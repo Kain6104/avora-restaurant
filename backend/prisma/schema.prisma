@@ -1,0 +1,293 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. NGƯỜI DÙNG & PHÂN QUYỀN (USER)
+// ==========================================
+model User {
+  id                    String    @id @default(uuid())
+  email                 String    @unique
+  phone                 String?   @unique
+  passwordHash          String
+  fullName              String
+  username              String?   @unique
+  avatarUrl             String?
+  birthdate             DateTime? @db.Date
+  role                  RoleType  @default(USER)
+  
+  // Thông tin thành viên & Điểm thưởng
+  points                Int       @default(0)
+  currentPoints         Float     @default(0)
+  totalSpending         Float     @default(0)
+  membershipTierId      String?
+  
+  // Xác thực & Bảo mật
+  isEmailVerified       Boolean   @default(false)
+  isPhoneVerified       Boolean   @default(false)
+  isAccountLocked       Boolean   @default(false)
+  forceRelogin          Boolean   @default(false)
+  secureToken           String    @unique @default(uuid())
+  deviceToken           String?   @db.VarChar(500)
+  zaloId                String?   @unique
+  
+  // Thông tin xuất hóa đơn VAT
+  taxCode               String?
+  companyName           String?
+  taxAddress            String?
+  invoiceEmail          String?
+
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  // Quan hệ
+  orders                Order[]
+  reservations          Reservation[]
+  favoriteItems         Product[] @relation("UserFavoriteItems")
+  addresses             Address[]
+  
+  // Chi nhánh hay ghé/mặc định
+  branchId              String?
+  branch                Branch?   @relation(fields: [branchId], references: [id])
+}
+
+enum RoleType {
+  ADMIN
+  MANAGER
+  CHEF
+  USER
+}
+
+model Address {
+  id          String   @id @default(uuid())
+  userId      String
+  street      String
+  ward        String
+  district    String
+  province    String
+  isDefault   Boolean  @default(false)
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 2. CHI NHÁNH (BRANCH)
+// ==========================================
+model Branch {
+  id                      String   @id @default(uuid())
+  name                    String
+  branchCode              String   @unique
+  phone                   String?
+  email                   String?
+  
+  // Địa chỉ
+  province                String?
+  district                String?
+  ward                    String?
+  street                  String?
+  latitude                Float?
+  longitude               Float?
+  
+  // Thời gian hoạt động & Trạng thái
+  openTime                String?  // VD: "08:00"
+  closeTime               String?  // VD: "22:00"
+  onlineOrderingEnabled   Boolean  @default(true)
+  servingType             ServingType @default(DINE_IN)
+  
+  // Cấu hình in ấn & bếp
+  splitKitchenTickets     Boolean  @default(false)
+  printCancelTicket       Boolean  @default(false)
+  allowedRadiusMeters     Int      @default(50)
+  qrSecretKey             String?
+
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  // Quan hệ
+  banners                 Banner[]    @relation("BannerToBranch")
+  products                Product[]   @relation("ProductToBranch")
+  categories              Category[]  @relation("CategoryToBranch")
+  reservations            Reservation[]
+  orders                  Order[]
+  users                   User[]
+}
+
+enum ServingType {
+  DINE_IN
+  TAKE_AWAY
+  DELIVERY
+}
+
+// ==========================================
+// 3. QUẢNG CÁO & MARKETING (BANNER)
+// ==========================================
+model Banner {
+  id          String    @id @default(uuid())
+  imageUrl    String
+  altText     String?
+  linkUrl     String?
+  active      Boolean   @default(true)
+  bannerOrder Int       @default(0)
+  popup       Boolean   @default(false)
+  
+  startDate   DateTime?
+  endDate     DateTime?
+
+  // Quan hệ: Một banner có thể hiển thị ở nhiều chi nhánh
+  branches    Branch[]  @relation("BannerToBranch")
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ==========================================
+// 4. DANH MỤC & SẢN PHẨM (CATEGORY & PRODUCT)
+// ==========================================
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  image       String?
+  description String?   @db.Text
+  displayOrder Int      @default(0)
+  
+  products    Product[]
+  branches    Branch[]  @relation("CategoryToBranch")
+  
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Product {
+  id                  String    @id @default(uuid())
+  itemCode            String    @unique
+  name                String
+  slug                String    @unique
+  description         String?   @db.Text
+  post                String?   @db.Text
+  
+  // Giá cả & Khuyến mãi
+  price               Float
+  oldPrice            Float?
+  discountedPrice     Float?
+  flashSalePrice      Float?
+  unit                String?   @default("phần")
+  taxPercentage       Float     @default(0.0)
+  isTaxIncludedInPrice Boolean  @default(true)
+  badge               String?
+  
+  // Media
+  imageUrl            String?
+  videoUrl            String?   @db.Text
+  
+  // Trạng thái & Thống kê
+  available           Boolean   @default(true)
+  isBestSeller        Boolean   @default(false)
+  isAiRecommended     Boolean   @default(false)
+  avgRating           Float     @default(0.0)
+  soldQuantity        Int       @default(0)
+  
+  // Đổi điểm thưởng
+  isRedeemable        Boolean   @default(false)
+  redemptionPoints    Int?
+
+  categoryId          String
+  category            Category  @relation(fields: [categoryId], references: [id])
+
+  // Quan hệ phức tạp
+  branches            Branch[]      @relation("ProductToBranch")
+  favoritedBy         User[]        @relation("UserFavoriteItems")
+  optionGroups        OptionGroup[] // Liên kết món ăn thêm, topping
+  
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+// ==========================================
+// 5. TÙY CHỌN MÓN ĂN (OPTION GROUP & ITEM)
+// ==========================================
+model OptionGroup {
+  id              String       @id @default(uuid())
+  productId       String
+  name            String       // VD: Kích thước, Độ cay, Topping
+  isRequired      Boolean      @default(false)
+  multipleChoice  Boolean      @default(false)
+  minSelect       Int          @default(0)
+  maxSelect       Int          @default(1)
+  displayOrder    Int          @default(0)
+
+  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionItems     OptionItem[]
+
+  createdAt       DateTime     @default(now())
+}
+
+model OptionItem {
+  id              String       @id @default(uuid())
+  optionGroupId   String
+  name            String       // VD: Size L, Thêm Phô Mai
+  priceAdjustment Float        @default(0.0)
+  isDefault       Boolean      @default(false)
+  available       Boolean      @default(true)
+  displayOrder    Int          @default(0)
+  maxQuantity     Int          @default(1)
+
+  optionGroup     OptionGroup  @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// 6. ĐẶT BÀN & ĐƠN HÀNG (RESERVATION & ORDER)
+// ==========================================
+model Reservation {
+  id              String    @id @default(uuid())
+  userId          String
+  branchId        String
+  reservationDate DateTime  @db.Date
+  reservationTime String    // VD: "19:30"
+  partySize       Int
+  tablePreference String?   // VD: "VIP", "Bar", "Window"
+  specialRequests String?   @db.Text // VD: Dị ứng hải sản
+  status          ReservationStatus @default(PENDING)
+  
+  user            User      @relation(fields: [userId], references: [id])
+  branch          Branch    @relation(fields: [branchId], references: [id])
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model Order {
+  id              String    @id @default(uuid())
+  userId          String
+  totalAmount     Float
+  status          OrderStatus @default(PENDING)
+  deliveryAddress String?   @db.Text
+  
+  branchId        String
+  branch          Branch    @relation(fields: [branchId], references: [id])
+  
+  user            User      @relation(fields: [userId], references: [id])
+  
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+enum OrderStatus {
+  PENDING
+  PREPARING
+  DELIVERING
+  COMPLETED
+  CANCELLED
+}
