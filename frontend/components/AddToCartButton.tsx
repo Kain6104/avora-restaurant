@@ -2,42 +2,95 @@
 
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, X } from 'lucide-react';
+import { Plus, Minus, X } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import AddToCartForm from './AddToCartForm';
 
 export default function AddToCartButton({ item, className }: { item: any, className?: string }) {
-  const { addToCart, currentBranchId } = useCart();
+  const { addToCart, currentBranchId, cartItems, updateQuantity, removeFromCart } = useCart();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
 
+  const productCartItems = cartItems?.filter((i: any) => i.productId === item.id) || [];
+  const cartQuantity = productCartItems.reduce((acc: number, curr: any) => acc + curr.quantity, 0);
+  const cartItemToDecrease = productCartItems[productCartItems.length - 1];
+
   const handleAddClick = (e: React.MouseEvent) => {
     e.preventDefault(); 
     e.stopPropagation(); // Prevent bubbling up to the parent <Link>
-    setIsModalOpen(true);
+    
+    if (item.optionGroups && item.optionGroups.length > 0) {
+      setIsModalOpen(true);
+    } else {
+      const originalPriceAtSale = item.discountedPrice || item.price;
+      const cartItem = {
+        id: item.id,
+        productId: item.id,
+        name: item.name,
+        originalPriceAtSale,
+        priceAtSale: originalPriceAtSale,
+        quantity: 1,
+        imageUrl: item.imageUrl || item.image,
+      };
+      
+      let branch = currentBranchId;
+      if (!branch && typeof window !== 'undefined') {
+        branch = localStorage.getItem('selectedBranchId') || 'AVO-Q1';
+      }
+      
+      addToCart(cartItem, branch || 'AVO-Q1');
+    }
+  };
+
+  const handleDecreaseClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (cartItemToDecrease) {
+      if (cartItemToDecrease.quantity > 1) {
+        updateQuantity(cartItemToDecrease.id, cartItemToDecrease.quantity - 1);
+      } else {
+        removeFromCart(cartItemToDecrease.id);
+      }
+    }
   };
 
   const handleConfirmAdd = (quantity: number, selectedOptions: Record<string, string[]>, addonsTotal: number) => {
-    // Format options as string for cart item name/description
     let optionNames: string[] = [];
+    let selectedCartItemOptions: { optionItemId: string, nameAtSale: string, priceAdjustmentAtSale: number }[] = [];
+
     if (item.optionGroups && selectedOptions) {
       item.optionGroups.forEach((group: any) => {
         const selectedIds = selectedOptions[group.id] || [];
         selectedIds.forEach((id: string) => {
           const opt = group.optionItems.find((o: any) => o.id === id);
-          if (opt) optionNames.push(opt.name);
+          if (opt) {
+            optionNames.push(opt.name);
+            selectedCartItemOptions.push({
+              optionItemId: opt.id,
+              nameAtSale: opt.name,
+              priceAdjustmentAtSale: opt.priceAdjustment || 0
+            });
+          }
         });
       });
     }
 
+    const originalPriceAtSale = item.discountedPrice || item.price;
+    const priceAtSale = originalPriceAtSale + addonsTotal;
+    const optionsTextSnapshot = optionNames.length > 0 ? optionNames.join(', ') : undefined;
+
     const cartItem = {
       id: item.id + (optionNames.length > 0 ? '-' + Math.random().toString(36).substr(2, 9) : ''),
-      name: item.name + (optionNames.length > 0 ? ` (${optionNames.join(', ')})` : ''),
-      price: (item.discountedPrice || item.price) + addonsTotal,
-      quantity: quantity,
-      imageUrl: item.imageUrl || item.image
+      productId: item.id,
+      name: item.name,
+      originalPriceAtSale,
+      priceAtSale,
+      quantity,
+      imageUrl: item.imageUrl || item.image,
+      optionsTextSnapshot,
+      selectedOptions: selectedCartItemOptions
     };
     
     let branch = currentBranchId;
@@ -49,14 +102,40 @@ export default function AddToCartButton({ item, className }: { item: any, classN
     setIsModalOpen(false);
   };
 
-  return (
-    <>
+  const renderContent = () => {
+    if (mounted && cartQuantity > 0) {
+      return (
+        <div className="flex items-center bg-red-50 rounded-full border border-red-100 p-0.5 shadow-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+          <button 
+            onClick={handleDecreaseClick}
+            className="w-7 h-7 flex items-center justify-center text-red-600 hover:bg-white rounded-full transition-colors shrink-0"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <span className="w-6 text-center text-xs font-bold text-red-600 shrink-0">{cartQuantity}</span>
+          <button 
+            onClick={handleAddClick}
+            className="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-sm shrink-0"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      );
+    }
+
+    return (
       <button 
         onClick={handleAddClick}
         className={className || "w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md shrink-0"}
       >
         <Plus className="w-4 h-4" />
       </button>
+    );
+  };
+
+  return (
+    <>
+      {renderContent()}
 
       {isModalOpen && mounted && createPortal(
         <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">

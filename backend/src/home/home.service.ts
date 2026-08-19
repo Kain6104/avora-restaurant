@@ -18,17 +18,19 @@ export class HomeService {
         where: { isBestSeller: true, available: true },
         include: { 
           category: true,
-          optionGroups: { include: { optionItems: true } }
+          optionGroups: { include: { optionItems: true } },
+          branches: { select: { id: true } }
         },
-        take: 8,
+        take: 20,
       }),
       this.prisma.product.findMany({
         where: { isAiRecommended: true, available: true },
         include: { 
           category: true,
-          optionGroups: { include: { optionItems: true } }
+          optionGroups: { include: { optionItems: true } },
+          branches: { select: { id: true } }
         },
-        take: 4,
+        take: 10,
       }),
     ]);
 
@@ -42,6 +44,20 @@ export class HomeService {
 
   async getBranches() {
     return this.prisma.branch.findMany({
+      select: {
+        id: true,
+        name: true,
+        street: true,
+        ward: true,
+        district: true,
+        province: true,
+        phone: true,
+        openTime: true,
+        closeTime: true,
+        latitude: true,
+        longitude: true,
+        onlineOrderingEnabled: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
   }

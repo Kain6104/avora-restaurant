@@ -2,20 +2,32 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 
+export interface CartItemOption {
+  optionItemId: string;
+  nameAtSale: string;
+  priceAdjustmentAtSale: number;
+}
+
 export interface CartItem {
   id: string;
+  productId: string;
   name: string;
-  price: number;
+  originalPriceAtSale: number;
+  priceAtSale: number;
   quantity: number;
   imageUrl?: string;
+  optionsTextSnapshot?: string;
+  selectedOptions?: CartItemOption[];
 }
 
 interface CartContextType {
   cartItems: CartItem[];
   currentBranchId: string;
+  isLoaded: boolean;
   addToCart: (item: CartItem, branchId: string) => void;
   removeFromCart: (id: string) => void;
   updateQuantity: (id: string, quantity: number) => void;
+  updateCartItem: (id: string, updatedItem: CartItem) => void;
   clearCart: () => void;
   changeBranch: (newBranchId: string) => void;
 }
@@ -105,6 +117,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCartItems((prev) => prev.map((i) => (i.id === id ? { ...i, quantity } : i)));
   };
 
+  const updateCartItem = (id: string, updatedItem: CartItem) => {
+    setCartItems((prev) => prev.map((i) => (i.id === id ? updatedItem : i)));
+  };
+
   const clearCart = () => {
     setCartItems([]);
   };
@@ -125,7 +141,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <CartContext.Provider value={{ cartItems, currentBranchId, addToCart, removeFromCart, updateQuantity, clearCart, changeBranch }}>
+    <CartContext.Provider value={{ cartItems, currentBranchId, isLoaded, addToCart, removeFromCart, updateQuantity, updateCartItem, clearCart, changeBranch }}>
       {children}
 
       {/* Toast Notification */}

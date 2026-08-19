@@ -102,7 +102,17 @@ async function main() {
     prisma.user.create({
       data: {
         email: 'khachhang1@gmail.com', fullName: 'Trần Đại Phát', phone: '0901234567', passwordHash: 'hashed_123', points: 1500, branchId: branches[0].id,
-        addresses: { create: [{ street: '123 Nguyễn Huệ', ward: 'Bến Nghé', district: 'Quận 1', province: 'TP.HCM', isDefault: true }] }
+        addresses: {
+          create: [{
+            recipientName: 'Trần Đại Phát', // Thêm tên người nhận
+            phone: '0901234567',          // Thêm SĐT
+            streetDetail: '123 Nguyễn Huệ', // ĐÃ ĐỔI TỪ street -> streetDetail
+            ward: 'Bến Nghé',
+            district: 'Quận 1',
+            province: 'TP.HCM',
+            isDefault: true
+          }]
+        }
       }
     }),
     prisma.user.create({ data: { email: 'khachhang2@gmail.com', fullName: 'Lê Minh Tâm', phone: '0912345678', passwordHash: 'hashed_123', points: 500 } }),
@@ -123,11 +133,11 @@ async function main() {
   console.log('7. Đang tạo 5 Đơn hàng (Orders)...');
   await prisma.order.createMany({
     data: [
-      { userId: users[2].id, totalAmount: 1249000, status: OrderStatus.COMPLETED, deliveryAddress: '123 Nguyễn Huệ, Quận 1', branchId: branches[0].id },
-      { userId: users[3].id, totalAmount: 350000, status: OrderStatus.PREPARING, deliveryAddress: '45 Lê Duẩn, Quận 1', branchId: branches[1].id },
-      { userId: users[4].id, totalAmount: 1500000, status: OrderStatus.PENDING, deliveryAddress: '88 Nguyễn Đình Chiểu, Quận 3', branchId: branches[0].id },
-      { userId: users[2].id, totalAmount: 5500000, status: OrderStatus.DELIVERING, deliveryAddress: '123 Nguyễn Huệ, Quận 1', branchId: branches[1].id },
-      { userId: users[3].id, totalAmount: 899000, status: OrderStatus.CANCELLED, deliveryAddress: '45 Lê Duẩn, Quận 1', branchId: branches[0].id },
+      { userId: users[2].id, branchId: branches[0].id, orderCode: 'ORD-001', customerName: 'Trần Đại Phát', customerPhone: '0901234567', deliveryAddress: '123 Nguyễn Huệ, Quận 1', subTotal: 1249000, totalAmount: 1249000, status: OrderStatus.COMPLETED },
+      { userId: users[3].id, branchId: branches[1].id, orderCode: 'ORD-002', customerName: 'Lê Minh Tâm', customerPhone: '0912345678', deliveryAddress: '45 Lê Duẩn, Quận 1', subTotal: 350000, totalAmount: 350000, status: OrderStatus.PREPARING },
+      { userId: users[4].id, branchId: branches[0].id, orderCode: 'ORD-003', customerName: 'Nguyễn Bích Ngọc', customerPhone: '0923456789', deliveryAddress: '88 Nguyễn Đình Chiểu, Quận 3', subTotal: 1500000, totalAmount: 1500000, status: OrderStatus.PENDING },
+      { userId: users[2].id, branchId: branches[1].id, orderCode: 'ORD-004', customerName: 'Trần Đại Phát', customerPhone: '0901234567', deliveryAddress: '123 Nguyễn Huệ, Quận 1', subTotal: 5500000, totalAmount: 5500000, status: OrderStatus.DELIVERING },
+      { userId: users[3].id, branchId: branches[0].id, orderCode: 'ORD-005', customerName: 'Lê Minh Tâm', customerPhone: '0912345678', deliveryAddress: '45 Lê Duẩn, Quận 1', subTotal: 899000, totalAmount: 899000, status: OrderStatus.CANCELLED },
     ]
   });
 

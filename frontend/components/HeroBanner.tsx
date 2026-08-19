@@ -91,9 +91,6 @@ export default function HeroBanner({ slides }: HeroBannerProps) {
               <Link href="/menu" className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 lg:px-8 py-3 lg:py-3.5 rounded-full font-bold transition-all shadow-xl shadow-red-600/30 hover:-translate-y-1 text-sm lg:text-base">
                 Đặt món ngay <ArrowRight className="w-4 h-4 lg:w-5 lg:h-5 bg-white text-red-600 rounded-full p-0.5" />
               </Link>
-              <Link href="/menu" className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border-2 border-slate-200 px-6 lg:px-8 py-3 lg:py-3.5 rounded-full font-bold transition-all hover:-translate-y-1 text-sm lg:text-base">
-                Xem thực đơn <BookOpen className="w-4 h-4 lg:w-5 lg:h-5 text-red-600" />
-              </Link>
             </div>
 
             {/* Features - hidden on smallest screens to save space */}

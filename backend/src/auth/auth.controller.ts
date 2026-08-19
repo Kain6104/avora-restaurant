@@ -1,7 +1,8 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Res, Get, Req, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, Res, Get, Put, Req, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import type { Response, Request } from 'express';
 import { JwtAuthGuard } from './jwt-auth.guard';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
 export class AuthController {
@@ -36,9 +37,43 @@ export class AuthController {
     return { message: 'Đăng xuất thành công' };
   }
 
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  async googleAuth(@Req() req: Request) {
+    // Initiates the Google OAuth2 login flow
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  async googleAuthRedirect(@Req() req: Request & { user: any }, @Res() res: Response) {
+    // This will be called after successful Google authentication
+    // The user is injected into req.user by the GoogleStrategy
+    const token = this.authService.generateToken(req.user);
+
+    // Set HTTP-Only Cookie
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: false, // Set to true if using HTTPS in production
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    // Redirect back to frontend with loginSuccess flag
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+    res.redirect(`${frontendUrl}?loginSuccess=true`);
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   async me(@Req() req: Request & { user: any }) {
     return this.authService.getMe(req.user.id);
+  }
+
+  @Put('update-phone')
+  @UseGuards(JwtAuthGuard)
+  async updatePhone(@Req() req: Request & { user: any }, @Body('phone') phone: string) {
+    await this.authService.updatePhone(req.user.id, phone);
+    return { message: 'Cập nhật số điện thoại thành công' };
   }
 }

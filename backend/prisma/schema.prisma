@@ -14,13 +14,15 @@ model User {
   id                    String    @id @default(uuid())
   email                 String    @unique
   phone                 String?   @unique
-  passwordHash          String
+  passwordHash          String?
   fullName              String
   username              String?   @unique
   avatarUrl             String?
   birthdate             DateTime? @db.Date
   role                  RoleType  @default(USER)
-  
+  authProvider          AuthProvider @default(LOCAL)
+  googleId              String?      @unique
+
   // Thông tin thành viên & Điểm thưởng
   points                Int       @default(0)
   currentPoints         Float     @default(0)
@@ -50,6 +52,7 @@ model User {
   reservations          Reservation[]
   favoriteItems         Product[] @relation("UserFavoriteItems")
   addresses             Address[]
+  notifications         Notification[]
   
   // Chi nhánh hay ghé/mặc định
   branchId              String?
@@ -63,16 +66,29 @@ enum RoleType {
   USER
 }
 
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  FACEBOOK
+}
+
 model Address {
-  id          String   @id @default(uuid())
-  userId      String
-  street      String
-  ward        String
-  district    String
-  province    String
-  isDefault   Boolean  @default(false)
+  id            String   @id @default(uuid())
+  userId        String
+  recipientName String?  
+  phone         String?  
+  province      String   
+  district      String?  
+  ward          String   
+  streetDetail  String   
+  isDefault     Boolean  @default(false)
+  latitude      Float?
+  longitude     Float?
   
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 // ==========================================
@@ -203,7 +219,8 @@ model Product {
   branches            Branch[]      @relation("ProductToBranch")
   favoritedBy         User[]        @relation("UserFavoriteItems")
   optionGroups        OptionGroup[] // Liên kết món ăn thêm, topping
-  
+  orderItems          OrderItem[]
+
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 }
@@ -238,16 +255,17 @@ model OptionItem {
   maxQuantity     Int          @default(1)
 
   optionGroup     OptionGroup  @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  orderItemOptions OrderItemOption[]
 }
 
 // ==========================================
 // 6. ĐẶT BÀN & ĐƠN HÀNG (RESERVATION & ORDER)
 // ==========================================
 model Reservation {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
   userId          String
   branchId        String
-  reservationDate DateTime  @db.Date
+  reservationDate DateTime @db.Date
   reservationTime String    // VD: "19:30"
   partySize       Int
   tablePreference String?   // VD: "VIP", "Bar", "Window"
@@ -269,25 +287,126 @@ enum ReservationStatus {
 }
 
 model Order {
-  id              String    @id @default(uuid())
+  id              String   @id @default(uuid())
+  orderCode       String   @unique // VD: ORD-AVO-12345
   userId          String
-  totalAmount     Float
-  status          OrderStatus @default(PENDING)
-  deliveryAddress String?   @db.Text
-  
   branchId        String
-  branch          Branch    @relation(fields: [branchId], references: [id])
   
-  user            User      @relation(fields: [userId], references: [id])
+  // 1. Thông tin khách hàng & Giao hàng (Snapshot)
+  customerName    String
+  customerPhone   String
+  deliveryAddress String   @db.Text
+  latitude        Float?
+  longitude       Float?
+  note            String?  @db.Text
   
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  // 2. Tài chính & Thanh toán (Snapshot)[cite: 10]
+  subTotal        Float    // Tổng tiền hàng
+  shippingFee     Float    @default(0) // Phí giao hàng
+  discountAmount  Float    @default(0) // Giảm giá (Voucher)
+  totalAmount     Float    // Tổng tiền thanh toán cuối cùng
+  
+  paymentMethod   String   @default("COD") // COD, MOMO, VN_PAY, BANKING[cite: 10]
+  paymentStatus   String   @default("PENDING") // PENDING, PAID, FAILED, REFUNDED[cite: 10]
+  transactionId   String?  // Mã giao dịch ngân hàng[cite: 10]
+  
+  // 3. Điểm thưởng (Loyalty)[cite: 10]
+  pointsUsed      Int      @default(0)
+  pointsAwarded   Int      @default(0)
+  
+  // 4. Trạng thái & Vận hành[cite: 10]
+  status          OrderStatus @default(PENDING)
+  cancelReason    String?  @db.Text
+  canceledBy      String?
+  
+  // 5. Xuất hóa đơn VAT (Chuẩn Việt Nam)[cite: 10]
+  isInvoiceRequested Boolean @default(false)
+  invoiceCompanyName String?
+  invoiceTaxCode     String?
+  invoiceAddress     String?  @db.Text
+  invoiceEmail       String?
+  
+  // 6. Timestamps Vận hành[cite: 10]
+  confirmedAt     DateTime?
+  deliveringAt    DateTime?
+  deliveredAt     DateTime?
+  canceledAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Quan hệ
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  user            User     @relation(fields: [userId], references: [id])
+  orderItems      OrderItem[]
 }
 
 enum OrderStatus {
-  PENDING
-  PREPARING
-  DELIVERING
-  COMPLETED
-  CANCELLED
+  PENDING         // Chờ xác nhận
+  CONFIRMED       // Đã xác nhận
+  PREPARING       // Đang chuẩn bị món
+  DELIVERING      // Đang giao hàng
+  COMPLETED       // Đã hoàn thành (Delivered)
+  CANCELLED       // Đã hủy
+}
+
+// Bảng chi tiết từng món trong đơn hàng (Lưu vết giá cả)
+model OrderItem {
+  id                  String   @id @default(uuid())
+  orderId             String
+  productId           String
+  
+  quantity            Int
+  priceAtSale         Float    // Giá bán cuối (có thể đã giảm do Flash Sale)
+  originalPriceAtSale Float    // Giá niêm yết gốc lúc bán
+  note                String?  @db.Text
+
+  // Tối ưu hóa UI: Lưu chuỗi text để hiển thị nhanh (VD: "Size L, Thêm Phô mai")[cite: 11]
+  optionsTextSnapshot String?  @db.Text 
+
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product  @relation(fields: [productId], references: [id])
+  selectedOptions     OrderItemOption[]
+}
+
+// Bảng lưu lại các Tùy chọn (Topping) khách đã chọn[cite: 11]
+model OrderItemOption {
+  id                    String   @id @default(uuid())
+  orderItemId           String
+  optionItemId          String
+  
+  nameAtSale            String   // Tên option lúc mua (Snapshot)
+  priceAdjustmentAtSale Float    // Giá cộng thêm lúc mua (Snapshot)
+
+  orderItem             OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  optionItem            OptionItem @relation(fields: [optionItemId], references: [id])
+}
+
+// ==========================================
+// 7. THÔNG BÁO (NOTIFICATION)
+// ==========================================
+model Notification {
+  id          String   @id @default(uuid())
+  userId      String
+
+  title       String   // VD: "Đơn hàng đang được giao!"
+  content     String   @db.Text // Nội dung chi tiết
+  type        NotificationType @default(SYSTEM)
+  isRead      Boolean  @default(false)
+
+  // ID tham chiếu (VD: ID của Order để khi khách click vào sẽ nhảy tới đúng đơn hàng)
+  referenceId String?  
+  url         String?
+  imageUrl    String?  // Ảnh minh họa (nếu có, VD: ảnh khuyến mãi)
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum NotificationType {
+  ORDER       // Thông báo đơn hàng
+  PROMOTION   // Khuyến mãi
+  REWARD      // Tích điểm / Đổi quà
+  SYSTEM      // Hệ thống
 }

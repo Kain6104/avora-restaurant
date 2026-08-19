@@ -8,6 +8,8 @@ import {
   Truck, Package, ChefHat, Search, Filter, ArrowLeft,
   ReceiptText, RotateCcw, MapPin, Star, ChevronDown
 } from 'lucide-react';
+import Image from 'next/image';
+import CancelOrderModal from '@/components/CancelOrderModal';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -21,8 +23,6 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; 
   CANCELLED:  { label: 'Đã hủy',       color: 'text-red-700',    bg: 'bg-red-100',     icon: <XCircle className="w-3.5 h-3.5" /> },
 };
 
-
-
 function timeAgo(dateStr: string) {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -34,35 +34,35 @@ function timeAgo(dateStr: string) {
 }
 
 export default function OrdersPage() {
-  const [user, setUser] = useState<any>(null);
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeStatus, setActiveStatus] = useState<OrderStatus>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(`${API_URL}/api/auth/me`, {
-          credentials: 'include',
-          headers: { 'ngrok-skip-browser-warning': 'true' },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setUser(data);
-          setOrders(data.orders || []);
-        } else {
-          toast.error('Vui lòng đăng nhập để tiếp tục');
-          window.location.href = '/login?redirectURL=/orders';
-        }
-      } catch {
+  const [cancelTargetCode, setCancelTargetCode] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/orders`, {
+        credentials: 'include',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOrders(data || []);
+      } else if (res.status === 401) {
         toast.error('Vui lòng đăng nhập để tiếp tục');
         window.location.href = '/login?redirectURL=/orders';
-      } finally {
-        setLoading(false);
       }
-    };
+    } catch {
+      toast.error('Lỗi khi tải đơn hàng');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchData();
   }, []);
 
@@ -77,8 +77,9 @@ export default function OrdersPage() {
 
   const filtered = orders.filter(o => {
     const matchStatus = activeStatus === 'ALL' || o.status === activeStatus;
-    const matchSearch = !searchQuery || o.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      o.items?.some((i: any) => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchSearch = !searchQuery || 
+      (o.orderCode || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      o.orderItems?.some((i: any) => i.product?.name.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchStatus && matchSearch;
   });
 
@@ -99,8 +100,18 @@ export default function OrdersPage() {
   return (
     <div className="min-h-screen bg-slate-50">
 
+      <CancelOrderModal 
+        orderCode={cancelTargetCode || ''}
+        isOpen={!!cancelTargetCode}
+        onClose={() => setCancelTargetCode(null)}
+        onSuccess={() => {
+          setCancelTargetCode(null);
+          fetchData();
+        }}
+      />
+
       {/* ── BREADCRUMB (Sticky) ── */}
-      <div className="sticky top-[52px] md:top-[56px] z-[45] bg-white border-b border-slate-100 shadow-sm transition-all">
+      <div className="bg-white border-b border-slate-100 shadow-sm transition-all sticky top-0 z-40">
         <div className="max-w-5xl mx-auto px-4 md:px-8 py-3 flex items-center gap-3">
           <Link href="/profile" className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
             <ArrowLeft className="w-4 h-4" />
@@ -209,7 +220,7 @@ export default function OrdersPage() {
             <p className="text-slate-500 text-sm mb-6">
               {searchQuery ? 'Không có kết quả phù hợp. Thử tìm kiếm khác.' : 'Bạn chưa có đơn hàng nào ở trạng thái này.'}
             </p>
-            <Link href="/menu" className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition-colors shadow-md shadow-red-600/30 text-sm">
+            <Link href="/" className="inline-flex items-center gap-2 px-6 py-3 bg-red-600 text-white font-bold rounded-full hover:bg-red-700 transition-colors shadow-md shadow-red-600/30 text-sm">
               Đặt món ngay
             </Link>
           </div>
@@ -237,7 +248,7 @@ export default function OrdersPage() {
                             <span className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full ${cfg.bg} ${cfg.color}`}>
                               {cfg.icon} {cfg.label}
                             </span>
-                            <span className="text-xs text-slate-400 font-mono">#{order.id.slice(-8).toUpperCase()}</span>
+                            <span className="text-xs text-slate-500 font-mono font-bold">{order.orderCode}</span>
                           </div>
                           <p className="text-xs text-slate-400 mt-0.5">{timeAgo(order.createdAt)}</p>
                         </div>
@@ -246,7 +257,7 @@ export default function OrdersPage() {
                         <p className="text-lg font-black text-slate-900">
                           {new Intl.NumberFormat('vi-VN').format(order.totalAmount)}đ
                         </p>
-                        <p className="text-[10px] text-slate-400 font-medium">{order.items?.length || 0} món</p>
+                        <p className="text-[10px] text-slate-400 font-medium">{order.orderItems?.length || 0} món</p>
                       </div>
                     </div>
 
@@ -259,95 +270,80 @@ export default function OrdersPage() {
                     )}
 
                     {/* Items preview */}
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-3 cursor-pointer group" onClick={() => setExpandedOrder(isExpanded ? null : order.id)}>
                       <div className="flex -space-x-2">
-                        {order.items?.slice(0, 3).map((item: any, i: number) => (
-                          <div key={i} className="w-8 h-8 rounded-full border-2 border-white overflow-hidden shrink-0 shadow-sm">
-                            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                        {order.orderItems?.slice(0, 3).map((item: any, i: number) => (
+                          <div key={i} className="relative w-8 h-8 rounded-full border-2 border-white overflow-hidden shrink-0 shadow-sm bg-slate-100 flex items-center justify-center">
+                            {item.product?.imageUrl ? (
+                              <Image src={item.product.imageUrl} alt={item.product.name} fill className="object-cover" />
+                            ) : (
+                              <span className="text-[8px]">No img</span>
+                            )}
                           </div>
                         ))}
-                        {order.items?.length > 3 && (
-                          <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
-                            +{order.items.length - 3}
+                        {order.orderItems?.length > 3 && (
+                          <div className="w-8 h-8 rounded-full border-2 border-white bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0 z-10">
+                            +{order.orderItems.length - 3}
                           </div>
                         )}
                       </div>
-                      <span className="text-xs text-slate-500 font-medium flex-1 truncate">
-                        {order.items?.[0]?.name}{order.items?.length > 1 ? ` và ${order.items.length - 1} món khác` : ''}
+                      <span className="text-xs text-slate-500 font-medium flex-1 truncate group-hover:text-red-500 transition-colors">
+                        {order.orderItems?.[0]?.product?.name}{order.orderItems?.length > 1 ? ` và ${order.orderItems.length - 1} món khác` : ''}
                       </span>
-                      <button
-                        onClick={() => setExpandedOrder(isExpanded ? null : order.id)}
-                        className="text-xs text-slate-400 hover:text-red-600 transition-colors flex items-center gap-0.5 shrink-0"
+                      <div
+                        className="text-xs text-slate-400 group-hover:text-red-600 transition-colors flex items-center gap-0.5 shrink-0"
                       >
-                        Chi tiết
+                        Nhanh
                         <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                      </button>
+                      </div>
                     </div>
 
                     {/* Expanded: item list */}
                     {isExpanded && (
-                      <div className="border border-slate-100 rounded-xl overflow-hidden mb-3">
-                        {order.items?.map((item: any, i: number) => (
+                      <div className="border border-slate-100 rounded-xl overflow-hidden mb-3 animate-fade-in">
+                        {order.orderItems?.map((item: any, i: number) => (
                           <div key={i} className={`flex items-center gap-3 p-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
-                            <img src={item.image} className="w-10 h-10 rounded-lg object-cover shrink-0" />
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-semibold text-slate-800 line-clamp-1">{item.name}</p>
-                              <p className="text-xs text-slate-400">x{item.qty}</p>
+                            <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100 border border-slate-200">
+                               {item.product?.imageUrl && (
+                                  <Image src={item.product.imageUrl} alt={item.product.name} fill className="object-cover" />
+                               )}
                             </div>
-                            <p className="text-sm font-bold text-red-600 shrink-0">
-                              {new Intl.NumberFormat('vi-VN').format(item.price)}đ
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-slate-800 line-clamp-1">{item.product?.name}</p>
+                              {item.optionsTextSnapshot && <p className="text-[10px] text-slate-500 line-clamp-1">{item.optionsTextSnapshot}</p>}
+                              <p className="text-xs text-slate-400">SL: {item.quantity}</p>
+                            </div>
+                            <p className="text-sm font-bold text-slate-700 shrink-0">
+                              {new Intl.NumberFormat('vi-VN').format(item.priceAtSale * item.quantity)}đ
                             </p>
                           </div>
                         ))}
-                        <div className="flex items-center justify-between p-3 bg-slate-50 border-t border-slate-100">
-                          <span className="text-sm font-bold text-slate-700">Tổng cộng</span>
-                          <span className="text-sm font-black text-red-600">
-                            {new Intl.NumberFormat('vi-VN').format(order.totalAmount)}đ
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Track bar for delivering */}
-                    {order.status === 'DELIVERING' && (
-                      <div className="mb-3">
-                        <div className="flex items-center justify-between text-xs text-slate-500 mb-1.5">
-                          <span className="font-medium text-purple-700 flex items-center gap-1">
-                            <Truck className="w-3.5 h-3.5" /> Đang trên đường giao
-                          </span>
-                          <span>~ 15 phút</span>
-                        </div>
-                        <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div className="h-full bg-gradient-to-r from-purple-500 to-purple-600 rounded-full animate-pulse" style={{ width: '65%' }} />
-                        </div>
                       </div>
                     )}
 
                     {/* Action buttons */}
                     <div className="flex gap-2">
-                      <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:border-slate-300 hover:bg-slate-50 transition-colors">
-                        <ReceiptText className="w-3.5 h-3.5" /> Xem hoá đơn
-                      </button>
+                      <Link href={`/orders/${order.orderCode}`} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:border-slate-300 hover:bg-slate-50 transition-colors">
+                        <ReceiptText className="w-3.5 h-3.5" /> Xem chi tiết
+                      </Link>
 
                       {order.status === 'COMPLETED' && (
-                        <>
-                          <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 border border-slate-200 text-slate-600 font-bold rounded-xl text-xs hover:border-slate-300 hover:bg-slate-50 transition-colors">
-                            <Star className="w-3.5 h-3.5" /> Đánh giá
-                          </button>
-                          <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-600 text-white font-bold rounded-xl text-xs hover:bg-red-700 transition-colors shadow-sm shadow-red-600/30">
-                            <RotateCcw className="w-3.5 h-3.5" /> Mua lại
-                          </button>
-                        </>
-                      )}
-
-                      {order.status === 'DELIVERING' && (
-                        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white font-bold rounded-xl text-xs hover:bg-purple-700 transition-colors">
-                          <Package className="w-3.5 h-3.5" /> Theo dõi
+                        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-600 text-white font-bold rounded-xl text-xs hover:bg-red-700 transition-colors shadow-sm shadow-red-600/30">
+                          <RotateCcw className="w-3.5 h-3.5" /> Mua lại
                         </button>
                       )}
 
+                      {order.status === 'DELIVERING' && (
+                        <Link href={`/orders/${order.orderCode}`} className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-purple-600 text-white font-bold rounded-xl text-xs hover:bg-purple-700 transition-colors">
+                          <Package className="w-3.5 h-3.5" /> Theo dõi
+                        </Link>
+                      )}
+
                       {order.status === 'PENDING' && (
-                        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-50 text-red-600 font-bold rounded-xl text-xs hover:bg-red-100 transition-colors border border-red-200">
+                        <button 
+                          onClick={() => setCancelTargetCode(order.orderCode)}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 bg-red-50 text-red-600 font-bold rounded-xl text-xs hover:bg-red-100 transition-colors border border-red-200"
+                        >
                           <XCircle className="w-3.5 h-3.5" /> Huỷ đơn
                         </button>
                       )}

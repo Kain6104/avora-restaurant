@@ -2,12 +2,14 @@ import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/co
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { NotificationService } from '../notification/notification.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
+    private notificationService: NotificationService,
   ) {}
 
   async register(data: any) {
@@ -45,6 +47,14 @@ export class AuthService {
         passwordHash,
         role: 'USER',
       },
+    });
+
+    // Tạo thông báo chào mừng
+    await this.notificationService.createNotification({
+      userId: newUser.id,
+      title: 'Chào mừng bạn đến với Avora!',
+      content: 'Tài khoản của bạn đã được đăng ký thành công. Hãy khám phá các món ăn tuyệt vời của chúng tôi nhé!',
+      type: 'SYSTEM',
     });
 
     return {
@@ -95,6 +105,70 @@ export class AuthService {
         role: user.role,
       }
     };
+  }
+
+  async validateGoogleUser(profile: any) {
+    const { email, firstName, lastName, picture, googleId } = profile;
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    let user = await this.prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      // Create new user
+      user = await this.prisma.user.create({
+        data: {
+          email,
+          fullName,
+          avatarUrl: picture,
+          googleId,
+          authProvider: 'GOOGLE',
+          role: 'USER',
+        },
+      });
+
+      // Tạo thông báo chào mừng
+      await this.notificationService.createNotification({
+        userId: user.id,
+        title: 'Chào mừng bạn đến với Avora!',
+        content: 'Tài khoản của bạn đã được đăng ký qua Google thành công. Hãy khám phá các món ăn tuyệt vời của chúng tôi nhé!',
+        type: 'SYSTEM',
+      });
+    } else {
+      // Update existing user with Google info if missing
+      user = await this.prisma.user.update({
+        where: { email },
+        data: {
+          googleId: user.googleId || googleId,
+          avatarUrl: user.avatarUrl || picture,
+        },
+      });
+    }
+
+    return user;
+  }
+
+  async updatePhone(userId: string, phone: string) {
+    const existingUser = await this.prisma.user.findUnique({
+      where: { phone },
+    });
+
+    if (existingUser && existingUser.id !== userId) {
+      throw new ConflictException('Số điện thoại này đã được sử dụng bởi một tài khoản khác.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { phone },
+    });
+
+    return updatedUser;
+  }
+
+  generateToken(user: any) {
+    const payload = { sub: user.id, email: user.email, role: user.role };
+    return this.jwtService.sign(payload);
   }
 
   async getMe(userId: string) {

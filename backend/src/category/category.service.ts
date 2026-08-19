@@ -10,7 +10,8 @@ export class CategoryService {
       orderBy: { displayOrder: 'asc' },
       include: {
         products: {
-          where: { available: true }
+          where: { available: true },
+          include: { branches: { select: { id: true } } }
         }
       }
     });
@@ -21,7 +22,8 @@ export class CategoryService {
       where: { slug },
       include: {
         products: {
-          where: { available: true }
+          where: { available: true },
+          include: { branches: { select: { id: true } } }
         }
       }
     });

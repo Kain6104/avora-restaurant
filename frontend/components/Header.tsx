@@ -3,13 +3,106 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Menu, Search, X, Bell, ChevronDown, User, LogOut, MapPin, Phone,
-  Truck, Gift, Download, Heart, ChevronRight, Home, ClipboardList, Star, ShoppingCart
+  Truck, Gift, Download, Heart, ChevronRight, Home, ClipboardList, Star, ShoppingCart,
+  Mic, Scan, Clock
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '../context/CartContext';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
+function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) {
+  const [phone, setPhone] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!phone || phone.length !== 10) {
+      setError('Vui lòng nhập đúng 10 số điện thoại hợp lệ.');
+      return;
+    }
+    setLoading(true);
+    setError('');
+
+    try {
+      const res = await fetch(`${API_URL}/api/auth/update-phone`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ phone }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || 'Cập nhật thất bại.');
+      } else {
+        onUpdateSuccess();
+      }
+    } catch (err) {
+      setError('Lỗi kết nối.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100">
+        <div className="p-8">
+          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-inner">
+            <Phone className="w-8 h-8 text-red-600" />
+          </div>
+          <h2 className="text-2xl font-black text-center text-slate-800 mb-2">Cập nhật Số điện thoại</h2>
+          <p className="text-center text-slate-500 text-sm mb-8">
+            Đây là bước bắt buộc để hoàn tất hồ sơ đăng nhập của bạn. Chúng tôi cần số điện thoại để liên hệ giao hàng.
+          </p>
+
+          {error && (
+            <div className="mb-6 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-bold text-center">
+              {error}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div>
+              <label className="block text-sm font-bold text-slate-700 mb-2">Số điện thoại của bạn</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <span className="text-slate-400 font-bold">+84</span>
+                </div>
+                <input
+                  type="tel"
+                  required
+                  className="block w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-bold transition-all shadow-sm"
+                  placeholder="Nhập 10 số..."
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center items-center py-3.5 px-4 rounded-2xl text-white bg-red-600 hover:bg-red-700 font-black shadow-lg shadow-red-600/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed hover:-translate-y-0.5"
+            >
+              {loading ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+              ) : (
+                'Xác Nhận & Tiếp Tục'
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 interface HeaderProps {
   initialCategories?: any[];
@@ -31,6 +124,11 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<any>(null);
   const [mobileCatExpanded, setMobileCatExpanded] = useState(false);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [isNotificationOpen, setIsNotificationOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const mobileNotificationRef = useRef<HTMLDivElement>(null);
   const megaMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { cartItems, changeBranch } = useCart();
@@ -102,6 +200,60 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
     run();
   }, []);
 
+  /* ── handle login success & toast ── */
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('loginSuccess') === 'true') {
+        import('react-hot-toast').then(({ toast }) => {
+          toast.success('Đăng nhập thành công!');
+        });
+        url.searchParams.delete('loginSuccess');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+  }, []);
+
+  /* ── fetch notifications ── */
+  useEffect(() => {
+    if (user) {
+      const fetchNotifications = async () => {
+        try {
+          const res = await fetch(`${API_URL}/api/notifications`, {
+            credentials: 'include',
+            headers: { 'ngrok-skip-browser-warning': 'true' },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            setNotifications(data.data || []);
+            setUnreadCount(data.unreadCount || 0);
+          }
+        } catch {}
+      };
+      fetchNotifications();
+    }
+  }, [user]);
+
+  const handleNotificationClick = async (notif: any) => {
+    if (!notif.isRead) {
+      try {
+        await fetch(`${API_URL}/api/notifications/${notif.id}/read`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'ngrok-skip-browser-warning': 'true' },
+        });
+        setNotifications(prev => prev.map(n => n.id === notif.id ? { ...n, isRead: true } : n));
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      } catch {}
+    }
+    setIsNotificationOpen(false);
+    if (notif.url) {
+      router.push(notif.url);
+    } else if (notif.type === 'ORDER') {
+      router.push(notif.referenceId ? `/orders/${notif.referenceId}` : '/orders');
+    }
+  };
+
   /* ── fetch suggestions ── */
   useEffect(() => {
     fetch(`${API_URL}/api/products/search/suggestions`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
@@ -120,28 +272,126 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
 
   /* ── scroll: compact desktop header ── */
   useEffect(() => {
-    const onScroll = () => setIsScrolled(window.scrollY > 60);
+    const onScroll = () => {
+      if (window.scrollY > 150) {
+        setIsScrolled(true);
+      } else if (window.scrollY < 20) {
+        setIsScrolled(false);
+      }
+    };
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  /* ── close mega menu on outside click ── */
+  /* ── close mega menu & notification on outside click ── */
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (megaMenuRef.current && !megaMenuRef.current.contains(e.target as Node)) {
         setIsMegaMenuOpen(false);
+      }
+      if (
+        (!notificationRef.current || !notificationRef.current.contains(e.target as Node)) &&
+        (!mobileNotificationRef.current || !mobileNotificationRef.current.contains(e.target as Node))
+      ) {
+        setIsNotificationOpen(false);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const renderNotificationDropdown = (isMobile = false) => {
+    if (!isNotificationOpen) return null;
+    return (
+      <div className={`absolute top-[calc(100%+8px)] ${isMobile ? 'right-0 w-[300px]' : '-right-10 md:right-0 w-[320px]'} bg-white shadow-2xl rounded-xl border border-slate-100 z-50 overflow-hidden`}>
+        <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
+          <h3 className="font-bold text-slate-800 text-sm">Thông báo mới nhận</h3>
+        </div>
+        <div className="max-h-[300px] overflow-y-auto">
+          {notifications.length === 0 ? (
+            <div className="p-6 text-center text-slate-500 text-sm">Chưa có thông báo nào</div>
+          ) : (
+            notifications.slice(0, 5).map(notif => (
+              <div 
+                key={notif.id} 
+                onClick={() => handleNotificationClick(notif)}
+                className={`px-4 py-3 border-b border-slate-50 cursor-pointer transition-colors ${!notif.isRead ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}`}
+              >
+                <div className="flex gap-3">
+                  <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center bg-white shadow-sm border border-slate-100 overflow-hidden">
+                    {notif.type === 'ORDER' ? <ClipboardList className="w-5 h-5 text-blue-500" /> : 
+                     notif.type === 'PROMOTION' ? <Gift className="w-5 h-5 text-red-500" /> : 
+                     <Bell className="w-5 h-5 text-amber-500" />}
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <h4 className={`text-sm line-clamp-1 ${!notif.isRead ? 'font-bold text-slate-800' : 'font-medium text-slate-600'}`}>{notif.title}</h4>
+                    <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{notif.content}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+        <div className="p-2 border-t border-slate-100 bg-slate-50">
+          <Link href="/notifications" onClick={() => setIsNotificationOpen(false)} className="block w-full text-center text-sm text-red-600 font-bold hover:underline py-1.5">
+            Xem tất cả
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSearchDropdown = () => {
+    if (!isSearchFocused) return null;
+    return (
+      <>
+        <div className="fixed inset-0 z-0" onClick={() => setIsSearchFocused(false)} />
+        <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 overflow-hidden max-h-[70vh] overflow-y-auto">
+          <div className="p-4 text-left">
+            {!searchQuery && searchHistory.length > 0 && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-slate-800">Lịch sử tìm kiếm</span>
+                  <button type="button" onClick={clearSearchHistory} className="text-xs text-blue-600 hover:underline">Xóa tất cả</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {searchHistory.map(term => (
+                    <button key={term} type="button"
+                      onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
+                      className="flex items-center gap-1 text-sm text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100"
+                    >
+                      <span className="text-slate-400">🕒</span> {term}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <span className="text-sm font-bold text-slate-800 mb-3 block">Tra cứu hàng đầu</span>
+            <div className="flex flex-wrap gap-2">
+              {(suggestions.topSearches.length > 0 ? suggestions.topSearches : ['Sashimi', 'Ramen', 'Sushi', 'Tempura', 'Mì Udon', 'Combo']).map(term => (
+                <button key={term} type="button"
+                  onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
+                  className="text-sm text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-full hover:border-red-400 hover:text-red-600 transition-colors"
+                >{term}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  };
+
   return (
     <>
+      {/* UPDATE PHONE MODAL FOR NEW GOOGLE USERS */}
+      {user && !user.phone && (
+        <UpdatePhoneModal onUpdateSuccess={() => window.location.reload()} />
+      )}
+
       {/* ══════════════════════════════════════
           HEADER — sticky, never hides on mobile
       ══════════════════════════════════════ */}
-      <header className="bg-white shadow-[0_2px_12px_rgba(0,0,0,0.07)] sticky top-0 z-50">
+      <header className="bg-white shadow-[0_2px_12px_rgba(0,0,0,0.07)] sticky top-0 z-50 transition-colors duration-300">
 
         {/* ── TOP BAR — desktop only, shrinks on scroll ── */}
         <div
@@ -155,7 +405,7 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                 onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
               >
                 <MapPin size={13} className="text-red-600" />
-                <span>Giao hàng đến: <strong className="text-slate-900">{selectedBranch?.name || 'Chọn chi nhánh'}</strong></span>
+                <span>Chi nhánh: <strong className="text-slate-900">{selectedBranch?.name || 'Chọn chi nhánh'}</strong></span>
                 <ChevronDown size={12} className="text-slate-400" />
               </div>
               {isBranchDropdownOpen && (
@@ -171,6 +421,10 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                         >
                           <p className={`font-bold text-sm ${selectedBranch?.id === b.id ? 'text-red-600' : 'text-slate-800'}`}>{b.name}</p>
                           <p className="text-xs text-slate-500 mt-0.5">{b.street}, {b.district}</p>
+                          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-slate-500 font-medium">
+                            <Clock className="w-3.5 h-3.5 text-slate-400" />
+                            <span>{b.openTime || '08:00'} - {b.closeTime || '22:00'}</span>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -198,27 +452,112 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
           </div>
         </div>
 
-        {/* ── MAIN ROW ── */}
-        <div className={`max-w-7xl mx-auto px-3 md:px-4 lg:px-8 flex items-center gap-2 transition-all duration-300 ${isScrolled ? 'h-13 md:h-[56px]' : 'h-13 md:h-[68px]'}`}
-          style={{ height: isScrolled ? undefined : undefined }}
-        >
+        {/* ── MOBILE MAIN ROW ── */}
+        <div className="md:hidden bg-white shadow-sm transition-all duration-300">
+          <div className="px-3 pt-2 pb-2 flex flex-col relative z-[90]">
+            {/* Top Row: Hamburger, Logo/ScrolledSearch, Cart */}
+            <div className="flex items-center justify-between h-11 relative">
+              {/* Left: Menu */}
+              <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-700 p-1.5 hover:bg-slate-100 rounded-full transition-colors z-10 shrink-0">
+                <Menu className="w-6 h-6" />
+              </button>
+
+              {/* Center Area */}
+              <div className="flex-1 h-full relative mx-2">
+                {/* Logo */}
+                <Link href="/" className={`absolute inset-0 flex justify-center items-center transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isScrolled ? 'opacity-0 scale-90 pointer-events-none -translate-y-4' : 'opacity-100 scale-100 translate-y-0'}`}>
+                  <img src="/avora_logo_ngang.png" alt="Avora" className="h-8 w-auto object-contain" />
+                </Link>
+
+                {/* Scrolled Search Bar */}
+                <div className={`absolute inset-0 flex items-center transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isScrolled ? 'opacity-100 translate-y-0 pointer-events-auto' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
+                  <div className="w-full relative">
+                    <form onSubmit={handleSearchSubmit}>
+                      <div className="flex items-center bg-slate-100 rounded-full pl-3 pr-1 py-1 border border-transparent focus-within:border-red-400 transition-all shadow-inner">
+                        <input
+                          type="text"
+                          placeholder="Tìm món ăn..."
+                          className="bg-transparent border-none outline-none flex-1 text-sm text-slate-800 placeholder-slate-500 min-w-0"
+                          value={searchQuery}
+                          onChange={e => setSearchQuery(e.target.value)}
+                          onFocus={() => setIsSearchFocused(true)}
+                        />
+                        {searchQuery && (
+                          <button type="button" onClick={() => setSearchQuery('')} className="p-1 text-slate-400">
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                        <button type="button" className="p-1 text-red-600 hover:bg-red-50 rounded-full">
+                          <Mic className="w-4 h-4" />
+                        </button>
+                        <button type="button" className="p-1 text-red-600 hover:bg-red-50 rounded-full">
+                          <Scan className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {isScrolled && renderSearchDropdown()}
+                    </form>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right: Notifications */}
+              <div className="relative z-10 shrink-0" ref={mobileNotificationRef}>
+                <button 
+                  onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                  className="relative text-slate-700 p-1.5 hover:bg-slate-100 rounded-full transition-colors flex items-center justify-center"
+                >
+                  <Bell className="w-6 h-6" />
+                  {unreadCount > 0 && <span className="absolute top-0 right-0 bg-red-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white">{unreadCount > 9 ? '9+' : unreadCount}</span>}
+                </button>
+                {renderNotificationDropdown(true)}
+              </div>
+            </div>
+
+            {/* Bottom Row / Normal Search Bar */}
+            <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isScrolled ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
+              <div className="overflow-hidden">
+                <div className="pt-2">
+                  <form onSubmit={handleSearchSubmit} className="relative">
+                    <div className="flex items-center bg-slate-100 rounded-full pl-4 pr-1.5 py-1.5 border border-transparent focus-within:border-red-400 transition-all shadow-inner">
+                      <input
+                        type="text"
+                        placeholder="Tìm món ăn, nhà hàng..."
+                        className="bg-transparent border-none outline-none flex-1 text-[15px] text-slate-800 placeholder-slate-500 min-w-0"
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        onFocus={() => setIsSearchFocused(true)}
+                      />
+                      {searchQuery && (
+                        <button type="button" onClick={() => setSearchQuery('')} className="p-1 text-slate-400 mr-1">
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                      <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors mr-0.5">
+                        <Mic className="w-[18px] h-[18px]" />
+                      </button>
+                      <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                        <Scan className="w-[18px] h-[18px]" />
+                      </button>
+                    </div>
+                    {!isScrolled && renderSearchDropdown()}
+                  </form>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── DESKTOP MAIN ROW ── */}
+        <div className={`hidden md:flex max-w-7xl mx-auto px-4 lg:px-8 items-center gap-2 transition-all duration-300 ${isScrolled ? 'h-[56px]' : 'h-[68px]'}`}>
           {/* Left */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              id="mobile-menu-btn"
-              onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden w-8 h-8 flex items-center justify-center text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
             <Link href="/" className="shrink-0">
-              <img src="/avora_logo_ngang.png" alt="Avora" className="hidden md:block h-14 w-auto" />
-              <img src="/avora_logo.png" alt="Avora" className="block md:hidden h-8 w-auto" />
+              <img src="/avora_logo_ngang.png" alt="Avora" className="h-14 w-auto" />
             </Link>
           </div>
 
           {/* Search */}
-          <div className="flex-1 min-w-0 px-1 md:px-5 relative z-[90]">
+          <div className="flex-1 min-w-0 px-5 relative z-[90]">
             <form onSubmit={handleSearchSubmit} className="relative">
               <div className="flex items-center bg-slate-100 rounded-full pl-3 pr-1 border border-slate-200 focus-within:border-red-400 focus-within:ring-2 focus-within:ring-red-100 focus-within:bg-white transition-all">
                 <Search className="w-4 h-4 text-slate-400 shrink-0" />
@@ -239,58 +578,31 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                   <Search className="w-3.5 h-3.5" />
                 </button>
               </div>
-
-              {/* Search dropdown */}
-              {isSearchFocused && (
-                <>
-                  <div className="fixed inset-0 z-0" onClick={() => setIsSearchFocused(false)} />
-                  <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 overflow-hidden max-h-[70vh] overflow-y-auto">
-                    <div className="p-4">
-                      {!searchQuery && searchHistory.length > 0 && (
-                        <div className="mb-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-sm font-bold text-slate-800">Lịch sử tìm kiếm</span>
-                            <button type="button" onClick={clearSearchHistory} className="text-xs text-blue-600 hover:underline">Xóa tất cả</button>
-                          </div>
-                          <div className="flex flex-wrap gap-2">
-                            {searchHistory.map(term => (
-                              <button key={term} type="button"
-                                onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
-                                className="flex items-center gap-1 text-sm text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100"
-                              >
-                                <span className="text-slate-400">🕒</span> {term}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                      <span className="text-sm font-bold text-slate-800 mb-3 block">Tra cứu hàng đầu</span>
-                      <div className="flex flex-wrap gap-2">
-                        {(suggestions.topSearches.length > 0 ? suggestions.topSearches : ['Sashimi', 'Ramen', 'Sushi', 'Tempura', 'Mì Udon', 'Combo']).map(term => (
-                          <button key={term} type="button"
-                            onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
-                            className="text-sm text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-full hover:border-red-400 hover:text-red-600 transition-colors"
-                          >{term}</button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </>
-              )}
+              {renderSearchDropdown()}
             </form>
           </div>
 
           {/* Right actions */}
           <div className="flex items-center gap-3 shrink-0">
             {/* Desktop */}
-            <div className="hidden md:flex items-center gap-4">
-              <button className="flex flex-col items-center text-slate-600 hover:text-red-600 transition-colors relative">
-                <div className="relative mb-0.5">
-                  <Bell className="w-[18px] h-[18px]" />
-                  <span className="absolute -top-1 -right-1.5 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border border-white">2</span>
-                </div>
-                <span className="text-[9px] font-semibold">Thông báo</span>
-              </button>
+            <div className="flex items-center gap-4">
+              <div className="relative" ref={notificationRef}>
+                <button 
+                  onClick={() => setIsNotificationOpen(!isNotificationOpen)}
+                  className="flex flex-col items-center text-slate-600 hover:text-red-600 transition-colors relative"
+                >
+                  <div className="relative mb-0.5">
+                    <Bell className="w-[18px] h-[18px]" />
+                    {unreadCount > 0 && (
+                      <span className="absolute -top-1 -right-1.5 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border border-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[9px] font-semibold">Thông báo</span>
+                </button>
+                {renderNotificationDropdown(false)}
+              </div>
               <Link href="#" className="flex flex-col items-center text-slate-600 hover:text-red-600 transition-colors">
                 <Heart className="w-[18px] h-[18px] mb-0.5" />
                 <span className="text-[9px] font-semibold">Yêu thích</span>
@@ -304,12 +616,6 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
               </Link>
             </div>
 
-            {/* Mobile bell only */}
-            <button className="md:hidden relative text-slate-700">
-              <Bell className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[9px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center border border-white">2</span>
-            </button>
-
             {/* Desktop user */}
             <div className="hidden lg:flex items-center border-l border-slate-200 pl-4 relative">
               {user ? (
@@ -320,7 +626,7 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                     </div>
                     <div>
                       <p className="text-[12px] font-bold text-slate-900 group-hover:text-red-600 transition-colors leading-tight">{user.fullName || user.name || 'Tài khoản'}</p>
-                      <p className="text-[10px] font-bold text-red-600 leading-tight">2.450 điểm</p>
+                      <p className="text-[10px] font-bold text-red-600 leading-tight">{new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm</p>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
                   </div>
@@ -546,6 +852,10 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                     >
                       <p className={`font-bold text-xs ${selectedBranch?.id === b.id ? 'text-red-600' : 'text-slate-800'}`}>{b.name}</p>
                       <p className="text-[10px] text-slate-400">{b.street}</p>
+                      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-slate-500 font-medium">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>{b.openTime || '08:00'} - {b.closeTime || '22:00'}</span>
+                      </div>
                     </div>
                   ))}
                 </div>

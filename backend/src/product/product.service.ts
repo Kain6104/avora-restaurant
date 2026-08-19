@@ -43,7 +43,8 @@ export class ProductService {
     minPrice?: string,
     maxPrice?: string,
     page: string = '1',
-    limit: string = '20'
+    limit: string = '20',
+    branchId?: string
   ) {
     let whereClause: any = { available: true };
     
@@ -73,6 +74,18 @@ export class ProductService {
       whereClause.price = {};
       if (minPrice) whereClause.price.gte = parseFloat(minPrice);
       if (maxPrice) whereClause.price.lte = parseFloat(maxPrice);
+    }
+    
+    if (branchId) {
+      whereClause.AND = [
+        ...(whereClause.AND || []),
+        {
+          OR: [
+            { branches: { some: { id: branchId } } },
+            { branches: { none: {} } }
+          ]
+        }
+      ];
     }
 
     let orderBy: any = {};
@@ -129,7 +142,26 @@ export class ProductService {
     };
   }
 
-  async getProductDetails(categorySlug: string, productSlug: string) {
+  async getProductById(id: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        optionGroups: {
+          include: {
+            optionItems: true
+          }
+        }
+      }
+    });
+
+    if (!product) {
+      throw new NotFoundException(`Product with id ${id} not found`);
+    }
+
+    return product;
+  }
+
+  async getProductDetails(categorySlug: string, productSlug: string, branchId?: string) {
     const category = await this.prisma.category.findUnique({
       where: { slug: categorySlug }
     });
@@ -146,6 +178,7 @@ export class ProductService {
       },
       include: {
         category: true,
+        branches: { select: { id: true } },
         optionGroups: {
           include: {
             optionItems: true
@@ -158,13 +191,23 @@ export class ProductService {
       throw new NotFoundException(`Product with slug ${productSlug} not found in category ${categorySlug}`);
     }
 
+    const relatedWhere: any = {
+      categoryId: category.id,
+      id: { not: product.id },
+      available: true
+    };
+    
+    if (branchId) {
+      relatedWhere.OR = [
+        { branches: { some: { id: branchId } } },
+        { branches: { none: {} } }
+      ];
+    }
+
     const relatedDishes = await this.prisma.product.findMany({
-      where: {
-        categoryId: category.id,
-        id: { not: product.id },
-        available: true
-      },
-      take: 4
+      where: relatedWhere,
+      include: { branches: { select: { id: true } } },
+      take: 10
     });
 
     return {

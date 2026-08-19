@@ -93,7 +93,7 @@ export default function BottomNav() {
 
       {/* Bottom nav bar */}
       <div
-        className={`md:hidden fixed bottom-0 left-0 right-0 z-[55] transition-transform duration-300 ease-out ${
+        className={`md:hidden fixed bottom-0 left-0 right-0 z-40 transition-transform duration-300 ease-out ${
           isVisible ? 'translate-y-0' : 'translate-y-full'
         }`}
       >

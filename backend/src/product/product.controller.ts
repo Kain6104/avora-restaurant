@@ -18,16 +18,23 @@ export class ProductController {
     @Query('minPrice') minPrice: string,
     @Query('maxPrice') maxPrice: string,
     @Query('page') page: string,
-    @Query('limit') limit: string
+    @Query('limit') limit: string,
+    @Query('branchId') branchId?: string
   ) {
-    return this.productService.searchProducts(query, category, sort, minPrice, maxPrice, page, limit);
+    return this.productService.searchProducts(query, category, sort, minPrice, maxPrice, page, limit, branchId);
+  }
+
+  @Get('by-id/:id')
+  async getProductById(@Param('id') id: string) {
+    return this.productService.getProductById(id);
   }
 
   @Get(':categorySlug/:productSlug')
   async getProductDetails(
     @Param('categorySlug') categorySlug: string,
-    @Param('productSlug') productSlug: string
+    @Param('productSlug') productSlug: string,
+    @Query('branchId') branchId?: string
   ) {
-    return this.productService.getProductDetails(categorySlug, productSlug);
+    return this.productService.getProductDetails(categorySlug, productSlug, branchId);
   }
 }

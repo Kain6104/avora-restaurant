@@ -298,14 +298,74 @@ function ProfileContent() {
 
 
 
-            {/* TAB: ADDRESS & SECURITY placeholders to avoid too long code, they follow similar patterns */}
-            {(activeTab === 'address' || activeTab === 'security') && (
+            {/* TAB: ADDRESS */}
+            {activeTab === 'address' && (
               <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500 p-12 text-center">
                 <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  {activeTab === 'address' ? <MapPin size={32} className="text-slate-400" /> : <Lock size={32} className="text-slate-400" />}
+                  <MapPin size={32} className="text-slate-400" />
                 </div>
-                <h2 className="text-xl font-bold text-slate-900 mb-2">Tính năng đang được phát triển</h2>
-                <p className="text-slate-500 text-sm">Chúng tôi đang cập nhật giao diện mới cho tính năng này. Vui lòng quay lại sau!</p>
+                <h2 className="text-xl font-bold text-slate-900 mb-2">Sổ Địa Chỉ</h2>
+                <p className="text-slate-500 text-sm">Tính năng quản lý sổ địa chỉ đang được cập nhật. Vui lòng quay lại sau!</p>
+              </div>
+            )}
+
+            {/* TAB: SECURITY */}
+            {activeTab === 'security' && (
+              <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50">
+                  <h2 className="text-xl font-bold text-slate-900">Bảo Mật Tài Khoản</h2>
+                  <p className="text-sm text-slate-500 mt-1">Quản lý phương thức đăng nhập và bảo mật</p>
+                </div>
+                
+                <div className="p-8 space-y-6">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Phương thức đăng nhập</h3>
+                    <div className="flex items-center justify-between p-4 border border-slate-200 rounded-2xl bg-white shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                          <Lock className="w-6 h-6 text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-900">Phương thức chính</p>
+                          <p className="text-sm text-slate-500">
+                            {user?.authProvider === 'GOOGLE' ? 'Tài khoản Google' : 'Mật khẩu (Cơ bản)'}
+                          </p>
+                        </div>
+                      </div>
+                      {user?.authProvider !== 'GOOGLE' && (
+                        <button className="px-4 py-2 text-sm font-bold text-slate-700 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors">
+                          Đổi mật khẩu
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-700 mb-4 uppercase tracking-wider">Liên kết mạng xã hội</h3>
+                    <div className="flex items-center justify-between p-4 border border-slate-200 rounded-2xl bg-white shadow-sm">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100">
+                          <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="w-6 h-6" />
+                        </div>
+                        <div>
+                          <p className="font-bold text-slate-900">Google</p>
+                          <p className="text-sm text-slate-500">
+                            Đăng nhập nhanh bằng tài khoản Google
+                          </p>
+                        </div>
+                      </div>
+                      {user?.googleId ? (
+                        <span className="px-3 py-1.5 text-xs font-bold text-green-700 bg-green-100 rounded-lg flex items-center gap-1.5">
+                          <CheckCircle2 size={14} /> Đã liên kết
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1.5 text-xs font-bold text-slate-500 bg-slate-100 rounded-lg">
+                          Chưa liên kết
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
