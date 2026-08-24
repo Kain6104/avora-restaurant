@@ -11,7 +11,7 @@ interface MenuClientProps {
 }
 
 export default function MenuClient({ initialCategories }: MenuClientProps) {
-  const { currentBranchId } = useCart();
+  const { currentBranchId, cartItems, flashSaleQuotas } = useCart();
   const [activeCategory, setActiveCategory] = useState<string>('');
   
   // Filter products by branch
@@ -19,14 +19,30 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
     return initialCategories.map(cat => {
       return {
         ...cat,
-        products: cat.products.filter((p: any) => {
+        products: cat.products.map((p: any) => {
+          let dp = { ...p };
+          if (dp.isFlashSaleItem || dp.flashSalePrice) {
+            const quota = flashSaleQuotas?.[dp.id];
+            if (quota !== undefined) {
+              const cartQty = cartItems?.filter((c: any) => c.productId === dp.id && c.isFlashSaleItem).reduce((acc: number, curr: any) => acc + curr.quantity, 0) || 0;
+              const remaining = quota - cartQty;
+              if (remaining <= 0) {
+                dp.flashSalePrice = null;
+                dp.isFlashSaleItem = false;
+                dp.flashSaleId = null;
+                dp.maxQuantityPerUser = null;
+              }
+            }
+          }
+          return dp;
+        }).filter((p: any) => {
           if (!currentBranchId) return true; // Show all if no branch selected
           if (!p.branches || p.branches.length === 0) return true; // Show if product has no branch restriction
           return p.branches.some((b: any) => b.id === currentBranchId);
         })
       };
     }).filter(cat => cat.products.length > 0); // Only keep categories with products
-  }, [initialCategories, currentBranchId]);
+  }, [initialCategories, currentBranchId, cartItems, flashSaleQuotas]);
 
   useEffect(() => {
     if (filteredCategories.length > 0 && !activeCategory) {

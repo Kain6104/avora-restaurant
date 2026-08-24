@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionService } from '../promotion/promotion.service';
 
 @Injectable()
 export class ProductService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private promotionService: PromotionService) {}
 
   async getSearchSuggestions() {
     // Top searches: using top sold items' names as a proxy for top searches
@@ -23,6 +24,9 @@ export class ProductService {
         available: true,
         oldPrice: { gt: this.prisma.product.fields.price } // valid if using Prisma 5.2+ field ref, but safer to do a raw query or just fetch those with oldPrice not null
       },
+      include: {
+        optionGroups: { include: { optionItems: true } }
+      },
       take: 20
     });
     
@@ -32,7 +36,43 @@ export class ProductService {
 
     return {
       topSearches,
-      hotDeals
+      hotDeals: await this.promotionService.enrichProductsWithFlashSale(hotDeals)
+    };
+  }
+
+  async quickSearch(query: string) {
+    if (!query) return { categories: [], products: [] };
+    
+    const searchTerms = query.trim().split(/\s+/);
+    const searchConditions = searchTerms.map(term => ({
+      OR: [
+        { name: { contains: term } },
+        { description: { contains: term } }
+      ]
+    }));
+
+    const products = await this.prisma.product.findMany({
+      where: { available: true, AND: searchConditions },
+      include: { 
+        branches: { select: { id: true, name: true } }, 
+        category: true,
+        optionGroups: { include: { optionItems: true } }
+      },
+      take: 6
+    });
+
+    const categoryConditions = searchTerms.map(term => ({
+      name: { contains: term }
+    }));
+    
+    const categories = await this.prisma.category.findMany({
+      where: { AND: categoryConditions },
+      take: 4
+    });
+
+    return { 
+      categories, 
+      products: await this.promotionService.enrichProductsWithFlashSale(products) 
     };
   }
 
@@ -75,19 +115,8 @@ export class ProductService {
       if (minPrice) whereClause.price.gte = parseFloat(minPrice);
       if (maxPrice) whereClause.price.lte = parseFloat(maxPrice);
     }
-    
-    if (branchId) {
-      whereClause.AND = [
-        ...(whereClause.AND || []),
-        {
-          OR: [
-            { branches: { some: { id: branchId } } },
-            { branches: { none: {} } }
-          ]
-        }
-      ];
-    }
-
+    // We no longer filter by branchId in whereClause because we want global search results.
+    // The frontend will use the included 'branches' data to indicate branch availability.
     let orderBy: any = {};
     if (sort === 'price_asc') orderBy = { price: 'asc' };
     else if (sort === 'price_desc') orderBy = { price: 'desc' };
@@ -101,7 +130,11 @@ export class ProductService {
     const products = await this.prisma.product.findMany({
       where: whereClause,
       orderBy,
-      include: { category: true },
+      include: { 
+        category: true, 
+        branches: { select: { id: true, name: true } },
+        optionGroups: { include: { optionItems: true } }
+      },
       take: parsedLimit,
       skip,
     });
@@ -134,17 +167,24 @@ export class ProductService {
       categories = await this.prisma.category.findMany();
     }
 
+    const enrichedProducts = await this.promotionService.enrichProductsWithFlashSale(products);
+
     return {
-      products,
+      products: enrichedProducts,
       total,
       categories,
       hasMore: skip + products.length < total
     };
   }
 
-  async getProductById(id: string) {
-    const product = await this.prisma.product.findUnique({
-      where: { id },
+  async getProductById(id: string, branchId?: string) {
+    let whereClause: any = { id };
+    if (branchId) {
+      whereClause.branches = { some: { id: branchId } };
+    }
+
+    const product = await this.prisma.product.findFirst({
+      where: whereClause,
       include: {
         optionGroups: {
           include: {
@@ -155,10 +195,29 @@ export class ProductService {
     });
 
     if (!product) {
-      throw new NotFoundException(`Product with id ${id} not found`);
+      throw new NotFoundException(branchId ? `Sản phẩm không có sẵn ở chi nhánh này` : `Product with id ${id} not found`);
     }
 
-    return product;
+    const [enrichedProduct] = await this.promotionService.enrichProductsWithFlashSale([product]);
+
+    return enrichedProduct;
+  }
+
+  async getProductsBulk(ids: string[]) {
+    if (!ids || ids.length === 0) return [];
+    
+    const products = await this.prisma.product.findMany({
+      where: { id: { in: ids } },
+      include: {
+        optionGroups: {
+          include: {
+            optionItems: true
+          }
+        }
+      }
+    });
+
+    return this.promotionService.enrichProductsWithFlashSale(products);
   }
 
   async getProductDetails(categorySlug: string, productSlug: string, branchId?: string) {
@@ -210,9 +269,12 @@ export class ProductService {
       take: 10
     });
 
+    const [enrichedProduct] = await this.promotionService.enrichProductsWithFlashSale([product]);
+    const enrichedRelatedDishes = await this.promotionService.enrichProductsWithFlashSale(relatedDishes);
+
     return {
-      product,
-      relatedDishes
+      product: enrichedProduct,
+      relatedDishes: enrichedRelatedDishes
     };
   }
 }

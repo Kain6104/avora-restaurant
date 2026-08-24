@@ -7,8 +7,7 @@ import { useCart } from '../context/CartContext';
 import AddToCartForm from './AddToCartForm';
 
 export default function AddToCartButton({ item, className }: { item: any, className?: string }) {
-  const { addToCart, currentBranchId, cartItems, updateQuantity, removeFromCart } = useCart();
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const { addToCart, currentBranchId, cartItems, updateQuantity, removeFromCart, setBranchModalProduct } = useCart();
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -21,27 +20,38 @@ export default function AddToCartButton({ item, className }: { item: any, classN
     e.preventDefault(); 
     e.stopPropagation(); // Prevent bubbling up to the parent <Link>
     
-    if (item.optionGroups && item.optionGroups.length > 0) {
-      setIsModalOpen(true);
-    } else {
-      const originalPriceAtSale = item.discountedPrice || item.price;
-      const cartItem = {
-        id: item.id,
-        productId: item.id,
-        name: item.name,
-        originalPriceAtSale,
-        priceAtSale: originalPriceAtSale,
-        quantity: 1,
-        imageUrl: item.imageUrl || item.image,
-      };
-      
-      let branch = currentBranchId;
-      if (!branch && typeof window !== 'undefined') {
-        branch = localStorage.getItem('selectedBranchId') || 'AVO-Q1';
-      }
-      
-      addToCart(cartItem, branch || 'AVO-Q1');
+    let branch = currentBranchId;
+    if (!branch && typeof window !== 'undefined') {
+      branch = localStorage.getItem('selectedBranchId') || 'AVO-Q1';
     }
+    
+    if (item.branches && item.branches.length > 0) {
+      const isAvailable = item.branches.some((b: any) => b.id === branch);
+      if (!isAvailable) {
+        setBranchModalProduct(item);
+        return;
+      }
+    }
+
+    const priceAtSale = item.flashSalePrice || item.discountedPrice || item.price;
+    const originalPriceAtSale = item.price;
+    const cartItem = {
+      id: item.id,
+      productId: item.id,
+      name: item.name,
+      originalPriceAtSale,
+      priceAtSale,
+      quantity: 1,
+      imageUrl: item.imageUrl || item.image,
+      isFlashSaleItem: !!item.flashSalePrice,
+      flashSaleId: item.flashSaleId,
+      flashSaleStock: item.flashSaleStock,
+      flashSaleSold: item.flashSaleSold,
+      maxQuantityPerUser: item.maxQuantityPerUser,
+      rawProduct: item
+    };
+    
+    addToCart(cartItem, branch || 'AVO-Q1');
   };
 
   const handleDecreaseClick = (e: React.MouseEvent) => {
@@ -54,52 +64,6 @@ export default function AddToCartButton({ item, className }: { item: any, classN
         removeFromCart(cartItemToDecrease.id);
       }
     }
-  };
-
-  const handleConfirmAdd = (quantity: number, selectedOptions: Record<string, string[]>, addonsTotal: number) => {
-    let optionNames: string[] = [];
-    let selectedCartItemOptions: { optionItemId: string, nameAtSale: string, priceAdjustmentAtSale: number }[] = [];
-
-    if (item.optionGroups && selectedOptions) {
-      item.optionGroups.forEach((group: any) => {
-        const selectedIds = selectedOptions[group.id] || [];
-        selectedIds.forEach((id: string) => {
-          const opt = group.optionItems.find((o: any) => o.id === id);
-          if (opt) {
-            optionNames.push(opt.name);
-            selectedCartItemOptions.push({
-              optionItemId: opt.id,
-              nameAtSale: opt.name,
-              priceAdjustmentAtSale: opt.priceAdjustment || 0
-            });
-          }
-        });
-      });
-    }
-
-    const originalPriceAtSale = item.discountedPrice || item.price;
-    const priceAtSale = originalPriceAtSale + addonsTotal;
-    const optionsTextSnapshot = optionNames.length > 0 ? optionNames.join(', ') : undefined;
-
-    const cartItem = {
-      id: item.id + (optionNames.length > 0 ? '-' + Math.random().toString(36).substr(2, 9) : ''),
-      productId: item.id,
-      name: item.name,
-      originalPriceAtSale,
-      priceAtSale,
-      quantity,
-      imageUrl: item.imageUrl || item.image,
-      optionsTextSnapshot,
-      selectedOptions: selectedCartItemOptions
-    };
-    
-    let branch = currentBranchId;
-    if (!branch && typeof window !== 'undefined') {
-      branch = localStorage.getItem('selectedBranchId') || 'AVO-Q1';
-    }
-    
-    addToCart(cartItem, branch || 'AVO-Q1');
-    setIsModalOpen(false);
   };
 
   const renderContent = () => {
@@ -133,42 +97,5 @@ export default function AddToCartButton({ item, className }: { item: any, classN
     );
   };
 
-  return (
-    <>
-      {renderContent()}
-
-      {isModalOpen && mounted && createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsModalOpen(false)}></div>
-          <div className="relative bg-white w-full sm:w-[500px] h-[80vh] sm:h-auto sm:max-h-[90vh] rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-8 duration-300">
-            
-            {/* Header */}
-            <div className="p-4 border-b border-slate-100 flex items-start justify-between shrink-0">
-              <div className="flex gap-4">
-                <img src={item.imageUrl || item.image || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-20 h-20 rounded-xl object-cover shadow-sm" />
-                <div>
-                  <h2 className="font-bold text-lg text-slate-900 leading-tight mb-1">{item.name}</h2>
-                  <div className="text-red-600 font-bold">{(item.discountedPrice || item.price).toLocaleString('vi-VN')}đ</div>
-                </div>
-              </div>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-4 overflow-y-auto flex-1">
-              <AddToCartForm 
-                basePrice={item.discountedPrice || item.price} 
-                optionGroups={item.optionGroups || []} 
-                onAddToCart={handleConfirmAdd} 
-              />
-            </div>
-            
-          </div>
-        </div>,
-        document.body
-      )}
-    </>
-  );
+  return renderContent();
 }

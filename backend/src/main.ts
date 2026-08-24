@@ -9,7 +9,7 @@ async function bootstrap() {
   app.enableCors({ 
     origin: true, 
     credentials: true,
-    allowedHeaders: 'Content-Type, Accept, Authorization, ngrok-skip-browser-warning'
+    allowedHeaders: 'Content-Type, Accept, Authorization, ngrok-skip-browser-warning, x-idempotency-key'
   });
   await app.listen(process.env.PORT ?? 3001);
 }

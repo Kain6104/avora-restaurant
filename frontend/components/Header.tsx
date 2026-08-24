@@ -9,6 +9,7 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '../context/CartContext';
+import { toast } from 'react-hot-toast';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -120,6 +121,8 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   const [suggestions, setSuggestions] = useState<{ topSearches: string[]; hotDeals: any[] }>({ topSearches: [], hotDeals: [] });
+  const [quickSearchResults, setQuickSearchResults] = useState<{categories: any[], products: any[]}>({ categories: [], products: [] });
+  const [isQuickSearchLoading, setIsQuickSearchLoading] = useState(false);
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<any>(null);
@@ -131,23 +134,35 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
   const mobileNotificationRef = useRef<HTMLDivElement>(null);
   const megaMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
-  const { cartItems, changeBranch } = useCart();
+  const { cartItems, changeBranch, currentBranchId, isBranchModalOpen, setIsBranchModalOpen, branchModalProduct, setBranchModalProduct, setConfirmDialog } = useCart();
   const totalItems = cartItems.reduce((acc, item) => acc + item.quantity, 0);
 
   /* ── init branch ── */
   useEffect(() => {
     if (initialBranches?.length > 0) {
-      const saved = localStorage.getItem('selectedBranchId');
+      const saved = currentBranchId || localStorage.getItem('selectedBranchId');
       const found = saved ? initialBranches.find(b => b.id === saved) : null;
       setSelectedBranch(found || initialBranches[0]);
     }
-  }, [initialBranches]);
+  }, [initialBranches, currentBranchId]);
 
   const handleSelectBranch = (branch: any) => {
     changeBranch(branch.id);
-    setSelectedBranch(branch);
     localStorage.setItem('selectedBranchId', branch.id);
+    if (branchModalProduct) {
+      setConfirmDialog({
+        message: `Đã đổi sang chi nhánh ${branch.name}. Bạn có muốn xem chi tiết món này không?`,
+        onConfirm: () => {
+          setConfirmDialog(null);
+          router.push(`/${branchModalProduct.category?.slug || 'menu'}/${branchModalProduct.slug}`);
+        }
+      });
+      setBranchModalProduct(null);
+    } else {
+      toast.success(`Đã đổi sang chi nhánh ${branch.name}`);
+    }
     setIsBranchDropdownOpen(false);
+    setIsBranchModalOpen(false);
   };
 
   /* ── search history ── */
@@ -260,6 +275,26 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
       .then(r => r.json()).then(d => setSuggestions(d)).catch(() => { });
   }, []);
 
+  /* ── quick search ── */
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setQuickSearchResults({ categories: [], products: [] });
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsQuickSearchLoading(true);
+      try {
+        const res = await fetch(`${API_URL}/api/products/search/quick?q=${encodeURIComponent(searchQuery)}`, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+        if (res.ok) {
+          const data = await res.json();
+          setQuickSearchResults(data);
+        }
+      } catch (err) { }
+      setIsQuickSearchLoading(false);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   const handleLogout = async () => {
     try {
       await fetch(`${API_URL}/api/auth/logout`, {
@@ -346,35 +381,106 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
     return (
       <>
         <div className="fixed inset-0 z-0" onClick={() => setIsSearchFocused(false)} />
-        <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 overflow-hidden max-h-[70vh] overflow-y-auto">
+        <div className="absolute top-[calc(100%+6px)] left-0 right-0 bg-white rounded-2xl shadow-2xl border border-slate-100 z-20 overflow-hidden max-h-[70vh] overflow-y-auto custom-scrollbar">
           <div className="p-4 text-left">
-            {!searchQuery && searchHistory.length > 0 && (
-              <div className="mb-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-slate-800">Lịch sử tìm kiếm</span>
-                  <button type="button" onClick={clearSearchHistory} className="text-xs text-blue-600 hover:underline">Xóa tất cả</button>
+            {searchQuery.trim() ? (
+              isQuickSearchLoading ? (
+                <div className="py-6 text-center flex flex-col items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-slate-500 text-sm font-medium">Đang tìm kiếm...</span>
                 </div>
+              ) : quickSearchResults.categories.length === 0 && quickSearchResults.products.length === 0 ? (
+                <div className="py-6 text-center flex flex-col items-center gap-2">
+                  <Search className="w-8 h-8 text-slate-300" />
+                  <span className="text-slate-500 text-sm font-medium">Không tìm thấy kết quả nào</span>
+                </div>
+              ) : (
+                <>
+                  {quickSearchResults.categories.length > 0 && (
+                    <div className="mb-4">
+                      <div className="flex flex-col bg-white">
+                        {quickSearchResults.categories.map((cat, idx) => (
+                          <Link href={`/${cat.slug}`} key={cat.id} onClick={() => setIsSearchFocused(false)} className={`py-3 px-2 flex items-center justify-between group ${idx !== quickSearchResults.categories.length - 1 ? 'border-b border-slate-50' : ''}`}>
+                            <span className="text-[14px] font-bold text-slate-600 group-hover:text-red-600 transition-colors lowercase first-letter:uppercase">{cat.name}</span>
+                            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-red-500 transition-colors" />
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {quickSearchResults.products.length > 0 && (
+                    <div className="bg-orange-50/50 -mx-4 px-4 py-4 mt-2">
+                      <span className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <div className="bg-green-500 text-white rounded-full p-1"><ShoppingCart className="w-3.5 h-3.5" /></div>
+                        Gợi ý sản phẩm
+                      </span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {quickSearchResults.products.map(p => {
+                          const isAvailableHere = !selectedBranch || p.branches?.length === 0 || p.branches.some((b: any) => b.id === selectedBranch.id);
+                          const onlyAvailableBranch = !isAvailableHere && p.branches?.length > 0 ? p.branches[0] : null;
+                          return (
+                            <div key={p.id} className="relative flex flex-col gap-2 p-2.5 bg-white border border-slate-100 hover:border-red-200 hover:shadow-md rounded-2xl group transition-all h-full">
+                              <img src={p.imageUrl || p.images?.[0]?.url || 'https://via.placeholder.com/150'} alt={p.name} className="w-full aspect-[4/3] rounded-xl object-cover group-hover:scale-[1.02] transition-transform" />
+                              <div className="flex-1 min-w-0 flex flex-col mt-1">
+                                <h4 className="font-bold text-[13px] text-slate-800 line-clamp-2 leading-tight group-hover:text-red-600 transition-colors">{p.name}</h4>
+                                <div className="mt-auto pt-2 flex items-center justify-between gap-1">
+                                  <span className="text-slate-900 font-bold text-[13px]">{(p.flashSalePrice || p.price).toLocaleString()}đ</span>
+                                </div>
+                                {!isAvailableHere && p.branches?.length > 0 && (
+                                  <button onClick={(e) => {
+                                    e.preventDefault();
+                                    setIsBranchModalOpen(true);
+                                    setIsSearchFocused(false);
+                                  }} className="mt-2 text-[10px] text-orange-700 font-bold bg-orange-100/80 hover:bg-orange-200 px-2 py-1 rounded-lg flex items-center justify-center gap-1 w-full transition-colors relative z-20">
+                                    <MapPin className="w-3 h-3 shrink-0" /> Xem chi nhánh có hàng
+                                  </button>
+                                )}
+                                {isAvailableHere && (
+                                  <Link href={`/${p.category?.slug || 'menu'}/${p.slug}`} onClick={() => setIsSearchFocused(false)} className="absolute inset-0 z-10" />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  <button type="button" onClick={handleSearchSubmit} className="w-full mt-4 py-3 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
+                    Xem tất cả kết quả <ChevronRight className="w-4 h-4" />
+                  </button>
+                </>
+              )
+            ) : (
+              <>
+                {!searchQuery && searchHistory.length > 0 && (
+                  <div className="mb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm font-bold text-slate-800">Lịch sử tìm kiếm</span>
+                      <button type="button" onClick={clearSearchHistory} className="text-xs text-blue-600 hover:underline">Xóa tất cả</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {searchHistory.map(term => (
+                        <button key={term} type="button"
+                          onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
+                          className="flex items-center gap-1 text-sm text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100"
+                        >
+                          <span className="text-slate-400"><Clock className="w-3.5 h-3.5" /></span> {term}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <span className="text-sm font-bold text-slate-800 mb-3 block">Tra cứu hàng đầu</span>
                 <div className="flex flex-wrap gap-2">
-                  {searchHistory.map(term => (
+                  {(suggestions.topSearches.length > 0 ? suggestions.topSearches : ['Sashimi', 'Ramen', 'Sushi', 'Tempura', 'Mì Udon', 'Combo']).map(term => (
                     <button key={term} type="button"
                       onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
-                      className="flex items-center gap-1 text-sm text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-100"
-                    >
-                      <span className="text-slate-400">🕒</span> {term}
-                    </button>
+                      className="text-sm text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-full hover:border-red-400 hover:text-red-600 transition-colors"
+                    >{term}</button>
                   ))}
                 </div>
-              </div>
+              </>
             )}
-            <span className="text-sm font-bold text-slate-800 mb-3 block">Tra cứu hàng đầu</span>
-            <div className="flex flex-wrap gap-2">
-              {(suggestions.topSearches.length > 0 ? suggestions.topSearches : ['Sashimi', 'Ramen', 'Sushi', 'Tempura', 'Mì Udon', 'Combo']).map(term => (
-                <button key={term} type="button"
-                  onClick={() => { setSearchQuery(term); saveSearchHistory(term); router.push(`/search?s=${encodeURIComponent(term)}`); setIsSearchFocused(false); }}
-                  className="text-sm text-slate-700 bg-white border border-slate-200 px-3 py-1.5 rounded-full hover:border-red-400 hover:text-red-600 transition-colors"
-                >{term}</button>
-              ))}
-            </div>
           </div>
         </div>
       </>
@@ -388,16 +494,66 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
         <UpdatePhoneModal onUpdateSuccess={() => window.location.reload()} />
       )}
 
-      {/* ══════════════════════════════════════
-          HEADER — sticky, never hides on mobile
-      ══════════════════════════════════════ */}
-      <header className="bg-white shadow-[0_2px_12px_rgba(0,0,0,0.07)] sticky top-0 z-50 transition-colors duration-300">
+      {/* BRANCH SELECTION MODAL */}
+      {(isBranchModalOpen || branchModalProduct) && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => { setIsBranchModalOpen(false); setBranchModalProduct(null); }} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
+              <h3 className="font-bold text-slate-800 text-lg">Chọn chi nhánh</h3>
+              <button onClick={() => { setIsBranchModalOpen(false); setBranchModalProduct(null); }} className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
 
-        {/* ── TOP BAR — desktop only, shrinks on scroll ── */}
-        <div
-          className={`hidden md:block bg-white border-b border-slate-100 transition-all duration-300 ease-in-out ${isScrolled ? 'max-h-0 opacity-0 pointer-events-none overflow-hidden' : 'max-h-[36px] opacity-100 overflow-visible relative z-[120]'}`}
-        >
-          <div className="max-w-7xl mx-auto px-4 lg:px-8 h-[36px] flex justify-between items-center text-[11px] lg:text-[12px] text-slate-600 font-medium">
+            {branchModalProduct && (
+              <div className="p-4 bg-slate-50 border-b border-slate-100 flex gap-4">
+                <img src={branchModalProduct.imageUrl || branchModalProduct.image || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-20 h-20 rounded-xl object-cover shadow-sm" />
+                <div className="flex flex-col justify-center">
+                  <h4 className="font-bold text-slate-900 text-lg leading-tight mb-1 line-clamp-2">{branchModalProduct.name}</h4>
+                  <div className="text-red-600 font-bold text-lg">{(branchModalProduct.flashSalePrice || branchModalProduct.price).toLocaleString('vi-VN')}đ</div>
+                </div>
+              </div>
+            )}
+
+            <div className="max-h-[50vh] overflow-y-auto p-3 custom-scrollbar">
+              {branchModalProduct && (
+                <div className="px-2 pt-2 pb-3">
+                  <p className="text-sm font-bold text-slate-700">Chi nhánh còn hàng:</p>
+                </div>
+              )}
+              
+              {(branchModalProduct ? branchModalProduct.branches : initialBranches)?.map((branchRef: any) => {
+                const b = branchModalProduct ? initialBranches?.find((ib: any) => ib.id === branchRef.id) : branchRef;
+                if (!b) return null;
+                return (
+                  <div
+                    key={b.id} onClick={() => handleSelectBranch(b)}
+                    className={`p-4 mb-2 rounded-xl cursor-pointer transition-all border ${selectedBranch?.id === b.id ? 'bg-red-50 border-red-200 shadow-sm' : 'hover:bg-slate-50 border-slate-100'}`}
+                  >
+                    <p className={`font-bold text-base ${selectedBranch?.id === b.id ? 'text-red-600' : 'text-slate-800'}`}>{b.name}</p>
+                    <p className="text-sm text-slate-500 mt-1">{b.street}, {b.district}</p>
+                    <div className="flex items-center gap-1.5 mt-2.5 text-xs text-slate-500 font-medium">
+                      <Clock className="w-4 h-4 text-slate-400" />
+                      <span>{b.openTime || '08:00'} - {b.closeTime || '22:00'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+              
+              {branchModalProduct && (!branchModalProduct.branches || branchModalProduct.branches.length === 0) && (
+                <div className="text-center py-6 text-slate-500 font-medium">
+                  Món này hiện đang hết hàng ở tất cả chi nhánh.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TOP BAR — desktop only, scrolls naturally ── */}
+      <div className="hidden md:block bg-white border-b border-slate-100 relative z-[120]">
+        <div className="max-w-7xl mx-auto px-4 lg:px-8 h-[36px] flex justify-between items-center text-[11px] lg:text-[12px] text-slate-600 font-medium">
             {/* Branch picker */}
             <div className="relative">
               <div
@@ -450,12 +606,16 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
               </a>
             </div>
           </div>
-        </div>
+      </div>
 
-        {/* ── MOBILE MAIN ROW ── */}
-        <div className="md:hidden bg-white shadow-sm transition-all duration-300">
+      {/* ══════════════════════════════════════
+          HEADER — sticky, never hides on mobile
+      ══════════════════════════════════════ */}
+      <header className="bg-white shadow-[0_2px_12px_rgba(0,0,0,0.07)] sticky top-0 z-50 transition-colors duration-300">
+
+        {/* ── MOBILE TOP ROW ── */}
+        <div className="md:hidden bg-white shadow-sm">
           <div className="px-3 pt-2 pb-2 flex flex-col relative z-[90]">
-            {/* Top Row: Hamburger, Logo/ScrolledSearch, Cart */}
             <div className="flex items-center justify-between h-11 relative">
               {/* Left: Menu */}
               <button onClick={() => setIsMobileMenuOpen(true)} className="text-slate-700 p-1.5 hover:bg-slate-100 rounded-full transition-colors z-10 shrink-0">
@@ -512,43 +672,11 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                 {renderNotificationDropdown(true)}
               </div>
             </div>
-
-            {/* Bottom Row / Normal Search Bar */}
-            <div className={`grid transition-[grid-template-rows,opacity] duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${isScrolled ? 'grid-rows-[0fr] opacity-0' : 'grid-rows-[1fr] opacity-100'}`}>
-              <div className="overflow-hidden">
-                <div className="pt-2">
-                  <form onSubmit={handleSearchSubmit} className="relative">
-                    <div className="flex items-center bg-slate-100 rounded-full pl-4 pr-1.5 py-1.5 border border-transparent focus-within:border-red-400 transition-all shadow-inner">
-                      <input
-                        type="text"
-                        placeholder="Tìm món ăn, nhà hàng..."
-                        className="bg-transparent border-none outline-none flex-1 text-[15px] text-slate-800 placeholder-slate-500 min-w-0"
-                        value={searchQuery}
-                        onChange={e => setSearchQuery(e.target.value)}
-                        onFocus={() => setIsSearchFocused(true)}
-                      />
-                      {searchQuery && (
-                        <button type="button" onClick={() => setSearchQuery('')} className="p-1 text-slate-400 mr-1">
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors mr-0.5">
-                        <Mic className="w-[18px] h-[18px]" />
-                      </button>
-                      <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors">
-                        <Scan className="w-[18px] h-[18px]" />
-                      </button>
-                    </div>
-                    {!isScrolled && renderSearchDropdown()}
-                  </form>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
         {/* ── DESKTOP MAIN ROW ── */}
-        <div className={`hidden md:flex max-w-7xl mx-auto px-4 lg:px-8 items-center gap-2 transition-all duration-300 ${isScrolled ? 'h-[56px]' : 'h-[68px]'}`}>
+        <div className="hidden md:flex max-w-7xl mx-auto px-4 lg:px-8 items-center gap-2 h-[68px]">
           {/* Left */}
           <div className="flex items-center gap-2 shrink-0">
             <Link href="/" className="shrink-0">
@@ -621,14 +749,17 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
               {user ? (
                 <div className="relative">
                   <div className="flex items-center gap-2 cursor-pointer group" onClick={() => setIsUserDropdownOpen(!isUserDropdownOpen)}>
-                    <div className="w-8 h-8 rounded-full bg-red-50 border border-red-100 overflow-hidden flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-full bg-red-50 border border-red-100 overflow-hidden flex items-center justify-center shrink-0">
                       {user.avatar ? <img src={user.avatar} className="w-full h-full object-cover" /> : <User className="w-4 h-4 text-red-600" />}
                     </div>
                     <div>
-                      <p className="text-[12px] font-bold text-slate-900 group-hover:text-red-600 transition-colors leading-tight">{user.fullName || user.name || 'Tài khoản'}</p>
-                      <p className="text-[10px] font-bold text-red-600 leading-tight">{new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="text-[12px] font-bold text-slate-900 group-hover:text-red-600 transition-colors leading-tight line-clamp-1">{user.fullName || user.name || 'Tài khoản'}</p>
+                        <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-sm whitespace-nowrap">{user?.membershipTier?.name || 'Thành viên mới'}</span>
+                      </div>
+                      <p className="text-[10px] font-bold text-red-600 leading-tight mt-0.5">{new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm</p>
                     </div>
-                    <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                    <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   </div>
                   {isUserDropdownOpen && (
                     <div className="absolute top-[calc(100%+8px)] right-0 w-48 bg-white shadow-2xl rounded-xl border border-slate-100 py-1.5 z-50">
@@ -649,12 +780,44 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
             </div>
           </div>
         </div>
+      </header>
 
-        {/* ── DESKTOP NAV — shrinks on scroll ── */}
-        <div
-          className={`hidden md:block border-t border-slate-100 transition-all duration-300 ease-in-out overflow-visible ${isScrolled ? 'max-h-0 opacity-0 pointer-events-none border-transparent' : 'max-h-[52px] opacity-100'}`}
-        >
-          <div className="max-w-7xl mx-auto px-4 lg:px-8 h-[52px] flex items-center gap-6 text-[15px] font-bold text-slate-800">
+      {/* ── SCROLLING NAV AND SEARCH (Slides under sticky header) ── */}
+      <div className="relative z-40 bg-white">
+        
+        {/* ── MOBILE BOTTOM SEARCH ROW ── */}
+        <div className="md:hidden shadow-sm px-3 pb-2 border-b border-slate-100">
+          <div className="pt-2">
+            <form onSubmit={handleSearchSubmit} className="relative">
+              <div className="flex items-center bg-slate-100 rounded-full pl-4 pr-1.5 py-1.5 border border-transparent focus-within:border-red-400 transition-all shadow-inner">
+                <input
+                  type="text"
+                  placeholder="Tìm món ăn, nhà hàng..."
+                  className="bg-transparent border-none outline-none flex-1 text-[15px] text-slate-800 placeholder-slate-500 min-w-0"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                />
+                {searchQuery && (
+                  <button type="button" onClick={() => setSearchQuery('')} className="p-1 text-slate-400 mr-1">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+                <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors mr-0.5">
+                  <Mic className="w-[18px] h-[18px]" />
+                </button>
+                <button type="button" className="p-1.5 text-red-600 hover:bg-red-50 rounded-full transition-colors">
+                  <Scan className="w-[18px] h-[18px]" />
+                </button>
+              </div>
+              {!isScrolled && renderSearchDropdown()}
+            </form>
+          </div>
+        </div>
+
+        {/* ── DESKTOP NAV ── */}
+        <div className="hidden md:block border-t border-slate-100 h-[52px]">
+          <div className="max-w-7xl mx-auto px-4 lg:px-8 h-full flex items-center gap-6 text-[15px] font-bold text-slate-800">
 
             {/* ── Danh mục mega menu ── */}
             <div
@@ -741,7 +904,7 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
             ))}
           </div>
         </div>
-      </header>
+      </div>
 
       {/* ══════════════════════════════════════
           MOBILE SIDEBAR
@@ -788,9 +951,9 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
                 <div className="bg-white/15 rounded-lg px-3 py-1.5 flex items-center justify-between mb-2.5 relative z-10">
                   <div className="flex items-center gap-1.5">
                     <Star className="w-3.5 h-3.5 text-yellow-300 fill-yellow-300" />
-                    <span className="text-white text-xs font-bold">2.450 điểm</span>
+                    <span className="text-white text-xs font-bold">{new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm</span>
                   </div>
-                  <span className="text-red-200 text-[11px]">Hạng Vàng</span>
+                  <span className="text-red-200 text-[11px] font-bold">{user?.membershipTier?.name || 'Thành viên mới'}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 relative z-10">
                   <Link href="/profile" onClick={() => setIsMobileMenuOpen(false)} className="bg-white text-red-600 font-bold text-xs text-center py-1.5 rounded-lg">Tài khoản</Link>

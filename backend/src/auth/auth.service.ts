@@ -71,6 +71,10 @@ export class AuthService {
   async login(data: any) {
     const { email, password } = data; // 'email' acts as identifier here
 
+    if (!email || !password) {
+      throw new UnauthorizedException('Vui lòng nhập email/số điện thoại và mật khẩu.');
+    }
+
     // Tìm user theo email hoặc phone
     const user = await this.prisma.user.findFirst({
       where: {
@@ -83,6 +87,13 @@ export class AuthService {
 
     if (!user) {
       throw new UnauthorizedException('Email, số điện thoại hoặc mật khẩu không chính xác.');
+    }
+
+    if (!user.passwordHash) {
+      if (user.authProvider === 'GOOGLE') {
+        throw new UnauthorizedException('Tài khoản này được liên kết với Google. Vui lòng đăng nhập bằng Google.');
+      }
+      throw new UnauthorizedException('Tài khoản không có mật khẩu. Vui lòng đăng nhập bằng phương thức khác.');
     }
 
     // So sánh mật khẩu
@@ -186,6 +197,82 @@ export class AuthService {
     }
 
     const { passwordHash, ...result } = user;
-    return result;
+    return { ...result, hasPassword: !!passwordHash };
+  }
+
+  async addPassword(userId: string, newPassword: string) {
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    return { message: 'Đã thêm mật khẩu thành công' };
+  }
+
+  async changePassword(userId: string, data: any) {
+    const { oldPassword, newPassword } = data;
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('Không tìm thấy người dùng hoặc người dùng chưa có mật khẩu');
+    }
+    
+    const isPasswordValid = await bcrypt.compare(oldPassword, user.passwordHash);
+    if (!isPasswordValid) {
+      throw new UnauthorizedException('Mật khẩu hiện tại không chính xác');
+    }
+    
+    const saltRounds = 10;
+    const passwordHash = await bcrypt.hash(newPassword, saltRounds);
+    
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+    
+    return { message: 'Đổi mật khẩu thành công' };
+  }
+
+  async updateProfile(userId: string, data: any) {
+    const { fullName, phone, birthdate } = data;
+    
+    if (phone) {
+      const phoneRegex = /^(03|05|07|08|09)\d{8}$/;
+      if (!phoneRegex.test(phone)) {
+        throw new ConflictException('Số điện thoại không hợp lệ.');
+      }
+
+      const existingPhone = await this.prisma.user.findFirst({ 
+        where: { phone, id: { not: userId } } 
+      });
+      if (existingPhone) {
+        throw new ConflictException('Số điện thoại này đã được sử dụng bởi một tài khoản khác.');
+      }
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('Không tìm thấy người dùng');
+
+    let updateData: any = {};
+    if (fullName !== undefined) updateData.fullName = fullName;
+    if (phone !== undefined) updateData.phone = phone;
+    
+    if (birthdate) {
+      if (user.birthdate) {
+        throw new ConflictException('Ngày sinh chỉ được cập nhật 1 lần duy nhất.');
+      }
+      updateData.birthdate = new Date(birthdate);
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+    });
+
+    const { passwordHash, ...result } = updatedUser;
+    return { message: 'Cập nhật thông tin thành công', user: result };
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   ArrowRight, Truck, Leaf, ShieldCheck, Zap, Gift, Star, Package, User, Flame, ChevronRight, ChevronLeft, Heart
 } from 'lucide-react';
@@ -17,7 +17,7 @@ interface HomeClientProps {
 }
 
 export default function HomeClient({ banners, categories, bestSellers, aiRecommended }: HomeClientProps) {
-  const { currentBranchId } = useCart();
+  const { currentBranchId, flashSaleQuotas, cartItems } = useCart();
 
   // Filter products by branch
   const filteredBestSellers = useMemo(() => {
@@ -35,6 +35,95 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
       return p.branches.some((b: any) => b.id === currentBranchId);
     });
   }, [aiRecommended, currentBranchId]);
+
+  const displayBestSellers = useMemo(() => {
+    return filteredBestSellers.map(p => {
+      let dp = { ...p };
+      if (dp.isFlashSaleItem || dp.flashSalePrice) {
+        const quota = flashSaleQuotas[dp.id];
+        if (quota !== undefined && quota <= 0) {
+          dp.flashSalePrice = null;
+          dp.isFlashSaleItem = false;
+          dp.flashSaleId = null;
+          dp.maxQuantityPerUser = null;
+        }
+      }
+      return dp;
+    });
+  }, [filteredBestSellers, flashSaleQuotas]);
+
+  const displayAiRecommended = useMemo(() => {
+    return filteredAiRecommended.map(p => {
+      let dp = { ...p };
+      if (dp.isFlashSaleItem || dp.flashSalePrice) {
+        const quota = flashSaleQuotas[dp.id];
+        if (quota !== undefined && quota <= 0) {
+          dp.flashSalePrice = null;
+          dp.isFlashSaleItem = false;
+          dp.flashSaleId = null;
+          dp.maxQuantityPerUser = null;
+        }
+      }
+      return dp;
+    });
+  }, [filteredAiRecommended, flashSaleQuotas]);
+
+  const [flashSale, setFlashSale] = useState<any>(null);
+  const [countdown, setCountdown] = useState<number>(0);
+
+  useEffect(() => {
+    fetch('/api/promotions/flash-sale/current')
+      .then(res => res.ok ? res.text() : Promise.resolve(null))
+      .then(text => text ? JSON.parse(text) : null)
+      .then(data => {
+        console.log("Flash Sale API Response:", data);
+        if (data && data.id) {
+          setFlashSale(data);
+          setCountdown(data.countdown || 0);
+        }
+      })
+      .catch(err => console.error("Error fetching flash sale:", err));
+  }, []);
+
+  const displayFlashSaleItems = useMemo(() => {
+    if (!flashSale || !flashSale.items) return [];
+      return flashSale.items.filter((item: any) => {
+       const quota = flashSaleQuotas[item.productId];
+       if (quota !== undefined) {
+         const cartQty = cartItems?.filter((c: any) => c.productId === item.productId && c.isFlashSaleItem).reduce((acc: number, curr: any) => acc + curr.quantity, 0) || 0;
+         const remaining = quota - cartQty;
+         if (remaining <= 0) return false;
+       }
+       return true;
+    });
+  }, [flashSale, flashSaleQuotas, cartItems]);
+
+  useEffect(() => {
+    let timer: any;
+    if (countdown > 0) {
+      timer = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  const timeObj = useMemo(() => {
+    const h = Math.floor(countdown / 3600);
+    const m = Math.floor((countdown % 3600) / 60);
+    const s = countdown % 60;
+    return [
+      h.toString().padStart(2, '0'),
+      m.toString().padStart(2, '0'),
+      s.toString().padStart(2, '0')
+    ];
+  }, [countdown]);
 
   return (
     <div className="bg-[#f8f7f5] font-sans pb-20 md:pb-0 overflow-x-hidden">
@@ -72,7 +161,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
       </section>
 
       {/* ─── FLASH SALE — Desktop ─── */}
-      {filteredBestSellers.length > 0 && (
+      {displayFlashSaleItems && displayFlashSaleItems.length > 0 && (
       <section className="mb-10 md:mb-16 relative">
         {/* Desktop */}
         <div className="hidden md:block max-w-[1400px] mx-auto px-8">
@@ -96,7 +185,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 <div className="flex items-center gap-3">
                   <span className="text-white/70 font-medium text-sm">Kết thúc trong:</span>
                   <div className="flex gap-1.5 items-center">
-                    {['02', '45', '10'].map((t, i) => (
+                    {timeObj.map((t, i) => (
                       <React.Fragment key={i}>
                         <div className="bg-black/50 backdrop-blur-sm text-white font-black text-base w-10 h-10 flex items-center justify-center rounded-xl border border-white/10">
                           {t}
@@ -109,25 +198,42 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
               </div>
 
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                {filteredBestSellers.slice(0, 4).map((item: any, idx: number) => (
-                  <Link key={idx} href={`/${item.category?.slug || item.categoryId}/${item.slug}`}
+                {displayFlashSaleItems.slice(0, 4).map((item: any, idx: number) => {
+                  const product = {
+                    ...item.product,
+                    flashSalePrice: item.flashSalePrice,
+                    flashSaleId: item.flashSaleId || flashSale.id,
+                    flashSaleStock: item.stock,
+                    flashSaleSold: item.sold,
+                    maxQuantityPerUser: item.maxQuantityPerUser
+                  };
+                  const discountPercent = Math.round((1 - item.flashSalePrice / product.price) * 100);
+                  const progress = Math.min(100, Math.round((item.sold / item.stock) * 100));
+                  return (
+                  <Link key={idx} href={`/${product.category?.slug || product.categoryId}/${product.slug}`}
                     className="bg-white/10 backdrop-blur-sm hover:bg-white/20 border border-white/20 rounded-2xl p-3 flex gap-3 transition-all duration-300 hover:-translate-y-1 group">
                     <div className="w-20 h-20 shrink-0 relative rounded-xl overflow-hidden">
-                      <img src={item.imageUrl} alt="sale" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                      <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-xl">-50%</div>
+                      <img src={product.imageUrl} alt="sale" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-xl">-{discountPercent}%</div>
                     </div>
                     <div className="flex flex-col flex-1 justify-center">
-                      <h3 className="font-bold text-white text-sm mb-1 leading-tight line-clamp-2">{item.name}</h3>
-                      <div className="flex items-baseline gap-1.5">
-                        <span className="text-yellow-400 font-black text-base">{item.price.toLocaleString('vi-VN')}đ</span>
+                      <h3 className="font-bold text-white text-sm mb-1 leading-tight line-clamp-2">{product.name}</h3>
+                      <div className="flex flex-col items-baseline gap-0.5">
+                        <span className="text-yellow-400 font-black text-base leading-none">{item.flashSalePrice.toLocaleString('vi-VN')}đ</span>
+                        <span className="text-white/50 text-[10px] line-through">{product.price.toLocaleString('vi-VN')}đ</span>
                       </div>
-                      <div className="w-full bg-black/30 rounded-full h-1.5 mt-2 overflow-hidden">
-                        <div className="bg-gradient-to-r from-yellow-400 to-orange-400 h-1.5 rounded-full animate-pulse" style={{ width: `${65 + idx * 8}%` }} />
+                      <div className="w-full bg-black/30 rounded-full h-1.5 mt-1 overflow-hidden">
+                        <div className="bg-gradient-to-r from-yellow-400 to-orange-400 h-1.5 rounded-full animate-pulse" style={{ width: `${progress}%` }} />
                       </div>
-                      <span className="text-white/60 text-[10px] mt-1">Đã bán {65 + idx * 8}%</span>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-white/60 text-[10px]">Đã bán {item.sold}/{item.stock}</span>
+                        <div className="scale-90 origin-right">
+                          <AddToCartButton item={product} className="w-7 h-7 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm" />
+                        </div>
+                      </div>
                     </div>
                   </Link>
-                ))}
+                )})}
               </div>
             </div>
           </div>
@@ -150,7 +256,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 </div>
               </div>
               <div className="flex items-center gap-1">
-                {['02', '45', '10'].map((t, i) => (
+                {timeObj.map((t, i) => (
                   <React.Fragment key={i}>
                     <span className="bg-black/40 text-white text-[11px] font-black w-7 h-7 flex items-center justify-center rounded-lg border border-white/10">{t}</span>
                     {i < 2 && <span className="text-yellow-400 font-black text-sm">:</span>}
@@ -160,25 +266,42 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
             </div>
 
             <div className="relative z-10 flex gap-2.5 overflow-x-auto hide-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1">
-              {filteredBestSellers.slice(0, 6).map((item: any, idx: number) => (
-                <Link key={idx} href={`/${item.category?.slug || item.categoryId}/${item.slug}`}
+              {displayFlashSaleItems.map((item: any, idx: number) => {
+                const product = {
+                  ...item.product,
+                  flashSalePrice: item.flashSalePrice,
+                  flashSaleId: item.flashSaleId || flashSale.id,
+                  flashSaleStock: item.stock,
+                  flashSaleSold: item.sold,
+                  maxQuantityPerUser: item.maxQuantityPerUser
+                };
+                const discountPercent = Math.round((1 - item.flashSalePrice / product.price) * 100);
+                const progress = Math.min(100, Math.round((item.sold / item.stock) * 100));
+                return (
+                <Link key={idx} href={`/${product.category?.slug || product.categoryId}/${product.slug}`}
                   className="snap-start shrink-0 w-[130px] bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl overflow-hidden active:scale-95 transition-transform">
                   <div className="relative aspect-square overflow-hidden">
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
-                    <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-lg">-50%</div>
+                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
+                    <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-lg">-{discountPercent}%</div>
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
                       <div className="w-full bg-white/30 rounded-full h-1 overflow-hidden">
-                        <div className="bg-yellow-400 h-1 rounded-full" style={{ width: `${60 + idx * 7}%` }} />
+                        <div className="bg-yellow-400 h-1 rounded-full" style={{ width: `${progress}%` }} />
                       </div>
-                      <span className="text-white/80 text-[9px] font-semibold">Đã bán {60 + idx * 7}%</span>
+                      <span className="text-white/80 text-[9px] font-semibold">Đã bán {item.sold}/{item.stock}</span>
                     </div>
                   </div>
                   <div className="px-2.5 py-2">
-                    <p className="font-bold text-white text-[11px] line-clamp-2 leading-tight mb-1">{item.name}</p>
-                    <span className="text-yellow-400 font-black text-sm">{item.price.toLocaleString('vi-VN')}đ</span>
+                    <p className="font-bold text-white text-[11px] line-clamp-2 leading-tight mb-1">{product.name}</p>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-yellow-400 font-black text-sm">{item.flashSalePrice.toLocaleString('vi-VN')}đ</span>
+                      <span className="text-white/50 text-[9px] line-through">{product.price.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                    <div className="mt-2 w-full flex justify-end">
+                       <AddToCartButton item={product} className="w-6 h-6 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm" />
+                    </div>
                   </div>
                 </Link>
-              ))}
+              )})}
             </div>
           </div>
         </div>
@@ -255,9 +378,9 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
             </Link>
           </div>
 
-          {filteredBestSellers.length > 0 ? (
+          {displayBestSellers.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
-              {filteredBestSellers.map((item: any) => (
+              {displayBestSellers.map((item: any) => (
                 <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100/80 hover:shadow-xl hover:-translate-y-1 hover:border-red-100 transition-all duration-300 group flex flex-col overflow-hidden">
                   <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="block relative aspect-[4/3] overflow-hidden bg-slate-50">
                     <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -265,7 +388,15 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                     <div className="absolute top-2 left-2 flex flex-col gap-1">
                       {item.badge && <span className="bg-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm uppercase">{item.badge}</span>}
-                      {item.oldPrice && <span className="bg-gradient-to-r from-orange-500 to-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">-{(100 - (item.price / item.oldPrice) * 100).toFixed(0)}%</span>}
+                      {item.flashSalePrice ? (
+                        <span className="bg-yellow-400 text-yellow-900 text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                          -{Math.round((1 - item.flashSalePrice / item.price) * 100)}%
+                        </span>
+                      ) : item.oldPrice && (
+                        <span className="bg-gradient-to-r from-orange-500 to-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
+                          -{Math.round((1 - item.price / item.oldPrice) * 100)}%
+                        </span>
+                      )}
                     </div>
                     {/* Quick view on hover */}
                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
@@ -285,8 +416,8 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     </div>
                     <div className="mt-auto flex items-center justify-between gap-2">
                       <div>
-                        <p className="text-red-600 font-black text-sm md:text-base leading-none">{item.price.toLocaleString('vi-VN')}đ</p>
-                        {item.oldPrice && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.oldPrice.toLocaleString('vi-VN')}đ</p>}
+                        <p className="text-red-600 font-black text-sm md:text-base leading-none">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                        {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
                       </div>
                       <AddToCartButton item={item} className="w-8 h-8 md:w-9 md:h-9 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
                     </div>
@@ -367,7 +498,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
       </section>
 
       {/* ─── AI RECOMMENDED ─── */}
-      {filteredAiRecommended.length > 0 && (
+      {displayAiRecommended.length > 0 && (
       <section className="max-w-[1400px] mx-auto px-3 md:px-8 mb-10 md:mb-16">
         <div className="flex items-center justify-between mb-5 md:mb-7">
           <div className="flex items-center gap-2.5">
@@ -382,7 +513,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
-          {filteredAiRecommended.map((item: any) => (
+          {displayAiRecommended.map((item: any) => (
             <div key={item.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-red-100 transition-all duration-300 border border-slate-100/80 group flex flex-col">
               <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="relative aspect-square overflow-hidden bg-slate-50 block">
                 <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -400,7 +531,10 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                   <span className="text-slate-700 font-semibold">4.9</span>
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-2">
-                  <p className="text-red-600 font-black text-sm md:text-base leading-none">{item.price.toLocaleString('vi-VN')}đ</p>
+                  <div>
+                    <p className="text-red-600 font-black text-sm md:text-base leading-none">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                    {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
+                  </div>
                   <AddToCartButton item={item} className="w-8 h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
                 </div>
               </div>
@@ -411,7 +545,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
       )}
 
       {/* ─── CÓ THỂ BẠN THÍCH ─── */}
-      {filteredBestSellers.length > 0 && (
+      {displayBestSellers.length > 0 && (
       <section className="max-w-[1400px] mx-auto px-3 md:px-8 mb-10 md:mb-16">
         <div className="flex items-center justify-between mb-5 md:mb-7">
           <div className="flex items-center gap-2.5">
@@ -427,7 +561,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex gap-3 md:gap-4 overflow-x-auto hide-scrollbar snap-x snap-mandatory py-3 -mx-2 px-2">
-            {[...filteredBestSellers, ...filteredAiRecommended].slice(0, 10).map((item: any, index: number) => (
+            {[...displayBestSellers, ...displayAiRecommended].slice(0, 10).map((item: any, index: number) => (
               <div key={`like-${index}`} className="w-[148px] md:w-[220px] shrink-0 snap-start bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100/80 hover:border-red-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group">
                 <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="relative aspect-[4/3] block bg-slate-50 overflow-hidden">
                   <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
@@ -440,7 +574,10 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     <Star className="w-3 h-3 fill-yellow-400" /> <span className="text-slate-600">4.{(item.name.length % 5) + 5}</span>
                   </div>
                   <div className="mt-auto flex items-center justify-between gap-1">
-                    <p className="text-red-600 font-black text-sm">{item.price.toLocaleString('vi-VN')}đ</p>
+                    <div>
+                      <p className="text-red-600 font-black text-sm">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                      {item.flashSalePrice && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
+                    </div>
                     <AddToCartButton item={item} className="w-7 h-7 md:w-8 md:h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0" />
                   </div>
                 </div>

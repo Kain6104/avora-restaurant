@@ -9,9 +9,11 @@ import { AuthModule } from './auth/auth.module';
 import { AddressModule } from './address/address.module';
 import { OrderModule } from './order/order.module';
 import { NotificationModule } from './notification/notification.module';
+import { PromotionModule } from './promotion/promotion.module';
+import { ChatbotModule } from './chatbot/chatbot.module';
 
 @Module({
-  imports: [PrismaModule, HomeModule, CategoryModule, ProductModule, AuthModule, AddressModule, OrderModule, NotificationModule],
+  imports: [PrismaModule, HomeModule, CategoryModule, ProductModule, AuthModule, AddressModule, OrderModule, NotificationModule, PromotionModule, ChatbotModule],
   controllers: [AppController],
   providers: [AppService],
 })

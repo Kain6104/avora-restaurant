@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Lock, User, Eye, EyeOff } from 'lucide-react';
+import { ArrowRight, Lock, User, Eye, EyeOff, X } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Loading from '../../loading';
 
@@ -15,9 +15,10 @@ export default function LoginPage() {
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [showGoogleModal, setShowGoogleModal] = useState(false);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -30,7 +31,6 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
     setLoading(true);
 
     try {
@@ -47,7 +47,11 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
+        if (data.message === 'Tài khoản này được liên kết với Google. Vui lòng đăng nhập bằng Google.') {
+          setShowGoogleModal(true);
+        } else {
+          toast.error(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
+        }
       } else {
         toast.success('Đăng nhập thành công!');
         const redirectURL = new URLSearchParams(window.location.search).get('redirectURL') || '/';
@@ -56,7 +60,7 @@ export default function LoginPage() {
       }
     } catch (err) {
       console.error('Login error:', err);
-      setError('Không thể kết nối đến máy chủ.');
+      toast.error('Không thể kết nối đến máy chủ.');
     } finally {
       setLoading(false);
     }
@@ -101,12 +105,6 @@ export default function LoginPage() {
               Mừng quý khách quay trở lại. Đăng nhập để tiếp tục!
             </p>
           </div>
-
-          {error && (
-            <div className="bg-red-50 text-red-600 p-2 rounded-xl text-sm mb-6 font-bold text-center border border-red-100 shadow-sm">
-              {error}
-            </div>
-          )}
 
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
@@ -185,11 +183,26 @@ export default function LoginPage() {
             <div className="mt-6">
               <button 
                 type="button"
-                onClick={() => window.location.href = `${API_URL}/api/auth/google`}
-                className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3"
+                disabled={loading || isGoogleLoading}
+                onClick={() => {
+                  setIsGoogleLoading(true);
+                  window.location.href = `${API_URL}/api/auth/google`;
+                }}
+                className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               >
                 <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="h-5 w-5" />
-                Đăng nhập với Google
+                {isGoogleLoading ? (
+                  <span className="flex items-center">
+                    Đang chuyển hướng
+                    <span className="flex ml-1 gap-0.5 items-end h-4">
+                      <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                      <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                      <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce"></span>
+                    </span>
+                  </span>
+                ) : (
+                  'Đăng nhập với Google'
+                )}
               </button>
             </div>
           </div>
@@ -203,6 +216,57 @@ export default function LoginPage() {
         </div>
       </div>
       </div>
+
+      {/* Google Login Modal */}
+      {showGoogleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setShowGoogleModal(false)}></div>
+          <div className="relative bg-white/90 backdrop-blur-xl border border-white/20 rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <button 
+              onClick={() => setShowGoogleModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition-colors bg-slate-100 hover:bg-slate-200 rounded-full p-1"
+            >
+              <X size={20} />
+            </button>
+            
+            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="w-8 h-8" />
+            </div>
+            
+            <h3 className="text-xl font-black text-center text-slate-900 mb-3">Tài Khoản Đã Liên Kết</h3>
+            <p className="text-slate-600 text-center text-sm mb-8 leading-relaxed">
+              Tài khoản này được liên kết với Google. Vui lòng đăng nhập bằng Google, sau đó vào <b>mục bảo mật tài khoản</b> để thiết lập mật khẩu nếu bạn muốn đăng nhập bằng phương thức này.
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  setIsGoogleLoading(true);
+                  window.location.href = `${API_URL}/api/auth/google`;
+                }}
+                disabled={isGoogleLoading}
+                className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"
+              >
+                {isGoogleLoading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  <>
+                    <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="w-4 h-4 bg-white rounded-full p-0.5" />
+                    Đăng nhập bằng Google
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setShowGoogleModal(false)}
+                disabled={isGoogleLoading}
+                className="w-full py-3 px-4 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-70"
+              >
+                Hủy
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

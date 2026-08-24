@@ -11,7 +11,10 @@ export class CategoryService {
       include: {
         products: {
           where: { available: true },
-          include: { branches: { select: { id: true } } }
+          include: { 
+            branches: { select: { id: true } },
+            optionGroups: { include: { optionItems: true } }
+          }
         }
       }
     });
@@ -23,7 +26,10 @@ export class CategoryService {
       include: {
         products: {
           where: { available: true },
-          include: { branches: { select: { id: true } } }
+          include: { 
+            branches: { select: { id: true } },
+            optionGroups: { include: { optionItems: true } }
+          }
         }
       }
     });

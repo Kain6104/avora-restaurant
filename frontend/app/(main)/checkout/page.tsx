@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../../../context/CartContext';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { MapPin, StickyNote, Receipt, CreditCard, ChevronRight, Search, Loader2, CheckCircle2, Building2, MapPinIcon } from 'lucide-react';
 import Image from 'next/image';
 import AddressModal from '@/components/AddressModal';
@@ -20,11 +21,12 @@ interface Address {
 }
 
 export default function CheckoutPage() {
-  const { cartItems, currentBranchId, clearCart, isLoaded } = useCart();
+  const { cartItems, currentBranchId, clearCart, isLoaded, appliedVoucher, discountAmount, getCartItemTotal, refreshQuotas } = useCart();
   const router = useRouter();
   
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
+  const [user, setUser] = useState<any>(null);
   const [note, setNote] = useState('');
   
   const [isInvoiceRequested, setIsInvoiceRequested] = useState(false);
@@ -39,9 +41,24 @@ export default function CheckoutPage() {
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
 
   // Tính toán Tạm tính (Subtotal) cho UI hiển thị
-  const subTotal = cartItems.reduce((acc, item) => acc + item.priceAtSale * item.quantity, 0);
+  const subTotal = cartItems.reduce((acc, item) => acc + getCartItemTotal(item), 0);
   const shippingFee = 15000;
-  const totalAmount = subTotal + shippingFee;
+  const totalAmount = Math.max(0, subTotal - (discountAmount || 0)) + shippingFee;
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const res = await fetch('/api/auth/me', { credentials: 'include', headers: { 'ngrok-skip-browser-warning': 'true' } });
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch user', e);
+      }
+    };
+    fetchUser();
+  }, []);
 
   const fetchAddresses = async () => {
     try {
@@ -71,8 +88,9 @@ export default function CheckoutPage() {
       return;
     }
 
+    refreshQuotas();
     fetchAddresses();
-  }, [cartItems, router, isLoaded]);
+  }, [cartItems.length, router, isLoaded]); // Use cartItems.length instead of cartItems to prevent infinite loops
 
   const handleTaxCodeLookup = async () => {
     if (!invoiceTaxCode) {
@@ -113,6 +131,8 @@ export default function CheckoutPage() {
           productId: item.productId,
           quantity: item.quantity,
           optionItemIds: item.selectedOptions?.map(opt => opt.optionItemId) || [],
+          isFlashSaleItem: item.isFlashSaleItem,
+          flashSaleId: item.flashSaleId,
         })),
         note,
         paymentMethod,
@@ -122,7 +142,8 @@ export default function CheckoutPage() {
           invoiceTaxCode,
           invoiceAddress,
           invoiceEmail
-        } : undefined
+        } : undefined,
+        voucherCode: appliedVoucher?.code
       };
 
       const response = await fetch('/api/orders', {
@@ -443,7 +464,7 @@ export default function CheckoutPage() {
                       {item.optionsTextSnapshot && (
                         <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-1.5">{item.optionsTextSnapshot}</p>
                       )}
-                      <p className="text-sm font-black text-orange-600">{(item.priceAtSale * item.quantity).toLocaleString('vi-VN')}đ</p>
+                      <p className="text-sm font-black text-orange-600">{getCartItemTotal(item).toLocaleString('vi-VN')}đ</p>
                     </div>
                   </div>
                 ))}
@@ -458,10 +479,12 @@ export default function CheckoutPage() {
                   <span>Phí giao hàng</span>
                   <span className="text-slate-800">{shippingFee.toLocaleString('vi-VN')}đ</span>
                 </div>
-                <div className="flex justify-between items-center py-1 group cursor-pointer">
-                  <span className="font-medium text-orange-500 group-hover:text-orange-600 transition-colors">Sử dụng mã giảm giá</span>
-                  <span className="text-orange-500 group-hover:text-orange-600 flex items-center"><ChevronRight size={18} /></span>
-                </div>
+                {appliedVoucher && (
+                  <div className="flex justify-between font-bold text-green-600">
+                    <span>Mã giảm giá ({appliedVoucher.code})</span>
+                    <span>-{discountAmount.toLocaleString('vi-VN')}đ</span>
+                  </div>
+                )}
                 
                 <div className="border-t border-slate-200 border-dashed pt-5 flex justify-between items-end mt-2">
                   <div>

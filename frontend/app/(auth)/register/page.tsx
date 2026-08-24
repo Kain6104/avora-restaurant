@@ -18,9 +18,9 @@ export default function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -33,16 +33,15 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
 
     const phoneRegex = /^(03|05|07|08|09)\d{8}$/;
     if (!phoneRegex.test(phone)) {
-      setError('Số điện thoại không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08 hoặc 09).');
+      toast.error('Số điện thoại không hợp lệ (10 số, bắt đầu bằng 03, 05, 07, 08 hoặc 09).');
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp.');
+      toast.error('Mật khẩu xác nhận không khớp.');
       return;
     }
 
@@ -61,14 +60,14 @@ export default function RegisterPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
+        toast.error(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
       } else {
         toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
         router.push('/login');
       }
     } catch (err) {
       console.error('Register error:', err);
-      setError('Không thể kết nối đến máy chủ.');
+      toast.error('Không thể kết nối đến máy chủ.');
     } finally {
       setLoading(false);
     }
@@ -113,12 +112,6 @@ export default function RegisterPage() {
                 Gia nhập Avora để nhận nhiều ưu đãi hấp dẫn!
               </p>
             </div>
-
-            {error && (
-              <div className="bg-red-50 text-red-600 p-2 rounded-xl text-sm mb-6 font-bold text-center border border-red-100 shadow-sm">
-                {error}
-              </div>
-            )}
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
@@ -245,11 +238,26 @@ export default function RegisterPage() {
               <div className="mt-6">
                 <button 
                   type="button"
-                  onClick={() => window.location.href = `${API_URL}/api/auth/google`}
-                  className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3"
+                  disabled={loading || isGoogleLoading}
+                  onClick={() => {
+                    setIsGoogleLoading(true);
+                    window.location.href = `${API_URL}/api/auth/google`;
+                  }}
+                  className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
                   <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="h-5 w-5" />
-                  Đăng ký với Google
+                  {isGoogleLoading ? (
+                    <span className="flex items-center">
+                      Đang chuyển hướng
+                      <span className="flex ml-1 gap-0.5 items-end h-4">
+                        <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                        <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                        <span className="w-1 h-1 bg-slate-500 rounded-full animate-bounce"></span>
+                      </span>
+                    </span>
+                  ) : (
+                    'Đăng ký với Google'
+                  )}
                 </button>
               </div>
             </div>

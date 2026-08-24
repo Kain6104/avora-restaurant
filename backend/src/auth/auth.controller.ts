@@ -76,4 +76,22 @@ export class AuthController {
     await this.authService.updatePhone(req.user.id, phone);
     return { message: 'Cập nhật số điện thoại thành công' };
   }
+
+  @Post('add-password')
+  @UseGuards(JwtAuthGuard)
+  async addPassword(@Req() req: Request & { user: any }, @Body('password') password: string) {
+    return this.authService.addPassword(req.user.id, password);
+  }
+
+  @Put('change-password')
+  @UseGuards(JwtAuthGuard)
+  async changePassword(@Req() req: Request & { user: any }, @Body() body: any) {
+    return this.authService.changePassword(req.user.id, body);
+  }
+
+  @Put('update-profile')
+  @UseGuards(JwtAuthGuard)
+  async updateProfile(@Req() req: Request & { user: any }, @Body() body: any) {
+    return this.authService.updateProfile(req.user.id, body);
+  }
 }

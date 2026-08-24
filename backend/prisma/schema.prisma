@@ -11,52 +11,58 @@ datasource db {
 // 1. NGƯỜI DÙNG & PHÂN QUYỀN (USER)
 // ==========================================
 model User {
-  id                    String    @id @default(uuid())
-  email                 String    @unique
-  phone                 String?   @unique
-  passwordHash          String?
-  fullName              String
-  username              String?   @unique
-  avatarUrl             String?
-  birthdate             DateTime? @db.Date
-  role                  RoleType  @default(USER)
-  authProvider          AuthProvider @default(LOCAL)
-  googleId              String?      @unique
+  id           String       @id @default(uuid())
+  email        String       @unique
+  phone        String?      @unique
+  passwordHash String?
+  fullName     String
+  username     String?      @unique
+  avatarUrl    String?
+  birthdate    DateTime?    @db.Date
+  role         RoleType     @default(USER)
+  authProvider AuthProvider @default(LOCAL)
+  googleId     String?      @unique
 
   // Thông tin thành viên & Điểm thưởng
-  points                Int       @default(0)
-  currentPoints         Float     @default(0)
-  totalSpending         Float     @default(0)
-  membershipTierId      String?
-  
-  // Xác thực & Bảo mật
-  isEmailVerified       Boolean   @default(false)
-  isPhoneVerified       Boolean   @default(false)
-  isAccountLocked       Boolean   @default(false)
-  forceRelogin          Boolean   @default(false)
-  secureToken           String    @unique @default(uuid())
-  deviceToken           String?   @db.VarChar(500)
-  zaloId                String?   @unique
-  
-  // Thông tin xuất hóa đơn VAT
-  taxCode               String?
-  companyName           String?
-  taxAddress            String?
-  invoiceEmail          String?
+  points           Int     @default(0)
+  currentPoints    Float   @default(0)
+  totalSpending    Float   @default(0)
+  membershipTierId String?
 
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  // Xác thực & Bảo mật
+  isEmailVerified Boolean @default(false)
+  isPhoneVerified Boolean @default(false)
+  isAccountLocked Boolean @default(false)
+  forceRelogin    Boolean @default(false)
+  secureToken     String  @unique @default(uuid())
+  deviceToken     String? @db.VarChar(500)
+  zaloId          String? @unique
+
+  // Thông tin xuất hóa đơn VAT
+  taxCode      String?
+  companyName  String?
+  taxAddress   String?
+  invoiceEmail String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Mã thành viên dùng để quét QR/Barcode tại quầy
+  memberCode String? @unique @db.VarChar(50)
 
   // Quan hệ
-  orders                Order[]
-  reservations          Reservation[]
-  favoriteItems         Product[] @relation("UserFavoriteItems")
-  addresses             Address[]
-  notifications         Notification[]
-  
+  orders            Order[]
+  reservations      Reservation[]
+  favoriteItems     Product[]          @relation("UserFavoriteItems")
+  addresses         Address[]
+  notifications     Notification[]
+  membershipTier    MembershipTier?    @relation(fields: [membershipTierId], references: [id])
+  pointTransactions PointTransaction[]
+  chatSessions      ChatSession[]
+
   // Chi nhánh hay ghé/mặc định
-  branchId              String?
-  branch                Branch?   @relation(fields: [branchId], references: [id])
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id])
 }
 
 enum RoleType {
@@ -73,64 +79,64 @@ enum AuthProvider {
 }
 
 model Address {
-  id            String   @id @default(uuid())
+  id            String  @id @default(uuid())
   userId        String
-  recipientName String?  
-  phone         String?  
-  province      String   
-  district      String?  
-  ward          String   
-  streetDetail  String   
-  isDefault     Boolean  @default(false)
+  recipientName String?
+  phone         String?
+  province      String
+  district      String?
+  ward          String
+  streetDetail  String
+  isDefault     Boolean @default(false)
   latitude      Float?
   longitude     Float?
-  
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==========================================
 // 2. CHI NHÁNH (BRANCH)
 // ==========================================
 model Branch {
-  id                      String   @id @default(uuid())
-  name                    String
-  branchCode              String   @unique
-  phone                   String?
-  email                   String?
-  
-  // Địa chỉ
-  province                String?
-  district                String?
-  ward                    String?
-  street                  String?
-  latitude                Float?
-  longitude               Float?
-  
-  // Thời gian hoạt động & Trạng thái
-  openTime                String?  // VD: "08:00"
-  closeTime               String?  // VD: "22:00"
-  onlineOrderingEnabled   Boolean  @default(true)
-  servingType             ServingType @default(DINE_IN)
-  
-  // Cấu hình in ấn & bếp
-  splitKitchenTickets     Boolean  @default(false)
-  printCancelTicket       Boolean  @default(false)
-  allowedRadiusMeters     Int      @default(50)
-  qrSecretKey             String?
+  id         String  @id @default(uuid())
+  name       String
+  branchCode String  @unique
+  phone      String?
+  email      String?
 
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  // Địa chỉ
+  province  String?
+  district  String?
+  ward      String?
+  street    String?
+  latitude  Float?
+  longitude Float?
+
+  // Thời gian hoạt động & Trạng thái
+  openTime              String? // VD: "08:00"
+  closeTime             String? // VD: "22:00"
+  onlineOrderingEnabled Boolean     @default(true)
+  servingType           ServingType @default(DINE_IN)
+
+  // Cấu hình in ấn & bếp
+  splitKitchenTickets Boolean @default(false)
+  printCancelTicket   Boolean @default(false)
+  allowedRadiusMeters Int     @default(50)
+  qrSecretKey         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Quan hệ
-  banners                 Banner[]    @relation("BannerToBranch")
-  products                Product[]   @relation("ProductToBranch")
-  categories              Category[]  @relation("CategoryToBranch")
-  reservations            Reservation[]
-  orders                  Order[]
-  users                   User[]
+  banners      Banner[]      @relation("BannerToBranch")
+  products     Product[]     @relation("ProductToBranch")
+  categories   Category[]    @relation("CategoryToBranch")
+  reservations Reservation[]
+  orders       Order[]
+  users        User[]
 }
 
 enum ServingType {
@@ -143,118 +149,123 @@ enum ServingType {
 // 3. QUẢNG CÁO & MARKETING (BANNER)
 // ==========================================
 model Banner {
-  id          String    @id @default(uuid())
+  id          String  @id @default(uuid())
   imageUrl    String
   altText     String?
   linkUrl     String?
-  active      Boolean   @default(true)
-  bannerOrder Int       @default(0)
-  popup       Boolean   @default(false)
-  
-  startDate   DateTime?
-  endDate     DateTime?
+  active      Boolean @default(true)
+  bannerOrder Int     @default(0)
+  popup       Boolean @default(false)
+
+  startDate DateTime?
+  endDate   DateTime?
 
   // Quan hệ: Một banner có thể hiển thị ở nhiều chi nhánh
-  branches    Branch[]  @relation("BannerToBranch")
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  branches Branch[] @relation("BannerToBranch")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // ==========================================
 // 4. DANH MỤC & SẢN PHẨM (CATEGORY & PRODUCT)
 // ==========================================
 model Category {
-  id          String    @id @default(uuid())
-  name        String
-  slug        String    @unique
-  image       String?
-  description String?   @db.Text
-  displayOrder Int      @default(0)
-  
-  products    Product[]
-  branches    Branch[]  @relation("CategoryToBranch")
-  
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id           String  @id @default(uuid())
+  name         String
+  slug         String  @unique
+  image        String?
+  description  String? @db.Text
+  displayOrder Int     @default(0)
+
+  products Product[]
+  branches Branch[]  @relation("CategoryToBranch")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Product {
-  id                  String    @id @default(uuid())
-  itemCode            String    @unique
-  name                String
-  slug                String    @unique
-  description         String?   @db.Text
-  post                String?   @db.Text
-  
-  // Giá cả & Khuyến mãi
-  price               Float
-  oldPrice            Float?
-  discountedPrice     Float?
-  flashSalePrice      Float?
-  unit                String?   @default("phần")
-  taxPercentage       Float     @default(0.0)
-  isTaxIncludedInPrice Boolean  @default(true)
-  badge               String?
-  
-  // Media
-  imageUrl            String?
-  videoUrl            String?   @db.Text
-  
-  // Trạng thái & Thống kê
-  available           Boolean   @default(true)
-  isBestSeller        Boolean   @default(false)
-  isAiRecommended     Boolean   @default(false)
-  avgRating           Float     @default(0.0)
-  soldQuantity        Int       @default(0)
-  
-  // Đổi điểm thưởng
-  isRedeemable        Boolean   @default(false)
-  redemptionPoints    Int?
+  id          String  @id @default(uuid())
+  itemCode    String  @unique
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  post        String? @db.Text
 
-  categoryId          String
-  category            Category  @relation(fields: [categoryId], references: [id])
+  // Giá cả & Khuyến mãi
+  price                Float
+  oldPrice             Float?
+  discountedPrice      Float?
+  flashSalePrice       Float?
+  unit                 String? @default("phần")
+  taxPercentage        Float   @default(0.0)
+  isTaxIncludedInPrice Boolean @default(true)
+  badge                String?
+
+  // Media
+  imageUrl String?
+  videoUrl String? @db.Text
+
+  // Trạng thái & Thống kê
+  available       Boolean @default(true)
+  isBestSeller    Boolean @default(false)
+  isAiRecommended Boolean @default(false)
+  avgRating       Float   @default(0.0)
+  soldQuantity    Int     @default(0)
+  
+  // Thuộc tính hiển thị chi tiết món ăn
+  spiciness       Int     @default(0) // Mức độ cay: 0, 1, 2, 3...
+  targetAudience  String? @default("Mọi lứa tuổi") // VD: Mọi lứa tuổi, Người lớn...
+
+  // Đổi điểm thưởng
+  isRedeemable     Boolean @default(false)
+  redemptionPoints Int?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
 
   // Quan hệ phức tạp
-  branches            Branch[]      @relation("ProductToBranch")
-  favoritedBy         User[]        @relation("UserFavoriteItems")
-  optionGroups        OptionGroup[] // Liên kết món ăn thêm, topping
-  orderItems          OrderItem[]
+  branches     Branch[]      @relation("ProductToBranch")
+  favoritedBy  User[]        @relation("UserFavoriteItems")
+  optionGroups OptionGroup[] // Liên kết món ăn thêm, topping
+  orderItems   OrderItem[]
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  FlashSaleItem FlashSaleItem[]
 }
 
 // ==========================================
 // 5. TÙY CHỌN MÓN ĂN (OPTION GROUP & ITEM)
 // ==========================================
 model OptionGroup {
-  id              String       @id @default(uuid())
-  productId       String
-  name            String       // VD: Kích thước, Độ cay, Topping
-  isRequired      Boolean      @default(false)
-  multipleChoice  Boolean      @default(false)
-  minSelect       Int          @default(0)
-  maxSelect       Int          @default(1)
-  displayOrder    Int          @default(0)
+  id             String  @id @default(uuid())
+  productId      String
+  name           String // VD: Kích thước, Độ cay, Topping
+  isRequired     Boolean @default(false)
+  multipleChoice Boolean @default(false)
+  minSelect      Int     @default(0)
+  maxSelect      Int     @default(1)
+  displayOrder   Int     @default(0)
 
-  product         Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
-  optionItems     OptionItem[]
+  product     Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  optionItems OptionItem[]
 
-  createdAt       DateTime     @default(now())
+  createdAt DateTime @default(now())
 }
 
 model OptionItem {
-  id              String       @id @default(uuid())
+  id              String  @id @default(uuid())
   optionGroupId   String
-  name            String       // VD: Size L, Thêm Phô Mai
-  priceAdjustment Float        @default(0.0)
-  isDefault       Boolean      @default(false)
-  available       Boolean      @default(true)
-  displayOrder    Int          @default(0)
-  maxQuantity     Int          @default(1)
+  name            String // VD: Size L, Thêm Phô Mai
+  priceAdjustment Float   @default(0.0)
+  isDefault       Boolean @default(false)
+  available       Boolean @default(true)
+  displayOrder    Int     @default(0)
+  maxQuantity     Int     @default(1)
 
-  optionGroup     OptionGroup  @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  optionGroup      OptionGroup       @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
   orderItemOptions OrderItemOption[]
 }
 
@@ -262,21 +273,21 @@ model OptionItem {
 // 6. ĐẶT BÀN & ĐƠN HÀNG (RESERVATION & ORDER)
 // ==========================================
 model Reservation {
-  id              String   @id @default(uuid())
+  id              String            @id @default(uuid())
   userId          String
   branchId        String
-  reservationDate DateTime @db.Date
-  reservationTime String    // VD: "19:30"
+  reservationDate DateTime          @db.Date
+  reservationTime String // VD: "19:30"
   partySize       Int
-  tablePreference String?   // VD: "VIP", "Bar", "Window"
-  specialRequests String?   @db.Text // VD: Dị ứng hải sản
+  tablePreference String? // VD: "VIP", "Bar", "Window"
+  specialRequests String?           @db.Text // VD: Dị ứng hải sản
   status          ReservationStatus @default(PENDING)
-  
-  user            User      @relation(fields: [userId], references: [id])
-  branch          Branch    @relation(fields: [branchId], references: [id])
-  
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum ReservationStatus {
@@ -287,126 +298,347 @@ enum ReservationStatus {
 }
 
 model Order {
-  id              String   @id @default(uuid())
-  orderCode       String   @unique // VD: ORD-AVO-12345
-  userId          String
-  branchId        String
-  
+  id        String @id @default(uuid())
+  orderCode String @unique // VD: ORD-AVO-12345
+  userId    String
+  branchId  String
+
   // 1. Thông tin khách hàng & Giao hàng (Snapshot)
   customerName    String
   customerPhone   String
-  deliveryAddress String   @db.Text
+  deliveryAddress String  @db.Text
   latitude        Float?
   longitude       Float?
-  note            String?  @db.Text
-  
+  note            String? @db.Text
+
   // 2. Tài chính & Thanh toán (Snapshot)[cite: 10]
-  subTotal        Float    // Tổng tiền hàng
-  shippingFee     Float    @default(0) // Phí giao hàng
-  discountAmount  Float    @default(0) // Giảm giá (Voucher)
-  totalAmount     Float    // Tổng tiền thanh toán cuối cùng
-  
-  paymentMethod   String   @default("COD") // COD, MOMO, VN_PAY, BANKING[cite: 10]
-  paymentStatus   String   @default("PENDING") // PENDING, PAID, FAILED, REFUNDED[cite: 10]
-  transactionId   String?  // Mã giao dịch ngân hàng[cite: 10]
-  
+  subTotal       Float // Tổng tiền hàng
+  shippingFee    Float @default(0) // Phí giao hàng
+  discountAmount Float @default(0) // Giảm giá (Voucher)
+  totalAmount    Float // Tổng tiền thanh toán cuối cùng
+
+  voucherId String?
+  voucher   Voucher? @relation(fields: [voucherId], references: [id])
+
+  paymentMethod String  @default("COD") // COD, MOMO, VN_PAY, BANKING[cite: 10]
+  paymentStatus String  @default("PENDING") // PENDING, PAID, FAILED, REFUNDED[cite: 10]
+  transactionId String? // Mã giao dịch ngân hàng[cite: 10]
+
   // 3. Điểm thưởng (Loyalty)[cite: 10]
-  pointsUsed      Int      @default(0)
-  pointsAwarded   Int      @default(0)
-  
+  pointsUsed    Int @default(0)
+  pointsAwarded Int @default(0)
+
   // 4. Trạng thái & Vận hành[cite: 10]
-  status          OrderStatus @default(PENDING)
-  cancelReason    String?  @db.Text
-  canceledBy      String?
-  
+  status       OrderStatus @default(PENDING)
+  cancelReason String?     @db.Text
+  canceledBy   String?
+
   // 5. Xuất hóa đơn VAT (Chuẩn Việt Nam)[cite: 10]
   isInvoiceRequested Boolean @default(false)
   invoiceCompanyName String?
   invoiceTaxCode     String?
-  invoiceAddress     String?  @db.Text
+  invoiceAddress     String? @db.Text
   invoiceEmail       String?
-  
+
   // 6. Timestamps Vận hành[cite: 10]
-  confirmedAt     DateTime?
-  deliveringAt    DateTime?
-  deliveredAt     DateTime?
-  canceledAt      DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
+  confirmedAt  DateTime?
+  deliveringAt DateTime?
+  deliveredAt  DateTime?
+  canceledAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   // Quan hệ
-  branch          Branch   @relation(fields: [branchId], references: [id])
-  user            User     @relation(fields: [userId], references: [id])
-  orderItems      OrderItem[]
+  branch           Branch             @relation(fields: [branchId], references: [id])
+  user             User               @relation(fields: [userId], references: [id])
+  orderItems       OrderItem[]
+  PointTransaction PointTransaction[]
 }
 
 enum OrderStatus {
-  PENDING         // Chờ xác nhận
-  CONFIRMED       // Đã xác nhận
-  PREPARING       // Đang chuẩn bị món
-  DELIVERING      // Đang giao hàng
-  COMPLETED       // Đã hoàn thành (Delivered)
-  CANCELLED       // Đã hủy
+  PENDING // Chờ xác nhận
+  CONFIRMED // Đã xác nhận
+  PREPARING // Đang chuẩn bị món
+  DELIVERING // Đang giao hàng
+  COMPLETED // Đã hoàn thành (Delivered)
+  CANCELLED // Đã hủy
 }
 
 // Bảng chi tiết từng món trong đơn hàng (Lưu vết giá cả)
 model OrderItem {
-  id                  String   @id @default(uuid())
-  orderId             String
-  productId           String
-  
+  id        String @id @default(uuid())
+  orderId   String
+  productId String
+
   quantity            Int
-  priceAtSale         Float    // Giá bán cuối (có thể đã giảm do Flash Sale)
-  originalPriceAtSale Float    // Giá niêm yết gốc lúc bán
-  note                String?  @db.Text
+  priceAtSale         Float // Giá bán cuối (có thể đã giảm do Flash Sale)
+  originalPriceAtSale Float // Giá niêm yết gốc lúc bán
+  note                String? @db.Text
 
   // Tối ưu hóa UI: Lưu chuỗi text để hiển thị nhanh (VD: "Size L, Thêm Phô mai")[cite: 11]
-  optionsTextSnapshot String?  @db.Text 
+  optionsTextSnapshot String? @db.Text
 
-  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product             Product  @relation(fields: [productId], references: [id])
-  selectedOptions     OrderItemOption[]
+  isFlashSaleItem Boolean @default(false)
+  flashSaleId     String? // Lưu lại ID flash sale (không bắt buộc relation chặt để tránh lỗi khi xóa Flash Sale)
+
+  order           Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product         Product           @relation(fields: [productId], references: [id])
+  selectedOptions OrderItemOption[]
 }
 
 // Bảng lưu lại các Tùy chọn (Topping) khách đã chọn[cite: 11]
 model OrderItemOption {
-  id                    String   @id @default(uuid())
-  orderItemId           String
-  optionItemId          String
-  
-  nameAtSale            String   // Tên option lúc mua (Snapshot)
-  priceAdjustmentAtSale Float    // Giá cộng thêm lúc mua (Snapshot)
+  id           String @id @default(uuid())
+  orderItemId  String
+  optionItemId String
 
-  orderItem             OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
-  optionItem            OptionItem @relation(fields: [optionItemId], references: [id])
+  nameAtSale            String // Tên option lúc mua (Snapshot)
+  priceAdjustmentAtSale Float // Giá cộng thêm lúc mua (Snapshot)
+
+  orderItem  OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  optionItem OptionItem @relation(fields: [optionItemId], references: [id])
 }
 
 // ==========================================
 // 7. THÔNG BÁO (NOTIFICATION)
 // ==========================================
 model Notification {
-  id          String   @id @default(uuid())
-  userId      String
+  id     String @id @default(uuid())
+  userId String
 
-  title       String   // VD: "Đơn hàng đang được giao!"
-  content     String   @db.Text // Nội dung chi tiết
-  type        NotificationType @default(SYSTEM)
-  isRead      Boolean  @default(false)
+  title   String // VD: "Đơn hàng đang được giao!"
+  content String           @db.Text // Nội dung chi tiết
+  type    NotificationType @default(SYSTEM)
+  isRead  Boolean          @default(false)
 
   // ID tham chiếu (VD: ID của Order để khi khách click vào sẽ nhảy tới đúng đơn hàng)
-  referenceId String?  
+  referenceId String?
   url         String?
-  imageUrl    String?  // Ảnh minh họa (nếu có, VD: ảnh khuyến mãi)
+  imageUrl    String? // Ảnh minh họa (nếu có, VD: ảnh khuyến mãi)
 
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum NotificationType {
-  ORDER       // Thông báo đơn hàng
-  PROMOTION   // Khuyến mãi
-  REWARD      // Tích điểm / Đổi quà
-  SYSTEM      // Hệ thống
+  ORDER // Thông báo đơn hàng
+  PROMOTION // Khuyến mãi
+  REWARD // Tích điểm / Đổi quà
+  SYSTEM // Hệ thống
+}
+
+// ==========================================
+// 8. KHUYẾN MÃI & FLASH SALE
+// ==========================================
+model Voucher {
+  id            String       @id @default(uuid())
+  code          String       @unique
+  title         String
+  description   String?      @db.Text
+  discountType  DiscountType @default(FIXED_AMOUNT) // PERCENTAGE, FIXED_AMOUNT, FREE_SHIP
+  discountValue Float // Phần trăm hoặc số tiền
+  maxDiscount   Float? // Giảm tối đa (cho loại %)
+  minOrderValue Float        @default(0) // Đơn tối thiểu
+
+  usageLimit        Int? // Tổng số lượt dùng của toàn hệ thống
+  usageLimitPerUser Int?    @default(1) // Số lần tối đa 1 user được dùng
+  usedCount         Int     @default(0)
+  isPublic          Boolean @default(true) // Hiển thị công khai hay mã ẩn phải tự nhập
+
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(true)
+
+  // Điều kiện Hạng thành viên (Tùy chọn)
+  membershipTierId String?
+  membershipTier   MembershipTier? @relation(fields: [membershipTierId], references: [id])
+
+  orders Order[] // Liên kết đến các đơn hàng đã dùng voucher này
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FREE_SHIP
+}
+
+model FlashSale {
+  id        String   @id @default(uuid())
+  name      String
+  startTime DateTime
+  endTime   DateTime
+  isActive  Boolean  @default(true)
+
+  items FlashSaleItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FlashSaleItem {
+  id          String @id @default(uuid())
+  flashSaleId String
+  productId   String
+
+  flashSalePrice     Float // Giá bán lúc flash sale
+  stock              Int // Số lượng mở bán
+  sold               Int   @default(0)
+  maxQuantityPerUser Int? // Giới hạn số lượng mua giá hời cho mỗi User (VD: 2)
+
+  flashSale FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+}
+
+// ==========================================
+// 9. HỆ THỐNG THÀNH VIÊN & TÍCH ĐIỂM (LOYALTY)
+// ==========================================
+
+model MembershipTier {
+  id   String @id @default(uuid())
+  name String @unique
+
+  // Điều kiện đạt hạng
+  minSpending Float @default(0)
+
+  // Quyền lợi thành viên
+  pointMultiplier Float @default(1.0)
+  discountPercent Float @default(0.0)
+
+  // Hiển thị
+  imageUrl String?
+
+  // Trạng thái
+  isActive Boolean @default(true)
+
+  // Relations
+  users             User[]
+  vouchers          Voucher[]
+  pointTransactions PointTransaction[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ==========================================
+// LỊCH SỬ GIAO DỊCH ĐIỂM
+// ==========================================
+
+model PointTransaction {
+  id                 String  @id @default(uuid())
+  userId             String
+  membershipTierId   String?
+  membershipTierName String?
+
+  // Điểm
+  balanceBefore Int
+  amount        Int // +100 hoặc -50
+  balanceAfter  Int
+
+  // Nguồn & Tham chiếu
+  source        PointTransactionSource
+  orderId       String?
+  orderCode     String?
+  referenceCode String?
+  description   String?                @db.Text
+
+  // Thời hạn (Tùy chọn cho hệ thống điểm có ngày hết hạn)
+  expiresAt DateTime?
+
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user           User            @relation(fields: [userId], references: [id])
+  membershipTier MembershipTier? @relation(fields: [membershipTierId], references: [id])
+  order          Order?          @relation(fields: [orderId], references: [id])
+
+  // Indexes
+  @@index([userId, createdAt])
+  @@index([userId, source])
+  @@index([userId, membershipTierId])
+  @@index([orderCode])
+  @@index([orderId])
+  @@index([referenceCode])
+}
+
+enum PointTransactionSource {
+  ORDER
+  REWARD
+  SYSTEM
+  ADMIN
+  BONUS
+  BIRTHDAY
+  REFUND
+  EXPIRED
+  PROMOTION
+}
+
+// ==========================================
+// 10. AI CHATBOT HISTORY
+// ==========================================
+
+model ChatSession {
+  id     String  @id @default(uuid())
+  userId String?
+
+  title String?
+
+  messages ChatMessage[]
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+model ChatMessage {
+  id        String @id @default(uuid())
+  sessionId String
+
+  senderType ChatSenderType
+  content    String         @db.Text
+
+  // Function calling
+  functionName   String?
+  functionArgs   String? @db.Text
+  functionResult String? @db.Text
+
+  // Rich UI action
+  actionType    ChatActionType?
+  actionPayload String?         @db.Text
+
+  session ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId, createdAt])
+}
+
+enum ChatSenderType {
+  USER
+  AI
+  TOOL
+  SYSTEM
+}
+
+enum ChatActionType {
+  ADD_TO_CART
+  ADD_ALL_TO_CART
+  SHOW_PRODUCT
+  SHOW_ORDER
+  CONFIRM_CANCEL
+  CONFIRM_RESERVATION
+  SHOW_VOUCHERS
+  NAVIGATE
+  REQUEST_LOCATION
+  ORDER_PREVIEW
+  PLACE_ORDER
 }

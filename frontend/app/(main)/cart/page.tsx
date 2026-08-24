@@ -1,20 +1,59 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCart, CartItem } from '../../../context/CartContext';
 import Link from 'next/link';
 import { 
   ShoppingCart, Plus, Minus, Trash2, ArrowLeft, 
-  ShoppingBag, PencilLine, ShieldCheck, Truck, HeadphonesIcon, RefreshCcw, Heart
+  ShoppingBag, PencilLine, ShieldCheck, Truck, HeadphonesIcon, RefreshCcw, Heart, Ticket, X
 } from 'lucide-react';
 import EditCartItemModal from './EditCartItemModal';
+import VoucherModal from '../../../components/VoucherModal';
 
 export default function CartPage() {
-  const { cartItems, updateQuantity, removeFromCart, updateCartItem } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, updateCartItem, appliedVoucher, discountAmount, setVoucher, removeVoucher, getCartItemTotal, refreshQuotas, isLoaded } = useCart();
   const [editingItem, setEditingItem] = useState<CartItem | null>(null);
+  const [voucherCode, setVoucherCode] = useState("");
+  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const [voucherError, setVoucherError] = useState("");
   
-  const totalAmount = cartItems.reduce((acc, item) => acc + item.priceAtSale * item.quantity, 0);
+  const totalAmount = cartItems.reduce((acc, item) => acc + getCartItemTotal(item), 0);
+  const finalAmount = Math.max(0, totalAmount - discountAmount);
   const totalQuantity = cartItems.reduce((acc, item) => acc + item.quantity, 0);
+
+  useEffect(() => {
+    if (isLoaded) {
+      refreshQuotas();
+    }
+  }, [isLoaded]);
+
+  const applyVoucherCode = async (code: string) => {
+    if (!code) return;
+    setApplying(true);
+    setVoucherError("");
+    try {
+      const userStr = localStorage.getItem('user');
+      const user = userStr ? JSON.parse(userStr) : null;
+      const res = await fetch('/api/promotions/vouchers/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, orderValue: totalAmount, userId: user?.id })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setVoucher(data.voucher, data.discountAmount);
+        setVoucherCode("");
+        setIsVoucherModalOpen(false);
+      } else {
+        setVoucherError(data.message || 'Mã không hợp lệ');
+      }
+    } catch (err) {
+      setVoucherError('Lỗi kết nối');
+    } finally {
+      setApplying(false);
+    }
+  };
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8 min-h-[calc(100vh-100px)]">
@@ -132,11 +171,13 @@ export default function CartPage() {
                     </div>
 
                     {/* Total */}
-                    <div className="col-span-1 md:col-span-2 flex items-center justify-between md:justify-end pr-0 md:pr-4">
-                      <span className="md:hidden text-slate-500 text-sm font-medium">Thành tiền:</span>
-                      <span className="font-black text-slate-900 text-base">
-                        {(item.priceAtSale * item.quantity).toLocaleString('vi-VN')}đ
-                      </span>
+                    <div className="col-span-1 md:col-span-2 flex flex-col items-end justify-center pr-0 md:pr-4">
+                      <div className="flex items-center justify-between w-full md:w-auto md:justify-end">
+                        <span className="md:hidden text-slate-500 text-sm font-medium">Thành tiền:</span>
+                        <span className="font-black text-slate-900 text-base">
+                          {getCartItemTotal(item).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
                     </div>
 
                     {/* Action */}
@@ -229,13 +270,62 @@ export default function CartPage() {
                   <span className="font-medium">Tạm tính ({totalQuantity} món)</span>
                   <span className="font-bold text-slate-800">{totalAmount.toLocaleString('vi-VN')}đ</span>
                 </div>
+                {appliedVoucher && (
+                  <div className="flex justify-between text-green-600">
+                    <span className="font-medium">Giảm giá ({appliedVoucher.code})</span>
+                    <span className="font-bold">-{discountAmount.toLocaleString('vi-VN')}đ</span>
+                  </div>
+                )}
+              </div>
+
+              {/* VOUCHER SECTION */}
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-slate-800">Khuyến mãi</span>
+                  <button onClick={() => setIsVoucherModalOpen(true)} className="text-xs font-bold text-red-600 hover:underline">Chọn mã</button>
+                </div>
+                
+                {appliedVoucher ? (
+                  <div className="flex items-center justify-between bg-green-50 border border-green-200 p-3 rounded-xl">
+                    <div className="flex items-center gap-2">
+                      <Ticket className="w-5 h-5 text-green-600" />
+                      <div>
+                        <p className="font-bold text-green-800 text-sm">{appliedVoucher.code}</p>
+                        <p className="text-xs text-green-600">Đã áp dụng mã giảm giá</p>
+                      </div>
+                    </div>
+                    <button onClick={removeVoucher} className="p-1.5 hover:bg-green-100 rounded-full text-green-700 transition-colors">
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={voucherCode}
+                        onChange={(e) => setVoucherCode(e.target.value)}
+                        placeholder="Nhập mã giảm giá"
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-red-400 focus:ring-2 focus:ring-red-100 transition-all uppercase"
+                      />
+                      <button 
+                        disabled={applying || !voucherCode}
+                        onClick={() => applyVoucherCode(voucherCode)}
+                        className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 text-white font-bold px-4 rounded-xl text-sm transition-colors"
+                      >
+                        {applying ? '...' : 'Áp dụng'}
+                      </button>
+                    </div>
+                    {voucherError && <p className="text-red-500 text-xs mt-2 font-medium">{voucherError}</p>}
+                  </div>
+                )}
               </div>
               
               <div className="border-t border-slate-100 border-dashed my-6"></div>
               
               <div className="flex justify-between items-end mb-4">
                 <span className="font-bold text-slate-900 text-lg">Tổng cộng</span>
-                <span className="font-black text-red-600 text-2xl">{totalAmount.toLocaleString('vi-VN')}đ</span>
+                <span className="font-black text-red-600 text-2xl">{finalAmount.toLocaleString('vi-VN')}đ</span>
               </div>
               
               <div className="bg-slate-50 text-slate-600 text-[12px] md:text-[13px] p-3 md:p-4 rounded-lg border border-slate-200 mb-5 md:mb-6 flex gap-2 md:gap-3 leading-relaxed font-medium">
@@ -273,6 +363,13 @@ export default function CartPage() {
           }}
         />
       )}
+
+      <VoucherModal 
+        isOpen={isVoucherModalOpen}
+        onClose={() => setIsVoucherModalOpen(false)}
+        orderValue={totalAmount}
+        onApply={(v) => applyVoucherCode(v.code)}
+      />
     </div>
   );
 }

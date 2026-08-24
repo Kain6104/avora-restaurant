@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Body } from '@nestjs/common';
 import { ProductService } from './product.service';
 
 @Controller('products')
@@ -8,6 +8,11 @@ export class ProductController {
   @Get('search/suggestions')
   async getSearchSuggestions() {
     return this.productService.getSearchSuggestions();
+  }
+
+  @Get('search/quick')
+  async quickSearch(@Query('q') query: string) {
+    return this.productService.quickSearch(query);
   }
 
   @Get('search')
@@ -25,8 +30,13 @@ export class ProductController {
   }
 
   @Get('by-id/:id')
-  async getProductById(@Param('id') id: string) {
-    return this.productService.getProductById(id);
+  async getProductById(@Param('id') id: string, @Query('branchId') branchId?: string) {
+    return this.productService.getProductById(id, branchId);
+  }
+
+  @Post('bulk')
+  async getProductsBulk(@Body('ids') ids: string[]) {
+    return this.productService.getProductsBulk(ids);
   }
 
   @Get(':categorySlug/:productSlug')

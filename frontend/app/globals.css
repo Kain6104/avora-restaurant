@@ -1,1 +1,19 @@
 @import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-be-vietnam-pro), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-serif: var(--font-be-vietnam-pro), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+}
+
+@keyframes shine {
+  0% {
+    transform: translateX(0) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(300%) skewX(-20deg);
+  }
+}
+
+.animate-shine {
+  animation: shine 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}

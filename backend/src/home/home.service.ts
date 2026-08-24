@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PromotionService } from '../promotion/promotion.service';
 
 @Injectable()
 export class HomeService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private promotionService: PromotionService) {}
 
   async getHomePageData() {
     const [banners, categories, bestSellers, aiRecommended] = await Promise.all([
@@ -34,11 +35,14 @@ export class HomeService {
       }),
     ]);
 
+    const enrichedBestSellers = await this.promotionService.enrichProductsWithFlashSale(bestSellers);
+    const enrichedAiRecommended = await this.promotionService.enrichProductsWithFlashSale(aiRecommended);
+
     return {
       banners,
       categories,
-      bestSellers,
-      aiRecommended,
+      bestSellers: enrichedBestSellers,
+      aiRecommended: enrichedAiRecommended,
     };
   }
 

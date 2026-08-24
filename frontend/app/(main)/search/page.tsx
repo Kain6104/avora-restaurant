@@ -3,14 +3,14 @@
 import React, { useEffect, useState, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, Filter, SortDesc, Search as SearchIcon, Star, Heart, Minus, ListFilter, ArrowDownUp, X, Check } from 'lucide-react';
+import { ChevronRight, Filter, SortDesc, Search as SearchIcon, Star, Heart, Minus, ListFilter, ArrowDownUp, X, Check, MapPin } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import AddToCartButton from '@/components/AddToCartButton';
 
 function SearchPageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { currentBranchId, cartItems, updateQuantity, removeFromCart } = useCart();
+  const { currentBranchId, cartItems, updateQuantity, removeFromCart, flashSaleQuotas, changeBranch, setIsBranchModalOpen, setBranchModalProduct } = useCart();
   const query = searchParams.get('s') || '';
   const categoryParam = searchParams.get('category') || '';
   const sortParam = searchParams.get('sort') || '';
@@ -36,6 +36,26 @@ function SearchPageContent() {
     fetchSearchResults(1);
   }, [query, categoryParam, sortParam, minPriceParam, maxPriceParam, currentBranchId]);
 
+  const displayProducts = React.useMemo(() => {
+    return products.map(p => {
+      let dp = { ...p };
+      if (dp.isFlashSaleItem || dp.flashSalePrice) {
+        const quota = flashSaleQuotas[dp.id];
+        if (quota !== undefined) {
+          const cartQty = cartItems?.filter((c: any) => c.productId === dp.id && c.isFlashSaleItem).reduce((acc: number, curr: any) => acc + curr.quantity, 0) || 0;
+          const remaining = quota - cartQty;
+          if (remaining <= 0) {
+            dp.flashSalePrice = null;
+            dp.isFlashSaleItem = false;
+            dp.flashSaleId = null;
+            dp.maxQuantityPerUser = null;
+          }
+        }
+      }
+      return dp;
+    });
+  }, [products, flashSaleQuotas, cartItems]);
+
   const fetchSearchResults = async (currentPage: number) => {
     if (currentPage === 1) setLoading(true);
     else setLoadingMore(true);
@@ -46,7 +66,8 @@ function SearchPageContent() {
       if (sortParam) url += `&sort=${sortParam}`;
       if (minPriceParam) url += `&minPrice=${minPriceParam}`;
       if (maxPriceParam) url += `&maxPrice=${maxPriceParam}`;
-      if (currentBranchId) url += `&branchId=${currentBranchId}`;
+      // Notice: branchId is intentionally omitted here to get global results
+      // if (currentBranchId) url += `&branchId=${currentBranchId}`;
 
       const res = await fetch(url);
       const data = await res.json();
@@ -248,13 +269,15 @@ function SearchPageContent() {
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
               </div>
             ) : tabParam === 'products' ? (
-              products.length > 0 ? (
+              displayProducts.length > 0 ? (
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-                    {products.map(product => {
+                    {displayProducts.map(product => {
                       const productCartItems = cartItems.filter(i => i.productId === product.id);
                       const cartQuantity = productCartItems.reduce((acc, curr) => acc + curr.quantity, 0);
-                      const cartItemToDecrease = productCartItems[productCartItems.length - 1];
+                      const isAvailableHere = !currentBranchId || product.branches?.length === 0 || product.branches?.some((b: any) => b.id === currentBranchId);
+                      const onlyAvailableBranch = !isAvailableHere && product.branches?.length > 0 ? product.branches[0] : null;
+                      
                       return (
                       <div key={product.id} className="bg-white rounded-2xl border border-slate-100/80 overflow-hidden hover:shadow-xl hover:border-red-100 hover:-translate-y-1 transition-all duration-300 group flex flex-col h-full">
                         <div className="block relative aspect-[4/3] bg-slate-50">
@@ -273,16 +296,26 @@ function SearchPageContent() {
                           </button>
                           
                           <div className="absolute top-2 left-2 flex flex-col gap-1 z-10 pointer-events-none">
-                            {product.oldPrice && (
+                            {product.flashSalePrice ? (
+                              <span className="bg-yellow-400 text-yellow-900 text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                                -{Math.round((1 - product.flashSalePrice / product.price) * 100)}%
+                              </span>
+                            ) : product.oldPrice && (
                               <span className="bg-gradient-to-r from-orange-500 to-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm">
                                 -{Math.round((1 - product.price / product.oldPrice) * 100)}%
                               </span>
                             )}
                           </div>
                           
-                          <Link href={`/${product.category?.slug}/${product.slug}`} className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-0">
-                            <span className="bg-white/90 backdrop-blur-sm text-slate-800 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">Xem nhanh</span>
-                          </Link>
+                          {isAvailableHere ? (
+                            <Link href={`/${product.category?.slug}/${product.slug}`} className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-0">
+                              <span className="bg-white/90 backdrop-blur-sm text-slate-800 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">Xem nhanh</span>
+                            </Link>
+                          ) : (
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-100 z-0">
+                              <span className="bg-orange-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm text-center">Không bán tại<br/>chi nhánh hiện tại</span>
+                            </div>
+                          )}
                         </div>
                         
                         <div className="p-3 md:p-4 flex flex-col flex-1">
@@ -302,15 +335,27 @@ function SearchPageContent() {
                           <div className="mt-auto flex items-center justify-between gap-2">
                             <div>
                               <p className="text-red-600 font-black text-sm md:text-base leading-none">
-                                {product.price.toLocaleString('vi-VN')}đ
+                                {(product.flashSalePrice || product.price).toLocaleString('vi-VN')}đ
                               </p>
-                              {product.oldPrice && (
+                              {(product.flashSalePrice ? true : !!product.oldPrice) && (
                                 <p className="text-slate-400 text-[10px] line-through mt-0.5">
-                                  {product.oldPrice.toLocaleString('vi-VN')}đ
+                                  {product.price.toLocaleString('vi-VN')}đ
                                 </p>
                               )}
                             </div>
-                            <AddToCartButton item={product} className="w-8 h-8 md:w-9 md:h-9 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
+                            
+                            {isAvailableHere ? (
+                              <AddToCartButton item={product} className="w-8 h-8 md:w-9 md:h-9 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
+                            ) : onlyAvailableBranch && (
+                              <button 
+                                onClick={() => {
+                                  setBranchModalProduct(product);
+                                }}
+                                className="text-[10px] font-bold text-orange-600 bg-orange-100 hover:bg-orange-200 px-2 py-1.5 rounded-lg transition-colors flex items-center gap-1"
+                              >
+                                <MapPin className="w-3 h-3 shrink-0" /> Xem chi nhánh có hàng
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
