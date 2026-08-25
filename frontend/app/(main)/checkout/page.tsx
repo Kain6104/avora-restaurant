@@ -133,6 +133,7 @@ export default function CheckoutPage() {
           optionItemIds: item.selectedOptions?.map(opt => opt.optionItemId) || [],
           isFlashSaleItem: item.isFlashSaleItem,
           flashSaleId: item.flashSaleId,
+          note: item.note,
         })),
         note,
         paymentMethod,
@@ -463,6 +464,9 @@ export default function CheckoutPage() {
                       <p className="font-bold text-slate-800 text-sm truncate leading-tight mb-1">{item.name}</p>
                       {item.optionsTextSnapshot && (
                         <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed mb-1.5">{item.optionsTextSnapshot}</p>
+                      )}
+                      {item.note && (
+                        <p className="text-[11px] text-slate-500 italic mb-1.5 text-ellipsis overflow-hidden">Ghi chú: {item.note}</p>
                       )}
                       <p className="text-sm font-black text-orange-600">{getCartItemTotal(item).toLocaleString('vi-VN')}đ</p>
                     </div>

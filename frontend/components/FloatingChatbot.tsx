@@ -58,6 +58,7 @@ export function FloatingChatbot() {
   const checkoutAddressIdRef = useRef<string | null>(null);
   const previewVoucherRef = useRef<string | null>(null);
   const shouldStopVoiceRef = useRef<boolean>(false);
+  const cartItemsRef = useRef<CartItem[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isAudioEnabled, setIsAudioEnabled] = useState(false);
   const [personality, setPersonality] = useState("Thân thiện");
@@ -116,6 +117,10 @@ export function FloatingChatbot() {
   const cartSummary = cartItems.length > 0
     ? "Giỏ hàng hiện tại: " + cartItems.map((item: any) => `${item.quantity}x ${item.name}`).join(', ')
     : "Giỏ hàng trống";
+
+  useEffect(() => {
+    cartItemsRef.current = cartItems;
+  }, [cartItems]);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -657,7 +662,10 @@ export function FloatingChatbot() {
     try {
       const res = await fetch(`${API_URL}/api/promotions/vouchers`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ userId: user?.id })
       });
       const vouchers = await res.json();
@@ -695,7 +703,7 @@ export function FloatingChatbot() {
   };
 
   const handleOrderPreview = async (addressId: string, voucherCode: string | null) => {
-    if (!cartItems || cartItems.length === 0) {
+    if (!cartItemsRef.current || cartItemsRef.current.length === 0) {
       toast.error('Giỏ hàng của bạn đang trống! Vui lòng thêm món trước khi chốt đơn.');
       setIsLoading(false);
       return;
@@ -712,7 +720,7 @@ export function FloatingChatbot() {
           'ngrok-skip-browser-warning': 'true',
         },
         credentials: 'include',
-        body: JSON.stringify({ addressId, cartItems, voucherCode })
+        body: JSON.stringify({ addressId, cartItems: cartItemsRef.current, voucherCode })
       });
       if (!res.ok) {
         const errorText = await res.text();
@@ -754,7 +762,7 @@ export function FloatingChatbot() {
           'x-idempotency-key': idempotencyKey
         },
         credentials: 'include',
-        body: JSON.stringify({ addressId: currentAddressId, branchId: currentBranchId, cartItems, paymentMethod: 'COD', voucherCode: previewVoucherRef.current })
+        body: JSON.stringify({ addressId: currentAddressId, branchId: currentBranchId, cartItems: cartItemsRef.current, paymentMethod: 'COD', voucherCode: previewVoucherRef.current })
       });
       if (!res.ok) throw new Error('Order error');
       const data = await res.json();

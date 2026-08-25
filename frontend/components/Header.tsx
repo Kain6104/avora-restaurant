@@ -301,6 +301,7 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
         method: 'POST', credentials: 'include',
         headers: { 'ngrok-skip-browser-warning': 'true' },
       });
+      localStorage.removeItem('user');
       window.location.reload();
     } catch { }
   };

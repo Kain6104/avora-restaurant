@@ -30,6 +30,7 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
   
   // Convert selectedOptions array to record map
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string[]>>({});
+  const [note, setNote] = useState(item.note || '');
 
   useEffect(() => {
     async function fetchProduct() {
@@ -106,7 +107,8 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
       originalPriceAtSale: newOriginalPrice,
       priceAtSale: newPriceAtSale,
       selectedOptions: newSelectedOptions,
-      optionsTextSnapshot: optionsTextParts.join(', ')
+      optionsTextSnapshot: optionsTextParts.join(', '),
+      note
     };
 
     onSave(updatedItem);
@@ -119,7 +121,7 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
         
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between shrink-0">
-          <h2 className="text-xl font-bold text-slate-900">Sửa tùy chọn</h2>
+          <h2 className="text-xl font-bold text-slate-900">Tùy chọn / Ghi chú</h2>
           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
             <X className="w-5 h-5 text-slate-500" />
           </button>
@@ -132,8 +134,6 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
               <Loader2 className="w-8 h-8 text-red-600 animate-spin" />
               <span className="text-sm text-slate-500">Đang tải tùy chọn...</span>
             </div>
-          ) : !product?.optionGroups || product.optionGroups.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">Món ăn này không có tùy chọn nào.</div>
           ) : (
             <div>
               <div className="flex items-center gap-4 mb-6 bg-slate-50 p-4 rounded-xl">
@@ -144,7 +144,7 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
                 </div>
               </div>
 
-              {product.optionGroups.map((group: OptionGroup) => (
+              {product.optionGroups?.map((group: OptionGroup) => (
                 <div key={group.id} className="mb-6">
                   <div className="flex items-center gap-2 mb-3">
                     <h4 className="font-bold text-slate-800">{group.name}</h4>
@@ -175,6 +175,18 @@ export default function EditCartItemModal({ item, onClose, onSave }: EditCartIte
                   </div>
                 </div>
               ))}
+              <div className="mb-6">
+                <div className="flex items-center gap-2 mb-3">
+                  <h4 className="font-bold text-slate-800">Ghi chú thêm</h4>
+                </div>
+                <textarea 
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="VD: Không hành, thêm tương ớt..."
+                  className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-4 focus:ring-red-500/10 focus:border-red-500 focus:bg-white outline-none transition-all placeholder:text-slate-400 text-sm resize-none"
+                  rows={2}
+                />
+              </div>
             </div>
           )}
         </div>

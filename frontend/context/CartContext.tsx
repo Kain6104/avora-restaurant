@@ -27,6 +27,7 @@ export interface CartItem {
   flashSaleSold?: number;
   maxQuantityPerUser?: number | null;
   rawProduct?: any;
+  note?: string;
 }
 
 interface CartContextType {
@@ -139,7 +140,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (user?.id) {
         const res = await fetch(`${baseUrl}/api/promotions/flash-sale/quota`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'ngrok-skip-browser-warning': 'true'
+          },
           body: JSON.stringify({ userId: user.id })
         });
         if (res.ok) {
@@ -154,7 +158,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const productIds = Array.from(new Set(currentCart.map(i => i.productId)));
       const prodRes = await fetch(`${baseUrl}/api/products/bulk`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ ids: productIds })
       });
       
@@ -485,7 +492,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     return item.quantity * item.priceAtSale;
   };
 
-  const handleOptionsConfirm = (quantity: number, selectedOptions: Record<string, string[]>, addonsTotal: number) => {
+  const handleOptionsConfirm = (quantity: number, selectedOptions: Record<string, string[]>, addonsTotal: number, note?: string) => {
     if (!optionsModalProduct) return;
     const item = optionsModalProduct;
     let optionNames: string[] = [];
@@ -530,7 +537,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       flashSaleStock: item.flashSaleStock || item.flashSale?.stock,
       flashSaleSold: item.flashSaleSold || item.flashSale?.sold,
       maxQuantityPerUser: item.maxQuantityPerUser || item.flashSale?.maxQuantityPerUser,
-      rawProduct: item
+      rawProduct: item,
+      note
     };
     
     let branch = currentBranchId;
@@ -589,25 +597,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       {optionsModalProduct && (
         <div className="fixed inset-0 z-[10005] flex items-end sm:items-center justify-center p-0 sm:p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setOptionsModalProduct(null); }}></div>
-          <div className="relative z-10 w-full sm:w-[500px] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl overflow-hidden h-[80vh] sm:h-auto sm:max-h-[90vh] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
-            <div className="p-4 border-b border-slate-100 flex items-start justify-between shrink-0">
-              <div className="flex gap-4">
-                <img src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-20 h-20 rounded-xl object-cover shadow-sm" />
+          <div className="relative z-10 w-full sm:w-[500px] bg-white rounded-t-2xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[85vh] sm:max-h-[90vh] h-auto flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
+            <div className="p-3 sm:p-4 border-b border-slate-100 flex items-start justify-between shrink-0">
+              <div className="flex gap-3 sm:gap-4">
+                <img src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl object-cover shadow-sm" />
                 <div>
-                  <h2 className="font-bold text-lg text-slate-900 leading-tight mb-1">{optionsModalProduct.name}</h2>
-                  <div className="text-red-600 font-bold">{(optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0).toLocaleString('vi-VN')}đ</div>
+                  <h2 className="font-bold text-sm sm:text-lg text-slate-900 leading-tight mb-0.5 sm:mb-1">{optionsModalProduct.name}</h2>
+                  <div className="text-red-600 font-bold text-sm sm:text-base">{(optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0).toLocaleString('vi-VN')}đ</div>
                 </div>
               </div>
-              <button onClick={() => setOptionsModalProduct(null)} className="p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors">
-                <X size={20} />
+              <button onClick={() => setOptionsModalProduct(null)} className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors mt-1 sm:mt-0">
+                <X size={18} className="sm:w-5 sm:h-5" />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4">
               <AddToCartForm 
                 basePrice={optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0} 
                 optionGroups={optionsModalProduct.optionGroups || []} 
-                onAddToCart={(qty, selectedOpts, totalAddons) => {
-                  handleOptionsConfirm(qty, selectedOpts, totalAddons);
+                onAddToCart={(qty, selectedOpts, totalAddons, note) => {
+                  handleOptionsConfirm(qty, selectedOpts, totalAddons, note);
                 }} 
               />
             </div>

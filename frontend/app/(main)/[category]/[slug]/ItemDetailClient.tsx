@@ -30,6 +30,11 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem('token'));
+  }, []);
 
   // Add to Recently Viewed
   useEffect(() => {
@@ -229,7 +234,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                   Flash Sale
                 </div>
               ) : displayProduct.isBestSeller && (
-                <div className="absolute top-4 left-4 bg-[#E55B32] text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm">
+                <div className="absolute top-4 left-4 bg-red-600 text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm">
                   Best Seller
                 </div>
               )}
@@ -250,7 +255,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                 <button 
                   key={idx} 
                   onClick={() => setActiveImage(thumb)}
-                  className={`relative w-[80px] md:w-[95px] aspect-[4/3] rounded-lg overflow-hidden flex-shrink-0 bg-white transition-all duration-300 ${activeImage === thumb ? 'border-[1.5px] border-[#E55B32] shadow-sm' : 'border border-slate-200 hover:border-slate-300'}`}
+                  className={`relative w-[80px] md:w-[95px] aspect-[4/3] rounded-lg overflow-hidden flex-shrink-0 bg-white transition-all duration-300 ${activeImage === thumb ? 'border-[1.5px] border-red-600 shadow-sm' : 'border border-slate-200 hover:border-slate-300'}`}
                 >
                   <img src={thumb} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover mix-blend-multiply" />
                 </button>
@@ -262,7 +267,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
           <div className="flex-1 flex flex-col pt-2">
             
             <div className="flex items-center justify-between mb-3">
-              <span className="bg-[#FFF8F3] text-[#E55B32] text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded">
+              <span className="bg-[#FFF8F3] text-red-600 text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded">
                 {category?.name || 'SUSHI'}
               </span>
               <button 
@@ -357,13 +362,13 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
           <div className="w-full lg:w-[320px] xl:w-[360px] shrink-0 bg-white rounded-3xl shadow-[0_8px_30px_rgba(0,0,0,0.04)] border border-slate-100 p-6 xl:p-8 sticky top-24">
             
             {displayProduct.flashSalePrice && (
-              <div className="w-full bg-[#FFF4ED] border border-[#E55B32]/30 rounded-xl p-3 mb-5 flex flex-col gap-1 items-center justify-center relative overflow-hidden">
-                <div className="flex items-center gap-1.5 text-[#E55B32] font-black text-sm uppercase tracking-wider">
+              <div className="w-full bg-[#FFF4ED] border border-red-600/30 rounded-xl p-3 mb-5 flex flex-col gap-1 items-center justify-center relative overflow-hidden">
+                <div className="flex items-center gap-1.5 text-red-600 font-black text-sm uppercase tracking-wider">
                   <Zap className="w-4 h-4 fill-current" />
                   FLASH SALE
                 </div>
                 <div className="text-[#3E2723] font-bold text-lg font-mono flex items-center gap-2">
-                  <span className="text-xs font-medium text-[#E55B32] uppercase">Kết thúc sau:</span>
+                  <span className="text-xs font-medium text-red-600 uppercase">Kết thúc sau:</span>
                   {timeLeft || "00:00:00"}
                 </div>
               </div>
@@ -371,7 +376,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
 
             <p className="text-slate-500 text-xs font-bold mb-1">Giá</p>
             <div className="flex items-baseline gap-2 mb-6">
-              <span className="text-3xl font-serif font-bold text-[#E55B32]">{(displayProduct.flashSalePrice || displayProduct.price).toLocaleString('vi-VN')}₫</span>
+              <span className="text-3xl font-serif font-bold text-red-600">{(displayProduct.flashSalePrice || displayProduct.price).toLocaleString('vi-VN')}₫</span>
               {(displayProduct.flashSalePrice ? true : !!displayProduct.oldPrice) && (
                 <span className="text-sm text-slate-400 line-through">{displayProduct.price.toLocaleString('vi-VN')}₫</span>
               )}
@@ -396,30 +401,32 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
               )}
               <button 
                 onClick={handleAddToCart}
-                className="w-full bg-[#E55B32] hover:bg-[#d44d28] text-white h-[48px] rounded-xl font-bold text-[14px] transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-red-600 hover:bg-red-700 text-white h-[48px] rounded-xl font-bold text-[14px] transition-colors flex items-center justify-center gap-2"
               >
                 <ShoppingCart className="w-4 h-4" /> Thêm vào giỏ hàng
               </button>
               <button 
                 onClick={handleBuyNow}
-                className="w-full bg-white border border-[#E55B32] text-[#E55B32] hover:bg-[#FFF8F3] h-[48px] rounded-xl font-bold text-[14px] transition-colors flex items-center justify-center gap-2"
+                className="w-full bg-white border border-red-600 text-red-600 hover:bg-red-50 h-[48px] rounded-xl font-bold text-[14px] transition-colors flex items-center justify-center gap-2"
               >
                 <Zap className="w-4 h-4" /> Đặt món ngay
               </button>
             </div>
 
             {/* MEMBER INFO */}
-            <div className="bg-[#FCF9F5] rounded-xl p-4 mt-6 border border-[#F2ECE4] flex gap-3">
-              <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shrink-0 shadow-sm border border-[#F2ECE4]">
-                <Star className="w-3 h-3 text-[#E55B32] fill-[#E55B32]" />
+            {!isLoggedIn && (
+              <div className="bg-[#FCF9F5] rounded-xl p-4 mt-6 border border-[#F2ECE4] flex gap-3">
+                <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shrink-0 shadow-sm border border-[#F2ECE4]">
+                  <Star className="w-3 h-3 text-red-600 fill-red-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-slate-800 text-[11px] font-bold mb-1">Thành viên Avora Member</p>
+                  <p className="text-slate-500 text-[10px] leading-relaxed">
+                    Tích lũy điểm cho mỗi đơn hàng và nhận ưu đãi. <Link href="/login" className="text-red-600 hover:underline font-bold">Đăng nhập</Link> ngay.
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <p className="text-slate-800 text-[11px] font-bold mb-1">Thành viên Avora Member</p>
-                <p className="text-slate-500 text-[10px] leading-relaxed">
-                  Tích lũy điểm cho mỗi đơn hàng và nhận ưu đãi. <Link href="/login" className="text-[#E55B32] hover:underline font-bold">Đăng nhập</Link> ngay.
-                </p>
-              </div>
-            </div>
+            )}
 
           </div>
         </div>
@@ -437,13 +444,13 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                 <button 
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`flex-1 py-4 text-[13px] font-bold transition-colors relative ${activeTab === tab ? 'text-[#E55B32]' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`flex-1 py-4 text-[13px] font-bold transition-colors relative ${activeTab === tab ? 'text-red-600' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   {tab === 'description' && 'Mô tả'}
                   {tab === 'ingredients' && 'Thành phần'}
                   {tab === 'reviews' && 'Đánh giá (128)'}
                   {activeTab === tab && (
-                    <div className="absolute bottom-0 left-0 w-full h-[2px] bg-[#E55B32]"></div>
+                    <div className="absolute bottom-0 left-0 w-full h-[2px] bg-red-600"></div>
                   )}
                 </button>
               ))}
@@ -505,11 +512,11 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
             <div className="flex justify-between items-end mb-6 border-b border-slate-200 pb-2">
               <div className="relative">
                 <h2 className="text-xl font-serif font-bold text-slate-800 relative z-10 flex items-center gap-2">
-                  <span className="bg-[#FFF8F3] text-[#E55B32] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-widest">Gợi ý</span>
+                  <span className="bg-[#FFF8F3] text-red-600 px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-widest">Gợi ý</span>
                   Món Tương Tự
                 </h2>
               </div>
-              <Link href={`/${category?.slug || 'menu'}`} className="text-[#E55B32] font-bold text-[12px] hover:underline flex items-center gap-1 mb-1">Xem tất cả <ArrowRight className="w-3 h-3" /></Link>
+              <Link href={`/${category?.slug || 'menu'}`} className="text-red-600 font-bold text-[12px] hover:underline flex items-center gap-1 mb-1">Xem tất cả <ArrowRight className="w-3 h-3" /></Link>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -519,7 +526,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                     <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover mix-blend-multiply group-hover:scale-105 transition-transform duration-500" />
                   </Link>
                   <Link href={`/${category?.slug || 'menu'}/${item.slug}`}>
-                    <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-[#E55B32] transition-colors">{item.name}</h4>
+                    <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">{item.name}</h4>
                   </Link>
                   <div className="flex items-center gap-1 mb-2 text-[9px] text-slate-500">
                     <Star className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400" />
@@ -531,7 +538,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                     </div>
                     <button 
                       onClick={(e) => handleQuickAdd(e, item)}
-                      className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 group-hover:bg-[#E55B32] group-hover:border-[#E55B32] group-hover:text-white transition-all shadow-sm"
+                      className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 group-hover:bg-red-600 group-hover:border-red-600 group-hover:text-white transition-all shadow-sm"
                     >
                       <Plus className="w-3.5 h-3.5" />
                     </button>
@@ -556,7 +563,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                         <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover mix-blend-multiply group-hover:scale-105 transition-transform duration-500" />
                       </Link>
                       <Link href={`/${item.category?.slug || 'menu'}/${item.slug}`}>
-                        <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-[#E55B32] transition-colors">{item.name}</h4>
+                        <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">{item.name}</h4>
                       </Link>
                       <div className="mt-auto flex items-center justify-between">
                         <div className="flex flex-col">
@@ -564,7 +571,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                         </div>
                         <button 
                           onClick={(e) => handleQuickAdd(e, item)}
-                          className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 group-hover:bg-[#E55B32] group-hover:border-[#E55B32] group-hover:text-white transition-all shadow-sm"
+                          className="w-7 h-7 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 group-hover:bg-red-600 group-hover:border-red-600 group-hover:text-white transition-all shadow-sm"
                         >
                           <Plus className="w-3.5 h-3.5" />
                         </button>
@@ -580,28 +587,28 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
         {/* 6. SERVICE INFORMATION */}
         <div className="bg-[#FBF7F2] rounded-2xl py-6 px-6 lg:px-12 flex flex-row flex-nowrap whitespace-nowrap overflow-x-auto hide-scrollbar justify-between items-center gap-6 divide-x divide-[#E8E0D5]">
           <div className="flex items-center justify-center gap-3 pr-4">
-            <Leaf className="w-6 h-6 text-[#E55B32] stroke-[1.5] shrink-0" />
+            <Leaf className="w-6 h-6 text-red-600 stroke-[1.5] shrink-0" />
             <div>
               <p className="font-bold text-slate-800 text-[12px]">Nguyên liệu thượng hạng</p>
               <p className="text-slate-500 text-[10px] mt-0.5">Tươi ngon mỗi ngày</p>
             </div>
           </div>
           <div className="flex items-center justify-center gap-3 px-4">
-            <ChefHat className="w-6 h-6 text-[#E55B32] stroke-[1.5] shrink-0" />
+            <ChefHat className="w-6 h-6 text-red-600 stroke-[1.5] shrink-0" />
             <div>
               <p className="font-bold text-slate-800 text-[12px]">Chế biến chuẩn Nhật</p>
               <p className="text-slate-500 text-[10px] mt-0.5">Đầu bếp giàu kinh nghiệm</p>
             </div>
           </div>
           <div className="flex items-center justify-center gap-3 px-4">
-            <Timer className="w-6 h-6 text-[#E55B32] stroke-[1.5] shrink-0" />
+            <Timer className="w-6 h-6 text-red-600 stroke-[1.5] shrink-0" />
             <div>
               <p className="font-bold text-slate-800 text-[12px]">Giao hàng 30 phút</p>
               <p className="text-slate-500 text-[10px] mt-0.5">Nóng hổi tận tay</p>
             </div>
           </div>
           <div className="flex items-center justify-center gap-3 pl-4">
-            <Heart className="w-6 h-6 text-[#E55B32] stroke-[1.5] shrink-0" />
+            <Heart className="w-6 h-6 text-red-600 stroke-[1.5] shrink-0" />
             <div>
               <p className="font-bold text-slate-800 text-[12px]">Hỗ trợ 24/7</p>
               <p className="text-slate-500 text-[10px] mt-0.5">Luôn sẵn sàng phục vụ</p>

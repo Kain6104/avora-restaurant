@@ -27,7 +27,10 @@ export default function VoucherModal({ isOpen, onClose, onApply, orderValue }: V
       const user = userStr ? JSON.parse(userStr) : null;
       const res = await fetch('/api/promotions/vouchers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ userId: user?.id })
       });
       const data = await res.json();
