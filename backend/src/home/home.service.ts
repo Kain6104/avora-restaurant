@@ -38,12 +38,28 @@ export class HomeService {
     const enrichedBestSellers = await this.promotionService.enrichProductsWithFlashSale(bestSellers);
     const enrichedAiRecommended = await this.promotionService.enrichProductsWithFlashSale(aiRecommended);
 
+    const settingsList = await this.prisma.systemSetting.findMany();
+    const settings: any = {};
+    settingsList.forEach(s => {
+      try { settings[s.key] = JSON.parse(s.value); } catch { settings[s.key] = s.value; }
+    });
+
     return {
       banners,
       categories,
       bestSellers: enrichedBestSellers,
       aiRecommended: enrichedAiRecommended,
+      settings,
     };
+  }
+
+  async getSettings() {
+    const settingsList = await this.prisma.systemSetting.findMany();
+    const settings: any = {};
+    settingsList.forEach(s => {
+      try { settings[s.key] = JSON.parse(s.value); } catch { settings[s.key] = s.value; }
+    });
+    return settings;
   }
 
   async getBranches() {

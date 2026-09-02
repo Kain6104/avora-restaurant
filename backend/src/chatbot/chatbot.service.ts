@@ -956,7 +956,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
 
       const vouchers = await this.prisma.voucher.findMany({
         where: whereClause,
-        include: { membershipTier: true }
+        include: { membershipTiers: true }
       });
 
       if (vouchers.length === 0) {
@@ -991,13 +991,13 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
         }
 
         // Check membership tier
-        else if (v.membershipTierId) {
+        else if (v.membershipTiers && v.membershipTiers.length > 0) {
           if (!user) {
             reasonCode = 'LOGIN_REQUIRED';
             reasonMessage = 'Vui lòng đăng nhập để kiểm tra hạng thành viên.';
-          } else if (!user.membershipTier || user.membershipTier.minSpending < v.membershipTier!.minSpending) {
+          } else if (!v.membershipTiers.some((t: any) => t.id === user.membershipTier?.id)) {
             reasonCode = 'TIER_NOT_MET';
-            reasonMessage = `Chỉ áp dụng cho Hạng ${v.membershipTier!.name} trở lên.`;
+            reasonMessage = `Không áp dụng cho hạng thành viên của bạn.`;
           }
         }
 
@@ -1026,7 +1026,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           maxDiscount: v.maxDiscount,
           minOrderValue: v.minOrderValue,
           endDate: v.endDate,
-          membershipTier: v.membershipTier?.name,
+          membershipTier: v.membershipTiers && v.membershipTiers.length > 0 ? v.membershipTiers.map((t: any) => t.name).join(', ') : null,
           reasonCode,
           reasonMessage
         };

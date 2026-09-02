@@ -186,6 +186,7 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
+        branch: { select: { id: true, name: true } },
         orders: {
           orderBy: { createdAt: 'desc' },
         }
@@ -197,7 +198,11 @@ export class AuthService {
     }
 
     const { passwordHash, ...result } = user;
-    return { ...result, hasPassword: !!passwordHash };
+    
+    // Thêm permissions dựa trên role
+    const permissions = require('../common/constants/permissions').ROLE_PERMISSIONS[user.role] || [];
+    
+    return { ...result, hasPassword: !!passwordHash, permissions };
   }
 
   async addPassword(userId: string, newPassword: string) {

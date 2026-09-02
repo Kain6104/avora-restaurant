@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrderStatus, PointTransactionSource } from '@prisma/client';
 import { PromotionService } from '../promotion/promotion.service';
+import { MembershipService } from '../membership/membership.service';
 
 @Injectable()
 export class OrderService {
@@ -10,6 +11,7 @@ export class OrderService {
     private prisma: PrismaService,
     private notificationService: NotificationService,
     private promotionService: PromotionService,
+    private membershipService: MembershipService,
   ) { }
 
   async previewOrder(userId: string, payload: any) {
@@ -122,14 +124,26 @@ export class OrderService {
     }
 
     let discountAmount = 0;
-    const shippingFee = 15000;
+    
+    // Fetch shipping settings
+    const settings = await this.prisma.systemSetting.findMany({
+      where: { key: { in: ['delivery_fee', 'delivery_min_free'] } }
+    });
+    let baseShippingFee = 0;
+    let deliveryMinFree = 0;
+    settings.forEach(s => {
+      if (s.key === 'delivery_fee') baseShippingFee = Number(s.value);
+      if (s.key === 'delivery_min_free') deliveryMinFree = Number(s.value);
+    });
+    
+    const shippingFee = subTotal >= deliveryMinFree ? 0 : baseShippingFee;
     let appliedVoucher = { applied: false, code: null as string | null, discount: 0 };
 
     if (voucherCode) {
       try {
-        const voucher = await this.prisma.voucher.findUnique({ where: { code: voucherCode } });
+        const voucher = await this.prisma.voucher.findUnique({ where: { code: voucherCode }, include: { membershipTiers: true } });
         let canUseVoucher = false;
-        if (voucher && voucher.isActive && voucher.startDate <= now && voucher.endDate >= now && (voucher.usageLimit === null || voucher.usedCount < voucher.usageLimit) && subTotal >= voucher.minOrderValue && (!voucher.membershipTierId || user.membershipTierId === voucher.membershipTierId)) {
+        if (voucher && voucher.isActive && voucher.startDate <= now && voucher.endDate >= now && (voucher.usageLimit === null || voucher.usedCount < voucher.usageLimit) && subTotal >= voucher.minOrderValue && (voucher.membershipTiers.length === 0 || voucher.membershipTiers.some(t => t.id === user.membershipTierId))) {
           canUseVoucher = true;
           if (voucher.usageLimitPerUser !== null) {
             const usedByThisUser = await this.prisma.order.count({
@@ -174,6 +188,11 @@ export class OrderService {
 
   async createOrder(userId: string, payload: any) {
     const { addressId, branchId, cartItems, note, paymentMethod, vatInfo } = payload;
+
+    const maintenanceSetting = await this.prisma.systemSetting.findUnique({ where: { key: 'maintenance_mode' } });
+    if (maintenanceSetting?.value === 'true') {
+      throw new BadRequestException('Hệ thống đang bảo trì, vui lòng quay lại sau!');
+    }
 
     if (!addressId || !cartItems || cartItems.length === 0) {
       throw new BadRequestException('Invalid payload');
@@ -324,11 +343,23 @@ export class OrderService {
 
       let discountAmount = 0;
       let voucherId: string | null = null;
-      const shippingFee = 15000;
+      
+      // Fetch shipping settings in transaction
+      const settings = await tx.systemSetting.findMany({
+        where: { key: { in: ['delivery_fee', 'delivery_min_free'] } }
+      });
+      let baseShippingFee = 0;
+      let deliveryMinFree = 0;
+      settings.forEach(s => {
+        if (s.key === 'delivery_fee') baseShippingFee = Number(s.value);
+        if (s.key === 'delivery_min_free') deliveryMinFree = Number(s.value);
+      });
+      
+      const shippingFee = subTotal >= deliveryMinFree ? 0 : baseShippingFee;
 
       if (payload.voucherCode) {
         try {
-          const voucher = await tx.voucher.findUnique({ where: { code: payload.voucherCode } });
+          const voucher = await tx.voucher.findUnique({ where: { code: payload.voucherCode }, include: { membershipTiers: true } });
           if (!voucher) throw new Error('Voucher không hợp lệ.');
           if (!voucher.isActive) throw new Error('Voucher không khả dụng.');
           if (voucher.startDate > now || voucher.endDate < now) throw new Error('Voucher đã hết hạn hoặc chưa bắt đầu.');
@@ -342,7 +373,7 @@ export class OrderService {
             }
           }
           if (subTotal < voucher.minOrderValue) throw new Error(`Đơn hàng chưa đạt giá trị tối thiểu ${voucher.minOrderValue.toLocaleString('vi-VN')}đ.`);
-          if (voucher.membershipTierId && user.membershipTierId !== voucher.membershipTierId) throw new Error('Voucher không dành cho hạng thành viên của bạn.');
+          if (voucher.membershipTiers.length > 0 && !voucher.membershipTiers.some(t => t.id === user.membershipTierId)) throw new Error('Voucher không dành cho hạng thành viên của bạn.');
 
           if (voucher.discountType === 'PERCENTAGE') {
             discountAmount = (subTotal * voucher.discountValue) / 100;
@@ -456,7 +487,7 @@ export class OrderService {
     return order;
   }
 
-  async cancelOrder(userId: string, orderCode: string, reason: string) {
+  async cancelOrder(userId: string, orderCode: string, reason: string, isAdmin: boolean = false) {
     if (!reason || reason.trim() === '') {
       throw new BadRequestException('Cancel reason is required');
     }
@@ -470,7 +501,7 @@ export class OrderService {
       throw new BadRequestException('Đơn hàng không tìm thấy.');
     }
 
-    if (order.status !== 'PENDING') {
+    if (!isAdmin && order.status !== 'PENDING') {
       throw new BadRequestException('Đơn hàng này không ở trạng thái có thể hủy. Vui lòng liên hệ hotline để được hỗ trợ!');
     }
 
@@ -519,15 +550,37 @@ export class OrderService {
       return order; // Không có gì thay đổi
     }
 
+    const statusWeights: Record<OrderStatus, number> = {
+      PENDING: 1,
+      CONFIRMED: 2,
+      PREPARING: 3,
+      DELIVERING: 4,
+      COMPLETED: 5,
+      CANCELLED: 99,
+    };
+
+    if (statusWeights[status] < statusWeights[order.status]) {
+      throw new BadRequestException('Không thể lùi trạng thái đơn hàng (chỉ có thể tiến lên).');
+    }
+    
+    if (order.status === OrderStatus.CANCELLED || order.status === OrderStatus.COMPLETED) {
+      throw new BadRequestException('Đơn hàng đã đóng, không thể thay đổi trạng thái.');
+    }
+
     // Dùng Transaction để đảm bảo tính toàn vẹn dữ liệu
-    return this.prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: { status },
-      });
+    const txResult = await this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const updateData: any = { status };
+      
+      // Ghi nhận tiến trình đơn hàng (Timeline)
+      if (statusWeights[status] >= statusWeights.CONFIRMED && !order.confirmedAt) updateData.confirmedAt = now;
+      if (statusWeights[status] >= statusWeights.DELIVERING && !order.deliveringAt) updateData.deliveringAt = now;
+      if (statusWeights[status] >= statusWeights.COMPLETED && !order.deliveredAt) updateData.deliveredAt = now;
+      if (status === OrderStatus.CANCELLED && !order.canceledAt) updateData.canceledAt = now;
+      if (status === OrderStatus.COMPLETED) updateData.paymentStatus = 'PAID';
 
       // Nếu đơn hàng vừa hoàn thành, cộng điểm và nâng hạng
-      if (status === OrderStatus.COMPLETED && order.status !== OrderStatus.COMPLETED) {
+      if (status === OrderStatus.COMPLETED) {
         const amount = order.totalAmount;
         const newTotalSpending = order.user.totalSpending + amount;
         
@@ -540,22 +593,15 @@ export class OrderService {
         }
 
         const pointsEarned = Math.floor((amount / 1000) * pointMultiplier);
+        updateData.pointsAwarded = pointsEarned; // Ghi nhận điểm kiếm được vào order
 
-        // Tìm tất cả các hạng thẻ để xét duyệt nâng hạng (Sắp xếp từ cao xuống thấp)
-        const tiers = await tx.membershipTier.findMany({
-          orderBy: { minSpending: 'desc' },
-        });
-
-        // Hạng mới sẽ là hạng cao nhất mà user đủ điều kiện minSpending
-        const newTier = tiers.find(tier => newTotalSpending >= tier.minSpending);
-
+        // Cập nhật tổng chi tiêu và điểm
         await tx.user.update({
           where: { id: order.userId },
           data: {
             totalSpending: newTotalSpending,
             points: { increment: pointsEarned },
             currentPoints: { increment: pointsEarned },
-            membershipTierId: newTier ? newTier.id : undefined,
           },
         });
 
@@ -563,7 +609,7 @@ export class OrderService {
         await tx.pointTransaction.create({
           data: {
             userId: order.userId,
-            membershipTierId: newTier ? newTier.id : undefined,
+            membershipTierId: order.user.membershipTierId, // Ghi nhận hạng lúc mua
             balanceBefore: order.user.points,
             amount: pointsEarned,
             balanceAfter: order.user.points + pointsEarned,
@@ -574,7 +620,18 @@ export class OrderService {
         });
       }
 
+      const updatedOrder = await tx.order.update({
+        where: { id: orderId },
+        data: updateData,
+      });
+
       return updatedOrder;
     });
+
+    if (status === OrderStatus.COMPLETED) {
+      await this.membershipService.recalculateUserTier(order.userId);
+    }
+
+    return txResult;
   }
 }

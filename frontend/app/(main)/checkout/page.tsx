@@ -40,9 +40,15 @@ export default function CheckoutPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
 
+  const [settings, setSettings] = useState<any>({});
+  
   // Tính toán Tạm tính (Subtotal) cho UI hiển thị
   const subTotal = cartItems.reduce((acc, item) => acc + getCartItemTotal(item), 0);
-  const shippingFee = 15000;
+  
+  const baseShippingFee = Number(settings.delivery_fee || 0);
+  const deliveryMinFree = Number(settings.delivery_min_free || 0);
+  const shippingFee = subTotal >= deliveryMinFree ? 0 : baseShippingFee;
+  
   const totalAmount = Math.max(0, subTotal - (discountAmount || 0)) + shippingFee;
 
   useEffect(() => {
@@ -57,7 +63,19 @@ export default function CheckoutPage() {
         console.error('Failed to fetch user', e);
       }
     };
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/home/settings');
+        if (res.ok) {
+          const data = await res.json();
+          setSettings(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch settings', e);
+      }
+    };
     fetchUser();
+    fetchSettings();
   }, []);
 
   const fetchAddresses = async () => {

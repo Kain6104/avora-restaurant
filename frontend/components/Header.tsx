@@ -108,9 +108,10 @@ function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) 
 interface HeaderProps {
   initialCategories?: any[];
   initialBranches?: any[];
+  initialSettings?: any;
 }
 
-export default function Header({ initialCategories = [], initialBranches = [] }: HeaderProps) {
+export default function Header({ initialCategories = [], initialBranches = [], initialSettings = {} }: HeaderProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [expandedMobileCategory, setExpandedMobileCategory] = useState<string | null>(null);
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
@@ -592,15 +593,15 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
 
             {/* Center promos */}
             <div className="hidden lg:flex items-center gap-8">
-              <div className="flex items-center gap-1.5"><Truck size={13} className="text-red-600" /><span><strong className="text-red-600">FREESHIP</strong> cho đơn từ 300.000đ</span></div>
+              <div className="flex items-center gap-1.5"><Truck size={13} className="text-red-600" /><span><strong className="text-red-600">FREESHIP</strong> cho đơn từ {new Intl.NumberFormat('vi-VN').format(Number(initialSettings?.delivery_min_free || 0))}đ</span></div>
               <div className="flex items-center gap-1.5"><Gift size={13} className="text-red-600" /><span>Ưu đãi đến <strong className="text-red-600">30%</strong> cho thành viên</span></div>
             </div>
 
             {/* Right */}
             <div className="flex items-center gap-5">
-              <a href="tel:19001234" className="flex items-center gap-1.5 hover:text-red-600 transition-colors">
+              <a href={`tel:${initialSettings?.restaurant_phone || '1900 1234'}`} className="flex items-center gap-1.5 hover:text-red-600 transition-colors">
                 <Phone size={13} className="text-red-600" />
-                <span>Hotline: <strong className="text-slate-900">1900 1234</strong></span>
+                <span>Hotline: <strong className="text-slate-900">{initialSettings?.restaurant_phone || '1900 1234'}</strong></span>
               </a>
               <a href="#" className="flex items-center gap-1.5 hover:text-red-600 transition-colors">
                 <Download size={13} className="text-red-600" /><span>Tải ứng dụng</span>
@@ -1096,13 +1097,13 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
           {/* Footer info */}
           <div className="px-3 pb-5">
             <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 flex flex-col gap-2">
-              <a href="tel:19001234" className="flex items-center gap-2 text-slate-600 hover:text-red-600 transition-colors">
+              <a href={`tel:${initialSettings?.restaurant_phone || '1900 1234'}`} className="flex items-center gap-2 text-slate-600 hover:text-red-600 transition-colors">
                 <Phone className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                <span className="text-xs font-semibold">Hotline: <strong>1900 1234</strong></span>
+                <span className="text-xs font-semibold">Hotline: <strong>{initialSettings?.restaurant_phone || '1900 1234'}</strong></span>
               </a>
               <div className="flex items-center gap-2 text-slate-500">
                 <Truck className="w-3.5 h-3.5 text-red-600 shrink-0" />
-                <span className="text-xs">Freeship cho đơn từ 300.000đ</span>
+                <span className="text-xs">Freeship cho đơn từ {new Intl.NumberFormat('vi-VN').format(Number(initialSettings?.delivery_min_free || 0))}đ</span>
               </div>
             </div>
           </div>

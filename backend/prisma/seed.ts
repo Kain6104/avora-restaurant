@@ -294,7 +294,7 @@ async function main() {
   const vouchers = await Promise.all([
     prisma.voucher.create({ data: { code: 'WELCOME50', title: 'Giảm 50K cho bạn mới', discountType: DiscountType.FIXED_AMOUNT, discountValue: 50000, minOrderValue: 200000, startDate: now, endDate: nextMonth, usageLimit: 1000 } }),
     prisma.voucher.create({ data: { code: 'FREESHIP', title: 'Miễn phí giao hàng (Tối đa 30K)', discountType: DiscountType.FREE_SHIP, discountValue: 30000, minOrderValue: 300000, startDate: now, endDate: nextMonth } }),
-    prisma.voucher.create({ data: { code: 'VIPGOLD', title: 'Giảm 10% Hạng Vàng', discountType: DiscountType.PERCENTAGE, discountValue: 10, maxDiscount: 200000, minOrderValue: 500000, startDate: now, endDate: nextMonth, membershipTierId: tiers[2].id } }),
+    prisma.voucher.create({ data: { code: 'VIPGOLD', title: 'Giảm 10% Hạng Vàng', discountType: DiscountType.PERCENTAGE, discountValue: 10, maxDiscount: 200000, minOrderValue: 500000, startDate: now, endDate: nextMonth, membershipTiers: { connect: [{ id: tiers[2].id }] } } }),
   ]);
 
   console.log('6. Đang tạo Flash Sale...');
