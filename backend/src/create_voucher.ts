@@ -20,7 +20,7 @@ async function main() {
     where: { code: 'VIPDIAMOND' },
     update: {
       isActive: true,
-      membershipTierId: diamondTier.id,
+      membershipTiers: { set: [{ id: diamondTier.id }] },
       title: 'Giảm 15% Hạng Kim Cương',
       discountType: 'PERCENTAGE',
       discountValue: 15,
@@ -41,7 +41,7 @@ async function main() {
       startDate,
       endDate,
       isActive: true,
-      membershipTierId: diamondTier.id,
+      membershipTiers: { connect: [{ id: diamondTier.id }] },
     },
   });
 

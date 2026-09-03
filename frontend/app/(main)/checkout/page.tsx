@@ -25,28 +25,34 @@ interface Address {
 export default function CheckoutPage() {
   const { cartItems, currentBranchId, clearCart, isLoaded, appliedVoucher, setVoucher, discountAmount, getCartItemTotal, refreshQuotas } = useCart();
   const router = useRouter();
-  
+
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   const [user, setUser] = useState<any>(null);
-  
+  const [settings, setSettings] = useState<Record<string, any>>({});
+
   const [note, setNote] = useState('');
   const [deliveryDay, setDeliveryDay] = useState<'today' | 'tomorrow'>('today');
   const [deliveryTime, setDeliveryTime] = useState<string>('');
-  
+
   const [isInvoiceRequested, setIsInvoiceRequested] = useState(false);
   const [vatData, setVatData] = useState<any>(null);
-  
+
   const [paymentMethod, setPaymentMethod] = useState('SEPAY');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
+
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
   const [isVatModalOpen, setIsVatModalOpen] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
 
+  // Tính toán Tạm tính (Subtotal) cho UI hiển thị
   const subTotal = cartItems.reduce((acc, item) => acc + getCartItemTotal(item), 0);
-  const shippingFee = 15000;
+
+  const baseShippingFee = Number(settings.delivery_fee || 0);
+  const deliveryMinFree = Number(settings.delivery_min_free || 0);
+  const shippingFee = subTotal >= deliveryMinFree ? 0 : baseShippingFee;
+
   const totalAmount = Math.max(0, subTotal - (discountAmount || 0)) + shippingFee;
   const pointEarned = Math.floor(totalAmount * 0.01); // 1% points
 
@@ -67,7 +73,19 @@ export default function CheckoutPage() {
         console.error('Failed to fetch user', e);
       }
     };
+    const fetchSettings = async () => {
+      try {
+        const res = await fetch('/api/home/settings');
+        if (res.ok) {
+          const data = await res.json();
+          setSettings(data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch settings', e);
+      }
+    };
     fetchUser();
+    fetchSettings();
   }, []);
 
   const fetchAddresses = async () => {
@@ -104,12 +122,12 @@ export default function CheckoutPage() {
       toast.error('Vui lòng chọn địa chỉ giao hàng');
       return;
     }
-    
+
     setIsSubmitting(true);
     const loadingToast = toast.loading('Đang xử lý đơn hàng...');
     try {
       const fullNote = deliveryTime ? `[Giao lúc: ${deliveryTime} ${deliveryDay === 'today' ? 'Hôm nay' : 'Ngày mai'}] ${note}` : note;
-      
+
       const payload = {
         addressId: selectedAddressId,
         branchId: currentBranchId,
@@ -160,7 +178,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen bg-[#f5f6f8] pb-24 lg:pb-12 font-sans text-slate-800">
-      
+
       {/* Header Mobile */}
       <div className="lg:hidden bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="flex items-center px-4 h-14">
@@ -173,18 +191,18 @@ export default function CheckoutPage() {
 
       <div className="container mx-auto px-0 sm:px-4 py-0 sm:py-8 max-w-6xl">
         <div className="flex flex-col lg:flex-row gap-4 sm:gap-6">
-          
+
           {/* LEFT COLUMN */}
           <div className="w-full lg:w-[65%] space-y-4 sm:space-y-6">
-            
+
             {/* THÔNG TIN GIAO HÀNG */}
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60">
               <h2 className="flex items-center text-base font-bold text-slate-800 mb-4">
-                <MapPin className="mr-2 text-[#da251d]" size={20} /> 
+                <MapPin className="mr-2 text-[#da251d]" size={20} />
                 Thông tin giao hàng
               </h2>
-              
-              <div 
+
+              <div
                 onClick={() => setIsAddressModalOpen(true)}
                 className="flex items-center justify-between p-3 sm:p-4 bg-red-50/30 border border-red-100 rounded-xl cursor-pointer hover:bg-red-50 transition-colors"
               >
@@ -210,15 +228,15 @@ export default function CheckoutPage() {
               <h2 className="flex items-center text-base font-bold text-slate-800 mb-4">
                 Thời gian nhận hàng
               </h2>
-              
+
               <div className="flex bg-slate-50 p-1 rounded-lg border border-slate-200 mb-4">
-                <button 
+                <button
                   onClick={() => setDeliveryDay('today')}
                   className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${deliveryDay === 'today' ? 'bg-white text-[#da251d] shadow-sm' : 'text-slate-500'}`}
                 >
                   Hôm nay ({formatDay(today)})
                 </button>
-                <button 
+                <button
                   onClick={() => setDeliveryDay('tomorrow')}
                   className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${deliveryDay === 'tomorrow' ? 'bg-white text-[#da251d] shadow-sm' : 'text-slate-500'}`}
                 >
@@ -230,7 +248,7 @@ export default function CheckoutPage() {
                 Không có khung giờ trống. (Giao càng sớm càng tốt)
               </div>
 
-              <textarea 
+              <textarea
                 rows={2}
                 value={note}
                 onChange={e => setNote(e.target.value)}
@@ -243,12 +261,12 @@ export default function CheckoutPage() {
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60">
               <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
                 <h2 className="flex items-center text-base font-bold text-slate-800">
-                  <Store className="mr-2 text-[#da251d]" size={20} /> 
+                  <Store className="mr-2 text-[#da251d]" size={20} />
                   Sushi Wa - Tầng B1 Gigamall Thủ Đức
                 </h2>
                 <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded-md font-medium">{cartItems.length} món</span>
               </div>
-              
+
               <div className="space-y-4">
                 {cartItems.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="flex gap-4">
@@ -291,7 +309,7 @@ export default function CheckoutPage() {
             </div>
 
             {/* YÊU CẦU XUẤT HÓA ĐƠN */}
-            <div 
+            <div
               onClick={() => setIsVatModalOpen(true)}
               className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors"
             >
@@ -309,15 +327,15 @@ export default function CheckoutPage() {
 
           {/* RIGHT COLUMN */}
           <div className="w-full lg:w-[35%] space-y-4 sm:space-y-6">
-            
+
             {/* ƯU ĐÃI */}
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60">
               <h2 className="flex items-center text-base font-bold text-slate-800 mb-4">
-                <Gift className="mr-2 text-amber-500" size={20} /> 
+                <Gift className="mr-2 text-amber-500" size={20} />
                 Ưu đãi & Điểm thưởng
               </h2>
-              
-              <div 
+
+              <div
                 onClick={() => setIsVoucherModalOpen(true)}
                 className="flex items-center justify-between p-3 bg-amber-50/50 border border-amber-100 rounded-xl cursor-pointer hover:bg-amber-50 transition-colors"
               >
@@ -341,11 +359,11 @@ export default function CheckoutPage() {
             {/* THANH TOÁN */}
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60">
               <h2 className="flex items-center text-base font-bold text-slate-800 mb-4">
-                <CreditCard className="mr-2 text-emerald-600" size={20} /> 
+                <CreditCard className="mr-2 text-emerald-600" size={20} />
                 Phương thức thanh toán
               </h2>
-              
-              <div 
+
+              <div
                 onClick={() => setIsPaymentModalOpen(true)}
                 className="flex items-center justify-between p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition-colors"
               >
@@ -374,10 +392,10 @@ export default function CheckoutPage() {
             {/* SUMMARY */}
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60 lg:sticky lg:top-24">
               <h2 className="flex items-center text-base font-bold text-slate-800 mb-4 border-b border-slate-100 pb-4">
-                <Receipt className="mr-2 text-slate-600" size={20} /> 
+                <Receipt className="mr-2 text-slate-600" size={20} />
                 Chi tiết thanh toán
               </h2>
-              
+
               <div className="space-y-3 text-sm mb-6">
                 <div className="flex justify-between text-slate-500">
                   <span>Tạm tính ({cartItems.length} món):</span>
@@ -399,13 +417,13 @@ export default function CheckoutPage() {
                 <span className="font-bold text-slate-800 text-lg">Tổng cộng:</span>
                 <span className="font-black text-2xl text-[#da251d]">{totalAmount.toLocaleString('vi-VN')}đ</span>
               </div>
-              
+
               <div className="flex items-center justify-end gap-1 text-[11px] text-amber-600 font-medium mb-6 italic">
                 <div className="w-3 h-3 bg-amber-400 rounded-full flex items-center justify-center text-white text-[8px] not-italic">V</div>
                 Tích lũy {pointEarned.toLocaleString('vi-VN')} điểm khi đơn hàng hoàn tất!
               </div>
 
-              <button 
+              <button
                 onClick={handlePlaceOrder}
                 disabled={isSubmitting}
                 className="w-full bg-[#da251d] hover:bg-[#b91c2c] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#da251d]/20 transition-all active:scale-[0.98] disabled:opacity-70 disabled:scale-100 flex items-center justify-center gap-2"
@@ -420,8 +438,8 @@ export default function CheckoutPage() {
       {isAddressModalOpen && (
         <AddressModal onClose={() => setIsAddressModalOpen(false)} onSuccess={() => fetchAddresses()} />
       )}
-      
-      <CheckoutVoucherModal 
+
+      <CheckoutVoucherModal
         isOpen={isVoucherModalOpen}
         onClose={() => setIsVoucherModalOpen(false)}
         orderValue={subTotal}
@@ -430,11 +448,11 @@ export default function CheckoutPage() {
           // Get the discount API recalculation done inside CartContext or handled locally.
           // Since CartContext setVoucher requires (voucher, discount), we need to fetch it or compute it.
           // Wait, CartContext's useEffect auto-computes discountAmount! We just need to pass the voucher.
-          setVoucher(v, 0); 
+          setVoucher(v, 0);
         }}
       />
 
-      <VATInvoiceModal 
+      <VATInvoiceModal
         isOpen={isVatModalOpen}
         onClose={() => setIsVatModalOpen(false)}
         initialData={vatData}
@@ -451,17 +469,17 @@ export default function CheckoutPage() {
           <div className="relative bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0 duration-300">
             <div className="p-4 border-b border-slate-100 flex justify-between items-center">
               <h3 className="font-bold text-lg">Chọn phương thức thanh toán</h3>
-              <button onClick={() => setIsPaymentModalOpen(false)}><X size={20}/></button>
+              <button onClick={() => setIsPaymentModalOpen(false)}><X size={20} /></button>
             </div>
             <div className="p-4 space-y-3">
-              <div onClick={() => { setPaymentMethod('SEPAY'); setIsPaymentModalOpen(false); }} className={`p-4 border rounded-xl flex items-center justify-between cursor-pointer ${paymentMethod==='SEPAY'?'border-[#da251d] bg-red-50/20':'border-slate-200'}`}>
+              <div onClick={() => { setPaymentMethod('SEPAY'); setIsPaymentModalOpen(false); }} className={`p-4 border rounded-xl flex items-center justify-between cursor-pointer ${paymentMethod === 'SEPAY' ? 'border-[#da251d] bg-red-50/20' : 'border-slate-200'}`}>
                 <div className="flex gap-3 items-center">
                   <div className="text-[#005BAA] font-black text-sm italic">SePay</div>
                   <span className="font-bold">Chuyển khoản QR (SePay)</span>
                 </div>
                 {paymentMethod === 'SEPAY' && <CheckCircle2 className="text-[#da251d]" size={20} />}
               </div>
-              <div onClick={() => { setPaymentMethod('COD'); setIsPaymentModalOpen(false); }} className={`p-4 border rounded-xl flex items-center justify-between cursor-pointer ${paymentMethod==='COD'?'border-[#da251d] bg-red-50/20':'border-slate-200'}`}>
+              <div onClick={() => { setPaymentMethod('COD'); setIsPaymentModalOpen(false); }} className={`p-4 border rounded-xl flex items-center justify-between cursor-pointer ${paymentMethod === 'COD' ? 'border-[#da251d] bg-red-50/20' : 'border-slate-200'}`}>
                 <div className="flex gap-3 items-center">
                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-xs font-bold">COD</div>
                   <span className="font-bold">Tiền mặt khi nhận hàng</span>

@@ -115,6 +115,7 @@ export class PromotionService {
   }
 
   async getVouchers(userId?: string) {
+    const now = new Date();
     let userTierId: string | null = null;
     let userOrderCount = 0;
 
@@ -133,6 +134,13 @@ export class PromotionService {
       where: {
         isActive: true,
         isPublic: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+        // Chỉ lấy những voucher không yêu cầu hạng thẻ HOẶC yêu cầu đúng hạng thẻ của user này
+        OR: [
+          { membershipTiers: { none: {} } },
+          ...(userTierId ? [{ membershipTiers: { some: { id: userTierId } } }] : [])
+        ]
       }
     });
 
@@ -156,7 +164,8 @@ export class PromotionService {
   async applyVoucher(code: string, orderValue: number, userId?: string, shippingFee: number = 0) {
     const now = new Date();
     const voucher = await this.prisma.voucher.findUnique({
-      where: { code }
+      where: { code },
+      include: { membershipTiers: true }
     });
 
     if (!voucher) {
@@ -192,12 +201,12 @@ export class PromotionService {
     }
 
     // Check membership tier if required
-    if (voucher.membershipTierId && userId) {
+    if (voucher.membershipTiers && voucher.membershipTiers.length > 0 && userId) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
-      if (user?.membershipTierId !== voucher.membershipTierId) {
+      if (!voucher.membershipTiers.some((t: any) => t.id === user?.membershipTierId)) {
         throw new BadRequestException('Bạn không đủ điều kiện hạng thẻ để sử dụng mã này');
       }
-    } else if (voucher.membershipTierId && !userId) {
+    } else if (voucher.membershipTiers && voucher.membershipTiers.length > 0 && !userId) {
         throw new BadRequestException('Vui lòng đăng nhập để sử dụng mã khuyến mãi này');
     }
 

@@ -1086,7 +1086,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
             code: { equals: cleanCode },
             isActive: true,
           },
-          include: { membershipTier: true }
+          include: { membershipTiers: true }
         });
 
         // 2. If not found, try search by keyword / tier name / title
@@ -1098,10 +1098,10 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
                 { code: { contains: cleanCode } },
                 { title: { contains: cleanCode } },
                 { description: { contains: cleanCode } },
-                { membershipTier: { name: { contains: cleanCode } } }
+                { membershipTiers: { some: { name: { contains: cleanCode } } } }
               ]
             },
-            include: { membershipTier: true }
+            include: { membershipTiers: true }
           });
         }
       }
@@ -1113,7 +1113,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
             isActive: true,
             isPublic: true,
           },
-          include: { membershipTier: true }
+          include: { membershipTiers: true }
         });
       }
 
@@ -1143,13 +1143,13 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
         }
 
         // Check membership tier
-        else if (v.membershipTierId) {
+        else if (v.membershipTiers && v.membershipTiers.length > 0) {
           if (!user) {
             reasonCode = 'LOGIN_REQUIRED';
-            reasonMessage = `Mã dành cho Hạng ${v.membershipTier?.name || 'thành viên'}. Vui lòng đăng nhập để sử dụng.`;
-          } else if (!user.membershipTier || user.membershipTier.minSpending < (v.membershipTier?.minSpending || 0)) {
+            reasonMessage = 'Vui lòng đăng nhập để kiểm tra hạng thành viên.';
+          } else if (!v.membershipTiers.some((t: any) => t.id === user.membershipTierId)) {
             reasonCode = 'TIER_NOT_MET';
-            reasonMessage = `Chỉ áp dụng cho Hạng ${v.membershipTier?.name} trở lên (Bạn đang ở hạng ${user.membershipTier?.name || 'Mới'}).`;
+            reasonMessage = `Không áp dụng cho hạng thành viên của bạn.`;
           }
         }
 
@@ -1179,7 +1179,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           maxDiscount: v.maxDiscount,
           minOrderValue: v.minOrderValue,
           endDate: v.endDate,
-          membershipTier: v.membershipTier?.name,
+          membershipTier: v.membershipTiers && v.membershipTiers.length > 0 ? v.membershipTiers.map((t: any) => t.name).join(', ') : null,
           isEligible: !reasonCode,
           reasonCode,
           reasonMessage

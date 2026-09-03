@@ -14,4 +14,9 @@ export class HomeController {
   async getBranches() {
     return this.homeService.getBranches();
   }
+
+  @Get('settings')
+  async getSettings() {
+    return this.homeService.getSettings();
+  }
 }

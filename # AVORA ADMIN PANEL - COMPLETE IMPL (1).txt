@@ -1,0 +1,692 @@
+# AVORA ADMIN PANEL — COMPLETE IMPLEMENTATION PLAN
+
+Mục tiêu: Xây dựng Admin Panel chuyên nghiệp cho Avora với RBAC + Permission + Branch-based Access, bảo mật toàn bộ Admin API ở Backend và giao diện responsive Desktop/Mobile.
+
+## 1. ROLE & PERMISSION
+
+Roles hiện tại:
+
+- ADMIN: Toàn quyền hệ thống, xem tất cả chi nhánh hoặc từng chi nhánh, quản lý Users/Roles/Branches, Orders, Products, Categories, Promotions, Settings.
+- MANAGER: Chỉ quản lý branch được gán qua `User.branchId`, không được xem branch khác hoặc `ALL`.
+- CHEF: Chỉ hoạt động trong branch được gán, chủ yếu xem Orders, Order Details và cập nhật trạng thái liên quan đến bếp.
+- USER: Không được truy cập Admin Panel/Admin API.
+
+Thiết kế Permission theo:
+
+`Role → Permissions → API/UI`
+
+Permissions có thể gồm:
+
+`dashboard.view`, `reports.view`, `users.view`, `users.update`, `orders.view`, `orders.update`, `orders.update_status`, `products.view`, `products.create`, `products.update`, `products.delete`, `categories.view`, `categories.create`, `categories.update`, `categories.delete`, `promotions.view`, `promotions.create`, `promotions.update`, `promotions.delete`, `settings.view`, `settings.update`.
+
+ADMIN có toàn bộ permissions. MANAGER/CHEF chỉ có permissions phù hợp.
+
+Frontend chỉ dùng Permission để điều khiển UI; Backend luôn phải kiểm tra lại Permission và Role.
+
+## 2. BACKEND SECURITY
+
+Kiến trúc:
+
+`JWT → JwtAuthGuard → RolesGuard → Permission Guard/Policy → BranchAccessPolicy → Controller → Service → Prisma`
+
+- `JwtAuthGuard`: xác thực JWT.
+- `RolesGuard`: kiểm tra Role.
+- `Permission Guard/Policy`: kiểm tra Permission.
+- `BranchAccessPolicy`: kiểm soát phạm vi dữ liệu theo branch.
+
+Branch rules:
+
+- ADMIN + `ALL` → xem toàn hệ thống.
+- ADMIN + branch cụ thể → chỉ xem branch đó.
+- MANAGER → luôn bị giới hạn bởi `user.branchId`.
+- CHEF → luôn bị giới hạn bởi `user.branchId`.
+- USER → không được gọi Admin API.
+
+Không bao giờ tin `branchId` từ Frontend. Nếu Manager/Chef gửi `?branchId=OTHER_BRANCH`, Backend phải bỏ qua/ghi đè bằng `user.branchId`.
+
+Tạo `BranchAccessPolicy` dùng chung cho toàn bộ Admin Services, không copy logic branch filtering ở từng Controller.
+
+## 3. ADMIN FRONTEND STRUCTURE
+
+Tạo Admin Panel riêng:
+
+`frontend/app/(admin)/`
+
+- `layout.tsx`
+- `dashboard/page.tsx`
+- `users/page.tsx`
+- `orders/page.tsx`
+- `products/page.tsx`
+- `categories/page.tsx`
+- `promotions/page.tsx`
+- `settings/page.tsx`
+
+Components:
+
+- `AdminSidebar`
+- `AdminHeader`
+- `BranchSelector`
+- `DataTable`
+- `StatCard`
+- `PermissionGate`
+- `ConfirmDialog`
+- `EmptyState`
+
+Context:
+
+`AdminContext.tsx`
+
+Quản lý:
+
+- currentUser
+- role
+- permissions
+- selectedBranchId
+- availableBranches
+- loading state
+
+ADMIN mặc định `selectedBranchId = ALL`.
+
+MANAGER/CHEF bắt buộc `selectedBranchId = user.branchId`, không cho thay đổi.
+
+Đồng bộ branch với URL, ví dụ:
+
+`/admin/dashboard?branch=abc`
+
+để refresh, Back/Forward và bookmark không làm mất branch state.
+
+## 4. ADMIN LAYOUT
+
+Desktop:
+
+- Sidebar.
+- Header.
+- Branch Selector.
+- User Profile.
+- Notification.
+- Main Content.
+
+Mobile:
+
+- Compact Header.
+- Sidebar Drawer.
+- Touch-friendly controls.
+- Responsive cards.
+- DataTable có horizontal scroll.
+- Không để giao diện Admin quá rộng trên mobile.
+
+Sidebar và các action phải tự động ẩn dựa trên Permission.
+
+Ví dụ không có `products.create` thì không hiển thị nút Create Product.
+
+## 5. USER MANAGEMENT
+
+Route:
+
+`/admin/users`
+
+Không dùng `/admin/roles` làm trang quản lý chính vì trang này thực chất quản lý User + Role + Branch.
+
+Features:
+
+- Search theo Name/Email/Phone.
+- Pagination.
+- Role Badge.
+- Branch Badge.
+- Status.
+- Manage User.
+
+API:
+
+`GET /api/admin/users`
+
+`GET /api/admin/users/:id`
+
+`PATCH /api/admin/users/:id/role`
+
+Payload:
+
+`{ role: 'MANAGER', branchId: 'abc' }`
+
+Rules:
+
+- MANAGER → bắt buộc `branchId`.
+- CHEF → bắt buộc `branchId`.
+- ADMIN → branch có thể NULL.
+- USER → branch có thể NULL.
+- Chỉ ADMIN được thay đổi Role/Branch.
+
+Backend phải validate toàn bộ, không chỉ Frontend.
+
+## 6. DASHBOARD
+
+Route:
+
+`/admin/dashboard`
+
+API:
+
+`GET /api/admin/dashboard/stats`
+
+Query:
+
+- `branchId`
+- `from`
+- `to`
+
+Ví dụ:
+
+`/api/admin/dashboard/stats?branchId=abc&from=2026-08-01&to=2026-08-25`
+
+Dashboard gồm:
+
+- Total Revenue.
+- Total Orders.
+- Completed Orders.
+- Cancelled Orders.
+- Total Customers.
+- Average Order Value.
+- Top Products.
+- Revenue By Day.
+- Orders By Status.
+- Recent Orders.
+- Branch comparison dành cho ADMIN.
+
+Không lấy toàn bộ Orders về Frontend để tự tính; ưu tiên Prisma/database aggregation.
+
+## 7. ORDERS
+
+Route:
+
+`/admin/orders`
+
+API:
+
+`GET /api/admin/orders`
+
+Filters:
+
+- branchId
+- status
+- paymentStatus
+- dateFrom
+- dateTo
+- search
+- page
+- limit
+
+Table:
+
+- Order Code.
+- Customer.
+- Branch.
+- Total.
+- Payment.
+- Status.
+- Created At.
+- Actions.
+
+Order Detail:
+
+- Customer.
+- Items.
+- Quantity.
+- Price.
+- Discount.
+- Voucher.
+- Payment.
+- Branch.
+- Timeline.
+- Status.
+
+CHEF chỉ được thực hiện các thao tác liên quan đến quyền của bếp.
+
+## 8. PRODUCTS
+
+Route:
+
+`/admin/products`
+
+Features:
+
+- List.
+- Search.
+- Category Filter.
+- Branch Filter.
+- Create.
+- Update.
+- Delete.
+- Enable/Disable.
+
+Trước khi viết Prisma query phải kiểm tra chính xác Prisma Schema và relation hiện tại. Không tự giả định Product quan hệ trực tiếp với Branch nếu thực tế sử dụng bảng trung gian.
+
+## 9. CATEGORIES
+
+Route:
+
+`/admin/categories`
+
+Features:
+
+- List.
+- Create.
+- Update.
+- Delete.
+- Sort Order.
+- Active/Inactive.
+
+Permissions:
+
+`categories.view`
+
+`categories.create`
+
+`categories.update`
+
+`categories.delete`
+
+## 10. PROMOTIONS / FLASH SALE / VOUCHER
+
+Route:
+
+`/admin/promotions`
+
+Quản lý:
+
+- Promotions.
+- Flash Sale.
+- Voucher.
+
+Features:
+
+- CRUD.
+- Activate/Deactivate.
+- Start/End Time.
+- Usage Limit.
+- Branch Scope.
+
+Backend phải validate Discount, Date, Product, Branch và Usage Limit.
+
+## 11. SETTINGS
+
+Route:
+
+`/admin/settings`
+
+Quản lý:
+
+- Restaurant Information.
+- Branch Information.
+- Opening Hours.
+- Delivery Radius.
+- Payment Settings.
+- System Settings.
+
+Settings nhạy cảm chỉ ADMIN được chỉnh sửa.
+
+## 12. API STRUCTURE
+
+Tất cả Admin API dùng prefix:
+
+`/api/admin`
+
+Ví dụ:
+
+- `/api/admin/dashboard/stats`
+- `/api/admin/users`
+- `/api/admin/orders`
+- `/api/admin/products`
+- `/api/admin/categories`
+- `/api/admin/promotions`
+- `/api/admin/settings`
+
+Không trộn Admin API với Client API.
+
+Các API danh sách phải hỗ trợ:
+
+`page`, `limit`, `search`, `sort`, `order`
+
+Response chuẩn:
+
+`{ data: [], meta: { page, limit, total, totalPages } }`
+
+Không load toàn bộ database lên Frontend.
+
+## 13. VALIDATION & ERROR HANDLING
+
+Backend dùng DTO validation.
+
+Validate:
+
+- ID/UUID.
+- Role.
+- Branch.
+- Permission.
+- Date.
+- Number.
+- Pagination.
+
+HTTP:
+
+- 400 → Validation Error.
+- 401 → Unauthorized.
+- 403 → Forbidden.
+- 404 → Not Found.
+
+Không expose stack trace hoặc sensitive information.
+
+## 14. AUDIT LOG
+
+Chuẩn bị Audit Log cho các thao tác quan trọng:
+
+- Change Role.
+- Change Branch.
+- Delete Product.
+- Update Order.
+- Change Promotion.
+- Change Settings.
+
+Lưu:
+
+- User.
+- Action.
+- Target.
+- Old Value.
+- New Value.
+- Created At.
+- IP nếu cần.
+
+## 15. UI/UX
+
+Phong cách:
+
+- Premium.
+- Modern.
+- Clean.
+- Professional.
+- Restaurant Management.
+- Responsive.
+- Desktop-first nhưng mobile-friendly.
+
+Không sử dụng emoji lỗi thời trong UI.
+
+Ưu tiên icon library hiện có như Font Awesome/Lucide.
+
+Có:
+
+- Loading Skeleton.
+- Empty State.
+- Error State.
+- Toast.
+- Confirmation Dialog.
+- Consistent Typography.
+- Clear hierarchy.
+- Clean Data Tables.
+- Responsive Cards.
+
+Không over-design; ưu tiên tốc độ và khả năng sử dụng.
+
+## 16. PERFORMANCE
+
+Frontend:
+
+- Pagination.
+- Debounced Search.
+- Lazy Loading.
+- Cache phù hợp.
+- Tránh API call dư thừa.
+
+Backend:
+
+- Prisma `select` field cần thiết.
+- Pagination.
+- Database indexes cho các field thường query.
+- Không query toàn bộ relation nếu không cần.
+- Database aggregation cho Dashboard.
+
+## 17. PHASE 1 — FOUNDATION & SECURITY
+
+Trước tiên:
+
+1. Kiểm tra Prisma Schema hiện tại.
+2. Kiểm tra User/Role/Branch relation.
+3. Xác định Permission architecture.
+4. Tạo Roles Decorator.
+5. Tạo RolesGuard.
+6. Tạo Permission Guard/Policy.
+7. Tạo BranchAccessPolicy.
+8. Tạo Admin API structure.
+9. Tạo API lấy Branches.
+10. Tạo Users API.
+11. Tạo Change Role/Branch API.
+12. Test ADMIN/MANAGER/CHEF/USER.
+
+Không xây Dashboard trước khi Security Foundation hoạt động.
+
+## 18. PHASE 2 — ADMIN FRONTEND FOUNDATION
+
+1. Tạo `(admin)` route group.
+2. Tạo Admin Layout.
+3. Tạo Sidebar.
+4. Tạo Header.
+5. Tạo BranchSelector.
+6. Tạo AdminContext.
+7. Đồng bộ branch với URL.
+8. Tạo PermissionGate.
+9. Tạo Loading/Error/Empty states.
+10. Responsive Mobile Admin.
+
+## 19. PHASE 3 — USER MANAGEMENT
+
+1. `/admin/users`
+2. DataTable.
+3. Search.
+4. Pagination.
+5. Role Badge.
+6. Branch Badge.
+7. Manage User Modal.
+8. Change Role.
+9. Change Branch.
+10. Confirmation Dialog.
+11. Permission validation.
+12. Toast notification.
+
+## 20. PHASE 4 — DASHBOARD
+
+1. Dashboard API.
+2. Branch filtering.
+3. Date filtering.
+4. Revenue.
+5. Orders.
+6. Customers.
+7. Top Products.
+8. Charts.
+9. Recent Orders.
+10. Responsive UI.
+
+## 21. PHASE 5 — ORDERS
+
+1. Orders API.
+2. Pagination.
+3. Search.
+4. Branch Filter.
+5. Status Filter.
+6. Date Filter.
+7. Orders Table.
+8. Order Detail.
+9. Status Update.
+10. Permission Validation.
+11. Chef-specific access.
+
+## 22. PHASE 6 — PRODUCTS & CATEGORIES
+
+1. Products API.
+2. Categories API.
+3. Product Table.
+4. Create.
+5. Edit.
+6. Delete.
+7. Branch Assignment.
+8. Category Management.
+9. Permission Control.
+
+## 23. PHASE 7 — PROMOTIONS
+
+Implement:
+
+- Promotions.
+- Flash Sale.
+- Voucher.
+- CRUD.
+- Branch Scope.
+- Date Validation.
+- Activation.
+- Permission Control.
+
+## 24. PHASE 8 — REPORTS / SETTINGS / AUDIT
+
+Reports:
+
+- Revenue.
+- Orders.
+- Products.
+- Customers.
+- Branch Performance.
+
+Settings:
+
+- Restaurant.
+- Branch.
+- Opening Hours.
+- Delivery.
+- Payment.
+- System.
+
+Hoàn thiện Audit Log và các quyền quản trị nâng cao.
+
+## 25. SECURITY TEST MATRIX
+
+ADMIN:
+
+- ALL Branches.
+- Specific Branch.
+- User Management.
+- Full Permissions.
+
+MANAGER:
+
+- Own Branch.
+- Attempt Other Branch.
+- Attempt ALL.
+- Attempt User Management.
+- Order Access.
+
+CHEF:
+
+- Own Branch.
+- Attempt Other Branch.
+- Attempt User Management.
+- Order Access.
+- Status Update.
+
+USER:
+
+- Attempt `/admin`.
+- Attempt Admin API.
+- Attempt Role API.
+
+Bắt buộc kiểm tra:
+
+`MANAGER + branchId=OTHER → Backend vẫn chỉ trả dữ liệu OWN branch`
+
+`CHEF + branchId=OTHER → Backend vẫn chỉ trả dữ liệu OWN branch`
+
+`USER → /api/admin/orders → 401/403`
+
+`MANAGER → PATCH /api/admin/users/:id/role → 403`
+
+## 26. IMPLEMENTATION RULES
+
+- Không phá code hiện tại.
+- Không đổi API đang hoạt động nếu không cần.
+- Không thay đổi Prisma Schema tùy tiện.
+- Kiểm tra Schema trước khi viết Prisma query.
+- Backend Security phải làm trước Frontend UI.
+- Không tin Role/Permission/Branch từ Frontend.
+- Không duplicate Branch filtering logic.
+- Tái sử dụng Guard/Policy/DTO/Components.
+- TypeScript type-safe.
+- Hạn chế `any`.
+- Không tạo file trùng chức năng.
+- Không tạo code thừa.
+- Sau mỗi Phase phải test trước khi sang Phase tiếp theo.
+- Nếu phát hiện vấn đề trong Schema hiện tại, báo rõ nguyên nhân và đề xuất thay đổi trước khi migration.
+
+## FINAL ARCHITECTURE
+
+Frontend:
+
+Next.js
+→ Client
+→ Admin Panel
+   → Dashboard
+   → Users
+   → Orders
+   → Products
+   → Categories
+   → Promotions
+   → Settings
+
+Backend:
+
+NestJS
+→ Authentication
+→ Admin
+   → Dashboard
+   → Users
+   → Orders
+   → Products
+   → Categories
+   → Promotions
+   → Settings
+→ RolesGuard
+→ Permission Guard/Policy
+→ BranchAccessPolicy
+→ Prisma
+
+Security Flow:
+
+JWT
+↓
+Role
+↓
+Permission
+↓
+Branch Access
+↓
+Service
+↓
+Prisma
+
+## STARTING POINT
+
+Không bắt đầu bằng Dashboard/UI.
+
+Bắt đầu theo thứ tự:
+
+Security Foundation
+→ Branch Access
+→ Permission
+→ Admin Layout
+→ User Management
+→ Dashboard
+→ Orders
+→ Products/Categories
+→ Promotions/Flash Sale/Voucher
+→ Reports/Settings/Audit Log
+
+Ưu tiên:
+
+SECURITY > DATA ISOLATION > CORRECTNESS > PERFORMANCE > UI/UX.
+
+Hãy bắt đầu bằng việc kiểm tra Prisma Schema và cấu trúc Backend hiện tại của Avora. Không tự ý tạo migration hoặc thay đổi database trước khi xác định chính xác Schema và các relation hiện có. Sau khi kiểm tra xong mới triển khai Phase 1.

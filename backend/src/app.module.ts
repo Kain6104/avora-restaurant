@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { MembershipModule } from './membership/membership.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,9 +12,10 @@ import { OrderModule } from './order/order.module';
 import { NotificationModule } from './notification/notification.module';
 import { PromotionModule } from './promotion/promotion.module';
 import { ChatbotModule } from './chatbot/chatbot.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
-  imports: [PrismaModule, HomeModule, CategoryModule, ProductModule, AuthModule, AddressModule, OrderModule, NotificationModule, PromotionModule, ChatbotModule],
+  imports: [PrismaModule, HomeModule, CategoryModule, ProductModule, AuthModule, AddressModule, OrderModule, NotificationModule, PromotionModule, ChatbotModule, AdminModule, MembershipModule],
   controllers: [AppController],
   providers: [AppService],
 })

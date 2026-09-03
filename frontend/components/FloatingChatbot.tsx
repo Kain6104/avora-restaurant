@@ -1225,6 +1225,10 @@ export function FloatingChatbot() {
     return null;
   }
 
+  if (pathname.startsWith('/admin')) {
+    return null;
+  }
+
   return (
     <>
       {isDragging && (

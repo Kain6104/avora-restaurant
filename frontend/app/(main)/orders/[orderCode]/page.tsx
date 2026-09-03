@@ -332,6 +332,12 @@ export default function OrderDetailPage() {
                     <span>-{new Intl.NumberFormat('vi-VN').format(order.discountAmount)}đ</span>
                   </div>
                 )}
+                {order.pointsAwarded > 0 && (
+                  <div className="flex justify-between items-center text-amber-600 text-sm font-medium">
+                    <span>Điểm tích lũy nhận được</span>
+                    <span className="flex items-center gap-1 font-bold">+{order.pointsAwarded} điểm</span>
+                  </div>
+                )}
               </div>
 
               <div className="border-t border-slate-200 border-dashed pt-4 mb-6 flex justify-between items-end">

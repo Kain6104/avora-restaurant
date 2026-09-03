@@ -1,0 +1,62 @@
+ADMIN PANEL:
+- phân side bar menu ra thành các khu khác nhau 
+- bổ sung thêm danh mục mới, trạng thái bán/ không bán  tại phần thêm món ăn mới
+- bổ sung chọn món ăn để bán flash sale , 
+- thêm bộ lọc thời gian cho dashboard, báo cáo, chia thêm trang để quản lý riêng
+- bổ sung trang chi tiết  khách hàng thể hiện đầy đủ các trường của khách hàng trong database /admin/customers/user1,... (gộp chung phần phân quyền vào chi tiết user)
+- bổ sung trang chi tiết đơn hàng /admin/orders/orderCode,... trong chi tiết đơn hàng có hiển thị khách có yêu cầu xuất hóa đơn VAT không, thông tin hóa đơn VAT,
+- bổ sung thêm khách hàng thủ công cho admin
+- bổ sung trang quản lý thẻ thành viên
+- Tách vouchers, flash sale, combo ra mỗi cái 1 trang 
+- Bổ sung trang thêm/ xóa/ sửa danh sách chi nhánh (có nhúng bản đồ leaflet để lấy tọa độ nhà hàng) 
+TẠO TRANG RIÊNG ĐỂ THÊM XÓA SỬA MÓN ĂN PHẢI ĐẦY ĐỦ TẤT CẢ CÁC PHẦN TRONG BẢNG Product:
+model Product {
+  id          String  @id @default(uuid())
+  itemCode    String  @unique
+  name        String
+  slug        String  @unique
+  description String? @db.Text
+  post        String? @db.Text
+
+  // Giá cả & Khuyến mãi
+  price                Float
+  oldPrice             Float?
+  discountedPrice      Float?
+  flashSalePrice       Float?
+  unit                 String? @default("phần")
+  taxPercentage        Float   @default(0.0)
+  isTaxIncludedInPrice Boolean @default(true)
+  badge                String?
+
+  // Media
+  imageUrl String?
+  videoUrl String? @db.Text
+
+  // Trạng thái & Thống kê
+  available       Boolean @default(true)
+  isBestSeller    Boolean @default(false)
+  isAiRecommended Boolean @default(false)
+  avgRating       Float   @default(0.0)
+  soldQuantity    Int     @default(0)
+  
+  // Thuộc tính hiển thị chi tiết món ăn
+  spiciness       Int     @default(0) // Mức độ cay: 0, 1, 2, 3...
+  targetAudience  String? @default("Mọi lứa tuổi") // VD: Mọi lứa tuổi, Người lớn...
+
+  // Đổi điểm thưởng
+  isRedeemable     Boolean @default(false)
+  redemptionPoints Int?
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  // Quan hệ phức tạp
+  branches     Branch[]      @relation("ProductToBranch")
+  favoritedBy  User[]        @relation("UserFavoriteItems")
+  optionGroups OptionGroup[] // Liên kết món ăn thêm, topping
+  orderItems   OrderItem[]
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  FlashSaleItem FlashSaleItem[]
+}
