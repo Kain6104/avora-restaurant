@@ -509,7 +509,7 @@ export default function Header({ initialCategories = [], initialBranches = [] }:
 
             {branchModalProduct && (
               <div className="p-4 bg-slate-50 border-b border-slate-100 flex gap-4">
-                <img src={branchModalProduct.imageUrl || branchModalProduct.image || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-20 h-20 rounded-xl object-cover shadow-sm" />
+                <img src={branchModalProduct.imageUrl || branchModalProduct.image || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'} className="w-20 h-20 rounded-xl object-cover shadow-sm" />
                 <div className="flex flex-col justify-center">
                   <h4 className="font-bold text-slate-900 text-lg leading-tight mb-1 line-clamp-2">{branchModalProduct.name}</h4>
                   <div className="text-red-600 font-bold text-lg">{(branchModalProduct.flashSalePrice || branchModalProduct.price).toLocaleString('vi-VN')}đ</div>

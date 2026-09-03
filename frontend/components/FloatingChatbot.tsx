@@ -120,7 +120,13 @@ export function FloatingChatbot() {
 
   useEffect(() => {
     cartItemsRef.current = cartItems;
-  }, [cartItems]);
+    if (socketRef.current) {
+      socketRef.current.emit('update_cart_context', {
+        cartSummary,
+        cartTotal
+      });
+    }
+  }, [cartItems, cartSummary, cartTotal]);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -514,7 +520,10 @@ export function FloatingChatbot() {
 
       const socket = io(`${socketUrl}/voice-chat`, {
         withCredentials: true,
-        query: { cartSummary: encodeURIComponent(cartSummary) }
+        query: { 
+          cartSummary: encodeURIComponent(cartSummary),
+          cartTotal: cartTotal.toString()
+        }
       });
       socketRef.current = socket;
 
@@ -605,7 +614,7 @@ export function FloatingChatbot() {
           handleNavigate(data.actionPayload);
         } else if (data.actionType === 'ORDER_PREVIEW' && data.actionPayload) {
           const payload = JSON.parse(data.actionPayload);
-          handleOrderPreview(payload.addressId, tempMsg.id);
+          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
         } else if (data.actionType === 'PLACE_ORDER' && data.actionPayload) {
           const payload = JSON.parse(data.actionPayload);
           handlePlaceOrder(payload.idempotencyKey);
@@ -668,10 +677,31 @@ export function FloatingChatbot() {
         },
         body: JSON.stringify({ userId: user?.id })
       });
-      const vouchers = await res.json();
-      const validVouchers = vouchers.filter((v: any) => v.minOrderValue <= cartTotal);
+      const data = await res.json();
+      const vouchers = Array.isArray(data) ? data : [];
+      const validVouchers = vouchers.filter((v: any) => {
+        if (!v.isActive) return false;
+        if (v.minOrderValue && v.minOrderValue > cartTotal) return false;
+        if (v.usageLimit !== null && v.usedCount >= v.usageLimit) return false;
+        if (v.usageLimitPerUser !== null && (v.usedCountByUser || 0) >= v.usageLimitPerUser) return false;
+        return true;
+      });
+
       if (validVouchers.length > 0) {
-        // Pick the one with the highest nominal discount for simplicity, or just the first
+        // Pick the voucher with highest discount value
+        validVouchers.sort((a: any, b: any) => {
+          const getDiscount = (v: any) => {
+            if (v.discountType === 'PERCENTAGE') {
+              const val = (cartTotal * v.discountValue) / 100;
+              return v.maxDiscount ? Math.min(val, v.maxDiscount) : val;
+            } else if (v.discountType === 'FIXED_AMOUNT') {
+              return Math.min(v.discountValue, cartTotal);
+            }
+            return v.discountValue || 0;
+          };
+          return getDiscount(b) - getDiscount(a);
+        });
+
         const best = validVouchers[0];
         previewVoucherRef.current = best.code;
         setMessages(prev => [...prev, {
@@ -698,7 +728,18 @@ export function FloatingChatbot() {
         }]);
       }
     } catch (e) {
-      console.error(e);
+      console.error('Error suggesting voucher:', e);
+      previewVoucherRef.current = null;
+      setMessages(prev => [...prev, {
+        id: `sys-${Date.now()}`,
+        sessionId: sessionId || "temp-session",
+        senderType: "AI",
+        content: `Hiện không có voucher nào phù hợp. Bạn có muốn nhập mã voucher của riêng bạn không?`,
+        actionType: null,
+        actionPayload: null,
+        createdAt: new Date().toISOString(),
+        suggestedReplies: ["Nhập mã khác", "Không dùng voucher"]
+      }]);
     }
   };
 
@@ -727,6 +768,10 @@ export function FloatingChatbot() {
         throw new Error(`Preview error: ${errorText}`);
       }
       const data = await res.json();
+      if (data.addressId) {
+        setCheckoutAddressId(data.addressId);
+        checkoutAddressIdRef.current = data.addressId;
+      }
 
       setMessages(prev => [...prev, {
         id: `sys-${Date.now()}`,
@@ -747,9 +792,24 @@ export function FloatingChatbot() {
   };
 
   const handlePlaceOrder = async (idempotencyKey: string) => {
-    const currentAddressId = checkoutAddressIdRef.current || checkoutAddressId;
+    let currentAddressId = checkoutAddressIdRef.current || checkoutAddressId;
     if (!currentAddressId) {
-      toast.error('Không tìm thấy thông tin địa chỉ giao hàng. Vui lòng bắt đầu lại quá trình chốt đơn.');
+      try {
+        const addrRes = await fetch(`${API_URL}/api/addresses`, { credentials: 'include', headers: { 'ngrok-skip-browser-warning': 'true' } });
+        if (addrRes.ok) {
+          const addrList = await addrRes.json();
+          const list = Array.isArray(addrList) ? addrList : (addrList?.data || []);
+          const def = list.find((a: any) => a.isDefault) || list[0];
+          if (def) {
+            currentAddressId = def.id;
+            setCheckoutAddressId(def.id);
+            checkoutAddressIdRef.current = def.id;
+          }
+        }
+      } catch (e) {}
+    }
+    if (!currentAddressId) {
+      toast.error('Không tìm thấy thông tin địa chỉ giao hàng. Vui lòng kiểm tra địa chỉ nhận hàng.');
       return;
     }
     setIsLoading(true);
@@ -764,7 +824,10 @@ export function FloatingChatbot() {
         credentials: 'include',
         body: JSON.stringify({ addressId: currentAddressId, branchId: currentBranchId, cartItems: cartItemsRef.current, paymentMethod: 'COD', voucherCode: previewVoucherRef.current })
       });
-      if (!res.ok) throw new Error('Order error');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.message || 'Có lỗi khi đặt hàng');
+      }
       const data = await res.json();
 
       const formattedTotal = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(data.totalAmount || cartTotal);
@@ -779,9 +842,9 @@ export function FloatingChatbot() {
       }]);
 
       clearCart();
-    } catch (e) {
-      console.error(e);
-      toast.error('Có lỗi khi đặt hàng');
+    } catch (e: any) {
+      console.error('Lỗi đặt hàng:', e);
+      toast.error(e?.message || 'Có lỗi khi đặt hàng');
     } finally {
       setIsLoading(false);
     }
@@ -939,7 +1002,7 @@ export function FloatingChatbot() {
           handleNavigate(lastMsg.actionPayload);
         } else if (lastMsg && lastMsg.actionType === 'ORDER_PREVIEW' && lastMsg.actionPayload) {
           const payload = JSON.parse(lastMsg.actionPayload);
-          handleOrderPreview(payload.addressId, lastMsg.id);
+          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
         } else if (lastMsg && lastMsg.actionType === 'PLACE_ORDER' && lastMsg.actionPayload) {
           const payload = JSON.parse(lastMsg.actionPayload);
           handlePlaceOrder(payload.idempotencyKey);
@@ -954,7 +1017,7 @@ export function FloatingChatbot() {
           handleNavigate(data.actionPayload);
         } else if (data.actionType === 'ORDER_PREVIEW' && data.actionPayload) {
           const payload = JSON.parse(data.actionPayload);
-          handleOrderPreview(payload.addressId, data.id);
+          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
         } else if (data.actionType === 'PLACE_ORDER' && data.actionPayload) {
           const payload = JSON.parse(data.actionPayload);
           handlePlaceOrder(payload.idempotencyKey);

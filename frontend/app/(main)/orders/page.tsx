@@ -305,7 +305,7 @@ export default function OrdersPage() {
                           <div key={i} className={`flex items-center gap-3 p-3 ${i > 0 ? 'border-t border-slate-50' : ''}`}>
                             <div className="relative w-10 h-10 rounded-lg overflow-hidden shrink-0 bg-slate-100 border border-slate-200">
                                {item.product?.imageUrl && (
-                                  <Image src={item.product.imageUrl} alt={item.product.name} fill className="object-cover" />
+                                  <Image src={item.product.imageUrl} alt={item.product.name} fill sizes="(max-width: 768px) 100px, 80px" className="object-cover" />
                                )}
                             </div>
                             <div className="flex-1 min-w-0">

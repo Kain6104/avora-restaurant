@@ -23,7 +23,7 @@ export const SLIDES = [
     title: "WAGYU A5 TAN CHẢY",
     titleHighlight: "TRÊN TỪNG THỚ THỊT",
     desc: "Thịt bò Wagyu nhập khẩu trực tiếp, mang đến trải nghiệm ẩm thực không thể nào quên.",
-    image: "https://images.unsplash.com/photo-1544025162-8111149f57b7?auto=format&fit=crop&q=80&w=1920",
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&q=80&w=1920",
     badge: { text: "Giảm giá", highlight: "10%", sub: "Thành viên VIP" }
   }
 ];

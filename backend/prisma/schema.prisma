@@ -37,6 +37,20 @@ model User {
   secureToken     String  @unique @default(uuid())
   deviceToken     String? @db.VarChar(500)
   zaloId          String? @unique
+  
+  // OTP Đăng ký & Xác thực tài khoản
+  verificationOtp           String?
+  verificationOtpExpires    DateTime?
+  verificationOtpAttempts   Int       @default(0)
+  verificationOtpLastSentAt DateTime?
+  
+  // OTP Quên mật khẩu
+  resetPasswordOtp          String?
+  resetPasswordExpires      DateTime?
+  resetPasswordOtpAttempts  Int       @default(0)
+  resetPasswordLastSentAt   DateTime?
+  resetPasswordRequestCount Int       @default(0)
+  resetPasswordRequestDate  DateTime? @db.Date
 
   // Thông tin xuất hóa đơn VAT
   taxCode      String?
@@ -446,6 +460,7 @@ model Voucher {
   usageLimitPerUser Int?    @default(1) // Số lần tối đa 1 user được dùng
   usedCount         Int     @default(0)
   isPublic          Boolean @default(true) // Hiển thị công khai hay mã ẩn phải tự nhập
+  isFirstOrderOnly  Boolean @default(false) // Chỉ áp dụng cho đơn hàng đầu tiên
 
   startDate DateTime
   endDate   DateTime

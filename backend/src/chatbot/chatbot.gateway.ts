@@ -67,11 +67,23 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       const cartSummaryStr = client.handshake.query?.cartSummary as string;
       const cartSummary = cartSummaryStr ? decodeURIComponent(cartSummaryStr) : '';
-      if (cartSummary) {
-         userContext += ` [THÔNG TIN GIỎ HÀNG: ${cartSummary}]`;
+      const cartTotalStr = client.handshake.query?.cartTotal as string;
+      const cartTotal = cartTotalStr ? parseFloat(cartTotalStr) : (cartSummary && !cartSummary.includes('trống') ? 1 : 0);
+      if (cartSummary || cartTotal > 0) {
+         userContext += ` [THÔNG TIN GIỎ HÀNG: ${cartSummary || 'Có món trong giỏ'}, Tổng tiền: ${cartTotal.toLocaleString('vi-VN')}đ, cartTotal = ${cartTotal}]`;
+      } else {
+         userContext += ` [THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0]`;
       }
 
-      this.userContexts.set(client.id, { userId, userContext });
+      this.userContexts.set(client.id, { userId, userContext, cartTotal, cartSummary });
+
+      client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number }) => {
+        const ctx = this.userContexts.get(client.id);
+        if (ctx) {
+          if (data.cartTotal !== undefined) ctx.cartTotal = data.cartTotal;
+          if (data.cartSummary !== undefined) ctx.cartSummary = data.cartSummary;
+        }
+      });
 
       const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
       const apiKey = envKeys.split(',')[0]?.trim();
@@ -190,7 +202,7 @@ Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, B
               this.logger.log(`Received function call: ${functionCall.name}`);
               client.emit('tool_call', { name: functionCall.name }); // Let UI know we are thinking
 
-              const result = await this.chatbotService.executeToolCall(functionCall, context?.userId);
+              const result = await this.chatbotService.executeToolCall(functionCall, context?.userId, undefined, context?.cartTotal);
 
               // Send rich UI action to client
               if (result.lastActionType || result.content) {

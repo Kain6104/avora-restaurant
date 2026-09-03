@@ -21,6 +21,18 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  
+  const [step, setStep] = useState<1 | 2>(1);
+  const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [countdown]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -61,6 +73,10 @@ export default function RegisterPage() {
 
       if (!res.ok) {
         toast.error(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
+      } else if (data.requiresVerification) {
+        toast.success(data.message || 'Vui lòng kiểm tra email để nhận mã xác thực.');
+        setCountdown(60);
+        setStep(2);
       } else {
         toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
         router.push('/login');
@@ -70,6 +86,88 @@ export default function RegisterPage() {
       toast.error('Không thể kết nối đến máy chủ.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.message || 'Không thể gửi lại mã.');
+      } else {
+        toast.success('Đã gửi lại mã xác nhận.');
+        setCountdown(60);
+      }
+    } catch (err) {
+      toast.error('Lỗi kết nối máy chủ.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOTPCode = async (codeToVerify: string) => {
+    if (!codeToVerify || codeToVerify.length !== 6) return;
+    
+    setLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/auth/verify-account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, otp: codeToVerify }),
+      });
+      const data = await res.json();
+      
+      if (!res.ok) {
+        toast.error(data.message || 'Mã OTP không hợp lệ.');
+        setOtpDigits(['', '', '', '', '', '']);
+        inputRefs.current[0]?.focus();
+      } else {
+        toast.success('Xác thực thành công! Hệ thống đang đăng nhập...');
+        router.push('/');
+        router.refresh();
+      }
+    } catch (err) {
+      toast.error('Không thể kết nối đến máy chủ.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyOTPForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const currentOtp = otpDigits.join('');
+    if (currentOtp.length !== 6) {
+      toast.error('Vui lòng nhập đủ 6 số OTP');
+      return;
+    }
+    verifyOTPCode(currentOtp);
+  };
+
+  const handleOtpChange = (index: number, value: string) => {
+    if (value && !/^\d+$/.test(value)) return;
+    
+    const newOtp = [...otpDigits];
+    newOtp[index] = value;
+    setOtpDigits(newOtp);
+    
+    if (value !== '' && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+    
+    if (newOtp.join('').length === 6) {
+      verifyOTPCode(newOtp.join(''));
+    }
+  };
+
+  const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+      inputRefs.current[index - 1]?.focus();
     }
   };
 
@@ -106,12 +204,16 @@ export default function RegisterPage() {
 
             <div className="text-center mb-6 lg:mb-8">
               <h2 className="text-2xl lg:text-3xl font-black text-white lg:text-slate-900 mb-2 drop-shadow-md lg:drop-shadow-sm">
-                Tạo Tài Khoản
+                {step === 1 ? 'Tạo Tài Khoản' : 'Xác Thực Tài Khoản'}
               </h2>
               <p className="text-white/90 lg:text-slate-700 text-sm lg:text-base font-semibold drop-shadow-md lg:drop-shadow-sm">
-                Gia nhập Avora để nhận nhiều ưu đãi hấp dẫn!
+                {step === 1 
+                  ? 'Gia nhập Avora để nhận nhiều ưu đãi hấp dẫn!' 
+                  : `Vui lòng nhập mã OTP 6 số đã gửi đến email ${email}`}
               </p>
             </div>
+
+            {step === 1 ? (
 
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
@@ -222,6 +324,81 @@ export default function RegisterPage() {
                 )}
               </button>
             </form>
+            ) : (
+            <form className="space-y-4" onSubmit={handleVerifyOTPForm}>
+              <div>
+                <label className="block text-xs lg:text-sm font-black text-white lg:text-slate-800 mb-3 drop-shadow-md lg:drop-shadow-sm">Mã xác nhận (OTP)</label>
+                <div className="flex justify-between gap-2 lg:gap-3">
+                  {otpDigits.map((digit, index) => (
+                    <input
+                      key={index}
+                      ref={(el) => { inputRefs.current[index] = el; }}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="off"
+                      maxLength={1}
+                      value={digit}
+                      onChange={(e) => handleOtpChange(index, e.target.value)}
+                      onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                      onPaste={(e) => {
+                        e.preventDefault();
+                        const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
+                        if (pastedData) {
+                          const newOtp = [...otpDigits];
+                          for (let i = 0; i < pastedData.length; i++) {
+                            if (index + i < 6) newOtp[index + i] = pastedData[i];
+                          }
+                          setOtpDigits(newOtp);
+                          const nextIndex = Math.min(index + pastedData.length, 5);
+                          inputRefs.current[nextIndex]?.focus();
+                          
+                          if (newOtp.join('').length === 6) {
+                            verifyOTPCode(newOtp.join(''));
+                          }
+                        }
+                      }}
+                      className="w-10 h-12 lg:w-12 lg:h-14 text-center text-xl lg:text-2xl font-black bg-white/60 border border-slate-200/60 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all shadow-sm hover:bg-white/80"
+                    />
+                  ))}
+                </div>
+                <div className="flex justify-between items-center mt-3 px-1">
+                  <p className="text-xs text-white/80 lg:text-slate-500 font-medium">Đã gửi mã đến {email}</p>
+                  <button
+                    type="button"
+                    onClick={handleResendOTP}
+                    disabled={countdown > 0 || loading}
+                    className="text-xs font-bold text-red-500 hover:text-red-400 disabled:text-slate-400 lg:disabled:text-slate-400 transition-colors"
+                  >
+                    {countdown > 0 ? `Gửi lại sau ${countdown}s` : 'Gửi lại mã'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 mt-6">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="group w-full flex justify-center items-center py-3 lg:py-3.5 px-4 text-sm lg:text-base font-black rounded-2xl text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-transparent focus:ring-red-500 transition-all shadow-xl shadow-red-600/30 disabled:opacity-70 disabled:cursor-not-allowed hover:-translate-y-1"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  ) : (
+                    <>
+                      Xác Nhận Mã <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  disabled={loading}
+                  className="w-full py-3 lg:py-3.5 px-4 text-sm lg:text-base font-bold text-white lg:text-slate-700 hover:bg-white/20 lg:hover:bg-slate-100 rounded-2xl transition-colors drop-shadow-md lg:drop-shadow-none"
+                >
+                  Quay lại sửa thông tin
+                </button>
+              </div>
+            </form>
+            )}
 
             <div className="mt-8 lg:mt-10">
               <div className="relative">
@@ -271,6 +448,26 @@ export default function RegisterPage() {
           </div>
         </div>
       </div>
+
+      {/* Google Full Screen Loading */}
+      {isGoogleLoading && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center justify-center transform transition-all max-w-sm w-[90%]">
+            <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mb-6 shadow-inner relative">
+              <div className="absolute inset-0 border-[3px] border-transparent border-t-blue-500 border-r-red-500 border-b-yellow-500 border-l-green-500 rounded-full animate-spin" style={{ animationDuration: '2s' }}></div>
+              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google" className="w-10 h-10 relative z-10" />
+            </div>
+            <h3 className="text-lg lg:text-xl font-black text-slate-800 tracking-wide mb-1 text-center">Đang kết nối với Google</h3>
+            <p className="text-slate-500 text-xs lg:text-sm font-medium mb-6 text-center">Hệ thống đang chuyển hướng, vui lòng chờ...</p>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+              <div className="w-2.5 h-2.5 bg-red-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+              <div className="w-2.5 h-2.5 bg-yellow-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+              <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-bounce" style={{ animationDelay: '450ms' }}></div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

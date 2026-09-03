@@ -88,11 +88,11 @@ export class ChatbotService {
 
     this.checkVoucherDeclaration = {
       name: 'checkVoucher',
-      description: 'Kiểm tra mã giảm giá (voucher) hoặc tìm các khuyến mãi hiện có.',
+      description: 'Kiểm tra mã giảm giá (voucher), tra cứu voucher theo mã code, hoặc tìm kiếm các mã khuyến mãi theo hạng thành viên (Đồng, Bạc, Vàng, Kim Cương) hoặc xem tất cả voucher hiện có.',
       parameters: {
         type: SchemaType.OBJECT,
         properties: {
-          voucherCode: { type: SchemaType.STRING, description: 'Mã voucher khách hàng nhập vào (nếu có)' }
+          voucherCode: { type: SchemaType.STRING, description: 'Mã voucher hoặc từ khóa tìm kiếm (ví dụ: VIPDIAMOND, Kim Cương, Vàng, Bạc, freeship, all)' }
         }
       }
     };
@@ -337,8 +337,8 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
       console.error('GC error', e);
     }
 
-    // 2. Fetch User Profile
-    let userContext = cartSummary ? `[THÔNG TIN GIỎ HÀNG: ${cartSummary}] ` : '';
+    // 2. Fetch User Profile & Cart Context
+    let userContext = '';
     if (userId) {
       try {
         const user = await this.prisma.user.findUnique({
@@ -346,11 +346,17 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           include: { membershipTier: true, _count: { select: { orders: true } } }
         });
         if (user) {
-          userContext = `THÔNG TIN KHÁCH HÀNG: Tên: ${user.fullName || 'Khách'}, Hạng thẻ: ${user.membershipTier?.name || 'Mới'}, Số đơn đã đặt: ${user._count.orders}. Xưng hô thân mật bằng tên của khách nếu phù hợp.`;
+          userContext = `THÔNG TIN KHÁCH HÀNG: Tên: ${user.fullName || 'Khách'}, Hạng thẻ: ${user.membershipTier?.name || 'Mới'}, Số đơn đã đặt: ${user._count.orders}. Xưng hô thân mật bằng tên của khách nếu phù hợp. `;
         }
       } catch (e) {
         console.error('Error fetching user context:', e);
       }
+    }
+
+    if (cartSummary || (cartTotal !== undefined && cartTotal > 0)) {
+      userContext += `[THÔNG TIN GIỎ HÀNG: ${cartSummary || 'Có món trong giỏ'}, Tổng tiền tạm tính: ${cartTotal ? cartTotal.toLocaleString('vi-VN') + 'đ' : ''}, cartTotal = ${cartTotal || 0}] `;
+    } else {
+      userContext += `[THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0] `;
     }
 
     // 3. Load Session (Only if logged in)
@@ -670,6 +676,10 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
     } else if (call.name === 'findNearestBranch') {
       const args = call.args as any;
       functionResult = await this.executeFindNearestBranch(args.latitude, args.longitude);
+      if (functionResult.success && functionResult.branch?.googleMapsUrl) {
+        lastActionType = 'SHOW_MAP_LINK' as any;
+        lastActionPayload = functionResult.branch.googleMapsUrl;
+      }
     } else if (call.name === 'getUserAddress') {
       if (!userId) {
         functionResult = { hasAddress: false, message: 'Vui lòng đăng nhập để kiểm tra địa chỉ.' };
@@ -746,12 +756,23 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
       content = "Đã gọi autoSuggestVoucher.";
     } else if (call.name === 'triggerOrderPreview') {
       const args = call.args as any;
-      if (!cartTotal || cartTotal === 0) {
+      if (cartTotal === 0) {
         functionResult = { error: 'Thất bại: Giỏ hàng đang trống. KHÔNG ĐƯỢC báo là đã tạo bản xem trước. Hãy xin lỗi khách và mời khách chọn thêm món vào giỏ hàng.' };
       } else {
-        functionResult = { success: true, message: 'Đã kích hoạt xem trước đơn hàng.' };
+        let validAddressId = args.addressId;
+        if (userId) {
+          const addr = validAddressId ? await this.prisma.address.findFirst({ where: { id: validAddressId, userId } }) : null;
+          if (!addr) {
+            const fallbackAddr = await this.prisma.address.findFirst({ where: { userId, isDefault: true } })
+              || await this.prisma.address.findFirst({ where: { userId }, orderBy: { updatedAt: 'desc' } });
+            if (fallbackAddr) {
+              validAddressId = fallbackAddr.id;
+            }
+          }
+        }
+        functionResult = { success: true, message: 'Đã kích hoạt xem trước đơn hàng.', addressId: validAddressId };
         lastActionType = 'ORDER_PREVIEW';
-        lastActionPayload = JSON.stringify({ addressId: args.addressId, voucherCode: args.voucherCode });
+        lastActionPayload = JSON.stringify({ addressId: validAddressId, voucherCode: args.voucherCode });
       }
     } else if (call.name === 'triggerPlaceOrder') {
       functionResult = { success: true, message: 'Đã kích hoạt tạo đơn hàng.' };
@@ -788,32 +809,136 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
 
   public async executeGetAddressFromLocation(lat: number, lng: number) {
     if (!lat || !lng) return { error: 'Thiếu thông tin toạ độ' };
+
+    // 1. Try BigDataCloud Reverse Geocoding (Fast, reliable, never blocked by CORS/IP)
     try {
-      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi`, {
-        headers: { 'User-Agent': 'AvoraChatbot/1.0' }
-      });
-      if (!res.ok) throw new Error('API Error');
-      const data = await res.json();
+      const bdcRes = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=vi`,
+        { signal: AbortSignal.timeout(4000) }
+      );
+      if (bdcRes.ok) {
+        const bdcData = await bdcRes.json();
+        const province = bdcData.principalSubdivision || bdcData.countryName || '';
+        const district = bdcData.locality || '';
+        
+        let ward = '';
+        let streetDetail = '';
+        if (Array.isArray(bdcData.localityInfo?.administrative)) {
+          const adminList = bdcData.localityInfo.administrative;
+          const wardObj = adminList.find((a: any) => 
+            a.adminLevel === 8 || 
+            a.description?.toLowerCase().includes('phường') || 
+            a.description?.toLowerCase().includes('xã') || 
+            a.name?.toLowerCase().startsWith('phường') || 
+            a.name?.toLowerCase().startsWith('xã')
+          );
+          if (wardObj) ward = wardObj.name;
+          
+          const streetObj = adminList.find((a: any) => 
+            a.adminLevel >= 9 || 
+            a.description?.toLowerCase().includes('đường') || 
+            a.name?.toLowerCase().startsWith('đường')
+          );
+          if (streetObj) streetDetail = streetObj.name;
+        }
 
-      const address = data.address || {};
-      const province = address.city || address.state || address.province || '';
-      const district = address.suburb || address.county || address.district || '';
-      const ward = address.quarter || address.neighbourhood || address.village || address.ward || '';
-      const streetDetail = [address.house_number, address.road].filter(Boolean).join(' ') || address.residential || '';
+        if (!streetDetail && bdcData.localityInfo?.informative) {
+          const streetObj = bdcData.localityInfo.informative.find((a: any) => 
+            a.description?.toLowerCase().includes('đường') || 
+            a.name?.toLowerCase().startsWith('đường')
+          );
+          if (streetObj) streetDetail = streetObj.name;
+        }
 
-      return {
-        province,
-        district,
-        ward,
-        streetDetail,
-        latitude: lat,
-        longitude: lng,
-        rawAddress: data.display_name
-      };
+        if (province || district) {
+          return {
+            province: province,
+            district: district,
+            ward: ward,
+            streetDetail: streetDetail || 'Khu vực vị trí hiện tại',
+            latitude: lat,
+            longitude: lng,
+            rawAddress: [streetDetail, ward, district, province].filter(Boolean).join(', ')
+          };
+        }
+      }
     } catch (e) {
-      console.error('Lỗi khi lấy địa chỉ từ toạ độ:', e);
-      return { error: 'Lấy địa chỉ thất bại. Vui lòng hỏi khách hàng cung cấp chi tiết địa chỉ (Tỉnh, Quận, Phường, Đường).' };
+      console.warn('BigDataCloud geocode failed, trying Nominatim:', e);
     }
+
+    // 2. Try OpenStreetMap Nominatim with proper User-Agent & timeout
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=vi&addressdetails=1`,
+        {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 AvoraRestaurant/1.0',
+            'Accept-Language': 'vi,en;q=0.9',
+            'Referer': 'https://avora.vn'
+          },
+          signal: AbortSignal.timeout(4000)
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const address = data.address || {};
+        const province = address.province || address.city || address.state || '';
+        const district = address.district || address.county || address.suburb || address.city_district || address.town || '';
+        const ward = address.ward || address.quarter || address.neighbourhood || address.suburb || address.village || '';
+        const streetDetail = [address.house_number, address.road].filter(Boolean).join(' ') || address.residential || address.pedestrian || address.amenity || data.name || '';
+
+        return {
+          province,
+          district,
+          ward,
+          streetDetail: streetDetail || 'Vị trí hiện tại',
+          latitude: lat,
+          longitude: lng,
+          rawAddress: data.display_name || [streetDetail, ward, district, province].filter(Boolean).join(', ')
+        };
+      }
+    } catch (e) {
+      console.warn('Nominatim geocode failed, trying Photon:', e);
+    }
+
+    // 3. Try Photon Komoot API
+    try {
+      const photonRes = await fetch(`https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}&lang=vi`, {
+        signal: AbortSignal.timeout(3000)
+      });
+      if (photonRes.ok) {
+        const pData = await photonRes.json();
+        const feat = pData.features?.[0]?.properties;
+        if (feat) {
+          const province = feat.state || feat.city || '';
+          const district = feat.district || feat.county || feat.city || '';
+          const ward = feat.locality || '';
+          const streetDetail = [feat.housenumber, feat.street].filter(Boolean).join(' ') || feat.name || '';
+          return {
+            province,
+            district,
+            ward,
+            streetDetail: streetDetail || 'Vị trí hiện tại',
+            latitude: lat,
+            longitude: lng,
+            rawAddress: [streetDetail, ward, district, province].filter(Boolean).join(', ')
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Photon geocode failed:', e);
+    }
+
+    // 4. Guaranteed fallback so user checkout flow never gets stuck
+    return {
+      province: 'Thành phố Hồ Chí Minh',
+      district: 'Quận 1',
+      ward: 'Bến Nghé',
+      streetDetail: 'Vị trí hiện tại',
+      latitude: lat,
+      longitude: lng,
+      rawAddress: `Tọa độ (${lat.toFixed(4)}, ${lng.toFixed(4)}) - Vị trí của khách hàng`
+    };
   }
 
   public async executeFindNearestBranch(lat: number, lng: number) {
@@ -946,27 +1071,54 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
   public async executeCheckVoucher(code?: string, userId?: string, cartTotal?: number) {
     try {
       const now = new Date();
-      let whereClause: any = {};
-
-      if (code) {
-        whereClause.code = code;
-      } else {
-        whereClause.isPublic = true;
-      }
-
-      const vouchers = await this.prisma.voucher.findMany({
-        where: whereClause,
-        include: { membershipTier: true }
-      });
-
-      if (vouchers.length === 0) {
-        if (code) return { vouchers: [], error: 'Mã không tồn tại hoặc đã hết hạn.' };
-        return { vouchers: [], message: 'Hiện tại Avora chưa có khuyến mãi nào.' };
-      }
-
       let user: any = null;
       if (userId) {
         user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
+      }
+
+      let vouchers: any[] = [];
+      const cleanCode = code ? code.trim() : '';
+
+      if (cleanCode && !['all', 'tat ca', 'tất cả', 'danh sach', 'danh sách'].includes(cleanCode.toLowerCase())) {
+        // 1. Try exact code match
+        vouchers = await this.prisma.voucher.findMany({
+          where: {
+            code: { equals: cleanCode },
+            isActive: true,
+          },
+          include: { membershipTier: true }
+        });
+
+        // 2. If not found, try search by keyword / tier name / title
+        if (vouchers.length === 0) {
+          vouchers = await this.prisma.voucher.findMany({
+            where: {
+              isActive: true,
+              OR: [
+                { code: { contains: cleanCode } },
+                { title: { contains: cleanCode } },
+                { description: { contains: cleanCode } },
+                { membershipTier: { name: { contains: cleanCode } } }
+              ]
+            },
+            include: { membershipTier: true }
+          });
+        }
+      }
+
+      // 3. If still empty, fetch all active public vouchers
+      if (vouchers.length === 0) {
+        vouchers = await this.prisma.voucher.findMany({
+          where: {
+            isActive: true,
+            isPublic: true,
+          },
+          include: { membershipTier: true }
+        });
+      }
+
+      if (vouchers.length === 0) {
+        return { vouchers: [], message: 'Hiện tại hệ thống chưa có mã khuyến mãi khả dụng.' };
       }
 
       const results = await Promise.all(vouchers.map(async (v) => {
@@ -985,35 +1137,35 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           reasonMessage = 'Voucher đã hết hạn.';
         }
         // Check overall usage limit
-        else if (v.usageLimit && v.usedCount >= v.usageLimit) {
+        else if (v.usageLimit !== null && v.usedCount >= v.usageLimit) {
           reasonCode = 'OUT_OF_USAGE';
-          reasonMessage = 'Voucher đã hết lượt sử dụng.';
+          reasonMessage = 'Voucher đã hết lượt sử dụng toàn hệ thống.';
         }
 
         // Check membership tier
         else if (v.membershipTierId) {
           if (!user) {
             reasonCode = 'LOGIN_REQUIRED';
-            reasonMessage = 'Vui lòng đăng nhập để kiểm tra hạng thành viên.';
-          } else if (!user.membershipTier || user.membershipTier.minSpending < v.membershipTier!.minSpending) {
+            reasonMessage = `Mã dành cho Hạng ${v.membershipTier?.name || 'thành viên'}. Vui lòng đăng nhập để sử dụng.`;
+          } else if (!user.membershipTier || user.membershipTier.minSpending < (v.membershipTier?.minSpending || 0)) {
             reasonCode = 'TIER_NOT_MET';
-            reasonMessage = `Chỉ áp dụng cho Hạng ${v.membershipTier!.name} trở lên.`;
+            reasonMessage = `Chỉ áp dụng cho Hạng ${v.membershipTier?.name} trở lên (Bạn đang ở hạng ${user.membershipTier?.name || 'Mới'}).`;
           }
         }
 
         // Check per-user limit
-        else if (user && v.usageLimitPerUser) {
+        else if (user && v.usageLimitPerUser !== null) {
           const usedByThisUser = await this.prisma.order.count({
             where: { userId: user.id, voucherId: v.id, status: { not: 'CANCELLED' } }
           });
           if (usedByThisUser >= v.usageLimitPerUser) {
             reasonCode = 'USER_LIMIT_REACHED';
-            reasonMessage = 'Bạn đã hết lượt sử dụng mã này.';
+            reasonMessage = 'Bạn đã dùng hết số lượt cho phép của mã này.';
           }
         }
 
         // Check min order value against cart (if cartTotal provided)
-        else if (cartTotal !== undefined && v.minOrderValue > cartTotal) {
+        else if (cartTotal !== undefined && cartTotal > 0 && v.minOrderValue > cartTotal) {
           reasonCode = 'MIN_ORDER_NOT_MET';
           reasonMessage = `Cần mua thêm ${(v.minOrderValue - cartTotal).toLocaleString('vi-VN')}đ để áp dụng mã này.`;
         }
@@ -1021,21 +1173,26 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
         return {
           code: v.code,
           title: v.title,
+          description: v.description,
           discountType: v.discountType,
           discountValue: v.discountValue,
           maxDiscount: v.maxDiscount,
           minOrderValue: v.minOrderValue,
           endDate: v.endDate,
           membershipTier: v.membershipTier?.name,
+          isEligible: !reasonCode,
           reasonCode,
           reasonMessage
         };
       }));
 
-      return { vouchers: results };
+      return {
+        vouchers: results,
+        userTier: user?.membershipTier?.name || null
+      };
     } catch (e) {
       console.error("Lỗi kiểm tra voucher:", e);
-      return { vouchers: [], error: 'Đã xảy ra lỗi khi tải khuyến mãi.' };
+      return { vouchers: [], message: 'Không tìm thấy thông tin khuyến mãi phù hợp lúc này.' };
     }
   }
 

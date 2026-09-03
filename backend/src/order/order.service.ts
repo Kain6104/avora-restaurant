@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { OrderStatus, PointTransactionSource } from '@prisma/client';
 import { PromotionService } from '../promotion/promotion.service';
+import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class OrderService {
@@ -15,21 +16,27 @@ export class OrderService {
   async previewOrder(userId: string, payload: any) {
     const { addressId, cartItems, voucherCode, paymentMethod } = payload;
 
-    if (!addressId || !cartItems || cartItems.length === 0) {
-      throw new BadRequestException('Invalid payload');
+    if (!cartItems || cartItems.length === 0) {
+      throw new BadRequestException('Giỏ hàng trống');
     }
 
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
     if (!user) throw new BadRequestException('User not found');
 
-    const address = await this.prisma.address.findUnique({ where: { id: addressId } });
-    if (!address || address.userId !== userId) {
-      throw new BadRequestException('Address not found or unauthorized');
+    let address: any = null;
+    if (addressId) {
+      address = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
+    }
+    if (!address) {
+      address = await this.prisma.address.findFirst({ where: { userId, isDefault: true } })
+        || await this.prisma.address.findFirst({ where: { userId }, orderBy: { updatedAt: 'desc' } });
     }
 
-    const customerName = address.recipientName || user.fullName;
-    const customerPhone = address.phone || user.phone || '';
-    const deliveryAddress = `${address.streetDetail}, ${address.ward}, ${address.district ? address.district + ', ' : ''}${address.province}`;
+    const customerName = address?.recipientName || user.fullName || 'Quý khách';
+    const customerPhone = address?.phone || user.phone || '';
+    const deliveryAddress = address
+      ? `${address.streetDetail}, ${address.ward}, ${address.district ? address.district + ', ' : ''}${address.province}`
+      : 'Vui lòng chọn hoặc thêm địa chỉ nhận hàng';
 
     const productIds = cartItems.map((item: any) => item.productId);
     const products = await this.prisma.product.findMany({
@@ -127,9 +134,21 @@ export class OrderService {
 
     if (voucherCode) {
       try {
-        const voucher = await this.prisma.voucher.findUnique({ where: { code: voucherCode } });
+        const voucher = await this.prisma.voucher.findUnique({ where: { code: voucherCode }, include: { membershipTier: true } });
         let canUseVoucher = false;
-        if (voucher && voucher.isActive && voucher.startDate <= now && voucher.endDate >= now && (voucher.usageLimit === null || voucher.usedCount < voucher.usageLimit) && subTotal >= voucher.minOrderValue && (!voucher.membershipTierId || user.membershipTierId === voucher.membershipTierId)) {
+
+        let isTierEligible = true;
+        if (voucher?.membershipTierId) {
+          if (!user.membershipTier) {
+            isTierEligible = false;
+          } else if (voucher.membershipTier) {
+            isTierEligible = user.membershipTier.minSpending >= voucher.membershipTier.minSpending;
+          } else {
+            isTierEligible = user.membershipTierId === voucher.membershipTierId;
+          }
+        }
+
+        if (voucher && voucher.isActive && voucher.startDate <= now && voucher.endDate >= now && (voucher.usageLimit === null || voucher.usedCount < voucher.usageLimit) && subTotal >= voucher.minOrderValue && isTierEligible) {
           canUseVoucher = true;
           if (voucher.usageLimitPerUser !== null) {
             const usedByThisUser = await this.prisma.order.count({
@@ -168,24 +187,33 @@ export class OrderService {
       receiverName: customerName,
       phone: customerPhone,
       deliveryAddress,
-      paymentMethod: paymentMethod || 'COD'
+      paymentMethod: paymentMethod || 'COD',
+      addressId: address?.id || null
     };
   }
 
   async createOrder(userId: string, payload: any) {
     const { addressId, branchId, cartItems, note, paymentMethod, vatInfo } = payload;
 
-    if (!addressId || !cartItems || cartItems.length === 0) {
-      throw new BadRequestException('Invalid payload');
+    if (!cartItems || cartItems.length === 0) {
+      throw new BadRequestException('Giỏ hàng trống');
     }
 
     // 1. Fetch User and Address securely from DB
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
     if (!user) throw new BadRequestException('User not found');
 
-    const address = await this.prisma.address.findUnique({ where: { id: addressId } });
-    if (!address || address.userId !== userId) {
-      throw new BadRequestException('Address not found or unauthorized');
+    let address: any = null;
+    if (addressId) {
+      address = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
+    }
+    if (!address) {
+      address = await this.prisma.address.findFirst({ where: { userId, isDefault: true } })
+        || await this.prisma.address.findFirst({ where: { userId }, orderBy: { updatedAt: 'desc' } });
+    }
+
+    if (!address) {
+      throw new BadRequestException('Vui lòng chọn hoặc thêm địa chỉ nhận hàng trước khi đặt đơn.');
     }
 
     const customerName = address.recipientName || user.fullName;
@@ -328,7 +356,7 @@ export class OrderService {
 
       if (payload.voucherCode) {
         try {
-          const voucher = await tx.voucher.findUnique({ where: { code: payload.voucherCode } });
+          const voucher = await tx.voucher.findUnique({ where: { code: payload.voucherCode }, include: { membershipTier: true } });
           if (!voucher) throw new Error('Voucher không hợp lệ.');
           if (!voucher.isActive) throw new Error('Voucher không khả dụng.');
           if (voucher.startDate > now || voucher.endDate < now) throw new Error('Voucher đã hết hạn hoặc chưa bắt đầu.');
@@ -342,7 +370,18 @@ export class OrderService {
             }
           }
           if (subTotal < voucher.minOrderValue) throw new Error(`Đơn hàng chưa đạt giá trị tối thiểu ${voucher.minOrderValue.toLocaleString('vi-VN')}đ.`);
-          if (voucher.membershipTierId && user.membershipTierId !== voucher.membershipTierId) throw new Error('Voucher không dành cho hạng thành viên của bạn.');
+
+          let isTierEligible = true;
+          if (voucher.membershipTierId) {
+            if (!user.membershipTier) {
+              isTierEligible = false;
+            } else if (voucher.membershipTier) {
+              isTierEligible = user.membershipTier.minSpending >= voucher.membershipTier.minSpending;
+            } else {
+              isTierEligible = user.membershipTierId === voucher.membershipTierId;
+            }
+          }
+          if (!isTierEligible) throw new Error('Voucher không dành cho hạng thành viên của bạn.');
 
           if (voucher.discountType === 'PERCENTAGE') {
             discountAmount = (subTotal * voucher.discountValue) / 100;
@@ -364,12 +403,18 @@ export class OrderService {
       const totalAmount = Math.max(0, subTotal - discountAmount) + shippingFee;
       const orderCode = `ORD-${Date.now()}`;
 
+      let orderBranchId = branchId;
+      if (!orderBranchId) {
+        const firstBranch = await tx.branch.findFirst();
+        orderBranchId = firstBranch?.id || null;
+      }
+
       // 4. Create Order
       const newOrder = await tx.order.create({
         data: {
           orderCode,
           userId,
-          branchId,
+          branchId: orderBranchId,
           customerName,
           customerPhone,
           deliveryAddress,
@@ -413,6 +458,60 @@ export class OrderService {
       referenceId: txResult.orderCode,
       url: `/orders/${txResult.orderCode}`,
     });
+
+    // Gửi email đặt hàng thành công
+    try {
+      if (process.env.SMTP_USER && process.env.SMTP_PASS && user.email) {
+        const transporter = nodemailer.createTransport({
+          service: 'gmail',
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS,
+          },
+        });
+
+        const formattedTotal = txResult.totalAmount.toLocaleString('vi-VN');
+        const formattedDate = new Date(txResult.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+
+        await transporter.sendMail({
+          from: `"Avora Restaurant" <${process.env.SMTP_USER}>`,
+          to: user.email,
+          subject: `Xác nhận đặt hàng thành công - ${txResult.orderCode}`,
+          html: `<div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 10px; overflow: hidden;">
+                   <div style="background-color: #dc2626; padding: 20px; text-align: center;">
+                     <h2 style="color: white; margin: 0;">ĐẶT HÀNG THÀNH CÔNG</h2>
+                   </div>
+                   <div style="padding: 20px;">
+                     <p>Xin chào <strong>${user.fullName}</strong>,</p>
+                     <p>Cảm ơn bạn đã đặt hàng tại <strong>Avora Restaurant</strong>. Đơn hàng của bạn đã được hệ thống ghi nhận và đang chờ xử lý.</p>
+                     
+                     <div style="background-color: #f9fafb; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                       <h3 style="margin-top: 0; color: #dc2626;">Thông tin đơn hàng</h3>
+                       <p><strong>Mã đơn hàng:</strong> <span style="color: #dc2626; font-weight: bold;">${txResult.orderCode}</span></p>
+                       <p><strong>Thời gian đặt:</strong> ${formattedDate}</p>
+                       <p><strong>Khách hàng:</strong> ${txResult.customerName}</p>
+                       <p><strong>Số điện thoại:</strong> ${txResult.customerPhone}</p>
+                       <p><strong>Địa chỉ giao hàng:</strong> ${txResult.deliveryAddress}</p>
+                       <p><strong>Tổng thanh toán:</strong> <span style="font-size: 18px; font-weight: bold; color: #dc2626;">${formattedTotal}đ</span></p>
+                       <p><strong>Phương thức thanh toán:</strong> ${txResult.paymentMethod}</p>
+                     </div>
+
+                     <p>Bạn có thể theo dõi tiến trình đơn hàng tại mục <strong>Lịch sử đơn hàng</strong> trên website.</p>
+                     
+                     <div style="text-align: center; margin-top: 30px;">
+                       <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/orders/${txResult.orderCode}" style="background-color: #dc2626; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Xem Chi Tiết Đơn Hàng</a>
+                     </div>
+                   </div>
+                   <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 12px; color: #666;">
+                     <p style="margin: 0;">Cảm ơn bạn đã lựa chọn Avora Restaurant!</p>
+                     <p style="margin: 5px 0 0 0;">Nếu có thắc mắc, vui lòng liên hệ hotline: <strong>1900 1234</strong></p>
+                   </div>
+                 </div>`,
+        });
+      }
+    } catch (e) {
+      console.error('Error sending order success email', e);
+    }
 
     return { success: true, orderId: txResult.id, orderCode: txResult.orderCode };
   }

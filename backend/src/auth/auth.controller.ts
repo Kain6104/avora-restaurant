@@ -94,4 +94,41 @@ export class AuthController {
   async updateProfile(@Req() req: Request & { user: any }, @Body() body: any) {
     return this.authService.updateProfile(req.user.id, body);
   }
+
+  @Post('forgot-password')
+  async forgotPassword(@Body('email') email: string) {
+    return this.authService.forgotPassword(email);
+  }
+
+  @Post('reset-password')
+  async resetPassword(@Body() body: any) {
+    return this.authService.resetPassword(body.email, body.otp, body.newPassword);
+  }
+
+  @Post('verify-otp')
+  async verifyOtp(@Body() body: any) {
+    return this.authService.verifyOtp(body.email, body.otp);
+  }
+
+  @Post('verify-account')
+  @HttpCode(HttpStatus.OK)
+  async verifyAccount(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const data = await this.authService.verifyAccount(body.email, body.otp);
+
+    // Set HTTP-Only Cookie to log them in automatically
+    res.cookie('token', data.access_token, {
+      httpOnly: true,
+      secure: false, // Set to true if using HTTPS in production
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    });
+
+    return { message: data.message, user: data.user };
+  }
+
+  @Post('resend-verification')
+  async resendVerification(@Body('email') email: string) {
+    return this.authService.resendVerificationOtp(email);
+  }
 }

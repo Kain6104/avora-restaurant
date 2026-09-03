@@ -115,13 +115,17 @@ export class PromotionService {
   }
 
   async getVouchers(userId?: string) {
-    const now = new Date();
     let userTierId: string | null = null;
+    let userOrderCount = 0;
 
     if (userId) {
-      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      const user = await this.prisma.user.findUnique({ 
+        where: { id: userId },
+        include: { _count: { select: { orders: true } } }
+      });
       if (user) {
         userTierId = user.membershipTierId;
+        userOrderCount = user._count.orders;
       }
     }
 
@@ -129,17 +133,24 @@ export class PromotionService {
       where: {
         isActive: true,
         isPublic: true,
-        startDate: { lte: now },
-        endDate: { gte: now },
-        // Chỉ lấy những voucher không yêu cầu hạng thẻ HOẶC yêu cầu đúng hạng thẻ của user này
-        OR: [
-          { membershipTierId: null },
-          ...(userTierId ? [{ membershipTierId: userTierId }] : [])
-        ]
       }
     });
 
-    return vouchers;
+    const vouchersWithDetails = await Promise.all(vouchers.map(async (voucher) => {
+      let usedCountByUser = 0;
+      if (userId) {
+        usedCountByUser = await this.prisma.order.count({
+          where: { userId, voucherId: voucher.id, status: { not: 'CANCELLED' } }
+        });
+      }
+      return {
+        ...voucher,
+        usedCountByUser,
+        userOrderCount
+      };
+    }));
+
+    return vouchersWithDetails;
   }
 
   async applyVoucher(code: string, orderValue: number, userId?: string, shippingFee: number = 0) {
@@ -166,6 +177,13 @@ export class PromotionService {
       });
       if (usedByThisUser >= voucher.usageLimitPerUser) {
         throw new BadRequestException('Bạn đã hết lượt sử dụng mã khuyến mãi này');
+      }
+    }
+
+    if (voucher.isFirstOrderOnly && userId) {
+      const orderCount = await this.prisma.order.count({ where: { userId } });
+      if (orderCount > 0) {
+        throw new BadRequestException('Mã khuyến mãi này chỉ áp dụng cho đơn hàng đầu tiên của bạn');
       }
     }
 

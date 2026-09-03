@@ -8,15 +8,10 @@ import {
   ShoppingBag, PencilLine, ShieldCheck, Truck, HeadphonesIcon, RefreshCcw, Heart, Ticket, X, ChevronRight
 } from 'lucide-react';
 import EditCartItemModal from './EditCartItemModal';
-import VoucherModal from '../../../components/VoucherModal';
 
 export default function CartPage() {
-  const { cartItems, updateQuantity, removeFromCart, updateCartItem, appliedVoucher, discountAmount, setVoucher, removeVoucher, getCartItemTotal, refreshQuotas, isLoaded } = useCart();
+  const { cartItems, updateQuantity, removeFromCart, updateCartItem, appliedVoucher, discountAmount, getCartItemTotal, refreshQuotas, isLoaded } = useCart();
   const [editingItem, setEditingItem] = useState<CartItem | null>(null);
-  const [voucherCode, setVoucherCode] = useState("");
-  const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [voucherError, setVoucherError] = useState("");
 
   const totalAmount = cartItems.reduce((acc, item) => acc + getCartItemTotal(item), 0);
   const finalAmount = Math.max(0, totalAmount - discountAmount);
@@ -27,37 +22,11 @@ export default function CartPage() {
       refreshQuotas();
     }
   }, [isLoaded]);
-
-  const applyVoucherCode = async (code: string) => {
-    if (!code) return;
-    setApplying(true);
-    setVoucherError("");
-    try {
-      const userStr = localStorage.getItem('user');
-      const user = userStr ? JSON.parse(userStr) : null;
-      const res = await fetch('/api/promotions/vouchers/apply', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true'
-        },
-        body: JSON.stringify({ code, orderValue: totalAmount, userId: user?.id })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setVoucher(data.voucher, data.discountAmount);
-        setVoucherCode("");
-        setIsVoucherModalOpen(false);
-      } else {
-        setVoucherError(data.message || 'Mã không hợp lệ');
-      }
-    } catch (err) {
-      setVoucherError('Lỗi kết nối');
-    } finally {
-      setApplying(false);
+  useEffect(() => {
+    if (isLoaded) {
+      refreshQuotas();
     }
-  };
-
+  }, [isLoaded]);
   return (
     <div className="max-w-6xl mx-auto px-2 sm:px-4 py-4 sm:py-8 min-h-[calc(100vh-100px)] lg:pb-2 bg-slate-50/30 sm:bg-transparent">
 
@@ -93,10 +62,10 @@ export default function CartPage() {
               {/* Cart List */}
               <div className="bg-white rounded-2xl sm:rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="hidden sm:grid grid-cols-12 gap-4 px-6 py-3 border-b border-slate-100 bg-slate-50/50 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  <div className="col-span-6">Món ăn</div>
+                  <div className="col-span-5">Món ăn</div>
                   <div className="col-span-2 text-center">Đơn giá</div>
                   <div className="col-span-2 text-center">Số lượng</div>
-                  <div className="col-span-2 text-right">Thành tiền</div>
+                  <div className="col-span-3 text-right pr-6">Thành tiền</div>
                 </div>
 
                 <div className="divide-y divide-slate-100">
@@ -106,7 +75,7 @@ export default function CartPage() {
                       {/* Image */}
                       <div className="w-16 h-16 sm:w-20 sm:h-20 shrink-0 rounded-xl overflow-hidden border border-slate-100 bg-slate-50 relative">
                         <img
-                          src={item.imageUrl || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=200'}
+                          src={item.imageUrl || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200'}
                           alt={item.name}
                           className="w-full h-full object-cover"
                         />
@@ -121,7 +90,7 @@ export default function CartPage() {
                       <div className="flex-1 min-w-0 flex flex-col sm:grid sm:grid-cols-12 sm:gap-4 sm:items-center h-full sm:h-auto">
 
                         {/* Name & Options */}
-                        <div className="sm:col-span-6 flex flex-col justify-center sm:justify-start">
+                        <div className="sm:col-span-5 flex flex-col justify-center sm:justify-start">
                           <div className="flex justify-between items-start pr-6 sm:pr-0">
                             <h3 className="font-bold text-slate-900 text-sm sm:text-[15px] line-clamp-2 leading-tight">
                               <Link 
@@ -170,16 +139,16 @@ export default function CartPage() {
                           </div>
 
                           {/* Quantity Control */}
-                          <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm h-7 sm:h-8">
-                            <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="w-7 sm:w-8 h-full flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-l-lg"><Minus size={14} /></button>
-                            <span className="w-6 sm:w-8 text-center text-xs sm:text-sm font-bold text-slate-800">{item.quantity}</span>
-                            <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-7 sm:w-8 h-full flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-r-lg"><Plus size={14} /></button>
+                          <div className="flex items-center bg-white border border-slate-200 rounded-lg shadow-sm h-7 sm:h-8 shrink-0">
+                            <button onClick={() => updateQuantity(item.id, item.quantity - 1)} className="w-7 sm:w-8 h-full flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-l-lg shrink-0"><Minus size={14} /></button>
+                            <span className="w-6 sm:w-8 text-center text-xs sm:text-sm font-bold text-slate-800 shrink-0">{item.quantity}</span>
+                            <button onClick={() => updateQuantity(item.id, item.quantity + 1)} className="w-7 sm:w-8 h-full flex items-center justify-center text-slate-500 hover:text-red-500 hover:bg-red-50 rounded-r-lg shrink-0"><Plus size={14} /></button>
                           </div>
                         </div>
 
                         {/* Total (Desktop only) */}
-                        <div className="hidden sm:flex sm:col-span-2 justify-end pr-8">
-                          <span className="font-black text-red-600 text-[15px]">
+                        <div className="hidden sm:flex sm:col-span-3 justify-end pr-6">
+                          <span className="font-black text-red-600 text-[15px] whitespace-nowrap">
                             {getCartItemTotal(item).toLocaleString('vi-VN')}đ
                           </span>
                         </div>
@@ -211,55 +180,6 @@ export default function CartPage() {
                     <span className="font-medium">Tạm tính ({totalQuantity} món)</span>
                     <span className="font-bold text-slate-800">{totalAmount.toLocaleString('vi-VN')}đ</span>
                   </div>
-                  {appliedVoucher && (
-                    <div className="flex justify-between text-green-600 text-sm">
-                      <span className="font-medium">Giảm giá ({appliedVoucher.code})</span>
-                      <span className="font-bold">-{discountAmount.toLocaleString('vi-VN')}đ</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* VOUCHER SECTION */}
-                <div className="mb-5">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-bold text-slate-800 flex items-center gap-1.5"><Ticket size={16} className="text-red-500" /> Ưu đãi</span>
-                    <button onClick={() => setIsVoucherModalOpen(true)} className="text-xs font-bold text-red-600 hover:underline">Chọn mã</button>
-                  </div>
-
-                  {appliedVoucher ? (
-                    <div className="flex items-center justify-between bg-green-50 border border-green-200 p-2.5 rounded-xl">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-green-100 rounded-full flex items-center justify-center"><Ticket className="w-3.5 h-3.5 text-green-600" /></div>
-                        <div>
-                          <p className="font-bold text-green-800 text-xs">{appliedVoucher.code}</p>
-                          <p className="text-[10px] text-green-600">Đã áp dụng mã</p>
-                        </div>
-                      </div>
-                      <button onClick={removeVoucher} className="p-1 hover:bg-green-100 rounded-full text-green-700 transition-colors">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={voucherCode}
-                          onChange={(e) => setVoucherCode(e.target.value)}
-                          placeholder="Nhập mã giảm giá"
-                          className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-400 transition-all uppercase placeholder:normal-case"
-                        />
-                        <button
-                          disabled={applying || !voucherCode}
-                          onClick={() => applyVoucherCode(voucherCode)}
-                          className="bg-slate-800 hover:bg-slate-900 disabled:bg-slate-300 disabled:text-slate-500 text-white font-bold px-3.5 rounded-xl text-sm transition-colors"
-                        >
-                          {applying ? '...' : 'Áp dụng'}
-                        </button>
-                      </div>
-                      {voucherError && <p className="text-red-500 text-[11px] mt-1.5 font-medium px-1">{voucherError}</p>}
-                    </div>
-                  )}
                 </div>
 
                 <div className="border-t border-slate-100 border-dashed my-4"></div>
@@ -385,13 +305,6 @@ export default function CartPage() {
           }}
         />
       )}
-
-      <VoucherModal
-        isOpen={isVoucherModalOpen}
-        onClose={() => setIsVoucherModalOpen(false)}
-        orderValue={totalAmount}
-        onApply={(v) => applyVoucherCode(v.code)}
-      />
 
       {/* CSS for hide-scrollbar and pb-safe */}
       <style dangerouslySetInnerHTML={{

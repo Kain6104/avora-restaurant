@@ -64,6 +64,41 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [isLoaded, setIsLoaded] = useState(false);
   const [appliedVoucher, setAppliedVoucher] = useState<any | null>(null);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
+
+  // Dynamically calculate discount
+  useEffect(() => {
+    if (!appliedVoucher) {
+      setDiscountAmount(0);
+      return;
+    }
+
+    const currentTotal = cartItems.reduce((acc, item) => {
+      if (item.isFlashSaleItem && item.flashSaleStock !== undefined && item.maxQuantityPerUser !== undefined && item.maxQuantityPerUser !== null) {
+        const flashSaleQty = Math.min(item.quantity, item.maxQuantityPerUser);
+        const normalQty = item.quantity - flashSaleQty;
+        return acc + (flashSaleQty * item.priceAtSale) + (normalQty * item.originalPriceAtSale);
+      }
+      return acc + (item.quantity * item.priceAtSale);
+    }, 0);
+
+    if (currentTotal < appliedVoucher.minOrderValue) {
+      setDiscountAmount(0);
+      return;
+    }
+
+    let calculatedDiscount = 0;
+    if (appliedVoucher.discountType === 'PERCENTAGE') {
+      calculatedDiscount = currentTotal * (appliedVoucher.discountValue / 100);
+      if (appliedVoucher.maxDiscount) {
+        calculatedDiscount = Math.min(calculatedDiscount, appliedVoucher.maxDiscount);
+      }
+    } else {
+      calculatedDiscount = appliedVoucher.discountValue;
+    }
+    
+    setDiscountAmount(calculatedDiscount);
+  }, [cartItems, appliedVoucher]);
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
@@ -473,7 +508,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const setVoucher = (voucher: any, discount: number) => {
     setAppliedVoucher(voucher);
-    setDiscountAmount(discount);
+    // discountAmount will be auto-calculated by the useEffect
     showToast(`Đã áp dụng mã ${voucher.code}`);
   };
 
@@ -600,7 +635,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           <div className="relative z-10 w-full sm:w-[500px] bg-white rounded-t-2xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[85vh] sm:max-h-[90vh] h-auto flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
             <div className="p-3 sm:p-4 border-b border-slate-100 flex items-start justify-between shrink-0">
               <div className="flex gap-3 sm:gap-4">
-                <img src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1544025162-8111149f57b7?w=400'} className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl object-cover shadow-sm" />
+                <img src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'} className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl object-cover shadow-sm" />
                 <div>
                   <h2 className="font-bold text-sm sm:text-lg text-slate-900 leading-tight mb-0.5 sm:mb-1">{optionsModalProduct.name}</h2>
                   <div className="text-red-600 font-bold text-sm sm:text-base">{(optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0).toLocaleString('vi-VN')}đ</div>

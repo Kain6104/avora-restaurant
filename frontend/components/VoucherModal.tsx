@@ -12,9 +12,14 @@ export default function VoucherModal({ isOpen, onClose, onApply, orderValue }: V
   const [vouchers, setVouchers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     if (isOpen) {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        setCurrentUser(JSON.parse(userStr));
+      }
       fetchVouchers();
     }
   }, [isOpen]);
@@ -80,31 +85,65 @@ export default function VoucherModal({ isOpen, onClose, onApply, orderValue }: V
             </div>
           ) : (
             vouchers.map(voucher => {
-              const isEligible = orderValue >= voucher.minOrderValue;
+              let isEligible = true;
+              let reason = "";
+              const now = new Date();
+              const startDate = new Date(voucher.startDate);
+              const endDate = new Date(voucher.endDate);
+
+              if (voucher.membershipTierId && currentUser?.membershipTierId !== voucher.membershipTierId) {
+                isEligible = false;
+                reason = "Rất tiếc, mã voucher này không dành cho hạng thẻ của bạn.";
+              } else if (voucher.isFirstOrderOnly && voucher.userOrderCount > 0) {
+                isEligible = false;
+                reason = "Rất tiếc, mã voucher này chỉ áp dụng cho đơn hàng đầu tiên của bạn tại hệ thống.";
+              } else if (voucher.usageLimitPerUser !== null && voucher.usedCountByUser >= voucher.usageLimitPerUser) {
+                isEligible = false;
+                reason = "Bạn đã sử dụng hết số lượt cho phép của mã này.";
+              } else if (orderValue < voucher.minOrderValue) {
+                isEligible = false;
+                reason = `Bạn cần mua thêm ${(voucher.minOrderValue - orderValue).toLocaleString('vi-VN')}đ để sử dụng mã này.`;
+              } else if (voucher.usageLimit !== null && voucher.usedCount >= voucher.usageLimit) {
+                isEligible = false;
+                reason = "Mã voucher đã hết lượt sử dụng.";
+              } else if (now < startDate || now > endDate) {
+                isEligible = false;
+                reason = "Mã voucher chưa bắt đầu hoặc đã hết hạn.";
+              }
+
               return (
-                <div key={voucher.id} className={`bg-white rounded-xl shadow-sm border ${isEligible ? 'border-red-100 hover:border-red-300 hover:shadow-md' : 'border-slate-200 opacity-60'} overflow-hidden transition-all flex`}>
-                  <div className={`w-24 shrink-0 flex flex-col items-center justify-center text-white p-3 ${isEligible ? 'bg-gradient-to-b from-red-500 to-red-600' : 'bg-slate-400'}`}>
-                    <Ticket className="w-8 h-8 mb-1 opacity-80" />
-                    <span className="font-black text-center leading-tight">
-                      {voucher.discountType === 'PERCENTAGE' ? `GIẢM ${voucher.discountValue}%` : 
-                       voucher.discountType === 'FREE_SHIP' ? 'FREE SHIP' : 
-                       `GIẢM ${(voucher.discountValue/1000)}K`}
-                    </span>
-                  </div>
-                  <div className="flex-1 p-3 flex flex-col relative">
-                    <h3 className="font-bold text-slate-900 text-sm mb-1 line-clamp-1">{voucher.code}</h3>
-                    <p className="text-xs text-slate-500 mb-2">Đơn tối thiểu {voucher.minOrderValue.toLocaleString('vi-VN')}đ</p>
-                    <div className="mt-auto flex justify-between items-end">
-                      <span className="text-[10px] text-slate-400">HSD: {new Date(voucher.endDate).toLocaleDateString('vi-VN')}</span>
-                      <button 
-                        disabled={!isEligible}
-                        onClick={() => onApply(voucher)}
-                        className={`text-xs font-bold px-3 py-1.5 rounded-lg ${isEligible ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
-                      >
-                        Áp dụng
-                      </button>
+                <div key={voucher.id} className="flex flex-col gap-2 mb-2">
+                  <div className={`bg-white rounded-xl shadow-sm border ${isEligible ? 'border-red-100 hover:border-red-300 hover:shadow-md' : 'border-slate-200 opacity-60'} overflow-hidden transition-all flex`}>
+                    <div className={`w-24 shrink-0 flex flex-col items-center justify-center text-white p-3 ${isEligible ? 'bg-gradient-to-b from-red-500 to-red-600' : 'bg-slate-400'}`}>
+                      <Ticket className="w-8 h-8 mb-1 opacity-80" />
+                      <span className="font-black text-center leading-tight">
+                        {voucher.discountType === 'PERCENTAGE' ? `GIẢM ${voucher.discountValue}%` : 
+                         voucher.discountType === 'FREE_SHIP' ? 'FREE SHIP' : 
+                         `GIẢM ${(voucher.discountValue/1000)}K`}
+                      </span>
+                    </div>
+                    <div className="flex-1 p-3 flex flex-col relative">
+                      <h3 className="font-bold text-slate-900 text-sm mb-1 line-clamp-1">{voucher.code}</h3>
+                      <p className="text-xs text-slate-500 mb-2">Đơn tối thiểu {voucher.minOrderValue.toLocaleString('vi-VN')}đ</p>
+                      <div className="mt-auto flex justify-between items-end">
+                        <span className="text-[10px] text-slate-400">HSD: {new Date(voucher.endDate).toLocaleDateString('vi-VN')}</span>
+                        <button 
+                          disabled={!isEligible}
+                          onClick={() => onApply(voucher)}
+                          className={`text-xs font-bold px-3 py-1.5 rounded-lg ${isEligible ? 'bg-red-50 text-red-600 hover:bg-red-600 hover:text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}
+                        >
+                          Áp dụng
+                        </button>
+                      </div>
                     </div>
                   </div>
+                  
+                  {!isEligible && reason && (
+                    <div className="bg-slate-50 text-slate-500 text-[11px] p-2.5 rounded-xl border border-slate-100 flex gap-2 leading-relaxed">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-slate-400" />
+                      <p>{reason}</p>
+                    </div>
+                  )}
                 </div>
               );
             })

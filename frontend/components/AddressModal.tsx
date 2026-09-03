@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, LocateFixed } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
@@ -37,13 +37,130 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     longitude: address?.longitude || 106.660172,
   });
 
+  useEffect(() => {
+    if (!address) {
+      try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const u = JSON.parse(userStr);
+          setFormData(prev => ({
+            ...prev,
+            recipientName: prev.recipientName || u.fullName || '',
+            phone: prev.phone || u.phone || '',
+          }));
+        }
+      } catch (e) {}
+    }
+  }, [address]);
+
+  const autoFillAddressFromCoords = async (latitude: number, longitude: number, toastId?: string) => {
+    setFormData(prev => ({ ...prev, latitude, longitude }));
+
+    // 1. Try BigDataCloud Reverse Geocoding
+    try {
+      const bdcRes = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=vi`
+      );
+      if (bdcRes.ok) {
+        const bdcData = await bdcRes.json();
+        const province = bdcData.principalSubdivision || bdcData.countryName || '';
+        let district = bdcData.locality || '';
+        let ward = '';
+        let streetDetail = '';
+
+        if (Array.isArray(bdcData.localityInfo?.administrative)) {
+          const adminList = bdcData.localityInfo.administrative;
+          const districtObj = adminList.find((a: any) =>
+            a.adminLevel === 6 ||
+            a.description?.toLowerCase().includes('quận') ||
+            a.description?.toLowerCase().includes('huyện') ||
+            a.description?.toLowerCase().includes('thành phố') ||
+            a.description?.toLowerCase().includes('thị xã')
+          );
+          if (districtObj && !district) district = districtObj.name;
+
+          const wardObj = adminList.find((a: any) =>
+            a.adminLevel === 8 ||
+            a.description?.toLowerCase().includes('phường') ||
+            a.description?.toLowerCase().includes('xã') ||
+            a.description?.toLowerCase().includes('thị trấn') ||
+            a.name?.toLowerCase().startsWith('phường') ||
+            a.name?.toLowerCase().startsWith('xã')
+          );
+          if (wardObj) ward = wardObj.name;
+
+          const streetObj = adminList.find((a: any) =>
+            a.adminLevel >= 9 ||
+            a.description?.toLowerCase().includes('đường') ||
+            a.name?.toLowerCase().startsWith('đường')
+          );
+          if (streetObj) streetDetail = streetObj.name;
+        }
+
+        if (!streetDetail && bdcData.localityInfo?.informative) {
+          const streetObj = bdcData.localityInfo.informative.find((a: any) =>
+            a.description?.toLowerCase().includes('đường') ||
+            a.name?.toLowerCase().startsWith('đường')
+          );
+          if (streetObj) streetDetail = streetObj.name;
+        }
+
+        const combinedWard = [ward, district].filter(Boolean).join(', ');
+        if (province || combinedWard) {
+          setFormData(prev => ({
+            ...prev,
+            province: province || prev.province,
+            ward: combinedWard || prev.ward,
+            streetDetail: streetDetail || prev.streetDetail || 'Vị trí hiện tại',
+          }));
+          if (toastId) toast.success('Đã lấy vị trí và điền địa chỉ thành công', { id: toastId });
+          return;
+        }
+      }
+    } catch (e) {
+      // Fallback to Nominatim
+    }
+
+    // 2. Try OpenStreetMap Nominatim
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=vi&addressdetails=1`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const addr = data.address || {};
+        const province = addr.province || addr.city || addr.state || '';
+        const district = addr.district || addr.county || addr.suburb || addr.city_district || addr.town || '';
+        const ward = addr.ward || addr.quarter || addr.neighbourhood || addr.suburb || addr.village || '';
+        const road = addr.road || '';
+        const houseNumber = addr.house_number || '';
+        
+        const parts = (data.display_name || '').split(',').map((s: string) => s.trim());
+        const rawStreet = parts.length > 2 ? parts.slice(0, Math.min(2, parts.length - 3)).join(', ') : (parts[0] || '');
+        const streetDetail = [houseNumber, road].filter(Boolean).join(' ') || addr.residential || addr.amenity || addr.building || rawStreet || '';
+        const combinedWard = [ward, district].filter(Boolean).join(', ');
+
+        setFormData(prev => ({
+          ...prev,
+          province: province || prev.province,
+          ward: combinedWard || prev.ward,
+          streetDetail: streetDetail || prev.streetDetail || 'Vị trí hiện tại',
+        }));
+        if (toastId) toast.success('Đã lấy vị trí và điền địa chỉ thành công', { id: toastId });
+        return;
+      }
+    } catch (e) {}
+
+    if (toastId) toast.success('Đã cập nhật tọa độ trên bản đồ', { id: toastId });
+  };
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleMapChange = (lat: number, lng: number) => {
-    setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
+    autoFillAddressFromCoords(lat, lng);
   };
 
   const handleToggleDefault = () => {
@@ -59,36 +176,9 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     const toastId = toast.loading('Đang lấy vị trí hiện tại...');
     
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
-        setFormData(prev => ({ ...prev, latitude, longitude }));
-        
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
-          if (res.ok) {
-            const data = await res.json();
-            const addressInfo = data.address || {};
-            
-            const city = addressInfo.city || addressInfo.state || addressInfo.province || '';
-            const suburb = addressInfo.suburb || addressInfo.quarter || addressInfo.neighbourhood || addressInfo.village || '';
-            const road = addressInfo.road || '';
-            const houseNumber = addressInfo.house_number || '';
-            
-            const streetDetail = [houseNumber, road].filter(Boolean).join(' ');
-            
-            setFormData(prev => ({
-              ...prev,
-              province: city || prev.province,
-              ward: suburb || prev.ward,
-              streetDetail: streetDetail || prev.streetDetail,
-            }));
-            toast.success('Đã lấy vị trí thành công', { id: toastId });
-          } else {
-            toast.success('Đã cập nhật tọa độ trên bản đồ', { id: toastId });
-          }
-        } catch (error) {
-          toast.success('Đã cập nhật tọa độ trên bản đồ', { id: toastId });
-        }
+        autoFillAddressFromCoords(latitude, longitude, toastId);
       },
       (error) => {
         toast.error('Không thể lấy vị trí. Vui lòng cấp quyền truy cập vị trí.', { id: toastId });
