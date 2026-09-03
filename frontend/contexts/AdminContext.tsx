@@ -4,6 +4,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
 interface User {
+  id?: string;
+  email?: string;
+  fullName?: string;
   role: string;
   branchId: string | null;
   branch?: { id: string; name: string };

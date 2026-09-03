@@ -16,7 +16,6 @@ interface MembershipTier {
   minSpending: number;
   pointMultiplier: number;
   discountPercent: number;
-  discountPercent: number;
   isActive: boolean;
   imageUrl?: string;
   _count?: { users: number };
@@ -227,7 +226,7 @@ export default function AdminMembershipTiersPage() {
                       })}
                     </Pie>
                     <Tooltip 
-                      formatter={(value: number) => [value, 'Thành viên']}
+                      formatter={(value: any) => [value, 'Thành viên']}
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                     />
                   </PieChart>

@@ -160,14 +160,20 @@ export default function AdminReportsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={revenueComparison}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="time" tickFormatter={(val) => {
-                   if(val.includes('-') && val.split('-').length === 2) return `Tháng ${val.split('-')[1]}`;
-                   return val.split('-').slice(1).join('/');
+                <XAxis dataKey="time" tickFormatter={(val: any) => {
+                   if (typeof val === 'string') {
+                     if (val.includes('-') && val.split('-').length === 2) return `Tháng ${val.split('-')[1]}`;
+                     return val.split('-').slice(1).join('/');
+                   }
+                   return String(val);
                 }} tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(val) => `${val / 1000000}M`} tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(val: any) => `${Number(val) / 1000000}M`} tick={{ fontSize: 12 }} />
                 <Tooltip 
-                  formatter={(value: number) => [formatMoney(value), 'Doanh thu']}
-                  labelFormatter={(label) => label.includes('-') && label.split('-').length === 2 ? `Tháng ${label}` : `Ngày: ${label}`}
+                  formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']}
+                  labelFormatter={(label: any) => {
+                    if (typeof label === 'string' && label.includes('-') && label.split('-').length === 2) return `Tháng ${label}`;
+                    return `Ngày: ${label}`;
+                  }}
                   contentStyle={{ borderRadius: '12px' }}
                 />
                 <Line type="monotone" dataKey="revenue" stroke="#3b82f6" strokeWidth={4} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 8 }} />
@@ -199,7 +205,7 @@ export default function AdminReportsPage() {
                       <Cell key={`cell-${index}`} fill={PAYMENT_COLORS[index % PAYMENT_COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip formatter={(value: number) => [formatMoney(value), 'Doanh thu']} />
+                  <Tooltip formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']} />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -278,11 +284,11 @@ export default function AdminReportsPage() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="hour" tickFormatter={(val) => `${val}h`} />
+                <XAxis dataKey="hour" tickFormatter={(val: any) => `${val}h`} />
                 <YAxis />
                 <Tooltip 
-                  formatter={(value: number, name: string) => [name === 'revenue' ? formatMoney(value) : value, name === 'revenue' ? 'Doanh thu' : 'Số đơn']}
-                  labelFormatter={(label) => `Giờ: ${label}:00 - ${Number(label)+1}:00`}
+                  formatter={(value: any, name: any) => [name === 'revenue' ? formatMoney(Number(value) || 0) : value, name === 'revenue' ? 'Doanh thu' : 'Số đơn']}
+                  labelFormatter={(label: any) => `Giờ: ${label}:00 - ${Number(label)+1}:00`}
                   contentStyle={{ borderRadius: '12px' }}
                 />
                 <Area type="monotone" dataKey="orderCount" stroke="#6366f1" strokeWidth={3} fillOpacity={1} fill="url(#colorPeak)" name="orderCount" />
@@ -301,10 +307,10 @@ export default function AdminReportsPage() {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={categoryStats} layout="vertical" margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" tickFormatter={(val) => `${val / 1000000}M`} />
+                <XAxis type="number" tickFormatter={(val: any) => `${Number(val) / 1000000}M`} />
                 <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 12 }} />
                 <Tooltip 
-                  formatter={(value: number) => [formatMoney(value), 'Doanh thu']}
+                  formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']}
                   contentStyle={{ borderRadius: '12px' }}
                 />
                 <Bar dataKey="revenue" fill="#10b981" radius={[0, 4, 4, 0]} barSize={20} />
@@ -326,9 +332,9 @@ export default function AdminReportsPage() {
               <BarChart data={tierRevenueStats} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(val) => `${val / 1000000}M`} />
+                <YAxis tickFormatter={(val: any) => `${Number(val) / 1000000}M`} />
                 <Tooltip 
-                  formatter={(value: number) => [formatMoney(value), 'Doanh thu']}
+                  formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']}
                   cursor={{ fill: 'transparent' }}
                   contentStyle={{ borderRadius: '12px' }}
                 />

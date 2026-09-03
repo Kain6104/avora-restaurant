@@ -181,21 +181,21 @@ export default function DashboardPage() {
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis 
                     dataKey="date" 
-                    tickFormatter={(val) => val.split('-').slice(1).join('/')} 
+                    tickFormatter={(val: any) => typeof val === 'string' ? val.split('-').slice(1).join('/') : String(val)} 
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fill: '#64748b', fontSize: 12 }} 
                     dy={10}
                   />
                   <YAxis 
-                    tickFormatter={(val) => `${val / 1000000}M`} 
+                    tickFormatter={(val: any) => `${Number(val) / 1000000}M`} 
                     axisLine={false} 
                     tickLine={false} 
                     tick={{ fill: '#64748b', fontSize: 12 }}
                   />
                   <Tooltip 
-                    formatter={(value: number) => [formatMoney(value), 'Doanh thu']}
-                    labelFormatter={(label) => `Ngày: ${label}`}
+                    formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']}
+                    labelFormatter={(label: any) => `Ngày: ${label}`}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)' }}
                   />
                   <Area type="monotone" dataKey="revenue" stroke="#ef4444" strokeWidth={3} fillOpacity={1} fill="url(#colorRevenue)" />
@@ -262,7 +262,7 @@ export default function DashboardPage() {
                     })}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number) => [value, 'Số lượng']}
+                    formatter={(value: any) => [value, 'Số lượng']}
                     contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
                   />
                 </PieChart>

@@ -27,6 +27,7 @@ interface Order {
   orderItems?: any[];
   voucher?: { code: string; discountType: string; discountValue: number };
   isViewedByAdmin?: boolean;
+  isInvoiceRequested?: boolean;
   cancelReason?: string;
   canceledBy?: string;
   user?: { id?: string; fullName?: string; email?: string; phone?: string };
