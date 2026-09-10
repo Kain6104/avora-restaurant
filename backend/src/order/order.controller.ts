@@ -27,6 +27,11 @@ export class OrderController {
     return this.orderService.getOrders(req.user.id);
   }
 
+  @Get('check-status/:orderCode')
+  async checkOrderStatus(@Param('orderCode') orderCode: string) {
+    return this.orderService.checkOrderStatus(orderCode);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get(':orderCode')
   async getOrderByCode(@Request() req, @Param('orderCode') orderCode: string) {

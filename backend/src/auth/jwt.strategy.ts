@@ -8,8 +8,14 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(private prisma: PrismaService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
         (request: any) => {
-          return request?.cookies?.token;
+          return (
+            request?.cookies?.token ||
+            request?.cookies?.access_token ||
+            request?.cookies?.accessToken ||
+            request?.cookies?.jwt
+          );
         },
       ]),
       ignoreExpiration: false,
@@ -18,14 +24,26 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: any) {
+    if (!payload?.sub) {
+      return null;
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id: payload.sub },
     });
 
     if (!user) {
-      throw new UnauthorizedException('Người dùng không tồn tại hoặc token không hợp lệ.');
+      return null;
     }
 
-    return { id: user.id, email: user.email, role: user.role, fullName: user.fullName, phone: user.phone, branchId: user.branchId };
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.fullName,
+      phone: user.phone,
+      branchId: user.branchId,
+      membershipTierId: user.membershipTierId,
+    };
   }
 }

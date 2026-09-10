@@ -1,23 +1,12 @@
 import React from 'react';
-import { AdminProvider } from '@/contexts/AdminContext';
-import AdminHeader from './components/AdminHeader';
-import AdminSidebar from './components/AdminSidebar';
+import type { Metadata } from 'next';
+import AdminLayoutWrapper from './AdminLayoutWrapper';
+
+export const metadata: Metadata = {
+  title: 'AVORA Admin & POS Management',
+  description: 'Hệ thống quản trị và điểm bán hàng POS AVORA Restaurant',
+};
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <AdminProvider>
-      <div className="flex h-screen bg-gray-50">
-        <AdminSidebar />
-        
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          <AdminHeader />
-          
-          <main className="flex-1 overflow-y-auto p-6">
-            {children}
-          </main>
-        </div>
-      </div>
-    </AdminProvider>
-  );
+  return <AdminLayoutWrapper>{children}</AdminLayoutWrapper>;
 }

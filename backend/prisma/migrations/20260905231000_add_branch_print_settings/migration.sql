@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE `Branch`
+  ADD COLUMN `autoPrintReceipt` BOOLEAN NOT NULL DEFAULT true,
+  ADD COLUMN `autoPrintTempBill` BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN `receiptCopies` INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN `kitchenCopies` INTEGER NOT NULL DEFAULT 1,
+  ADD COLUMN `defaultPaperSize` VARCHAR(191) NULL DEFAULT '80mm',
+  ADD COLUMN `defaultReceiptPrinterId` VARCHAR(191) NULL;

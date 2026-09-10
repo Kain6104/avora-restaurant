@@ -1,12 +1,13 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Home, ClipboardList, ShoppingCart, User, ChevronUp } from 'lucide-react';
+import { Home, ClipboardList, ShoppingCart, User, ChevronUp, CalendarCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useCart } from '../context/CartContext';
 import { usePathname } from 'next/navigation';
 
 export default function BottomNav() {
+  const [mounted, setMounted] = useState(false);
   const { cartItems } = useCart();
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0);
   const pathname = usePathname();
@@ -14,6 +15,10 @@ export default function BottomNav() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const lastScrollY = useRef(0);
   const scrolledUpAcc = useRef(0);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     const HIDE_THRESHOLD = 10;
@@ -55,9 +60,12 @@ export default function BottomNav() {
   const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' });
 
   // Fix active tab: use exact match for all tabs.
-  // "Đơn hàng" links to /profile?tab=orders — we check search param
   const navItems = [
     { href: '/', icon: Home, label: 'Trang chủ', match: () => pathname === '/' },
+    {
+      href: '/booking', icon: CalendarCheck, label: 'Đặt bàn',
+      match: () => pathname === '/booking' || pathname.startsWith('/booking/') || pathname === '/reservation',
+    },
     {
       href: '/orders', icon: ClipboardList, label: 'Đơn hàng',
       match: () => pathname === '/orders' || pathname.startsWith('/orders/'),
@@ -123,7 +131,7 @@ export default function BottomNav() {
                     className={`w-[22px] h-[22px] transition-all duration-200 ${active ? 'scale-110' : ''}`}
                     strokeWidth={active ? 2.5 : 1.8}
                   />
-                  {typeof badge === 'number' && badge > 0 && (
+                  {mounted && typeof badge === 'number' && badge > 0 && (
                     <span className="absolute -top-1.5 -right-2 bg-red-600 text-white text-[9px] font-bold min-w-[15px] h-[15px] px-0.5 rounded-full flex items-center justify-center border-[1.5px] border-white leading-none">
                       {badge > 99 ? '99+' : badge}
                     </span>

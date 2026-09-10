@@ -1,305 +1,354 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Search, UserPlus, Filter, Settings, Shield, ChefHat, User as UserIcon, X, Plus, Users, ShieldCheck, Crown, User, ShoppingBag, MapPin, Calendar, Star, Receipt, Eye } from 'lucide-react';
-import { toast } from 'react-hot-toast';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Pagination from '@/app/admin/components/Pagination';
+import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  Search,
+  Plus,
+  Edit2,
+  Shield,
+  ShieldAlert,
+  UserCheck,
+  ChefHat,
+  User as UserIcon,
+  RotateCw,
+  Store,
+  Eye,
+} from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import {
+  PageHeader,
+  FilterBar,
+  SearchInput,
+  StatusBadge,
+  DataTable,
+  MobileDataCard,
+  Pagination,
+} from '@/app/admin/components/ui';
 import { buildApiUrl } from '@/lib/utils/api';
 
 interface UserItem {
   id: string;
   fullName: string;
   email: string;
-  phone: string;
+  phone?: string;
   role: string;
-  branchId?: string;
-  branch?: { name: string };
+  isEmailVerified: boolean;
+  isActive: boolean;
   createdAt: string;
-  isAccountLocked: boolean;
+  branch?: { name: string };
+  membershipTier?: { name: string };
 }
 
-interface Meta {
-  total: number;
-  totalPages: number;
-  page: number;
-}
-
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: 'bg-red-100 text-red-800',
-  MANAGER: 'bg-blue-100 text-blue-800',
-  CHEF: 'bg-orange-100 text-orange-800',
-  USER: 'bg-gray-100 text-gray-700',
-};
-
-const ROLE_ICONS: Record<string, React.ReactNode> = {
-  ADMIN: <Crown size={12} />,
-  MANAGER: <ShieldCheck size={12} />,
-  CHEF: <ChefHat size={12} />,
-  USER: <User size={12} />,
-};
+const ROLES = ['ADMIN', 'MANAGER', 'CHEF', 'USER'] as const;
 
 export default function AdminUsersPage() {
-  const { selectedBranchId, role } = useAdmin();
-  const [users, setUsers] = useState<UserItem[]>([]);
-  const [meta, setMeta] = useState<Meta>({ total: 0, totalPages: 1, page: 1 });
+  const { role, selectedBranchId } = useAdmin();
+  const { t, locale } = useLanguage();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [meta, setMeta] = useState({ total: 0, totalPages: 1, page: 1 });
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [filterRole, setFilterRole] = useState(searchParams.get('role') || '');
-  const [page, setPage] = useState(Number(searchParams.get('page')) || 1);
 
-  // Role count state
-  const [roleCounts, setRoleCounts] = useState<Record<string, number>>({});
+  // Filters state
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [page, setPage] = useState(1);
 
-  const isInitialMount = useRef(true);
-
-  // Sync state to URL
-  useEffect(() => {
-    if (isInitialMount.current) return;
-    const params = new URLSearchParams(window.location.search);
-    if (search) params.set('search', search); else params.delete('search');
-    if (filterRole) params.set('role', filterRole); else params.delete('role');
-    if (page > 1) params.set('page', page.toString()); else params.delete('page');
-    
-    const newUrl = `${window.location.pathname}?${params.toString()}`;
-    window.history.replaceState({}, '', newUrl);
-  }, [search, filterRole, page]);
-
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      fetchUsers();
-    } else {
-      fetchUsers();
-    }
-
-    if (role === 'ADMIN') fetchBranches();
-  }, [selectedBranchId, page, filterRole]);
-
-  // Fetch role counts in parallel
-  useEffect(() => {
-    if (role === 'ADMIN') fetchRoleCounts();
-  }, [selectedBranchId]);
-
-  const fetchUsers = async (currentSearch = search) => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const url = buildApiUrl('/api/admin/users', {
-        branchId: selectedBranchId,
-        search: currentSearch,
-        role: filterRole,
+      const queryParams: Record<string, any> = {
         page,
-        limit: 10
-      });
+        limit: 12,
+      };
 
+      if (selectedBranchId && selectedBranchId !== 'ALL') {
+        queryParams.branchId = selectedBranchId;
+      }
+      if (search) queryParams.search = search;
+      if (roleFilter) queryParams.role = roleFilter;
+
+      const url = buildApiUrl('/api/admin/users', queryParams);
       const res = await fetch(url, { credentials: 'include' });
-      const data = await res.json();
-      setUsers(data.data || []);
-      setMeta(data.meta || { total: 0, totalPages: 1, page: 1 });
-    } catch (error) {
-      console.error(error);
+      if (res.ok) {
+        const json = await res.json();
+        setUsers(json.data || []);
+        if (json.meta) setMeta(json.meta);
+      }
+    } catch (e) {
+      console.error('Error fetching users:', e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedBranchId, search, roleFilter, page]);
 
-  const fetchRoleCounts = async () => {
-    try {
-      const roles = ['ADMIN', 'MANAGER', 'CHEF', 'USER'];
-      const counts: Record<string, number> = {};
-      await Promise.all(
-        roles.map(async (r) => {
-          const url = buildApiUrl('/api/admin/users', {
-            branchId: selectedBranchId,
-            limit: 1,
-            role: r
-          });
-          const res = await fetch(url, { credentials: 'include' });
-          const data = await res.json();
-          counts[r] = data.meta?.total ?? 0;
-        })
-      );
-      setRoleCounts(counts);
-    } catch (error) {
-      console.error(error);
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  const getRoleIcon = (r: string) => {
+    switch (r) {
+      case 'ADMIN':
+        return <ShieldAlert size={14} className="text-red-600" />;
+      case 'MANAGER':
+        return <Shield size={14} className="text-blue-600" />;
+      case 'CHEF':
+        return <ChefHat size={14} className="text-amber-600" />;
+      default:
+        return <UserIcon size={14} className="text-slate-500" />;
     }
   };
 
-  const fetchBranches = async () => {};
-
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPage(1);
-    fetchUsers();
-  };
-
-
-
-  return (
-    <div className="space-y-6 relative">
-      <div className="flex items-center justify-between">
+  const columns = [
+    {
+      key: 'user',
+      header: t('table.customer', 'Người dùng & Tài khoản'),
+      render: (u: UserItem) => (
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-xs text-slate-700 uppercase shrink-0">
+            {u.fullName?.charAt(0) || u.email?.charAt(0) || 'U'}
+          </div>
+          <div className="min-w-0">
+            <p className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+              {u.fullName || 'Chưa đặt tên'}
+            </p>
+            <span className="text-[11px] text-slate-400 block truncate">{u.email}</span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Vai trò & Chi nhánh',
+      render: (u: UserItem) => (
         <div>
-          <h1 className="text-2xl font-bold">Quản lý người dùng</h1>
-          <span className="text-sm text-gray-500">
-            Tổng: <span className="font-bold text-gray-800">{meta.total}</span> người dùng
-          </span>
-        </div>
-        <button
-          onClick={() => router.push('/admin/users/create')}
-          className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-red-700 transition-colors"
-        >
-          <span className="text-lg leading-none">+</span> Thêm tài khoản
-        </button>
-      </div>
-
-      {/* Role count cards */}
-      {role === 'ADMIN' && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {(['ADMIN', 'MANAGER', 'CHEF', 'USER'] as const).map((r) => (
-            <button
-              key={r}
-              onClick={() => { setFilterRole(filterRole === r ? '' : r); setPage(1); }}
-              className={`p-4 rounded-xl border-2 text-left transition-all ${
-                filterRole === r ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <span className={`text-xs font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${ROLE_COLORS[r]}`}>
-                  {ROLE_ICONS[r]} {r}
-                </span>
-              </div>
-              <div className="text-2xl font-bold text-gray-900">{roleCounts[r] ?? '...'}</div>
-              <div className="text-xs text-gray-500">người dùng</div>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4 border-b bg-gray-50 flex flex-col md:flex-row items-start md:items-center gap-3">
-          <form onSubmit={handleSearch} className="flex gap-2 flex-1">
-            <div className="relative flex-1 max-w-sm">
-              <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-              <input
-                type="text"
-                placeholder="Tìm tên, email hoặc số điện thoại..."
-                className="w-full border rounded-lg pl-9 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-red-500"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <button
-              type="submit"
-              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700"
-            >
-              Tìm
-            </button>
-            {search && (
-              <button
-                type="button"
-                onClick={() => { setSearch(''); setPage(1); fetchUsers(); }}
-                className="border px-3 py-2 rounded-lg text-sm hover:bg-gray-50"
-              >
-                Xóa
-              </button>
-            )}
-          </form>
-
-          {filterRole && (
-            <span className="text-sm text-red-600 font-medium bg-red-50 px-3 py-1.5 rounded-lg">
-              Đang lọc: {filterRole}
-              <button onClick={() => { setFilterRole(''); setPage(1); }} className="ml-2 hover:underline">✕</button>
+          <div className="flex items-center gap-1.5">
+            {getRoleIcon(u.role)}
+            <span className="font-bold text-xs text-slate-800 uppercase">
+              {t(`role.${u.role}`, u.role)}
+            </span>
+          </div>
+          {u.branch && (
+            <span className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
+              <Store size={10} /> {u.branch.name}
             </span>
           )}
         </div>
+      ),
+    },
+    {
+      key: 'membershipTier',
+      header: 'Hạng thành viên',
+      render: (u: UserItem) => (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-50 text-red-700 border border-red-100">
+          {u.membershipTier?.name || 'Thành viên mới'}
+        </span>
+      ),
+    },
+    {
+      key: 'phone',
+      header: 'Số điện thoại',
+      render: (u: UserItem) => (
+        <span className="text-xs font-mono text-slate-600">{u.phone || '—'}</span>
+      ),
+    },
+    {
+      key: 'createdAt',
+      header: t('table.time', 'Ngày tham gia'),
+      render: (u: UserItem) => (
+        <span className="text-xs text-slate-400 font-medium">
+          {new Date(u.createdAt).toLocaleDateString(locale === 'en' ? 'en-US' : 'vi-VN')}
+        </span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: t('table.action', 'Thao tác'),
+      align: 'right' as const,
+      render: (u: UserItem) => (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(`/admin/users/${u.id}`);
+          }}
+          aria-label={t('common.details', 'Xem chi tiết')}
+          className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+        >
+          {role === 'ADMIN' ? <Edit2 size={16} /> : <Eye size={16} />}
+        </button>
+      ),
+    },
+  ];
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm whitespace-nowrap">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-3 font-bold text-gray-600">Tên</th>
-                <th className="px-6 py-3 font-bold text-gray-600">Email</th>
-                <th className="px-6 py-3 font-bold text-gray-600">Số điện thoại</th>
-                <th className="px-6 py-3 font-bold text-gray-600">Vai trò</th>
-                <th className="px-6 py-3 font-bold text-gray-600">Chi nhánh</th>
-                <th className="px-6 py-3 font-bold text-gray-600 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">Đang tải...</td>
-                </tr>
-              ) : users.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-6 py-10 text-center">
-                    <div className="flex flex-col items-center gap-2 text-gray-400">
-                      <Users size={36} />
-                      <span>Không tìm thấy người dùng nào</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : (
-                users.map((user) => (
-                  <tr 
-                    key={user.id} 
-                    className="hover:bg-gray-50 transition-colors cursor-pointer"
-                    onClick={() => router.push(`/admin/users/${user.id}`)}
-                  >
-                    <td className="px-6 py-4 font-medium text-gray-900">{user.fullName}</td>
-                    <td className="px-6 py-4 text-gray-600">{user.email}</td>
-                    <td className="px-6 py-4 text-gray-600">{user.phone || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded-full font-bold flex items-center gap-1 w-fit ${ROLE_COLORS[user.role]}`}>
-                        {ROLE_ICONS[user.role]} {user.role}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-600">{user.branch?.name || '-'}</td>
-                    <td className="px-6 py-4 text-right">
-                      {role === 'ADMIN' ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/admin/users/${user.id}`);
-                          }}
-                          className="text-blue-600 hover:underline font-medium text-sm border border-blue-200 bg-blue-50 px-3 py-1.5 rounded-lg"
-                        >
-                          Chỉnh sửa
-                        </button>
-                      ) : (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/admin/users/${user.id}`);
-                          }}
-                          className="text-gray-600 hover:text-gray-900 font-medium text-sm bg-gray-100 px-3 py-1.5 rounded-lg flex items-center justify-end gap-1 ml-auto"
-                        >
-                          <Eye size={14} /> Xem
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      {/* Page Header */}
+      <PageHeader
+        title={t('users.title', 'Quản lý Người dùng')}
+        subtitle={t('users.subtitle', 'Danh sách tài khoản khách hàng, quản lý chi nhánh và phân quyền nhân sự')}
+        breadcrumbs={[
+          { label: t('nav.customers', 'Khách hàng') },
+          { label: t('nav.users', 'Người dùng') },
+        ]}
+        badge={
+          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-100">
+            {t('common.total', 'Tổng')} {meta.total} {t('common.results', 'tài khoản')}
+          </span>
+        }
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchUsers()}
+              aria-label={t('common.refresh', 'Làm mới')}
+              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+            >
+              <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
+              <span>{t('common.refresh', 'Làm mới')}</span>
+            </button>
+            {role === 'ADMIN' && (
+              <button
+                type="button"
+                onClick={() => router.push('/admin/users/create')}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+              >
+                <Plus size={15} />
+                <span>{t('common.add', 'Thêm tài khoản')}</span>
+              </button>
+            )}
+          </div>
+        }
+      />
+
+      {/* Role KPI Filter Tabs */}
+      {role === 'ADMIN' && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+          {ROLES.map((r) => {
+            const isActive = roleFilter === r;
+            return (
+              <button
+                key={r}
+                type="button"
+                onClick={() => {
+                  setRoleFilter(isActive ? '' : r);
+                  setPage(1);
+                }}
+                className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex items-center gap-3 ${
+                  isActive
+                    ? 'bg-red-50/90 border-red-300 text-red-700 shadow-xs'
+                    : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-2xs'
+                }`}
+              >
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                    isActive ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {getRoleIcon(r)}
+                </div>
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold block truncate">
+                    {t(`role.${r}`, r)}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    {r === 'ADMIN' ? 'Full Access' : r === 'MANAGER' ? 'Branch' : 'General'}
+                  </span>
+                </div>
+              </button>
+            );
+          })}
         </div>
+      )}
 
-        <Pagination 
-          currentPage={page} 
-          totalPages={meta.totalPages} 
-          totalItems={meta.total} 
-          itemName="người dùng" 
-          onPageChange={setPage} 
-        />
-      </div>
+      {/* Filter Bar */}
+      <FilterBar
+        actions={
+          (search || roleFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setRoleFilter('');
+                setPage(1);
+              }}
+              className="px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            >
+              {t('common.clearFilter', 'Xóa lọc')}
+            </button>
+          )
+        }
+      >
+        <div className="w-full sm:w-80">
+          <SearchInput
+            value={search}
+            onChange={(val) => {
+              setSearch(val);
+              setPage(1);
+            }}
+            placeholder={t('common.search', 'Tìm theo tên, email, số điện thoại...')}
+          />
+        </div>
+      </FilterBar>
 
+      {/* Data Table */}
+      <DataTable
+        columns={columns}
+        data={users}
+        keyExtractor={(u) => u.id}
+        loading={loading}
+        onRowClick={(u) => router.push(`/admin/users/${u.id}`)}
+        emptyTitle={t('common.noData', 'Không tìm thấy người dùng nào')}
+        emptyDescription="Thử tìm kiếm với từ khóa khác hoặc xóa bộ lọc vai trò."
+        mobileCardRender={(u) => (
+          <MobileDataCard
+            title={u.fullName || u.email}
+            subtitle={u.email}
+            badge={
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 uppercase">
+                {t(`role.${u.role}`, u.role)}
+              </span>
+            }
+            details={[
+              {
+                label: 'SĐT',
+                value: u.phone || '—',
+              },
+              {
+                label: 'Chi nhánh',
+                value: u.branch?.name || 'Tất cả',
+              },
+              {
+                label: 'Hạng thẻ',
+                value: u.membershipTier?.name || 'Thành viên mới',
+              },
+            ]}
+            actions={
+              <button
+                type="button"
+                onClick={() => router.push(`/admin/users/${u.id}`)}
+                className="w-full py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors"
+              >
+                <Edit2 size={13} />
+                <span>{t('common.details', 'Xem chi tiết tài khoản')}</span>
+              </button>
+            }
+          />
+        )}
+      />
 
+      {/* Pagination */}
+      <Pagination
+        currentPage={page}
+        totalPages={meta.totalPages}
+        totalItems={meta.total}
+        pageSize={12}
+        onPageChange={setPage}
+        itemName={t('nav.users', 'tài khoản')}
+      />
     </div>
   );
 }

@@ -1,53 +1,120 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
-import { Search, Plus, Edit, Trash2, Power, PowerOff, Percent, Clock, Box, ShieldCheck, Crown } from 'lucide-react';
+import { useLanguage } from '@/contexts/LanguageContext';
+import {
+  Search,
+  Plus,
+  Edit2,
+  Trash2,
+  Power,
+  PowerOff,
+  Ticket,
+  Zap,
+  Gift,
+  Crown,
+  Clock,
+  Store,
+  RotateCw,
+} from 'lucide-react';
 import ImageUploader from '@/app/admin/components/ImageUploader';
+import {
+  PageHeader,
+  FilterBar,
+  SearchInput,
+  Select,
+  StatusBadge,
+  DataTable,
+  MobileDataCard,
+  Modal,
+  ConfirmDialog,
+  FormField,
+} from '@/app/admin/components/ui';
 import { buildApiUrl } from '@/lib/utils/api';
 import { toast } from 'react-hot-toast';
 
-export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers' | 'flash-sales' | 'combos' }) {
+interface PromotionsManagerProps {
+  activeTab: 'vouchers' | 'flash-sales' | 'combos';
+}
+
+export default function PromotionsManager({ activeTab }: PromotionsManagerProps) {
   const { role, selectedBranchId, availableBranches } = useAdmin();
+  const { t, locale } = useLanguage();
 
   const [vouchers, setVouchers] = useState<any[]>([]);
   const [flashSales, setFlashSales] = useState<any[]>([]);
   const [combos, setCombos] = useState<any[]>([]);
   const [membershipTiers, setMembershipTiers] = useState<any[]>([]);
+  const [allPaymentMethods, setAllPaymentMethods] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterTierId, setFilterTierId] = useState('ALL');
 
-  // Forms states
+  // Delete state
+  const [deleteUrl, setDeleteUrl] = useState<string | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  // Voucher Form Modal
   const [isVoucherModalOpen, setIsVoucherModalOpen] = useState(false);
   const [editingVoucher, setEditingVoucher] = useState<any>(null);
   const [voucherData, setVoucherData] = useState({
-    code: '', title: '', discountType: 'FIXED_AMOUNT', discountValue: 0,
-    startDate: '', endDate: '', minOrderValue: 0, usageLimit: 0,
-    imageUrl: '', imageFile: null as File | null, branchIds: [] as string[], membershipTierIds: [] as string[], isActive: true
+    code: '',
+    title: '',
+    discountType: 'FIXED_AMOUNT',
+    discountValue: 0,
+    startDate: '',
+    endDate: '',
+    minOrderValue: 0,
+    usageLimit: 0,
+    imageUrl: '',
+    branchIds: [] as string[],
+    membershipTierIds: [] as string[],
+    appliesToAllPaymentMethods: true,
+    paymentMethodIds: [] as string[],
+    isActive: true,
   });
 
+  // Flash Sale Form Modal
   const [isFlashSaleModalOpen, setIsFlashSaleModalOpen] = useState(false);
   const [editingFlashSale, setEditingFlashSale] = useState<any>(null);
   const [fsData, setFsData] = useState({
-    name: '', startTime: '', endTime: '', status: 'DRAFT', imageUrl: '', imageFile: null as File | null, branchIds: [] as string[], membershipTierIds: [] as string[], isActive: true, items: [] as any[]
+    name: '',
+    startTime: '',
+    endTime: '',
+    status: 'DRAFT',
+    imageUrl: '',
+    branchIds: [] as string[],
+    membershipTierIds: [] as string[],
+    applyOnline: true,
+    applyPos: true,
+    isActive: true,
+    items: [] as any[],
   });
-
   const [productSearchFS, setProductSearchFS] = useState('');
   const [productResultsFS, setProductResultsFS] = useState<any[]>([]);
 
+  // Combo Form Modal
   const [isComboModalOpen, setIsComboModalOpen] = useState(false);
   const [editingCombo, setEditingCombo] = useState<any>(null);
   const [comboData, setComboData] = useState({
-    name: '', description: '', price: 0, originalPrice: 0, startDate: '', endDate: '',
-    usageLimit: 0, imageUrl: '', imageFile: null as File | null, branchIds: [] as string[], membershipTierIds: [] as string[], isActive: true, items: [] as any[]
+    name: '',
+    description: '',
+    price: 0,
+    originalPrice: 0,
+    startDate: '',
+    endDate: '',
+    usageLimit: 0,
+    imageUrl: '',
+    branchIds: [] as string[],
+    membershipTierIds: [] as string[],
+    isActive: true,
+    items: [] as any[],
   });
-
   const [productSearchCombo, setProductSearchCombo] = useState('');
   const [productResultsCombo, setProductResultsCombo] = useState<any[]>([]);
   const [comboDiscountType, setComboDiscountType] = useState<'NONE' | 'FIXED' | 'PERCENTAGE'>('NONE');
   const [comboDiscountValue, setComboDiscountValue] = useState(0);
-
 
   const fetchMembershipTiers = async () => {
     try {
@@ -61,13 +128,18 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
     }
   };
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const url = buildApiUrl(`/api/admin/promotions/${activeTab}`, {
+      let endpoint = '';
+      if (activeTab === 'vouchers') endpoint = '/api/admin/promotions/vouchers';
+      else if (activeTab === 'flash-sales') endpoint = '/api/admin/promotions/flash-sales';
+      else if (activeTab === 'combos') endpoint = '/api/admin/promotions/combos';
+
+      const url = buildApiUrl(endpoint, {
         branchId: selectedBranchId !== 'ALL' ? selectedBranchId : undefined,
         search,
-        membershipTierId: filterTierId !== 'ALL' ? filterTierId : undefined
+        membershipTierId: filterTierId !== 'ALL' ? filterTierId : undefined,
       });
 
       const res = await fetch(url, { credentials: 'include' });
@@ -77,160 +149,81 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
         else if (activeTab === 'flash-sales') setFlashSales(data.data || []);
         else if (activeTab === 'combos') setCombos(data.data || []);
       }
-    } catch (error) {
-      console.error(error);
-      toast.error('Lỗi khi tải dữ liệu');
+    } catch (e) {
+      console.error('Error fetching data:', e);
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, selectedBranchId, search, filterTierId]);
 
   useEffect(() => {
-    fetchData();
     fetchMembershipTiers();
-  }, [activeTab, selectedBranchId, filterTierId]);
+    fetchData();
 
-  // Combo product search
-  useEffect(() => {
-    if (productSearchCombo.trim().length >= 2) {
-      const fetchProducts = async () => {
-        try {
-          const res = await fetch(`/api/admin/products?search=${encodeURIComponent(productSearchCombo)}&limit=10`, { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            setProductResultsCombo(data.data || []);
-          }
-        } catch (error) {
-          console.error('Lỗi tìm kiếm sản phẩm:', error);
+    async function loadPaymentMethods() {
+      try {
+        const res = await fetch('/api/payment-methods/admin/all', { credentials: 'include' });
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data)) {
+          setAllPaymentMethods(json.data);
         }
-      };
-      const debounce = setTimeout(fetchProducts, 400);
-      return () => clearTimeout(debounce);
-    } else {
-      setProductResultsCombo([]);
+      } catch (err) {
+        console.error(err);
+      }
     }
-  }, [productSearchCombo]);
+    loadPaymentMethods();
+  }, [fetchData]);
 
-  // Flash Sale product search
-  useEffect(() => {
-    if (productSearchFS.trim().length >= 2) {
-      const fetchProducts = async () => {
-        try {
-          const res = await fetch(`/api/admin/products?search=${encodeURIComponent(productSearchFS)}&limit=10`, { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            setProductResultsFS(data.data || []);
-          }
-        } catch (error) {
-          console.error('Lỗi tìm kiếm sản phẩm:', error);
-        }
-      };
-      const debounce = setTimeout(fetchProducts, 400);
-      return () => clearTimeout(debounce);
-    } else {
+  // Search Products for Flash Sale
+  const handleSearchProductsFS = async (term: string) => {
+    setProductSearchFS(term);
+    if (!term || term.length < 2) {
       setProductResultsFS([]);
+      return;
     }
-  }, [productSearchFS]);
-
-  // Recalculate original price when items change
-  useEffect(() => {
-    if (isComboModalOpen) {
-      const newOriginalPrice = comboData.items.reduce((sum, item) => sum + (item.product?.price || 0) * item.quantity, 0);
-      setComboData(prev => prev.originalPrice !== newOriginalPrice ? { ...prev, originalPrice: newOriginalPrice } : prev);
-    }
-  }, [comboData.items, isComboModalOpen]);
-
-  // Recalculate final price when original price or discount changes
-  useEffect(() => {
-    if (isComboModalOpen && comboDiscountType !== 'NONE') {
-      let finalPrice = comboData.originalPrice;
-      if (comboDiscountType === 'FIXED') {
-        finalPrice = Math.max(0, comboData.originalPrice - comboDiscountValue);
-      } else if (comboDiscountType === 'PERCENTAGE') {
-        finalPrice = Math.max(0, comboData.originalPrice * (1 - comboDiscountValue / 100));
-      }
-      setComboData(prev => prev.price !== finalPrice ? { ...prev, price: finalPrice } : prev);
-    }
-  }, [comboData.originalPrice, comboDiscountType, comboDiscountValue, isComboModalOpen]);
-
-
-
-  const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
-  };
-
-  const formatDateForInput = (dateString: string) => {
-    if (!dateString) return '';
-    return new Date(dateString).toISOString().split('T')[0];
-  };
-
-  const formatDateTimeForInput = (dateString: string) => {
-    if (!dateString) return '';
-    return new Date(dateString).toISOString().slice(0, 16);
-  };
-
-  const submitForm = async (url: string, method: string, body: any, closeAction: () => void, folder: string) => {
-    // Validate time logic
-    const start = body.startDate || body.startTime;
-    const end = body.endDate || body.endTime;
-    if (start && end) {
-      if (new Date(start) > new Date(end)) {
-        toast.error('Thời gian kết thúc không hợp lý (trước thời gian bắt đầu)!');
-        return;
-      }
-      if (new Date(start).getTime() === new Date(end).getTime() && start.includes('T')) {
-        toast.error('Thời gian bắt đầu và kết thúc không được trùng nhau!');
-        return;
-      }
-    }
-
     try {
-      const { imageFile, ...submitData } = body;
-
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(submitData),
-        credentials: 'include'
+      const res = await fetch(`/api/admin/products?search=${encodeURIComponent(term)}&limit=8`, {
+        credentials: 'include',
       });
       if (res.ok) {
-        toast.success(method === 'POST' ? 'Tạo thành công' : 'Cập nhật thành công');
-        closeAction();
-        fetchData();
-      } else {
-        const err = await res.json();
-        toast.error(err.message || 'Có lỗi xảy ra');
+        const data = await res.json();
+        setProductResultsFS(data.data || []);
       }
     } catch (e) {
-      toast.error('Lỗi kết nối');
+      console.error(e);
     }
   };
 
-  const handleDelete = async (url: string) => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa?')) return;
+  // Search Products for Combo
+  const handleSearchProductsCombo = async (term: string) => {
+    setProductSearchCombo(term);
+    if (!term || term.length < 2) {
+      setProductResultsCombo([]);
+      return;
+    }
     try {
-      const res = await fetch(url, { method: 'DELETE', credentials: 'include' });
+      const res = await fetch(`/api/admin/products?search=${encodeURIComponent(term)}&limit=8`, {
+        credentials: 'include',
+      });
       if (res.ok) {
-        toast.success('Xóa thành công');
-        fetchData();
-      } else {
-        toast.error('Lỗi khi xóa');
+        const data = await res.json();
+        setProductResultsCombo(data.data || []);
       }
     } catch (e) {
-      toast.error('Lỗi kết nối');
+      console.error(e);
     }
   };
 
-  const handleToggleActive = async (type: string, id: string, newStatus: boolean) => {
+  const handleToggleActive = async (type: string, id: string, nextState: boolean) => {
     try {
-      const res = await fetch(`/api/admin/promotions/${type}/${id}`, {
+      const res = await fetch(`/api/admin/promotions/${type}/${id}/toggle`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isActive: newStatus }),
-        credentials: 'include'
+        body: JSON.stringify({ isActive: nextState }),
+        credentials: 'include',
       });
       if (res.ok) {
-        toast.success('Đã cập nhật trạng thái');
+        toast.success(t('common.saveChanges', 'Cập nhật trạng thái thành công'));
         fetchData();
       } else {
         toast.error('Lỗi khi cập nhật trạng thái');
@@ -240,84 +233,220 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
     }
   };
 
-  // VOUCHER ACTIONS
+  const confirmDeleteAction = async () => {
+    if (!deleteUrl) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(deleteUrl, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        toast.success(t('common.delete', 'Đã xóa thành công'));
+        setDeleteUrl(null);
+        fetchData();
+      } else {
+        toast.error('Không thể xóa dữ liệu');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối');
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
+  const formatMoney = (amount: number = 0) => {
+    return new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+    }).format(amount);
+  };
+
+  const submitForm = async (
+    url: string,
+    method: string,
+    bodyData: any,
+    onSuccess: () => void,
+    typeText: string
+  ) => {
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(bodyData),
+        credentials: 'include',
+      });
+      if (res.ok) {
+        toast.success(
+          method === 'POST' ? `Tạo mới ${typeText} thành công` : `Cập nhật ${typeText} thành công`
+        );
+        onSuccess();
+        fetchData();
+      } else {
+        const err = await res.json();
+        toast.error(err.message || 'Lỗi khi lưu thông tin');
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối máy chủ');
+    }
+  };
+
+  // Open Handlers
   const openVoucherModal = (item?: any) => {
     if (item) {
       setEditingVoucher(item);
       setVoucherData({
-        ...item,
-        startDate: formatDateForInput(item.startDate),
-        endDate: formatDateForInput(item.endDate),
+        code: item.code || '',
+        title: item.title || '',
+        discountType: item.discountType || 'FIXED_AMOUNT',
+        discountValue: item.discountValue || 0,
+        startDate: item.startDate ? item.startDate.split('T')[0] : '',
+        endDate: item.endDate ? item.endDate.split('T')[0] : '',
+        minOrderValue: item.minOrderValue || 0,
+        usageLimit: item.usageLimit || 0,
+        imageUrl: item.imageUrl || '',
         branchIds: item.branches ? item.branches.map((b: any) => b.id) : [],
         membershipTierIds: item.membershipTiers ? item.membershipTiers.map((t: any) => t.id) : [],
-        usageLimit: item.usageLimit || 0,
-        imageFile: null
+        appliesToAllPaymentMethods: item.appliesToAllPaymentMethods ?? true,
+        paymentMethodIds: item.voucherPaymentMethods
+          ? item.voucherPaymentMethods.map((vpm: any) => vpm.paymentMethodId)
+          : [],
+        isActive: item.isActive ?? true,
       });
     } else {
       setEditingVoucher(null);
-      setVoucherData({ code: '', title: '', discountType: 'FIXED_AMOUNT', discountValue: 0, startDate: '', endDate: '', minOrderValue: 0, usageLimit: 0, imageUrl: '', imageFile: null, branchIds: [], membershipTierIds: [], isActive: true });
+      setVoucherData({
+        code: '',
+        title: '',
+        discountType: 'FIXED_AMOUNT',
+        discountValue: 0,
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        minOrderValue: 0,
+        usageLimit: 0,
+        imageUrl: '',
+        branchIds: [],
+        membershipTierIds: [],
+        appliesToAllPaymentMethods: true,
+        paymentMethodIds: [],
+        isActive: true,
+      });
     }
     setIsVoucherModalOpen(true);
   };
 
-  // FLASH SALE ACTIONS
   const openFlashSaleModal = (item?: any) => {
     if (item) {
       setEditingFlashSale(item);
       setFsData({
-        ...item,
-        startTime: formatDateTimeForInput(item.startTime),
-        endTime: formatDateTimeForInput(item.endTime),
+        name: item.name || '',
+        startTime: item.startTime ? item.startTime.substring(0, 16) : '',
+        endTime: item.endTime ? item.endTime.substring(0, 16) : '',
+        status: item.status || 'DRAFT',
+        imageUrl: item.imageUrl || '',
         branchIds: item.branches ? item.branches.map((b: any) => b.id) : [],
         membershipTierIds: item.membershipTiers ? item.membershipTiers.map((t: any) => t.id) : [],
-        imageFile: null,
-        items: item.items ? item.items.map((i: any) => ({
-          productId: i.productId,
-          product: i.product,
-          flashSalePrice: i.flashSalePrice,
-          stock: i.stock,
-          maxQuantityPerUser: i.maxQuantityPerUser
-        })) : []
+        applyOnline: item.applyOnline ?? true,
+        applyPos: item.applyPos ?? true,
+        isActive: item.isActive ?? true,
+        items: item.items
+          ? item.items.map((i: any) => ({
+              productId: i.productId,
+              product: i.product,
+              flashSalePrice: i.flashSalePrice,
+              stock: i.stock,
+              maxQuantityPerUser: i.maxQuantityPerUser || 1,
+            }))
+          : [],
       });
     } else {
       setEditingFlashSale(null);
-      setFsData({ name: '', startTime: '', endTime: '', status: 'DRAFT', imageUrl: '', imageFile: null, branchIds: [], membershipTierIds: [], isActive: true, items: [] });
+      const now = new Date();
+      const end = new Date(now.getTime() + 2 * 60 * 60 * 1000);
+      setFsData({
+        name: '',
+        startTime: now.toISOString().substring(0, 16),
+        endTime: end.toISOString().substring(0, 16),
+        status: 'DRAFT',
+        imageUrl: '',
+        branchIds: [],
+        membershipTierIds: [],
+        applyOnline: true,
+        applyPos: true,
+        isActive: true,
+        items: [],
+      });
     }
-    setProductSearchFS('');
-    setProductResultsFS([]);
     setIsFlashSaleModalOpen(true);
   };
 
-  // COMBO ACTIONS
   const openComboModal = (item?: any) => {
     if (item) {
       setEditingCombo(item);
       setComboData({
-        ...item,
-        startDate: formatDateTimeForInput(item.startDate),
-        endDate: formatDateTimeForInput(item.endDate),
+        name: item.name || '',
+        description: item.description || '',
+        price: item.price || 0,
+        originalPrice: item.originalPrice || 0,
+        startDate: item.startDate ? item.startDate.split('T')[0] : '',
+        endDate: item.endDate ? item.endDate.split('T')[0] : '',
+        usageLimit: item.usageLimit || 0,
+        imageUrl: item.imageUrl || '',
         branchIds: item.branches ? item.branches.map((b: any) => b.id) : [],
         membershipTierIds: item.membershipTiers ? item.membershipTiers.map((t: any) => t.id) : [],
-        imageFile: null,
-        items: item.items ? item.items.map((i: any) => ({
-          productId: i.productId,
-          product: i.product,
-          quantity: i.quantity
-        })) : []
+        isActive: item.isActive ?? true,
+        items: item.items
+          ? item.items.map((i: any) => ({
+              productId: i.productId,
+              product: i.product,
+              quantity: i.quantity,
+            }))
+          : [],
       });
     } else {
       setEditingCombo(null);
-      setComboData({ name: '', description: '', price: 0, originalPrice: 0, startDate: '', endDate: '', usageLimit: 0, imageUrl: '', imageFile: null, branchIds: [], membershipTierIds: [], isActive: true, items: [] });
+      setComboData({
+        name: '',
+        description: '',
+        price: 0,
+        originalPrice: 0,
+        startDate: '',
+        endDate: '',
+        usageLimit: 0,
+        imageUrl: '',
+        branchIds: [],
+        membershipTierIds: [],
+        isActive: true,
+        items: [],
+      });
     }
     setComboDiscountType('NONE');
     setComboDiscountValue(0);
     setIsComboModalOpen(true);
   };
 
-  // Render Branch Selector for Admin
-  const BranchSelector = ({ value, onChange }: { value: string[], onChange: (val: string[]) => void }) => {
-    if (role !== 'ADMIN') return null;
+  const pageTitle =
+    activeTab === 'vouchers'
+      ? t('promotions.vouchersTitle', 'Quản lý Vouchers')
+      : activeTab === 'flash-sales'
+      ? t('promotions.flashSalesTitle', 'Quản lý Flash Sale')
+      : t('promotions.combosTitle', 'Quản lý Combo món');
 
+  const pageSubtitle =
+    activeTab === 'vouchers'
+      ? t('promotions.vouchersSubtitle', 'Cấu hình mã giảm giá, giới hạn đơn hàng và phân quyền hạng thành viên')
+      : activeTab === 'flash-sales'
+      ? t('promotions.flashSalesSubtitle', 'Khung giờ giảm giá sốc, giới hạn kho và số lượng theo thành viên')
+      : t('promotions.combosSubtitle', 'Gói combo món ăn ưu đãi, tối ưu giá trị đơn hàng trung bình');
+
+  const BranchSelectorPills = ({
+    value,
+    onChange,
+  }: {
+    value: string[];
+    onChange: (val: string[]) => void;
+  }) => {
+    if (role !== 'ADMIN') return null;
     const isGlobal = !value || value.length === 0;
 
     const handleToggle = (id: string) => {
@@ -325,26 +454,50 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
         onChange([]);
       } else {
         const current = value || [];
-        if (current.includes(id)) {
-          onChange(current.filter(v => v !== id));
-        } else {
-          onChange([...current, id]);
-        }
+        if (current.includes(id)) onChange(current.filter((v) => v !== id));
+        else onChange([...current, id]);
       }
     };
 
     return (
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-2">Áp dụng cho Chi nhánh (ADMIN)</label>
+      <div className="space-y-1.5">
+        <label className="block text-xs font-bold text-slate-700">
+          {t('promotions.branchApply', 'Áp dụng cho Chi nhánh')}
+        </label>
         <div className="flex flex-wrap gap-2">
-          <label className={`cursor-pointer px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${isGlobal ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'}`}>
-            <input type="checkbox" className="hidden" checked={isGlobal} onChange={() => handleToggle('')} />
-            Toàn hệ thống
+          <label
+            className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+              isGlobal
+                ? 'bg-red-600 text-white border-red-600 shadow-2xs'
+                : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="hidden"
+              checked={isGlobal}
+              onChange={() => handleToggle('')}
+            />
+            <Store size={13} />
+            <span>{t('common.allBranches', 'Toàn hệ thống')}</span>
           </label>
-          {availableBranches.map(b => (
-            <label key={b.id} className={`cursor-pointer px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${(value || []).includes(b.id) ? 'bg-red-600 text-white border-red-600' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'}`}>
-              <input type="checkbox" className="hidden" checked={(value || []).includes(b.id)} onChange={() => handleToggle(b.id)} />
-              {b.name}
+          {availableBranches.map((b) => (
+            <label
+              key={b.id}
+              className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                (value || []).includes(b.id)
+                  ? 'bg-red-600 text-white border-red-600 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={(value || []).includes(b.id)}
+                onChange={() => handleToggle(b.id)}
+              />
+              <Store size={13} />
+              <span>{b.name}</span>
             </label>
           ))}
         </div>
@@ -352,7 +505,13 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
     );
   };
 
-  const MembershipTierSelector = ({ value, onChange }: { value: string[], onChange: (val: string[]) => void }) => {
+  const MembershipTierSelectorPills = ({
+    value,
+    onChange,
+  }: {
+    value: string[];
+    onChange: (val: string[]) => void;
+  }) => {
     const isAll = !value || value.length === 0;
 
     const handleToggle = (id: string) => {
@@ -360,27 +519,50 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
         onChange([]);
       } else {
         const current = value || [];
-        if (current.includes(id)) {
-          onChange(current.filter(v => v !== id));
-        } else {
-          onChange([...current, id]);
-        }
+        if (current.includes(id)) onChange(current.filter((v) => v !== id));
+        else onChange([...current, id]);
       }
     };
 
     return (
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 mb-1">Áp dụng cho hạng thành viên</label>
-        <p className="text-xs text-gray-500 mb-2">Để trống nếu áp dụng cho mọi thành viên</p>
+      <div className="space-y-1.5">
+        <label className="block text-xs font-bold text-slate-700">
+          {t('promotions.tierApply', 'Hạng thành viên áp dụng')}
+        </label>
         <div className="flex flex-wrap gap-2">
-          <label className={`cursor-pointer px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${isAll ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'}`}>
-            <input type="checkbox" className="hidden" checked={isAll} onChange={() => handleToggle('')} />
-            Tất cả các hạng
+          <label
+            className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+              isAll
+                ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+            }`}
+          >
+            <input
+              type="checkbox"
+              className="hidden"
+              checked={isAll}
+              onChange={() => handleToggle('')}
+            />
+            <Crown size={13} />
+            <span>{t('common.allTiers', 'Tất cả các hạng')}</span>
           </label>
-          {membershipTiers.map(t => (
-            <label key={t.id} className={`cursor-pointer px-3 py-1.5 rounded-full text-sm font-medium border transition-colors ${(value || []).includes(t.id) ? 'bg-amber-500 text-white border-amber-500' : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'}`}>
-              <input type="checkbox" className="hidden" checked={(value || []).includes(t.id)} onChange={() => handleToggle(t.id)} />
-              {t.name}
+          {membershipTiers.map((t) => (
+            <label
+              key={t.id}
+              className={`cursor-pointer px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors flex items-center gap-1.5 ${
+                (value || []).includes(t.id)
+                  ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                  : 'bg-white text-slate-700 hover:bg-slate-50 border-slate-200'
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="hidden"
+                checked={(value || []).includes(t.id)}
+                onChange={() => handleToggle(t.id)}
+              />
+              <Crown size={13} />
+              <span>{t.name}</span>
             </label>
           ))}
         </div>
@@ -388,561 +570,1183 @@ export default function PromotionsManager({ activeTab }: { activeTab: 'vouchers'
     );
   };
 
-
-
   return (
-    <div className="space-y-6 relative">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-2xl font-bold">Quản lý {activeTab === 'vouchers' ? 'Voucher' : activeTab === 'flash-sales' ? 'Flash Sale' : 'Combo'}</h1>
+    <div className="space-y-4 sm:space-y-6">
+      {/* Page Header */}
+      <PageHeader
+        title={pageTitle}
+        subtitle={pageSubtitle}
+        breadcrumbs={[
+          { label: t('nav.marketing', 'Marketing') },
+          { label: pageTitle },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={fetchData}
+              aria-label={t('common.refresh', 'Làm mới')}
+              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+            >
+              <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
+              <span>{t('common.refresh', 'Làm mới')}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (activeTab === 'vouchers') openVoucherModal();
+                else if (activeTab === 'flash-sales') openFlashSaleModal();
+                else openComboModal();
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+            >
+              <Plus size={15} />
+              <span>{t('common.create', 'Tạo mới')}</span>
+            </button>
+          </div>
+        }
+      />
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <form onSubmit={(e) => { e.preventDefault(); fetchData(); }} className="relative flex-1 md:w-64">
-            <input type="text" placeholder="Tìm kiếm..." value={search} onChange={e => setSearch(e.target.value)} className="w-full border rounded-lg pl-10 pr-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-red-500" />
-            <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
-            <button type="submit" className="hidden"></button>
-          </form>
+      {/* Filter Bar */}
+      <FilterBar
+        actions={
+          (search || filterTierId !== 'ALL') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setFilterTierId('ALL');
+              }}
+              className="px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+            >
+              {t('common.clearFilter', 'Xóa lọc')}
+            </button>
+          )
+        }
+      >
+        <div className="w-full sm:w-72">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder={t('promotions.searchPlaceholder', 'Tìm kiếm chương trình...')}
+          />
+        </div>
 
-          <select
+        <div className="w-full sm:w-56">
+          <Select
             value={filterTierId}
             onChange={(e) => setFilterTierId(e.target.value)}
-            className="border rounded-lg px-3 py-2 text-sm shadow-sm outline-none focus:ring-2 focus:ring-red-500 bg-white"
-          >
-            <option value="ALL">Tất cả hạng thành viên</option>
-            {membershipTiers.map(t => (
-              <option key={t.id} value={t.id}>{t.name}</option>
-            ))}
-          </select>
-
-          <button onClick={() => {
-            if (activeTab === 'vouchers') openVoucherModal();
-            else if (activeTab === 'flash-sales') openFlashSaleModal();
-            else openComboModal();
-          }} className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 shadow-sm text-sm flex items-center gap-1.5 whitespace-nowrap">
-            <Plus size={16} /> Thêm Mới
-          </button>
+            options={[
+              { value: 'ALL', label: t('promotions.allTiers', 'Tất cả hạng thành viên') },
+              ...membershipTiers.map((t) => ({ value: t.id, label: `Hạng: ${t.name}` })),
+            ]}
+          />
         </div>
-      </div>
+      </FilterBar>
 
+      {/* Content Rendering Based on Active Tab */}
+      {activeTab === 'vouchers' && (
+        <DataTable
+          data={vouchers}
+          keyExtractor={(v) => v.id}
+          loading={loading}
+          onRowClick={(v) => openVoucherModal(v)}
+          emptyTitle={t('common.noData', 'Chưa có voucher nào')}
+          emptyDescription="Tạo mã voucher đầu tiên để bắt đầu thu hút khách hàng."
+          columns={[
+            {
+              key: 'code',
+              header: t('promotions.voucherCode', 'Mã Voucher'),
+              render: (v) => (
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-red-50 text-red-600">
+                    <Ticket size={16} />
+                  </div>
+                  <div>
+                    <span className="font-mono font-black text-slate-900 text-sm">{v.code}</span>
+                    <p className="text-xs text-slate-400 truncate max-w-[180px]">{v.title}</p>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'discount',
+              header: t('promotions.discount', 'Mức giảm giá'),
+              render: (v) => (
+                <div>
+                  <span className={`font-black text-sm ${v.discountType === 'FREE_SHIP' ? 'text-emerald-600' : 'text-red-600'}`}>
+                    {v.discountType === 'PERCENTAGE'
+                      ? `Giảm ${v.discountValue}%`
+                      : v.discountType === 'FREE_SHIP'
+                      ? v.discountValue > 0
+                        ? `Freeship tối đa ${formatMoney(v.discountValue)}`
+                        : 'Miễn phí giao hàng 100%'
+                      : `Giảm ${formatMoney(v.discountValue)}`}
+                  </span>
+                  {v.minOrderValue > 0 && (
+                    <p className="text-[11px] text-slate-400">
+                      Đơn tối thiểu: {formatMoney(v.minOrderValue)}
+                    </p>
+                  )}
+                </div>
+              ),
+            },
+            {
+              key: 'period',
+              header: t('promotions.durationBranches', 'Thời gian & Chi nhánh'),
+              render: (v) => (
+                <div className="space-y-1">
+                  <span className="text-xs text-slate-600 block">
+                    {new Date(v.startDate).toLocaleDateString(locale === 'en' ? 'en-US' : 'vi-VN')} -{' '}
+                    {new Date(v.endDate).toLocaleDateString(locale === 'en' ? 'en-US' : 'vi-VN')}
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {v.branches && v.branches.length > 0 ? (
+                      v.branches.map((b: any) => (
+                        <span
+                          key={b.id}
+                          className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700"
+                        >
+                          {b.name}
+                        </span>
+                      ))
+                    ) : (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700">
+                        {t('common.allBranches', 'Toàn hệ thống')}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'usage',
+              header: t('promotions.usedLimit', 'Đã dùng / Giới hạn'),
+              align: 'center',
+              render: (v) => (
+                <span className="font-bold text-xs text-slate-800">
+                  {v.usedCount} {v.usageLimit ? `/ ${v.usageLimit}` : 'lượt'}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: t('common.status', 'Trạng thái'),
+              align: 'center',
+              render: (v) => (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleActive('vouchers', v.id, !v.isActive);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold transition-all ${
+                    v.isActive
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {v.isActive ? <Power size={12} /> : <PowerOff size={12} />}
+                  <span>{v.isActive ? t('common.running', 'Đang chạy') : t('common.paused', 'Tạm dừng')}</span>
+                </button>
+              ),
+            },
+            {
+              key: 'actions',
+              header: t('common.actions', 'Thao tác'),
+              align: 'right',
+              render: (v) => (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openVoucherModal(v);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteUrl(`/api/admin/promotions/vouchers/${v.id}`);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
+      {activeTab === 'flash-sales' && (
+        <DataTable
+          data={flashSales}
+          keyExtractor={(fs) => fs.id}
+          loading={loading}
+          onRowClick={(fs) => openFlashSaleModal(fs)}
+          emptyTitle={t('common.noData', 'Chưa có Flash Sale nào')}
+          emptyDescription="Tạo khung giờ Flash Sale giảm giá sốc cho các món đặc sắc."
+          columns={[
+            {
+              key: 'name',
+              header: t('promotions.flashSaleCampaign', 'Chương trình Flash Sale'),
+              render: (fs) => (
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-purple-50 text-purple-600">
+                    <Zap size={16} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">{fs.name}</p>
+                    <span className="text-xs text-slate-400">
+                      {fs.items?.length || 0} {t('promotions.itemsApplied', 'món áp dụng')}
+                    </span>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'time',
+              header: t('promotions.eventDuration', 'Thời gian diễn ra'),
+              render: (fs) => (
+                <span className="text-xs text-slate-600 font-medium">
+                  {new Date(fs.startTime).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')} -{' '}
+                  {new Date(fs.endTime).toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN')}
+                </span>
+              ),
+            },
+            {
+              key: 'status',
+              header: t('common.status', 'Trạng thái'),
+              align: 'center',
+              render: (fs) => (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleActive('flash-sales', fs.id, !fs.isActive);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                    fs.isActive
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {fs.isActive ? <Power size={12} /> : <PowerOff size={12} />}
+                  <span>{fs.isActive ? t('common.running', 'Đang chạy') : t('common.paused', 'Tạm dừng')}</span>
+                </button>
+              ),
+            },
+            {
+              key: 'actions',
+              header: t('common.actions', 'Thao tác'),
+              align: 'right',
+              render: (fs) => (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openFlashSaleModal(fs);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteUrl(`/api/admin/promotions/flash-sales/${fs.id}`);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
-      <div className="bg-white rounded-2xl shadow-sm border overflow-hidden">
-        <div className="overflow-x-auto">
-          {loading ? (
-            <div className="p-10 text-center text-gray-500">Đang tải dữ liệu...</div>
-          ) : (
-            <table className="w-full text-left text-sm whitespace-nowrap">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-6 py-4 font-bold text-gray-600">Thông tin</th>
-                  {activeTab === 'vouchers' && <th className="px-6 py-4 font-bold text-gray-600">Chi tiết giảm giá</th>}
-                  <th className="px-6 py-4 font-bold text-gray-600">Thời gian{role === 'ADMIN' && ' & Chi nhánh'}</th>
-                  {activeTab === 'vouchers' && <th className="px-6 py-4 font-bold text-gray-600 text-center">Đã Dùng / Giới hạn</th>}
-                  {activeTab === 'combos' && <th className="px-6 py-4 font-bold text-gray-600 text-right">Giá Combo</th>}
-                  <th className="px-6 py-4 font-bold text-gray-600 text-center">Trạng Thái</th>
-                  <th className="px-6 py-4 font-bold text-gray-600 text-right">Thao Tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {/* VOUCHERS LIST */}
-                {activeTab === 'vouchers' && vouchers.map(v => (
-                  <tr key={v.id} onClick={() => openVoucherModal(v)} className="hover:bg-blue-50/30 transition-colors cursor-pointer group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {v.imageUrl && <img src={v.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                        <div>
-                          <div className="font-bold text-gray-900 font-mono text-base">{v.code}</div>
-                          <div className="text-gray-500 text-xs truncate max-w-[150px]" title={v.title}>{v.title}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="font-bold text-red-600">
-                        {v.discountType === 'PERCENTAGE' ? `Giảm ${v.discountValue}%` : `Giảm ${formatMoney(v.discountValue)}`}
-                      </div>
-                      {v.minOrderValue > 0 && <div className="text-xs text-gray-500 mt-1">Đơn tối thiểu: {formatMoney(v.minOrderValue)}</div>}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-gray-600 text-xs mb-1">
-                        {new Date(v.startDate).toLocaleDateString()} - {new Date(v.endDate).toLocaleDateString()}
-                      </div>
-                      {role === 'ADMIN' && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-gray-100 text-gray-700">
-                          {v.branches && v.branches.length > 0 ? v.branches.map((b: any) => b.name).join(', ') : 'Toàn hệ thống'}
-                        </div>
-                      )}
-                      {role !== 'ADMIN' && (!v.branches || v.branches.length === 0) && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-blue-100 text-blue-700 mt-1">
-                          Toàn hệ thống
-                        </div>
-                      )}
-                      <div className="mt-1">
-                        {v.membershipTiers && v.membershipTiers.length > 0 ? (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-amber-100 text-amber-700">
-                             Hạng: {v.membershipTiers.map((t: any) => t.name).join(', ')}
-                           </div>
-                        ) : (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-green-100 text-green-700">
-                             Mọi hạng thành viên
-                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center font-medium">
-                      {v.usedCount} {v.usageLimit ? `/ ${v.usageLimit}` : ''}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleActive('vouchers', v.id, !v.isActive); }}
-                        disabled={role !== 'ADMIN' && (!v.branches || v.branches.length === 0)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${role !== 'ADMIN' && (!v.branches || v.branches.length === 0) ? 'opacity-50 cursor-not-allowed ' : ''
-                          }${v.isActive
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                      >
-                        {v.isActive ? <Power size={14} /> : <PowerOff size={14} />}
-                        {v.isActive ? 'Hoạt Động' : 'Tạm Dừng'}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {(role === 'ADMIN' || (v.branches && v.branches.length > 0)) && (
-                        <>
-                          <button onClick={(e) => { e.stopPropagation(); openVoucherModal(v); }} className="p-2 text-blue-600"><Edit size={18} /></button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(`/api/admin/promotions/vouchers/${v.id}`); }} className="p-2 text-red-600"><Trash2 size={18} /></button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* FLASH SALES LIST */}
-                {activeTab === 'flash-sales' && flashSales.map(fs => (
-                  <tr key={fs.id} onClick={() => openFlashSaleModal(fs)} className="hover:bg-blue-50/30 transition-colors cursor-pointer group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {fs.imageUrl && <img src={fs.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                        <span className="font-bold text-gray-900">{fs.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-gray-600 text-xs mb-1">
-                        {new Date(fs.startTime).toLocaleString()} - {new Date(fs.endTime).toLocaleString()}
-                      </div>
-                      {role === 'ADMIN' && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-gray-100 text-gray-700">
-                          {fs.branches && fs.branches.length > 0 ? fs.branches.map((b: any) => b.name).join(', ') : 'Toàn hệ thống'}
-                        </div>
-                      )}
-                      {role !== 'ADMIN' && (!fs.branches || fs.branches.length === 0) && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-blue-100 text-blue-700 mt-1">
-                          Toàn hệ thống
-                        </div>
-                      )}
-                      <div className="mt-1">
-                        {fs.membershipTiers && fs.membershipTiers.length > 0 ? (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-amber-100 text-amber-700">
-                             Hạng: {fs.membershipTiers.map((t: any) => t.name).join(', ')}
-                           </div>
-                        ) : (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-green-100 text-green-700">
-                             Mọi hạng thành viên
-                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleActive('flash-sales', fs.id, !fs.isActive); }}
-                        disabled={role !== 'ADMIN' && (!fs.branches || fs.branches.length === 0)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${role !== 'ADMIN' && (!fs.branches || fs.branches.length === 0) ? 'opacity-50 cursor-not-allowed ' : ''
-                          }${fs.isActive
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                      >
-                        {fs.isActive ? <Power size={14} /> : <PowerOff size={14} />}
-                        {fs.isActive ? 'Hoạt Động' : 'Tạm Dừng'}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {(role === 'ADMIN' || (fs.branches && fs.branches.length > 0)) && (
-                        <>
-                          <button onClick={(e) => { e.stopPropagation(); openFlashSaleModal(fs); }} className="p-2 text-blue-600"><Edit size={18} /></button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(`/api/admin/promotions/flash-sales/${fs.id}`); }} className="p-2 text-red-600"><Trash2 size={18} /></button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-
-                {/* COMBOS LIST */}
-                {activeTab === 'combos' && combos.map(c => (
-                  <tr key={c.id} onClick={() => openComboModal(c)} className="hover:bg-blue-50/30 transition-colors cursor-pointer group">
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {c.imageUrl && <img src={c.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                        <span className="font-bold text-gray-900">{c.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-gray-600 text-xs mb-1">
-                        {c.startDate ? new Date(c.startDate).toLocaleString() : 'Vô thời hạn'}
-                      </div>
-                      {role === 'ADMIN' && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-gray-100 text-gray-700">
-                          {c.branches && c.branches.length > 0 ? c.branches.map((b: any) => b.name).join(', ') : 'Toàn hệ thống'}
-                        </div>
-                      )}
-                      {role !== 'ADMIN' && (!c.branches || c.branches.length === 0) && (
-                        <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-blue-100 text-blue-700 mt-1">
-                          Toàn hệ thống
-                        </div>
-                      )}
-                      <div className="mt-1">
-                        {c.membershipTiers && c.membershipTiers.length > 0 ? (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-amber-100 text-amber-700">
-                             Hạng: {c.membershipTiers.map((t: any) => t.name).join(', ')}
-                           </div>
-                        ) : (
-                           <div className="text-xs font-semibold px-2 py-0.5 rounded inline-block bg-green-100 text-green-700">
-                             Mọi hạng thành viên
-                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right font-bold text-red-600">
-                      {formatMoney(c.price)}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleToggleActive('combos', c.id, !c.isActive); }}
-                        disabled={role !== 'ADMIN' && (!c.branches || c.branches.length === 0)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all ${role !== 'ADMIN' && (!c.branches || c.branches.length === 0) ? 'opacity-50 cursor-not-allowed ' : ''
-                          }${c.isActive
-                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                            : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
-                          }`}
-                      >
-                        {c.isActive ? <Power size={14} /> : <PowerOff size={14} />}
-                        {c.isActive ? 'Hoạt Động' : 'Tạm Dừng'}
-                      </button>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      {(role === 'ADMIN' || (c.branches && c.branches.length > 0)) && (
-                        <>
-                          <button onClick={(e) => { e.stopPropagation(); openComboModal(c); }} className="p-2 text-blue-600"><Edit size={18} /></button>
-                          <button onClick={(e) => { e.stopPropagation(); handleDelete(`/api/admin/promotions/combos/${c.id}`); }} className="p-2 text-red-600"><Trash2 size={18} /></button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      {activeTab === 'combos' && (
+        <DataTable
+          data={combos}
+          keyExtractor={(c) => c.id}
+          loading={loading}
+          onRowClick={(c) => openComboModal(c)}
+          emptyTitle={t('common.noData', 'Chưa có combo món ăn nào')}
+          emptyDescription="Tạo các combo món hấp dẫn để kích thích sức mua của khách hàng."
+          columns={[
+            {
+              key: 'name',
+              header: t('promotions.comboName', 'Tên Combo & Món'),
+              render: (c) => (
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-orange-50 text-orange-600">
+                    <Gift size={16} />
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">{c.name}</p>
+                    <span className="text-xs text-slate-400">
+                      {c.items?.length || 0} {t('nav.products', 'món')}
+                    </span>
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'price',
+              header: t('promotions.priceSavings', 'Giá Combo'),
+              align: 'right',
+              render: (c) => (
+                <span className="font-black text-red-600 text-sm">{formatMoney(c.price)}</span>
+              ),
+            },
+            {
+              key: 'status',
+              header: t('common.status', 'Trạng thái'),
+              align: 'center',
+              render: (c) => (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleToggleActive('combos', c.id, !c.isActive);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${
+                    c.isActive
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}
+                >
+                  {c.isActive ? <Power size={12} /> : <PowerOff size={12} />}
+                  <span>{c.isActive ? t('common.active', 'Đang bán') : t('common.inactive', 'Tạm ngưng')}</span>
+                </button>
+              ),
+            },
+            {
+              key: 'actions',
+              header: t('common.actions', 'Thao tác'),
+              align: 'right',
+              render: (c) => (
+                <div className="flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openComboModal(c);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                  >
+                    <Edit2 size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteUrl(`/api/admin/promotions/combos/${c.id}`);
+                    }}
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+        />
+      )}
 
       {/* VOUCHER MODAL */}
-      {isVoucherModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">{editingVoucher ? 'Sửa Voucher' : 'Thêm Voucher'}</h2>
-            <form onSubmit={e => {
-              e.preventDefault();
-              const url = editingVoucher ? `/api/admin/promotions/vouchers/${editingVoucher.id}` : `/api/admin/promotions/vouchers`;
-              submitForm(url, editingVoucher ? 'PATCH' : 'POST', voucherData, () => setIsVoucherModalOpen(false), 'vouchers');
-            }}>
-              <ImageUploader imageUrl={voucherData.imageUrl} folder="promotions" onUploadSuccess={(url) => setVoucherData((prev: any) => ({ ...prev, imageUrl: url }))} />
-              <BranchSelector value={voucherData.branchIds} onChange={v => setVoucherData({ ...voucherData, branchIds: v })} />
-              <MembershipTierSelector value={voucherData.membershipTierIds} onChange={v => setVoucherData({ ...voucherData, membershipTierIds: v })} />
+      <Modal
+        isOpen={isVoucherModalOpen}
+        onClose={() => setIsVoucherModalOpen(false)}
+        title={editingVoucher ? t('common.edit', 'Chỉnh sửa Voucher') : t('common.add', 'Tạo mới Voucher')}
+        maxWidth="lg"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsVoucherModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+            >
+              {t('common.cancel', 'Hủy')}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                const url = editingVoucher
+                  ? `/api/admin/promotions/vouchers/${editingVoucher.id}`
+                  : `/api/admin/promotions/vouchers`;
+                submitForm(
+                  url,
+                  editingVoucher ? 'PATCH' : 'POST',
+                  voucherData,
+                  () => setIsVoucherModalOpen(false),
+                  'Voucher'
+                );
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm"
+            >
+              {t('common.saveChanges', 'Lưu Voucher')}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3.5">
+          <BranchSelectorPills
+            value={voucherData.branchIds}
+            onChange={(v) => setVoucherData({ ...voucherData, branchIds: v })}
+          />
+          <MembershipTierSelectorPills
+            value={voucherData.membershipTierIds}
+            onChange={(v) => setVoucherData({ ...voucherData, membershipTierIds: v })}
+          />
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="block text-sm mb-1">Mã Voucher</label><input required value={voucherData.code} onChange={e => setVoucherData({ ...voucherData, code: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-                <div><label className="block text-sm mb-1">Tiêu đề</label><input required value={voucherData.title} onChange={e => setVoucherData({ ...voucherData, title: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm mb-1">Loại giảm giá</label>
-                  <select value={voucherData.discountType} onChange={e => setVoucherData({ ...voucherData, discountType: e.target.value })} className="w-full border rounded-lg px-3 py-2">
-                    <option value="FIXED_AMOUNT">Giảm tiền mặt (VNĐ)</option>
-                    <option value="PERCENTAGE">Giảm phần trăm (%)</option>
-                  </select>
-                </div>
-                <div><label className="block text-sm mb-1">Mức giảm</label><input required type="number" value={voucherData.discountValue} onChange={e => setVoucherData({ ...voucherData, discountValue: Number(e.target.value) })} className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="block text-sm mb-1">Ngày bắt đầu</label><input required type="date" value={voucherData.startDate} onChange={e => setVoucherData({ ...voucherData, startDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-                <div><label className="block text-sm mb-1">Ngày kết thúc</label><input required type="date" min={voucherData.startDate || undefined} value={voucherData.endDate} onChange={e => setVoucherData({ ...voucherData, endDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="block text-sm mb-1">Đơn tối thiểu (VNĐ)</label><input type="number" value={voucherData.minOrderValue} onChange={e => setVoucherData({ ...voucherData, minOrderValue: Number(e.target.value) })} className="w-full border rounded-lg px-3 py-2" /></div>
-                <div><label className="block text-sm mb-1">Giới hạn số lượng</label><input type="number" value={voucherData.usageLimit} onChange={e => setVoucherData({ ...voucherData, usageLimit: Number(e.target.value) })} placeholder="0 = Không giới hạn" className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-              <div className="mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={voucherData.isActive} onChange={e => setVoucherData({ ...voucherData, isActive: e.target.checked })} className="w-4 h-4 text-red-600" />
-                  <span className="font-medium text-sm">Kích hoạt Voucher này</span>
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-                <button type="button" onClick={() => setIsVoucherModalOpen(false)} className="px-4 py-2 border rounded-lg">Hủy</button>
-                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-lg">Lưu lại</button>
-              </div>
-            </form>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Mã Voucher (Code)" required>
+              <input
+                required
+                value={voucherData.code}
+                onChange={(e) =>
+                  setVoucherData({ ...voucherData, code: e.target.value.toUpperCase() })
+                }
+                className="w-full h-10 px-3 font-mono font-bold uppercase border border-slate-200 rounded-xl outline-none"
+                placeholder="VD: GIAM20K"
+              />
+            </FormField>
+            <FormField label="Tiêu đề hiển thị" required>
+              <input
+                required
+                value={voucherData.title}
+                onChange={(e) => setVoucherData({ ...voucherData, title: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+                placeholder="VD: Giảm 20K đơn từ 100K"
+              />
+            </FormField>
           </div>
-        </div>
-      )}
 
-      {/* FLASH SALE MODAL */}
-      {isFlashSaleModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">{editingFlashSale ? 'Sửa Flash Sale' : 'Tạo Flash Sale'}</h2>
-            <form onSubmit={e => {
-              e.preventDefault();
-              const url = editingFlashSale ? `/api/admin/promotions/flash-sales/${editingFlashSale.id}` : `/api/admin/promotions/flash-sales`;
-              submitForm(url, editingFlashSale ? 'PATCH' : 'POST', fsData, () => setIsFlashSaleModalOpen(false), 'flash-sales');
-            }}>
-              <ImageUploader imageUrl={fsData.imageUrl} folder="promotions" onUploadSuccess={(url) => setFsData((prev: any) => ({ ...prev, imageUrl: url }))} />
-              <BranchSelector value={fsData.branchIds} onChange={v => setFsData({ ...fsData, branchIds: v })} />
-              <MembershipTierSelector value={fsData.membershipTierIds} onChange={v => setFsData({ ...fsData, membershipTierIds: v })} />
-
-              <div className="mb-4"><label className="block text-sm mb-1">Tên đợt Sale</label><input required value={fsData.name} onChange={e => setFsData({ ...fsData, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-              <div className="mb-4">
-                <label className="block text-sm mb-1 font-semibold text-gray-700">Thêm sản phẩm vào Flash Sale</label>
-                <div className="relative mb-3">
-                  <div className="flex items-center border rounded-lg px-3 py-2 bg-white focus-within:ring-2 ring-red-100">
-                    <Search size={18} className="text-gray-400 mr-2" />
-                    <input type="text" value={productSearchFS} onChange={e => setProductSearchFS(e.target.value)} placeholder="Tìm tên sản phẩm..." className="w-full outline-none" />
-                  </div>
-                  {productResultsFS.length > 0 && (
-                    <div className="absolute z-10 w-full bg-white border rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto">
-                      {productResultsFS.map(p => (
-                        <div key={p.id} className="px-4 py-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b last:border-0" onClick={() => {
-                          const exists = fsData.items.find((i: any) => i.productId === p.id);
-                          if (!exists) {
-                            setFsData({ ...fsData, items: [...fsData.items, { productId: p.id, product: p, flashSalePrice: p.price, stock: 100, maxQuantityPerUser: 0 }] });
-                          }
-                          setProductSearchFS('');
-                          setProductResultsFS([]);
-                        }}>
-                          <div className="flex items-center gap-3">
-                            {p.imageUrl && <img src={p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                            <span className="font-medium text-gray-800">{p.name}</span>
-                          </div>
-                          <span className="text-red-600 font-bold">{formatMoney(p.price)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {fsData.items.length > 0 && (
-                  <div className="border rounded-lg overflow-hidden bg-gray-50/50">
-                    {fsData.items.map((item: any, index: number) => (
-                      <div key={item.productId} className="flex flex-col gap-2 p-3 border-b last:border-0 bg-white m-1 rounded shadow-sm">
-                        <div className="flex justify-between items-center">
-                          <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
-                            {item.product?.imageUrl && <img src={item.product?.imageUrl} alt="" className="w-8 h-8 rounded object-cover" />}
-                            <span className="truncate max-w-[200px]" title={item.product?.name}>{item.product?.name}</span>
-                            <span className="text-xs text-gray-400 line-through ml-2">{formatMoney(item.product?.price || 0)}</span>
-                          </div>
-                          <button type="button" onClick={() => {
-                            setFsData({ ...fsData, items: fsData.items.filter((i: any) => i.productId !== item.productId) });
-                          }} className="text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                        </div>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Giá Sale (VNĐ)</label>
-                            <input type="number" value={item.flashSalePrice} onChange={e => {
-                              const newItems = [...fsData.items];
-                              newItems[index].flashSalePrice = parseInt(e.target.value) || 0;
-                              setFsData({ ...fsData, items: newItems });
-                            }} className="w-full border rounded-lg px-2 py-1 text-sm outline-none focus:border-red-400 font-bold text-red-600" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Kho xuất (SL)</label>
-                            <input type="number" min="1" value={item.stock} onChange={e => {
-                              const newItems = [...fsData.items];
-                              newItems[index].stock = parseInt(e.target.value) || 1;
-                              setFsData({ ...fsData, items: newItems });
-                            }} className="w-full border rounded-lg px-2 py-1 text-sm outline-none focus:border-red-400" />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-500 mb-1">Giới hạn/KH (0=Ko)</label>
-                            <input type="number" min="0" value={item.maxQuantityPerUser} onChange={e => {
-                              const newItems = [...fsData.items];
-                              newItems[index].maxQuantityPerUser = parseInt(e.target.value) || 0;
-                              setFsData({ ...fsData, items: newItems });
-                            }} className="w-full border rounded-lg px-2 py-1 text-sm outline-none focus:border-red-400" />
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="block text-sm mb-1">Bắt đầu</label><input required type="datetime-local" value={fsData.startTime} onChange={e => setFsData({ ...fsData, startTime: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-                <div><label className="block text-sm mb-1">Kết thúc</label><input required type="datetime-local" value={fsData.endTime} onChange={e => setFsData({ ...fsData, endTime: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-              <div className="mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={fsData.isActive} onChange={e => setFsData({ ...fsData, isActive: e.target.checked })} className="w-4 h-4 text-red-600" />
-                  <span className="font-medium text-sm">Kích hoạt Flash Sale</span>
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-                <button type="button" onClick={() => setIsFlashSaleModalOpen(false)} className="px-4 py-2 border rounded-lg">Hủy</button>
-                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-lg">Lưu lại</button>
-              </div>
-            </form>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Loại giảm giá">
+              <select
+                value={voucherData.discountType}
+                onChange={(e) => setVoucherData({ ...voucherData, discountType: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              >
+                <option value="FIXED_AMOUNT">Giảm số tiền cố định (VNĐ)</option>
+                <option value="PERCENTAGE">Giảm theo phần trăm (%)</option>
+                <option value="FREE_SHIP">Miễn phí vận chuyển (FreeShip)</option>
+              </select>
+            </FormField>
+            <FormField
+              label={
+                voucherData.discountType === 'FREE_SHIP'
+                  ? 'Mức giảm phí ship (0 = 100%)'
+                  : 'Giá trị giảm'
+              }
+              required
+            >
+              <input
+                type="number"
+                required
+                value={voucherData.discountValue}
+                onChange={(e) =>
+                  setVoucherData({ ...voucherData, discountValue: Number(e.target.value) })
+                }
+                className={`w-full h-10 px-3 font-bold border border-slate-200 rounded-xl outline-none ${
+                  voucherData.discountType === 'FREE_SHIP' ? 'text-emerald-600' : 'text-red-600'
+                }`}
+              />
+            </FormField>
           </div>
-        </div>
-      )}
 
-      {/* COMBO MODAL */}
-      {isComboModalOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-3xl shadow-lg max-h-[90vh] overflow-y-auto">
-            <h2 className="text-xl font-bold mb-4">{editingCombo ? 'Sửa Combo' : 'Tạo Combo'}</h2>
-            <form onSubmit={e => {
-              e.preventDefault();
-              const url = editingCombo ? `/api/admin/promotions/combos/${editingCombo.id}` : `/api/admin/promotions/combos`;
-              submitForm(url, editingCombo ? 'PATCH' : 'POST', comboData, () => setIsComboModalOpen(false), 'combos');
-            }}>
-              <ImageUploader imageUrl={comboData.imageUrl} folder="promotions" onUploadSuccess={(url) => setComboData((prev: any) => ({ ...prev, imageUrl: url }))} />
-              <BranchSelector value={comboData.branchIds} onChange={v => setComboData({ ...comboData, branchIds: v })} />
-              <MembershipTierSelector value={comboData.membershipTierIds} onChange={v => setComboData({ ...comboData, membershipTierIds: v })} />
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Ngày bắt đầu" required>
+              <input
+                type="date"
+                required
+                value={voucherData.startDate}
+                onChange={(e) => setVoucherData({ ...voucherData, startDate: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+            <FormField label="Ngày kết thúc" required>
+              <input
+                type="date"
+                required
+                value={voucherData.endDate}
+                onChange={(e) => setVoucherData({ ...voucherData, endDate: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+          </div>
 
-              <div className="mb-4"><label className="block text-sm mb-1">Tên Combo</label><input required value={comboData.name} onChange={e => setComboData({ ...comboData, name: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Giá trị đơn hàng tối thiểu" required>
+              <input
+                type="number"
+                required
+                value={voucherData.minOrderValue}
+                onChange={(e) =>
+                  setVoucherData({ ...voucherData, minOrderValue: Number(e.target.value) })
+                }
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+            <FormField label="Giới hạn lượt dùng (0 = vô hạn)">
+              <input
+                type="number"
+                value={voucherData.usageLimit}
+                onChange={(e) =>
+                  setVoucherData({ ...voucherData, usageLimit: Number(e.target.value) })
+                }
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+                placeholder="0 = Không giới hạn"
+              />
+            </FormField>
+          </div>
 
-              <div className="mb-4">
-                <label className="block text-sm mb-1 font-semibold text-gray-700">Thêm sản phẩm vào Combo</label>
-                <div className="relative mb-3">
-                  <div className="flex items-center border rounded-lg px-3 py-2 bg-white focus-within:ring-2 ring-red-100">
-                    <Search size={18} className="text-gray-400 mr-2" />
-                    <input type="text" value={productSearchCombo} onChange={e => setProductSearchCombo(e.target.value)} placeholder="Tìm tên sản phẩm..." className="w-full outline-none" />
-                  </div>
-                  {productResultsCombo.length > 0 && (
-                    <div className="absolute z-10 w-full bg-white border rounded-lg shadow-xl mt-1 max-h-60 overflow-y-auto">
-                      {productResultsCombo.map(p => (
-                        <div key={p.id} className="px-4 py-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b last:border-0" onClick={() => {
-                          const exists = comboData.items.find(i => i.productId === p.id);
-                          if (exists) {
-                            setComboData({ ...comboData, items: comboData.items.map(i => i.productId === p.id ? { ...i, quantity: i.quantity + 1 } : i) });
-                          } else {
-                            setComboData({ ...comboData, items: [...comboData.items, { productId: p.id, product: p, quantity: 1 }] });
-                          }
-                          setProductSearchCombo('');
-                          setProductResultsCombo([]);
-                        }}>
-                          <div className="flex items-center gap-3">
-                            {p.imageUrl && <img src={p.imageUrl} alt="" className="w-10 h-10 rounded object-cover" />}
-                            <span className="font-medium text-gray-800">{p.name}</span>
-                          </div>
-                          <span className="text-red-600 font-bold">{formatMoney(p.price)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+          {/* Phương thức thanh toán áp dụng */}
+          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+            <label className="block text-xs font-bold text-slate-800">
+              Phương thức thanh toán áp dụng voucher
+            </label>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="pmRestrictionRadio"
+                  checked={voucherData.appliesToAllPaymentMethods}
+                  onChange={() => setVoucherData({ ...voucherData, appliesToAllPaymentMethods: true })}
+                  className="w-4 h-4 text-red-600"
+                />
+                <span>Áp dụng cho tất cả phương thức thanh toán</span>
+              </label>
 
-                {comboData.items.length > 0 && (
-                  <div className="border rounded-lg overflow-hidden bg-gray-50/50">
-                    {comboData.items.map((item, index) => (
-                      <div key={item.productId} className="flex justify-between items-center p-3 border-b last:border-0 bg-white m-1 rounded shadow-sm">
-                        <div className="text-sm font-medium text-gray-800 flex items-center gap-2">
-                          {item.product?.imageUrl && <img src={item.product?.imageUrl} alt="" className="w-8 h-8 rounded object-cover" />}
-                          <span className="truncate max-w-[200px]" title={item.product?.name}>{item.product?.name}</span>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <span className="text-sm font-semibold text-gray-500 w-24 text-right">{formatMoney(item.product?.price || 0)}</span>
-                          <span className="text-gray-400">x</span>
-                          <input type="number" min="1" value={item.quantity} onChange={e => {
-                            const newQty = parseInt(e.target.value) || 1;
-                            const newItems = [...comboData.items];
-                            newItems[index].quantity = newQty;
-                            setComboData({ ...comboData, items: newItems });
-                          }} className="w-16 border rounded-lg px-2 py-1 text-center font-medium outline-none focus:border-red-400" />
-                          <button type="button" onClick={() => {
-                            setComboData({ ...comboData, items: comboData.items.filter(i => i.productId !== item.productId) });
-                          }} className="text-red-500 p-1.5 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={16} /></button>
-                        </div>
-                      </div>
-                    ))}
-                    <div className="p-3 bg-gray-50 text-right flex justify-between items-center text-sm border-t">
-                      <span className="text-gray-500 font-medium">Tổng giá gốc các món:</span>
-                      <span className="font-bold text-gray-900 text-lg">{formatMoney(comboData.originalPrice)}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="radio"
+                  name="pmRestrictionRadio"
+                  checked={!voucherData.appliesToAllPaymentMethods}
+                  onChange={() => setVoucherData({ ...voucherData, appliesToAllPaymentMethods: false })}
+                  className="w-4 h-4 text-red-600"
+                />
+                <span>Chỉ áp dụng cho các phương thức được chọn bên dưới:</span>
+              </label>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm mb-1 font-semibold text-gray-700">Hình thức tính giá</label>
-                  <select value={comboDiscountType} onChange={e => setComboDiscountType(e.target.value as any)} className="w-full border rounded-lg px-3 py-2 bg-white outline-none focus:border-red-400">
-                    <option value="NONE">Nhập giá bán trực tiếp</option>
-                    <option value="FIXED">Giảm trừ tiền mặt (VNĐ)</option>
-                    <option value="PERCENTAGE">Giảm theo %</option>
-                  </select>
-                </div>
-                {comboDiscountType !== 'NONE' ? (
-                  <div>
-                    <label className="block text-sm mb-1 font-semibold text-gray-700">
-                      Mức giảm {comboDiscountType === 'PERCENTAGE' ? '(%)' : '(VNĐ)'}
-                    </label>
-                    <input type="number" required value={comboDiscountValue} onChange={e => setComboDiscountValue(Number(e.target.value))} className="w-full border rounded-lg px-3 py-2 text-red-600 font-bold outline-none focus:border-red-400" />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="block text-sm mb-1 font-semibold text-gray-700">Giá bán Combo (VNĐ)</label>
-                    <input type="number" required value={comboData.price} onChange={e => setComboData({ ...comboData, price: Number(e.target.value) })} className="w-full border rounded-lg px-3 py-2 text-red-600 font-bold outline-none focus:border-red-400" />
-                  </div>
-                )}
-              </div>
-
-              {comboDiscountType !== 'NONE' && (
-                <div className="mb-4 p-4 bg-red-50 rounded-lg flex justify-between items-center border border-red-100">
-                  <span className="text-red-800 font-medium">Giá bán Combo cuối cùng:</span>
-                  <span className="text-2xl font-bold text-red-600">{formatMoney(comboData.price)}</span>
+              {!voucherData.appliesToAllPaymentMethods && (
+                <div className="mt-2 pt-2 border-t border-slate-200 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
+                  {allPaymentMethods.map((pm) => {
+                    const isChecked = voucherData.paymentMethodIds.includes(pm.id);
+                    return (
+                      <label
+                        key={pm.id}
+                        className={`flex items-center gap-2 p-2 rounded-xl border text-xs cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'border-red-500 bg-red-50 text-red-900 font-bold'
+                            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setVoucherData({
+                                ...voucherData,
+                                paymentMethodIds: [...voucherData.paymentMethodIds, pm.id],
+                              });
+                            } else {
+                              setVoucherData({
+                                ...voucherData,
+                                paymentMethodIds: voucherData.paymentMethodIds.filter((id) => id !== pm.id),
+                              });
+                            }
+                          }}
+                          className="w-4 h-4 text-red-600 rounded"
+                        />
+                        <span>{pm.name}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               )}
-
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><label className="block text-sm mb-1">Thời gian bắt đầu (Tùy chọn)</label><input type="datetime-local" value={comboData.startDate} onChange={e => setComboData({ ...comboData, startDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-                <div><label className="block text-sm mb-1">Thời gian kết thúc (Tùy chọn)</label><input type="datetime-local" value={comboData.endDate} onChange={e => setComboData({ ...comboData, endDate: e.target.value })} className="w-full border rounded-lg px-3 py-2" /></div>
-              </div>
-
-              <div className="mb-4">
-                <label className="block text-sm mb-1">Giới hạn lượt mua</label>
-                <input type="number" value={comboData.usageLimit} onChange={e => setComboData({ ...comboData, usageLimit: Number(e.target.value) })} placeholder="0 = Không giới hạn" className="w-full border rounded-lg px-3 py-2" />
-              </div>
-
-              <div className="mb-4">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="checkbox" checked={comboData.isActive} onChange={e => setComboData({ ...comboData, isActive: e.target.checked })} className="w-4 h-4 text-red-600" />
-                  <span className="font-medium text-sm">Kích hoạt Combo</span>
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-3 pt-4 border-t mt-4">
-                <button type="button" onClick={() => setIsComboModalOpen(false)} className="px-4 py-2 border rounded-lg">Hủy</button>
-                <button type="submit" className="px-4 py-2 bg-red-600 text-white rounded-lg">Lưu lại</button>
-              </div>
-            </form>
+            </div>
           </div>
         </div>
-      )}
+      </Modal>
+
+      {/* FLASH SALE MODAL */}
+      <Modal
+        isOpen={isFlashSaleModalOpen}
+        onClose={() => setIsFlashSaleModalOpen(false)}
+        title={editingFlashSale ? 'Chỉnh sửa Flash Sale' : 'Tạo mới Flash Sale'}
+        maxWidth="2xl"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsFlashSaleModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!fsData.name || !fsData.startTime || !fsData.endTime) {
+                  toast.error('Vui lòng nhập tên chương trình và thời gian diễn ra');
+                  return;
+                }
+                if (fsData.items.length === 0) {
+                  toast.error('Vui lòng thêm ít nhất 1 món ăn vào Flash Sale');
+                  return;
+                }
+                const url = editingFlashSale
+                  ? `/api/admin/promotions/flash-sales/${editingFlashSale.id}`
+                  : `/api/admin/promotions/flash-sales`;
+                submitForm(
+                  url,
+                  editingFlashSale ? 'PATCH' : 'POST',
+                  fsData,
+                  () => setIsFlashSaleModalOpen(false),
+                  'Flash Sale'
+                );
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer"
+            >
+              Lưu Flash Sale
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+          <BranchSelectorPills
+            value={fsData.branchIds}
+            onChange={(v) => setFsData({ ...fsData, branchIds: v })}
+          />
+          <MembershipTierSelectorPills
+            value={fsData.membershipTierIds}
+            onChange={(v) => setFsData({ ...fsData, membershipTierIds: v })}
+          />
+
+          <FormField label="Tên chương trình Flash Sale" required>
+            <input
+              required
+              value={fsData.name}
+              onChange={(e) => setFsData({ ...fsData, name: e.target.value })}
+              className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none font-bold"
+              placeholder="VD: Flash Sale Giờ Vàng 12h - 14h"
+            />
+          </FormField>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormField label="Thời gian bắt đầu" required>
+              <input
+                type="datetime-local"
+                required
+                value={fsData.startTime}
+                onChange={(e) => setFsData({ ...fsData, startTime: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none font-medium"
+              />
+            </FormField>
+            <FormField label="Thời gian kết thúc" required>
+              <input
+                type="datetime-local"
+                required
+                value={fsData.endTime}
+                onChange={(e) => setFsData({ ...fsData, endTime: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none font-medium"
+              />
+            </FormField>
+          </div>
+
+          {/* Kênh bán hàng áp dụng */}
+          <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200">
+            <label className="block text-xs font-bold text-slate-800 mb-2">
+              Kênh bán hàng áp dụng Flash Sale
+            </label>
+            <div className="flex items-center gap-6">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fsData.applyOnline}
+                  onChange={(e) => setFsData({ ...fsData, applyOnline: e.target.checked })}
+                  className="w-4 h-4 text-red-600 rounded"
+                />
+                <span>Áp dụng bán Online (Website / App)</span>
+              </label>
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={fsData.applyPos}
+                  onChange={(e) => setFsData({ ...fsData, applyPos: e.target.checked })}
+                  className="w-4 h-4 text-red-600 rounded"
+                />
+                <span>Áp dụng bán tại quầy POS</span>
+              </label>
+            </div>
+          </div>
+
+          {/* Search & Add Items to Flash Sale */}
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-slate-800">
+                Danh sách món ăn Flash Sale ({fsData.items.length} món)
+              </label>
+            </div>
+
+            {/* Product Search Box */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Tìm món ăn theo tên để thêm vào Flash Sale..."
+                value={productSearchFS}
+                onChange={(e) => handleSearchProductsFS(e.target.value)}
+                className="w-full h-10 pl-9 pr-4 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 font-medium"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+
+              {productResultsFS.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                  {productResultsFS.map((prod) => {
+                    const isAdded = fsData.items.some((i) => i.productId === prod.id);
+                    return (
+                      <div
+                        key={prod.id}
+                        onClick={() => {
+                          if (isAdded) return;
+                          setFsData({
+                            ...fsData,
+                            items: [
+                              ...fsData.items,
+                              {
+                                productId: prod.id,
+                                product: prod,
+                                flashSalePrice: Math.round((prod.basePrice || 0) * 0.7),
+                                stock: 20,
+                                maxQuantityPerUser: 2,
+                              },
+                            ],
+                          });
+                          setProductSearchFS('');
+                          setProductResultsFS([]);
+                        }}
+                        className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                          isAdded ? 'bg-slate-50 opacity-50 cursor-not-allowed' : 'hover:bg-red-50/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={prod.imageUrl || '/placeholder.png'}
+                            alt=""
+                            className="w-8 h-8 rounded-lg object-cover bg-slate-100"
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">{prod.name}</p>
+                            <p className="text-[11px] text-slate-400 font-semibold">{formatMoney(prod.basePrice)}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold text-red-600">
+                          {isAdded ? 'Đã thêm' : '+ Thêm'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Added Items List */}
+            {fsData.items.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-3">
+                Chưa có món nào. Hãy tìm kiếm ở ô trên để thêm món vào chương trình.
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {fsData.items.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={item.product?.imageUrl || '/placeholder.png'}
+                          alt=""
+                          className="w-8 h-8 rounded-lg object-cover bg-slate-100"
+                        />
+                        <div>
+                          <p className="text-xs font-bold text-slate-900">{item.product?.name || 'Món ăn'}</p>
+                          <p className="text-[11px] text-slate-400">
+                            Giá gốc: <strong className="line-through">{formatMoney(item.product?.basePrice)}</strong>
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFsData({
+                            ...fsData,
+                            items: fsData.items.filter((_, i) => i !== idx),
+                          });
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                          Giá Flash Sale (VNĐ)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.flashSalePrice}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...fsData.items];
+                            updated[idx] = { ...updated[idx], flashSalePrice: val };
+                            setFsData({ ...fsData, items: updated });
+                          }}
+                          className="w-full h-8 px-2 text-xs font-black text-red-600 border border-slate-200 rounded-lg outline-none focus:border-red-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                          Số lượng bán
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.stock || item.stockQuantity || 0}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...fsData.items];
+                            updated[idx] = { ...updated[idx], stock: val, stockQuantity: val };
+                            setFsData({ ...fsData, items: updated });
+                          }}
+                          className="w-full h-8 px-2 text-xs font-bold text-slate-800 border border-slate-200 rounded-lg outline-none focus:border-red-500"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">
+                          Tối đa / khách (0 = vô hạn)
+                        </label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={item.maxQuantityPerUser !== undefined ? item.maxQuantityPerUser : (item.userLimit || 0)}
+                          onChange={(e) => {
+                            const val = Number(e.target.value);
+                            const updated = [...fsData.items];
+                            updated[idx] = { ...updated[idx], maxQuantityPerUser: val, userLimit: val };
+                            setFsData({ ...fsData, items: updated });
+                          }}
+                          className="w-full h-8 px-2 text-xs font-bold text-slate-800 border border-slate-200 rounded-lg outline-none focus:border-red-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* COMBO MODAL */}
+      <Modal
+        isOpen={isComboModalOpen}
+        onClose={() => setIsComboModalOpen(false)}
+        title={editingCombo ? 'Chỉnh sửa Combo' : 'Tạo mới Combo món'}
+        maxWidth="2xl"
+        footer={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsComboModalOpen(false)}
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+            >
+              Hủy
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                if (!comboData.name) {
+                  toast.error('Vui lòng nhập tên Combo');
+                  return;
+                }
+                if (comboData.items.length === 0) {
+                  toast.error('Vui lòng thêm ít nhất 1 món vào Combo');
+                  return;
+                }
+                const url = editingCombo
+                  ? `/api/admin/promotions/combos/${editingCombo.id}`
+                  : `/api/admin/promotions/combos`;
+                submitForm(
+                  url,
+                  editingCombo ? 'PATCH' : 'POST',
+                  comboData,
+                  () => setIsComboModalOpen(false),
+                  'Combo'
+                );
+              }}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm cursor-pointer"
+            >
+              Lưu Combo
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+          <BranchSelectorPills
+            value={comboData.branchIds}
+            onChange={(v) => setComboData({ ...comboData, branchIds: v })}
+          />
+          <MembershipTierSelectorPills
+            value={comboData.membershipTierIds}
+            onChange={(v) => setComboData({ ...comboData, membershipTierIds: v })}
+          />
+
+          <FormField label="Tên gói Combo" required>
+            <input
+              required
+              value={comboData.name}
+              onChange={(e) => setComboData({ ...comboData, name: e.target.value })}
+              className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none font-bold"
+              placeholder="VD: Combo Gia Đình 4 Người Siêu Tiết Kiệm"
+            />
+          </FormField>
+
+          <FormField label="Mô tả Combo">
+            <textarea
+              rows={2}
+              value={comboData.description}
+              onChange={(e) => setComboData({ ...comboData, description: e.target.value })}
+              className="w-full p-3 border border-slate-200 rounded-xl outline-none text-xs"
+              placeholder="Mô tả chi tiết các món trong gói combo..."
+            />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Giá bán Combo (VNĐ)" required>
+              <input
+                type="number"
+                min={0}
+                required
+                value={comboData.price}
+                onChange={(e) => setComboData({ ...comboData, price: Number(e.target.value) })}
+                className="w-full h-10 px-3 font-black text-red-600 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+            <FormField label="Giá gốc (VNĐ)">
+              <input
+                type="number"
+                min={0}
+                value={comboData.originalPrice}
+                onChange={(e) => setComboData({ ...comboData, originalPrice: Number(e.target.value) })}
+                className="w-full h-10 px-3 font-bold text-slate-400 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Ngày bắt đầu">
+              <input
+                type="date"
+                value={comboData.startDate}
+                onChange={(e) => setComboData({ ...comboData, startDate: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+            <FormField label="Ngày kết thúc">
+              <input
+                type="date"
+                value={comboData.endDate}
+                onChange={(e) => setComboData({ ...comboData, endDate: e.target.value })}
+                className="w-full h-10 px-3 border border-slate-200 rounded-xl outline-none"
+              />
+            </FormField>
+          </div>
+
+          {/* Search & Add Items to Combo */}
+          <div className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 space-y-3">
+            <label className="block text-xs font-bold text-slate-800">
+              Danh sách món ăn trong Combo ({comboData.items.length} món)
+            </label>
+
+            {/* Product Search Box */}
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Tìm món ăn theo tên để thêm vào Combo..."
+                value={productSearchCombo}
+                onChange={(e) => handleSearchProductsCombo(e.target.value)}
+                className="w-full h-10 pl-9 pr-4 text-xs bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 font-medium"
+              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+
+              {productResultsCombo.length > 0 && (
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-20 max-h-48 overflow-y-auto divide-y divide-slate-100">
+                  {productResultsCombo.map((prod) => {
+                    const isAdded = comboData.items.some((i) => i.productId === prod.id);
+                    return (
+                      <div
+                        key={prod.id}
+                        onClick={() => {
+                          if (isAdded) return;
+                          const newItems = [
+                            ...comboData.items,
+                            {
+                              productId: prod.id,
+                              product: prod,
+                              quantity: 1,
+                            },
+                          ];
+                          const totalOriginal = newItems.reduce(
+                            (sum, i) => sum + (i.product?.basePrice || 0) * (i.quantity || 1),
+                            0
+                          );
+                          setComboData({
+                            ...comboData,
+                            items: newItems,
+                            originalPrice: totalOriginal,
+                            price: comboData.price || Math.round(totalOriginal * 0.85),
+                          });
+                          setProductSearchCombo('');
+                          setProductResultsCombo([]);
+                        }}
+                        className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                          isAdded ? 'bg-slate-50 opacity-50 cursor-not-allowed' : 'hover:bg-red-50/60'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <img
+                            src={prod.imageUrl || '/placeholder.png'}
+                            alt=""
+                            className="w-8 h-8 rounded-lg object-cover bg-slate-100"
+                          />
+                          <div>
+                            <p className="text-xs font-bold text-slate-900">{prod.name}</p>
+                            <p className="text-[11px] text-slate-400 font-semibold">{formatMoney(prod.basePrice)}</p>
+                          </div>
+                        </div>
+                        <span className="text-xs font-bold text-red-600">
+                          {isAdded ? 'Đã thêm' : '+ Thêm'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Added Items List */}
+            {comboData.items.length === 0 ? (
+              <p className="text-xs text-slate-400 italic text-center py-3">
+                Chưa có món nào. Hãy tìm kiếm ở ô trên để thêm món vào Combo.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {comboData.items.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <img
+                        src={item.product?.imageUrl || '/placeholder.png'}
+                        alt=""
+                        className="w-9 h-9 rounded-lg object-cover bg-slate-100"
+                      />
+                      <div>
+                        <p className="text-xs font-bold text-slate-900">{item.product?.name || 'Món ăn'}</p>
+                        <p className="text-[11px] text-slate-400">
+                          {formatMoney(item.product?.basePrice)} / phần
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <label className="text-[11px] font-bold text-slate-500">Số lượng:</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={item.quantity}
+                          onChange={(e) => {
+                            const val = Math.max(1, Number(e.target.value));
+                            const updated = [...comboData.items];
+                            updated[idx] = { ...updated[idx], quantity: val };
+                            const totalOriginal = updated.reduce(
+                              (sum, i) => sum + (i.product?.basePrice || 0) * (i.quantity || 1),
+                              0
+                            );
+                            setComboData({
+                              ...comboData,
+                              items: updated,
+                              originalPrice: totalOriginal,
+                            });
+                          }}
+                          className="w-16 h-8 px-2 text-xs font-bold text-slate-800 border border-slate-200 rounded-lg outline-none"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = comboData.items.filter((_, i) => i !== idx);
+                          const totalOriginal = updated.reduce(
+                            (sum, i) => sum + (i.product?.basePrice || 0) * (i.quantity || 1),
+                            0
+                          );
+                          setComboData({
+                            ...comboData,
+                            items: updated,
+                            originalPrice: totalOriginal,
+                          });
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
+
+      {/* Delete Dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteUrl}
+        onClose={() => setDeleteUrl(null)}
+        onConfirm={confirmDeleteAction}
+        title={t('common.delete', 'Xác nhận xóa chương trình')}
+        message="Bạn có chắc chắn muốn xóa chương trình khuyến mãi này không? Hành động này không thể hoàn tác."
+        confirmText={t('common.delete', 'Xóa vĩnh viễn')}
+        cancelText={t('common.cancel', 'Hủy')}
+        loading={deleteLoading}
+        type="danger"
+      />
     </div>
   );
 }
-
-// Trigger rebuild
-
-

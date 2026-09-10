@@ -41,6 +41,7 @@ export default function OrdersPage() {
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
   const [cancelTargetCode, setCancelTargetCode] = useState<string | null>(null);
+  const [isUnauthorized, setIsUnauthorized] = useState(false);
 
   const fetchData = async () => {
     try {
@@ -52,8 +53,7 @@ export default function OrdersPage() {
         const data = await res.json();
         setOrders(data || []);
       } else if (res.status === 401) {
-        toast.error('Vui lòng đăng nhập để tiếp tục');
-        window.location.href = '/login?redirectURL=/orders';
+        setIsUnauthorized(true);
       }
     } catch {
       toast.error('Lỗi khi tải đơn hàng');
@@ -86,6 +86,31 @@ export default function OrdersPage() {
   const activeCount = (status: OrderStatus) =>
     status === 'ALL' ? orders.length : orders.filter(o => o.status === status).length;
 
+  if (isUnauthorized) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
+        <div className="bg-white rounded-2xl p-8 max-w-sm w-full text-center shadow-sm border border-slate-100 flex flex-col items-center gap-4">
+          <div className="w-14 h-14 bg-red-50 text-[#da251d] rounded-2xl flex items-center justify-center">
+            <ShoppingBag className="w-7 h-7" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-slate-800 mb-1">Chưa đăng nhập</h2>
+            <p className="text-xs text-slate-500">Vui lòng đăng nhập để xem danh sách và trạng thái đơn hàng của bạn.</p>
+          </div>
+          <Link
+            href="/login?redirectURL=/orders"
+            className="w-full py-2.5 bg-[#da251d] hover:bg-[#b81d16] text-white font-bold text-xs rounded-xl transition-colors shadow-xs"
+          >
+            Đăng nhập ngay
+          </Link>
+          <Link href="/" className="text-xs text-slate-400 hover:text-slate-600 transition-colors">
+            Về trang chủ
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -110,8 +135,8 @@ export default function OrdersPage() {
         }}
       />
 
-      {/* ── BREADCRUMB (Sticky) ── */}
-      <div className="bg-white border-b border-slate-100 shadow-sm transition-all sticky top-0 z-40">
+      {/* ── BREADCRUMB ── */}
+      <div className="bg-white border-b border-slate-100 shadow-sm transition-all relative z-10">
         <div className="max-w-5xl mx-auto px-4 md:px-8 py-3 flex items-center gap-3">
           <Link href="/profile" className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors">
             <ArrowLeft className="w-4 h-4" />

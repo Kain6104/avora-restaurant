@@ -303,9 +303,9 @@ export default function RestaurantsPageClient({ initialBranches }: { initialBran
                       <h3 className={`text-sm font-semibold truncate ${isSelected ? 'text-red-700' : 'text-slate-800'}`}>
                         {branch.name}
                       </h3>
-                      {(branch.street || branch.district || branch.province) && (
+                      {(branch.street || branch.province) && (
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
-                          {[branch.street, branch.ward, branch.district, branch.province].filter(Boolean).join(', ')}
+                          {[branch.street, branch.ward, branch.province].filter(Boolean).join(', ')}
                         </p>
                       )}
                       <div className="flex items-center gap-2.5 mt-1">
@@ -355,7 +355,7 @@ export default function RestaurantsPageClient({ initialBranches }: { initialBran
 
                   {/* Google Maps */}
                   <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${branch.name} ${branch.street || ''} ${branch.district || ''}`)}`}
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${branch.name} ${branch.street || ''} ${branch.province || ''}`)}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={e => e.stopPropagation()}

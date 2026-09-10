@@ -1,9 +1,20 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { NotificationService } from '../notification/notification.service';
 import * as nodemailer from 'nodemailer';
+
+import { AuthorizationService } from '../common/services/authorization.service';
 
 @Injectable()
 export class AuthService {
@@ -11,6 +22,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private notificationService: NotificationService,
+    private authorizationService: AuthorizationService,
   ) {}
 
   private async generateNextMemberCode(): Promise<string> {
@@ -69,6 +81,12 @@ export class AuthService {
 
   async register(data: any) {
     const { email, password, fullName, phone } = data;
+
+    // Ràng buộc số điện thoại: đúng 10 số, đầu số VN hợp lệ
+    const phoneRegex = /^(03|05|07|08|09)\d{8}$/;
+    if (!phone || !phoneRegex.test(phone.trim())) {
+      throw new BadRequestException('Số điện thoại không hợp lệ. Vui lòng nhập đúng 10 số (bắt đầu bằng 03, 05, 07, 08, 09).');
+    }
 
     // Kiểm tra xem email đã tồn tại chưa
     const existingUser = await this.prisma.user.findFirst({
@@ -159,6 +177,10 @@ export class AuthService {
       throw new UnauthorizedException('Email, số điện thoại hoặc mật khẩu không chính xác.');
     }
 
+    if (user.isAccountLocked) {
+      throw new UnauthorizedException('Tài khoản đã bị khóa.');
+    }
+
     if (!user.isEmailVerified) {
        const now = new Date();
        if (user.verificationOtpLastSentAt && (now.getTime() - user.verificationOtpLastSentAt.getTime() < 60000)) {
@@ -232,6 +254,9 @@ export class AuthService {
         type: 'SYSTEM',
       });
     } else {
+      if (user.isAccountLocked) {
+        throw new UnauthorizedException('Tài khoản đã bị khóa.');
+      }
       // Update existing user with Google info if missing
       user = await this.prisma.user.update({
         where: { email },
@@ -271,12 +296,12 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: {
-        branch: { select: { id: true, name: true } },
+        branch: { select: { id: true, name: true, branchCode: true } },
         orders: {
           orderBy: { createdAt: 'desc' },
         },
         membershipTier: true,
-      }
+      },
     });
 
     if (!user) {
@@ -284,11 +309,22 @@ export class AuthService {
     }
 
     const { passwordHash, ...result } = user;
-    
-    // Thêm permissions dựa trên role
-    const permissions = require('../common/constants/permissions').ROLE_PERMISSIONS[user.role] || [];
-    
-    return { ...result, hasPassword: !!passwordHash, permissions };
+    const capabilities = await this.authorizationService.getCapabilities(userId);
+
+    return {
+      ...result,
+      hasPassword: !!passwordHash,
+      permissions: Object.keys(capabilities.effectivePermissions),
+      roles: capabilities.roles,
+      assignments: capabilities.assignments,
+      effectivePermissions: capabilities.effectivePermissions,
+      allBranches: capabilities.allBranches,
+      capabilities,
+    };
+  }
+
+  async getCapabilities(userId: string) {
+    return this.authorizationService.getCapabilities(userId);
   }
 
   async addPassword(userId: string, newPassword: string) {
@@ -365,6 +401,41 @@ export class AuthService {
 
     const { passwordHash, ...result } = updatedUser;
     return { message: 'Cập nhật thông tin thành công', user: result };
+  }
+
+  async updateAvatar(userId: string, avatarUrl: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy người dùng');
+    }
+
+    // Delete old avatar file from frontend/public/avt if it was stored locally
+    if (user.avatarUrl && user.avatarUrl.startsWith('/avt/')) {
+      try {
+        const oldFilename = user.avatarUrl.replace('/avt/', '');
+        const oldFilePath = require('path').resolve(process.cwd(), '../frontend/public/avt', oldFilename);
+        const fs = require('fs');
+        if (fs.existsSync(oldFilePath)) {
+          fs.unlinkSync(oldFilePath);
+        }
+      } catch (e) {
+        console.warn('Could not remove old avatar:', e);
+      }
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+    });
+
+    const { passwordHash, ...result } = updatedUser;
+    return {
+      message: 'Cập nhật ảnh đại diện thành công',
+      avatarUrl,
+      user: result,
+    };
   }
 
   async forgotPassword(email: string) {
@@ -598,4 +669,243 @@ export class AuthService {
     this.sendVerificationEmail(email, user.fullName, otp);
     return { message: 'Mã xác nhận đã được gửi lại thành công.' };
   }
+
+  async createDesktopLaunchCode(userId: string, ipAddress?: string): Promise<{ code: string; expiresIn: number }> {
+    // 1. Kiểm tra tồn tại & trạng thái người dùng
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Không tìm thấy thông tin tài khoản.');
+    }
+
+    if (user.isAccountLocked) {
+      throw new ForbiddenException('Tài khoản của bạn đã bị khóa.');
+    }
+
+    // 2. Kiểm tra quyền POS Access
+    const hasPosAccess =
+      (await this.authorizationService.hasPermission(user.id, 'pos.access')) ||
+      user.role === 'ADMIN';
+
+    if (!hasPosAccess) {
+      throw new ForbiddenException('Tài khoản của bạn không có quyền sử dụng AVORA POS Desktop.');
+    }
+
+    // 3. Kiểm tra phân quyền chi nhánh
+    const effective = await this.authorizationService.getEffectivePermissions(user.id);
+    const hasBranchAccess =
+      effective.isAdmin ||
+      (effective.permissions['pos.access']?.branchIds?.length > 0) ||
+      !!user.branchId;
+
+    if (!hasBranchAccess) {
+      throw new ForbiddenException('Tài khoản chưa được phân quyền tại chi nhánh nào.');
+    }
+
+    // 4. Rate limit: tối đa 10 requests / phút / user
+    const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
+    const recentCount = await this.prisma.desktopLaunchCode.count({
+      where: {
+        userId: user.id,
+        createdAt: { gte: oneMinuteAgo },
+      },
+    });
+
+    if (recentCount >= 10) {
+      throw new HttpException(
+        'Bạn đã yêu cầu quá nhiều mã đăng nhập. Vui lòng đợi 1 phút và thử lại.',
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // 5. Sinh mã ngẫu nhiên cryptographically random (64 hex characters)
+    const code = crypto.randomBytes(32).toString('hex');
+    const expiresIn = 60; // 60 seconds
+    const expiresAt = new Date(Date.now() + expiresIn * 1000);
+
+    // 6. Lưu vào cơ sở dữ liệu
+    await this.prisma.desktopLaunchCode.create({
+      data: {
+        code,
+        userId: user.id,
+        branchId: user.branchId,
+        createdIp: ipAddress || null,
+        expiresAt,
+      },
+    });
+
+    // 7. Ghi Audit Log (Tuyệt đối KHÔNG log raw launch code hay token)
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'DESKTOP_LAUNCH_CODE_CREATED',
+          target: 'Desktop Launch Code generated (expires in 60s)',
+          ipAddress: ipAddress || null,
+        },
+      });
+    } catch {
+      // Non-fatal
+    }
+
+    return {
+      code,
+      expiresIn,
+    };
+  }
+
+  async exchangeDesktopLaunchCode(
+    code: string,
+    deviceId?: string,
+    appVersion?: string,
+    ipAddress?: string,
+  ): Promise<{ success: boolean; access_token: string; user: any }> {
+    if (!code || typeof code !== 'string' || !code.trim()) {
+      throw new BadRequestException('Mã xác thực không hợp lệ.');
+    }
+
+    const cleanCode = code.trim();
+
+    // 1. Tìm bản ghi launch code
+    const launchRecord = await this.prisma.desktopLaunchCode.findUnique({
+      where: { code: cleanCode },
+    });
+
+    if (!launchRecord) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            userId: '00000000-0000-0000-0000-000000000000',
+            action: 'DESKTOP_LAUNCH_CODE_REJECTED',
+            target: 'Launch code not found',
+            ipAddress: ipAddress || null,
+          },
+        });
+      } catch {}
+
+      throw new UnauthorizedException({
+        code: 'DESKTOP_SSO_CODE_INVALID',
+        message: 'Mã xác thực không tồn tại hoặc không hợp lệ.',
+      });
+    }
+
+    // 2. Kiểm tra đã sử dụng
+    if (launchRecord.consumedAt) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            userId: launchRecord.userId,
+            action: 'DESKTOP_LAUNCH_CODE_REJECTED',
+            target: 'Launch code already consumed',
+            ipAddress: ipAddress || null,
+          },
+        });
+      } catch {}
+
+      throw new ConflictException({
+        code: 'DESKTOP_SSO_CODE_ALREADY_USED',
+        message: 'Mã xác thực này đã được sử dụng trước đó.',
+      });
+    }
+
+    // 3. Kiểm tra hết hạn (quá 60s)
+    if (launchRecord.expiresAt.getTime() < Date.now()) {
+      try {
+        await this.prisma.auditLog.create({
+          data: {
+            userId: launchRecord.userId,
+            action: 'DESKTOP_LAUNCH_CODE_EXPIRED',
+            target: 'Launch code expired',
+            ipAddress: ipAddress || null,
+          },
+        });
+      } catch {}
+
+      throw new UnauthorizedException({
+        code: 'DESKTOP_SSO_CODE_EXPIRED',
+        message: 'Liên kết đăng nhập đã hết hạn. Vui lòng thử mở lại AVORA POS từ trang web.',
+      });
+    }
+
+    // 4. Atomic mark code consumed (Race condition protection across instances)
+    const updateResult = await this.prisma.desktopLaunchCode.updateMany({
+      where: {
+        id: launchRecord.id,
+        consumedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      data: {
+        consumedAt: new Date(),
+        consumedByIp: ipAddress || null,
+        deviceId: deviceId || null,
+        appVersion: appVersion || null,
+      },
+    });
+
+    if (updateResult.count === 0) {
+      throw new ConflictException({
+        code: 'DESKTOP_SSO_CODE_ALREADY_USED',
+        message: 'Mã xác thực đã được sử dụng bởi một tiến trình khác.',
+      });
+    }
+
+    // 5. Revalidate User tại thời điểm exchange
+    const user = await this.prisma.user.findUnique({
+      where: { id: launchRecord.userId },
+    });
+
+    if (!user || user.isAccountLocked) {
+      throw new ForbiddenException('Tài khoản của bạn đã bị khóa hoặc không hợp lệ.');
+    }
+
+    // Revalidate POS Access
+    const hasPosAccess =
+      (await this.authorizationService.hasPermission(user.id, 'pos.access')) ||
+      user.role === 'ADMIN';
+
+    if (!hasPosAccess) {
+      throw new ForbiddenException('Quyền truy cập AVORA POS của tài khoản đã bị thu hồi.');
+    }
+
+    // Revalidate Branch Access
+    const effective = await this.authorizationService.getEffectivePermissions(user.id);
+    const hasBranchAccess =
+      effective.isAdmin ||
+      (effective.permissions['pos.access']?.branchIds?.length > 0) ||
+      !!user.branchId;
+
+    if (!hasBranchAccess) {
+      throw new ForbiddenException('Tài khoản chưa được phân quyền tại chi nhánh nào.');
+    }
+
+    // 6. Cấp Desktop Session
+    const token = this.generateToken(user);
+
+    // 7. Ghi Audit Log
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          userId: user.id,
+          action: 'DESKTOP_LAUNCH_CODE_EXCHANGED',
+          target: `Desktop Launch Code exchanged successfully (Device: ${deviceId || 'unknown'}, App: ${appVersion || 'unknown'})`,
+          ipAddress: ipAddress || null,
+        },
+      });
+    } catch {}
+
+    return {
+      success: true,
+      access_token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+        branchId: user.branchId,
+      },
+    };
+  }
 }
+

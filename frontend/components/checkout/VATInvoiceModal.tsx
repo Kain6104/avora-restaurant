@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { X, Search, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { X, Search, Loader2, AlertTriangle, CheckCircle2, ReceiptText } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 interface VATInvoiceModalProps {
@@ -14,6 +17,33 @@ interface VATInvoiceModalProps {
   } | null;
 }
 
+/**
+ * Tự động chuẩn hóa địa chỉ thuế:
+ * - Thay thế các viết tắt "TP", "TP.", "Tp", "Tp.", "TP.HCM" thành "Thành phố..."
+ * - Tự động thêm ", Việt Nam" vào cuối địa chỉ nếu chưa có
+ */
+export function formatTaxAddress(rawAddress: string): string {
+  if (!rawAddress) return '';
+  let str = rawAddress.trim();
+
+  // Chuẩn hóa tên thành phố
+  str = str.replace(/\b(T\.?P\.?|Tp\.?)\s+/gi, 'Thành phố ');
+  str = str.replace(/\bTP\.HCM\b/gi, 'Thành phố Hồ Chí Minh');
+  str = str.replace(/\bTPHCM\b/gi, 'Thành phố Hồ Chí Minh');
+  str = str.replace(/\bTPHN\b/gi, 'Thành phố Hà Nội');
+  str = str.replace(/\bTP\.HN\b/gi, 'Thành phố Hà Nội');
+
+  // Bỏ dấu phẩy thừa ở cuối
+  str = str.replace(/[\s,]+$/, '');
+
+  // Thêm ", Việt Nam" nếu chưa có
+  if (!/Việt\s*Nam$/i.test(str)) {
+    str += ', Việt Nam';
+  }
+
+  return str;
+}
+
 export default function VATInvoiceModal({ isOpen, onClose, onSave, initialData }: VATInvoiceModalProps) {
   const [taxCode, setTaxCode] = useState(initialData?.taxCode || '');
   const [companyName, setCompanyName] = useState(initialData?.companyName || '');
@@ -22,25 +52,44 @@ export default function VATInvoiceModal({ isOpen, onClose, onSave, initialData }
   const [isLookingUp, setIsLookingUp] = useState(false);
   const [lookupSuccess, setLookupSuccess] = useState(false);
 
-  if (!isOpen) return null;
+  // Validation errors state
+  const [errors, setErrors] = useState<Record<string, boolean>>({});
+
+  const taxCodeRef = useRef<HTMLInputElement>(null);
+  const companyNameRef = useRef<HTMLInputElement>(null);
+  const addressRef = useRef<HTMLTextAreaElement>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!isOpen || !mounted) return null;
 
   const handleLookup = async () => {
-    if (!taxCode) {
-      toast.error('Vui lòng nhập Mã số thuế');
+    if (!taxCode.trim()) {
+      setErrors((prev) => ({ ...prev, taxCode: true }));
+      taxCodeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      taxCodeRef.current?.focus();
+      toast.error('Vui lòng nhập Mã số thuế để tra cứu');
       return;
     }
+    setErrors((prev) => ({ ...prev, taxCode: false }));
     setIsLookingUp(true);
     setLookupSuccess(false);
     try {
-      const res = await fetch(`https://api.vietqr.io/v2/business/${taxCode}`);
+      const res = await fetch(`https://api.vietqr.io/v2/business/${encodeURIComponent(taxCode.trim())}`);
       const data = await res.json();
       if (data.code === "00" && data.data) {
         setCompanyName(data.data.name || '');
-        setAddress(data.data.address || '');
+        const formattedAddr = formatTaxAddress(data.data.address || '');
+        setAddress(formattedAddr);
         setLookupSuccess(true);
-        toast.success("Tra cứu thông tin thành công");
+        setErrors({});
+        toast.success("Tra cứu thông tin doanh nghiệp thành công");
       } else {
-        toast.error("Không tìm thấy thông tin doanh nghiệp");
+        toast.error("Không tìm thấy thông tin cho mã số thuế này");
       }
     } catch (e) {
       toast.error("Lỗi kết nối khi tra cứu MST");
@@ -50,125 +99,224 @@ export default function VATInvoiceModal({ isOpen, onClose, onSave, initialData }
   };
 
   const handleSave = () => {
-    if (!taxCode || !companyName || !address || !email) {
-      toast.error('Vui lòng điền đầy đủ thông tin xuất hóa đơn');
+    const newErrors: Record<string, boolean> = {};
+
+    if (!taxCode.trim()) newErrors.taxCode = true;
+    if (!companyName.trim()) newErrors.companyName = true;
+    if (!address.trim()) newErrors.address = true;
+    if (!email.trim() || !email.includes('@')) newErrors.email = true;
+
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+
+      // Cuộn xuống ô đầu tiên bị thiếu và focus
+      if (newErrors.taxCode) {
+        taxCodeRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        taxCodeRef.current?.focus();
+      } else if (newErrors.companyName) {
+        companyNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        companyNameRef.current?.focus();
+      } else if (newErrors.address) {
+        addressRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        addressRef.current?.focus();
+      } else if (newErrors.email) {
+        emailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        emailRef.current?.focus();
+      }
+
+      toast.error('Vui lòng điền đầy đủ các thông tin bắt buộc có dấu (*)');
       return;
     }
-    onSave({ taxCode, companyName, address, email });
+
+    const cleanAddress = formatTaxAddress(address);
+    onSave({
+      taxCode: taxCode.trim(),
+      companyName: companyName.trim(),
+      address: cleanAddress,
+      email: email.trim(),
+    });
+    toast.success('Đã lưu thông tin hóa đơn VAT');
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white w-full max-w-lg rounded-2xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200">
+      <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs" onClick={onClose} />
+      <div className="relative bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 overflow-hidden my-auto max-h-[90vh]">
         
-        {/* Header */}
-        <div className="bg-[#da251d] p-4 flex items-center justify-between text-white">
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <span className="w-5 h-5 flex items-center justify-center border-2 border-white rounded-sm text-xs font-black">VAT</span>
-            Xuất Hóa Đơn VAT
+        {/* Header với Icon Hóa Đơn */}
+        <div className="bg-[#da251d] p-4 sm:p-5 flex items-center justify-between text-white shrink-0 shadow-sm">
+          <h2 className="text-base sm:text-lg font-black flex items-center gap-2.5 tracking-tight">
+            <div className="w-8 h-8 rounded-xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white border border-white/20">
+              <ReceiptText size={18} />
+            </div>
+            <span>Thông Tin Xuất Hóa Đơn VAT</span>
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-black/20 rounded-full transition-colors">
-            <X size={20} />
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-colors cursor-pointer"
+          >
+            <X size={18} />
           </button>
         </div>
 
-        <div className="p-5 overflow-y-auto custom-scrollbar max-h-[75vh]">
-          {/* Warning */}
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-5">
-            <h3 className="text-amber-800 font-bold flex items-center gap-2 mb-2 text-sm">
-              <AlertTriangle size={16} /> Lưu ý:
-            </h3>
-            <ul className="list-disc list-inside text-[13px] text-amber-700/90 space-y-1">
-              <li>Vui lòng nhập chính xác thông tin Công ty đăng ký trên Thuế.</li>
-              <li>Hóa đơn điện tử sẽ được xuất và gửi qua email trong ngày.</li>
-              <li>Nhà hàng <span className="font-bold">không chịu trách nhiệm</span> nếu quý khách cung cấp sai thông tin xuất hóa đơn.</li>
-            </ul>
+        <div className="p-4 sm:p-6 overflow-y-auto custom-scrollbar flex-1 space-y-4">
+          {/* Warning banner */}
+          <div className="p-3 bg-amber-50 border border-amber-200/60 rounded-2xl flex items-start gap-2.5">
+            <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={16} />
+            <p className="text-[11px] sm:text-xs text-amber-800 leading-relaxed font-medium">
+              Vui lòng kiểm tra kỹ Mã số thuế và Địa chỉ trước khi lưu. Hóa đơn điện tử sẽ được phát hành sau khi đơn hàng giao thành công.
+            </p>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3 sm:space-y-4">
+            {/* Mã số thuế */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Mã số thuế</label>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Mã số thuế <span className="text-red-500">*</span>
+              </label>
               <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  className={`flex-1 p-3 bg-white border ${lookupSuccess ? 'border-emerald-500' : 'border-slate-200'} rounded-xl focus:ring-2 focus:ring-[#da251d]/20 focus:border-[#da251d] outline-none transition-all placeholder:text-slate-400 font-medium`}
-                  value={taxCode} 
-                  onChange={e => setTaxCode(e.target.value)} 
-                  placeholder="Nhập mã số thuế" 
+                <input
+                  ref={taxCodeRef}
+                  type="text"
+                  value={taxCode}
+                  onChange={(e) => {
+                    setTaxCode(e.target.value.toUpperCase());
+                    if (errors.taxCode) setErrors((prev) => ({ ...prev, taxCode: false }));
+                  }}
+                  placeholder="Nhập mã số thuế công ty"
+                  className={`flex-1 px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all outline-none uppercase ${
+                    errors.taxCode
+                      ? 'border-red-500 bg-red-50/50 ring-2 ring-red-100'
+                      : 'border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                  }`}
                 />
-                <button 
+                <button
                   type="button"
                   onClick={handleLookup}
-                  disabled={isLookingUp || !taxCode}
-                  className="flex items-center justify-center gap-2 bg-[#1e293b] hover:bg-black disabled:bg-slate-400 text-white px-5 rounded-xl font-bold transition-all active:scale-95 whitespace-nowrap text-sm"
+                  disabled={isLookingUp}
+                  className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 shadow-sm cursor-pointer"
                 >
-                  {isLookingUp ? <Loader2 size={16} className="animate-spin" /> : <Search size={16} />}
-                  Tra cứu
+                  {isLookingUp ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Search size={14} />
+                  )}
+                  <span>Tra cứu</span>
                 </button>
               </div>
-              
+              {errors.taxCode && (
+                <p className="text-[11px] text-red-600 font-semibold mt-1">Vui lòng nhập mã số thuế</p>
+              )}
               {lookupSuccess && (
-                <div className="mt-2 text-emerald-600 text-[13px] font-bold flex items-center gap-1.5">
-                  <CheckCircle2 size={14} /> Đã tìm thấy thông tin!
-                  <div className="ml-auto text-[11px] font-normal bg-emerald-50 px-2 py-1 rounded text-emerald-700">Dữ liệu từ Cục Thuế</div>
-                </div>
+                <p className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1 mt-1">
+                  <CheckCircle2 size={13} />
+                  Đã tự động lấy dữ liệu từ Tổng cục Thuế
+                </p>
               )}
             </div>
-            
+
+            {/* Tên công ty */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Tên công ty</label>
-              <input 
-                type="text" 
-                className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#da251d]/20 focus:border-[#da251d] outline-none transition-all placeholder:text-slate-400 font-medium text-sm"
-                value={companyName} 
-                onChange={e => setCompanyName(e.target.value)} 
-                placeholder="Tên công ty / Doanh nghiệp" 
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Tên công ty / Đơn vị <span className="text-red-500">*</span>
+              </label>
+              <input
+                ref={companyNameRef}
+                type="text"
+                value={companyName}
+                onChange={(e) => {
+                  setCompanyName(e.target.value);
+                  if (errors.companyName) setErrors((prev) => ({ ...prev, companyName: false }));
+                }}
+                placeholder="Nhập tên doanh nghiệp đầy đủ"
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all outline-none ${
+                  errors.companyName
+                    ? 'border-red-500 bg-red-50/50 ring-2 ring-red-100'
+                    : 'border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                }`}
               />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Địa chỉ thuế</label>
-              <textarea 
-                rows={2}
-                className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#da251d]/20 focus:border-[#da251d] outline-none transition-all placeholder:text-slate-400 font-medium text-sm resize-none"
-                value={address} 
-                onChange={e => setAddress(e.target.value)} 
-                placeholder="Địa chỉ theo đăng ký kinh doanh" 
-              />
+              {errors.companyName && (
+                <p className="text-[11px] text-red-600 font-semibold mt-1">Vui lòng nhập tên công ty</p>
+              )}
             </div>
 
+            {/* Địa chỉ */}
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-1.5">Email nhận hóa đơn</label>
-              <input 
-                type="email" 
-                className="w-full p-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-[#da251d]/20 focus:border-[#da251d] outline-none transition-all placeholder:text-slate-400 font-medium text-sm"
-                value={email} 
-                onChange={e => setEmail(e.target.value)} 
-                placeholder="Nhập email nhận hóa đơn điện tử" 
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Địa chỉ đăng ký kinh doanh <span className="text-red-500">*</span>
+              </label>
+              <textarea
+                ref={addressRef}
+                rows={2}
+                value={address}
+                onChange={(e) => {
+                  setAddress(e.target.value);
+                  if (errors.address) setErrors((prev) => ({ ...prev, address: false }));
+                }}
+                onBlur={() => {
+                  if (address) setAddress(formatTaxAddress(address));
+                }}
+                placeholder="Địa chỉ theo GPKD (tự động chuẩn hóa Thành phố & Việt Nam)"
+                className={`w-full px-3.5 py-2 rounded-xl border text-xs sm:text-sm font-semibold transition-all outline-none resize-none ${
+                  errors.address
+                    ? 'border-red-500 bg-red-50/50 ring-2 ring-red-100'
+                    : 'border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                }`}
               />
+              {errors.address && (
+                <p className="text-[11px] text-red-600 font-semibold mt-1">Vui lòng nhập địa chỉ công ty</p>
+              )}
+            </div>
+
+            {/* Email nhận hóa đơn */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Email nhận hóa đơn điện tử <span className="text-red-500">*</span>
+              </label>
+              <input
+                ref={emailRef}
+                type="email"
+                value={email}
+                className={`w-full px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all outline-none ${
+                  errors.email
+                    ? 'border-red-500 bg-red-50/50 ring-2 ring-red-100'
+                    : 'border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-100'
+                }`}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (errors.email) setErrors((prev) => ({ ...prev, email: false }));
+                }} 
+                placeholder="Ví dụ: ketoan@congty.com" 
+              />
+              {errors.email && (
+                <p className="text-[11px] text-red-600 font-semibold mt-1">Vui lòng nhập địa chỉ email hợp lệ</p>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-slate-100 bg-white flex justify-end gap-3 rounded-b-2xl">
+        {/* Footer Actions */}
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-2.5 rounded-b-3xl shrink-0">
           <button 
+            type="button"
             onClick={onClose}
-            className="px-6 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-100 transition-colors text-sm"
+            className="px-4 py-2.5 rounded-xl font-bold text-slate-600 hover:bg-slate-200 transition-colors text-xs cursor-pointer"
           >
-            Hủy
+            Hủy bỏ
           </button>
           <button 
+            type="button"
             onClick={handleSave}
-            className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#da251d] hover:bg-[#b91c2c] transition-colors shadow-lg shadow-[#da251d]/30 active:scale-95 text-sm"
+            className="px-6 py-2.5 rounded-xl font-bold text-white bg-[#da251d] hover:bg-[#b91c2c] transition-all shadow-md active:scale-95 text-xs cursor-pointer"
           >
             Xác nhận lưu
           </button>
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

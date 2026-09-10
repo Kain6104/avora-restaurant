@@ -328,7 +328,7 @@ async function main() {
         email: 'khachhang1@gmail.com', fullName: 'Trần Đại Phát', phone: '0901234567', passwordHash: 'hashed_123',
         points: 1500, branchId: branches[0].id, membershipTierId: tiers[2].id,
         addresses: {
-          create: [{ recipientName: 'Trần Đại Phát', phone: '0901234567', streetDetail: '123 Nguyễn Huệ', ward: 'Bến Nghé', district: 'Quận 1', province: 'TP.HCM', isDefault: true, latitude: 10.774, longitude: 106.703 }]
+          create: [{ recipientName: 'Trần Đại Phát', phone: '0901234567', streetDetail: '123 Nguyễn Huệ', ward: 'Bến Nghé', province: 'TP.HCM', isDefault: true, latitude: 10.774, longitude: 106.703 }]
         }
       }
     })

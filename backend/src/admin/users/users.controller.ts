@@ -1,22 +1,18 @@
 import { Controller, Get, Param, Patch, Post, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { BranchScope } from '../../common/decorators/branch-scope.decorator';
 import { RoleType } from '@prisma/client';
-import { PERMISSIONS } from '../../common/constants/permissions';
 
 @Controller('admin/users')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.USERS_VIEW)
+  @RequirePermission('staff.view')
   async findAll(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
@@ -38,16 +34,14 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.USERS_VIEW)
+  @RequirePermission('staff.view')
   async findOne(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
     const data = await this.usersService.findOne(id, branchIdScope);
     return { data };
   }
 
   @Patch(':id/role')
-  @Roles(RoleType.ADMIN) // ONLY Admin can change roles/branches
-  @Permissions(PERMISSIONS.USERS_UPDATE)
+  @RequirePermission('staff.roles.assign')
   async updateRole(
     @Param('id') id: string,
     @Body('role') role: RoleType,
@@ -60,18 +54,46 @@ export class UsersController {
   }
 
   @Post()
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.USERS_CREATE)
+  @RequirePermission('staff.create')
   async create(@Body() data: any) {
     const result = await this.usersService.create(data);
     return { data: result, message: 'Created user successfully' };
   }
 
   @Patch(':id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.USERS_UPDATE)
-  async update(@Param('id') id: string, @Body() data: any) {
-    const result = await this.usersService.update(id, data);
+  @RequirePermission('staff.update')
+  async update(@Param('id') id: string, @Body() data: any, @Req() req?: any) {
+    const adminId = req?.user?.id;
+    const result = await this.usersService.update(id, data, adminId);
     return { data: result, message: 'Updated user successfully' };
+  }
+
+  /**
+   * Khởi tạo quy trình đổi email sang email mới và gửi mã OTP
+   */
+  @Post(':id/request-email-change')
+  @RequirePermission('customers.update')
+  async requestEmailChange(
+    @Param('id') id: string,
+    @Body('newEmail') newEmail: string,
+    @Req() req?: any,
+  ) {
+    const adminId = req?.user?.id;
+    return this.usersService.requestEmailChange(id, newEmail, adminId);
+  }
+
+  /**
+   * Xác thực mã OTP và cập nhật email mới cho User
+   */
+  @Post(':id/verify-email-change')
+  @RequirePermission('customers.update')
+  async verifyEmailChange(
+    @Param('id') id: string,
+    @Body('newEmail') newEmail: string,
+    @Body('otp') otp: string,
+    @Req() req?: any,
+  ) {
+    const adminId = req?.user?.id;
+    return this.usersService.verifyEmailChange(id, newEmail, otp, adminId);
   }
 }

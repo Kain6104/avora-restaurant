@@ -84,6 +84,11 @@ export default function CartPage() {
                             SALE
                           </div>
                         )}
+                        {item.isCombo && (
+                          <div className="absolute top-0 left-0 bg-amber-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-br-lg z-10">
+                            COMBO
+                          </div>
+                        )}
                       </div>
 
                       {/* Details Container */}
@@ -94,7 +99,7 @@ export default function CartPage() {
                           <div className="flex justify-between items-start pr-6 sm:pr-0">
                             <h3 className="font-bold text-slate-900 text-sm sm:text-[15px] line-clamp-2 leading-tight">
                               <Link 
-                                href={item.rawProduct?.category?.slug && item.rawProduct?.slug ? `/${item.rawProduct.category.slug}/${item.rawProduct.slug}` : `/menu`} 
+                                href={item.isCombo ? '/combo' : (item.rawProduct?.category?.slug && item.rawProduct?.slug ? `/${item.rawProduct.category.slug}/${item.rawProduct.slug}` : `/menu`)} 
                                 className="hover:text-red-600 transition-colors"
                               >
                                 {item.name}

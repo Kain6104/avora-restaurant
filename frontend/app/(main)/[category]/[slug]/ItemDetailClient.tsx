@@ -4,6 +4,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ChevronRight, Star, Heart, MapPin, Leaf, ChefHat, Timer, RotateCcw, Plus, Minus, ShoppingCart, Zap, Home, ArrowRight } from 'lucide-react';
 import { useCart } from '../../../../context/CartContext';
+import { useWishlist } from '@/context/WishlistContext';
 import { toast } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
 
@@ -23,11 +24,12 @@ const getSoldCount = (id: string) => {
 
 export default function ItemDetailClient({ product, relatedDishes }: ItemDetailClientProps) {
   const router = useRouter();
-  const { currentBranchId, flashSaleQuotas, cartItems, setBranchModalProduct, addToCart } = useCart();
+  const { currentBranchId, flashSaleQuotas, cartItems, setBranchModalProduct, setIsBranchModalOpen, addToCart } = useCart();
+  const { isFavorite, toggleFavorite } = useWishlist();
   const [activeTab, setActiveTab] = useState('description');
   const [localQuantity, setLocalQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(product?.imageUrl);
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  const isWishlisted = isFavorite(product?.id);
   const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -145,6 +147,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
   const handleAddToCart = (): boolean => {
     if (!isAvailableHere) {
       setBranchModalProduct(displayProduct);
+      setIsBranchModalOpen(true);
+      toast.error('Món ăn không có sẵn tại chi nhánh hiện tại. Vui lòng đổi chi nhánh!');
       return false;
     }
     const priceAtSale = displayProduct.flashSalePrice || displayProduct.price;
@@ -171,6 +175,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
   const handleBuyNow = () => {
     if (!isAvailableHere) {
       setBranchModalProduct(displayProduct);
+      setIsBranchModalOpen(true);
+      toast.error('Món ăn không có sẵn tại chi nhánh hiện tại. Vui lòng đổi chi nhánh!');
       return;
     }
     const added = handleAddToCart();
@@ -184,6 +190,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
     if (item.branches && item.branches.length > 0) {
       if (currentBranchId && !item.branches.some((b:any)=>b.id === currentBranchId)) {
         setBranchModalProduct(item);
+        setIsBranchModalOpen(true);
+        toast.error('Món ăn không có sẵn tại chi nhánh hiện tại. Vui lòng đổi chi nhánh!');
         return;
       }
     }
@@ -271,10 +279,11 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                 {category?.name || 'SUSHI'}
               </span>
               <button 
-                onClick={() => setIsWishlisted(!isWishlisted)}
-                className={`transition-colors ${isWishlisted ? 'text-red-500' : 'text-slate-400 hover:text-slate-600'}`}
+                onClick={() => toggleFavorite(displayProduct)}
+                className={`p-2 rounded-full transition-all ${isWishlisted ? 'text-red-500 bg-red-50' : 'text-slate-400 hover:text-red-500 hover:bg-slate-50'}`}
+                title={isWishlisted ? 'Bỏ khỏi yêu thích' : 'Thêm vào yêu thích'}
               >
-                <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-current' : ''}`} />
+                <Heart className={`w-5 h-5 ${isWishlisted ? 'fill-current text-red-500' : ''}`} />
               </button>
             </div>
 
@@ -395,8 +404,21 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
 
             <div className="flex flex-col gap-3">
               {!isAvailableHere && (
-                <div className="text-red-500 font-medium text-xs flex items-center gap-1.5 mb-1">
-                  <MapPin className="w-3.5 h-3.5" /> Món không có sẵn tại chi nhánh.
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-2 mb-1">
+                  <div className="text-red-600 font-medium text-xs flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 shrink-0 text-red-600" />
+                    <span>Món không có sẵn tại chi nhánh này.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBranchModalProduct(displayProduct);
+                      setIsBranchModalOpen(true);
+                    }}
+                    className="text-xs font-bold text-red-700 hover:text-red-900 underline shrink-0 cursor-pointer"
+                  >
+                    Đổi chi nhánh
+                  </button>
                 </div>
               )}
               <button 

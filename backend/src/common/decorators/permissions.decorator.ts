@@ -1,4 +1,2 @@
-import { SetMetadata } from '@nestjs/common';
-
-export const PERMISSIONS_KEY = 'permissions';
-export const Permissions = (...permissions: string[]) => SetMetadata(PERMISSIONS_KEY, permissions);
+export * from './require-permission.decorator';
+export { REQUIRE_PERMISSION_METADATA_KEY as PERMISSIONS_KEY } from './require-permission.decorator';

@@ -13,6 +13,7 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "rootDir": "./src",
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,
@@ -20,5 +21,7 @@
     "noImplicitAny": false,
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "test", "dist", "**/*spec.ts", "scripts", "*.ts", "scratch"]
 }

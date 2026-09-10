@@ -7,10 +7,20 @@ export class HomeService {
   constructor(private prisma: PrismaService, private promotionService: PromotionService) {}
 
   async getHomePageData() {
+    const now = new Date();
     const [banners, categories, bestSellers, aiRecommended] = await Promise.all([
       this.prisma.banner.findMany({
-        where: { active: true },
-        orderBy: { bannerOrder: 'asc' },
+        where: {
+          active: true,
+          AND: [
+            { OR: [{ startDate: null }, { startDate: { lte: now } }] },
+            { OR: [{ endDate: null }, { endDate: { gte: now } }] },
+          ],
+        },
+        include: {
+          branches: { select: { id: true, name: true } },
+        },
+        orderBy: [{ bannerOrder: 'asc' }, { createdAt: 'desc' }],
       }),
       this.prisma.category.findMany({
         orderBy: { displayOrder: 'asc' },
@@ -77,6 +87,10 @@ export class HomeService {
         latitude: true,
         longitude: true,
         onlineOrderingEnabled: true,
+        allowDirectDiscount: true,
+        pointRedeemRate: true,
+        isLoyaltyOnlineEnabled: true,
+        loyaltyEarnRateOnline: true,
       },
       orderBy: { createdAt: 'asc' },
     });

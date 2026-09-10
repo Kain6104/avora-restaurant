@@ -162,7 +162,7 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
         </div>
 
         {/* Mobile Filter Bar (Moved outside to fix layout/sticky issues) */}
-        <div className="lg:hidden sticky top-[60px] md:top-[80px] z-[40] bg-[#FAF9F5] py-3 mb-6 -mx-4 px-4 flex items-center gap-3 overflow-x-auto hide-scrollbar shadow-sm">
+        <div className="lg:hidden sticky top-[60px] md:top-[80px] z-[10] bg-[#FAF9F5] py-3 mb-6 -mx-4 px-4 flex items-center gap-3 overflow-x-auto hide-scrollbar shadow-sm">
           <button onClick={() => setIsFilterOpen(true)} className="flex items-center gap-2 bg-white px-5 py-2.5 rounded-full shadow-sm border border-slate-100 text-sm font-bold text-[#3E2723] shrink-0 hover:bg-slate-50">
             <SlidersHorizontal className="w-4 h-4 text-[#E55B32]" />
             Bộ Lọc

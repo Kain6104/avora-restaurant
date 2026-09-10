@@ -1,10 +1,29 @@
 'use client';
+
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAdmin } from '@/contexts/AdminContext';
 import { toast } from 'react-hot-toast';
-import { Save, ArrowLeft, ShoppingBag, MapPin } from 'lucide-react';
+import {
+  Save,
+  ArrowLeft,
+  ShoppingBag,
+  MapPin,
+  User as UserIcon,
+  Shield,
+  Lock,
+  RotateCcw,
+  Store,
+  CreditCard,
+  Award,
+  CheckCircle2,
+  AlertTriangle,
+  Mail,
+} from 'lucide-react';
 import ImageUploader from '@/app/admin/components/ImageUploader';
+import { AdminCard, PageHeader, FormField, StatusBadge } from '@/app/admin/components/ui';
+import ChangeEmailModal from './ChangeEmailModal';
+import UserRoleAssignmentsSection from './UserRoleAssignmentsSection';
 
 interface UserFormProps {
   initialData?: any;
@@ -13,9 +32,10 @@ interface UserFormProps {
 
 export default function UserForm({ initialData, isEdit }: UserFormProps) {
   const router = useRouter();
-  const { role, selectedBranchId, availableBranches } = useAdmin();
+  const { role } = useAdmin();
   const [uploading, setUploading] = useState(false);
   const [branches, setBranches] = useState<{ id: string; name: string }[]>([]);
+  const [isChangeEmailModalOpen, setIsChangeEmailModalOpen] = useState(false);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -23,14 +43,13 @@ export default function UserForm({ initialData, isEdit }: UserFormProps) {
     phone: '',
     username: '',
     birthdate: '',
-    password: '',
     role: 'USER',
     branchId: '',
     avatarUrl: '',
     isEmailVerified: false,
     isPhoneVerified: false,
     isAccountLocked: false,
-    forceRelogin: false
+    forceRelogin: false,
   });
 
   useEffect(() => {
@@ -41,17 +60,18 @@ export default function UserForm({ initialData, isEdit }: UserFormProps) {
 
   useEffect(() => {
     if (initialData) {
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         ...initialData,
-        password: '', // Không hiển thị password cũ
         branchId: initialData.branchId || '',
         username: initialData.username || '',
-        birthdate: initialData.birthdate ? new Date(initialData.birthdate).toISOString().split('T')[0] : '',
+        birthdate: initialData.birthdate
+          ? new Date(initialData.birthdate).toISOString().split('T')[0]
+          : '',
         isEmailVerified: initialData.isEmailVerified || false,
         isPhoneVerified: initialData.isPhoneVerified || false,
         isAccountLocked: initialData.isAccountLocked || false,
-        forceRelogin: initialData.forceRelogin || false
+        forceRelogin: initialData.forceRelogin || false,
       }));
     }
   }, [initialData]);
@@ -59,42 +79,42 @@ export default function UserForm({ initialData, isEdit }: UserFormProps) {
   const fetchBranches = async () => {
     try {
       const res = await fetch('/api/admin/branches', { credentials: 'include' });
-      const data = await res.json();
-      setBranches(data.data || []);
+      if (res.ok) {
+        const data = await res.json();
+        setBranches(data.data || []);
+      }
     } catch (e) {
       console.error(e);
     }
   };
-
-
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setUploading(true);
 
     try {
-      const finalImageUrl = formData.avatarUrl;
-
-      const submitData = {
+      const submitData: any = {
         fullName: formData.fullName,
-        email: formData.email,
         phone: formData.phone || null,
         username: formData.username || null,
         birthdate: formData.birthdate ? new Date(formData.birthdate).toISOString() : null,
-        password: formData.password || undefined,
-        role: formData.role,
-        branchId: formData.branchId || null,
-        avatarUrl: finalImageUrl || null,
-        isEmailVerified: formData.isEmailVerified,
+        avatarUrl: formData.avatarUrl || null,
         isPhoneVerified: formData.isPhoneVerified,
         isAccountLocked: formData.isAccountLocked,
-        forceRelogin: formData.forceRelogin
+        forceRelogin: formData.forceRelogin,
       };
-      
-      if (!submitData.password) {
-        delete submitData.password;
+
+      // Khi chỉnh sửa, KHÔNG gửi role và branchId để không đè lên hệ thống phân quyền Enterprise RBAC
+      if (!isEdit) {
+        submitData.role = formData.role || 'USER';
+        submitData.branchId = formData.branchId || null;
       }
-      
+
+      // Chỉ gửi email nếu tạo mới hoặc chưa xác thực
+      if (!isEdit || !formData.isEmailVerified) {
+        submitData.email = formData.email;
+      }
+
       const url = isEdit ? `/api/admin/users/${initialData.id}` : `/api/admin/users`;
       const method = isEdit ? 'PATCH' : 'POST';
 
@@ -102,12 +122,12 @@ export default function UserForm({ initialData, isEdit }: UserFormProps) {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(submitData),
-        credentials: 'include'
+        credentials: 'include',
       });
 
       if (res.ok) {
         toast.success(isEdit ? 'Cập nhật tài khoản thành công' : 'Thêm tài khoản thành công');
-        router.back();
+        router.push('/admin/users');
       } else {
         const err = await res.json();
         toast.error(err.message || 'Có lỗi xảy ra');
@@ -119,244 +139,329 @@ export default function UserForm({ initialData, isEdit }: UserFormProps) {
     }
   };
 
-  const formatMoney = (amount: number) => {
+  const formatMoney = (amount: number = 0) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
   };
 
   return (
-    <div className="max-w-6xl mx-auto pb-10">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <button onClick={() => router.back()} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="text-2xl font-bold">{isEdit ? 'Chi Tiết & Chỉnh Sửa Người Dùng' : 'Thêm Tài Khoản Mới'}</h1>
+    <div className="max-w-6xl mx-auto space-y-4 sm:space-y-6 pb-12">
+      {/* Header */}
+      <PageHeader
+        title={isEdit ? `Chi tiết: ${formData.fullName || 'Người dùng'}` : 'Thêm tài khoản mới'}
+        subtitle="Quản lý thông tin định danh cá nhân, phân quyền hệ thống và trạng thái bảo mật"
+        breadcrumbs={[
+          { label: 'Nhân sự', href: '/admin/users' },
+          { label: 'Người dùng', href: '/admin/users' },
+          { label: isEdit ? 'Chỉnh sửa' : 'Tạo mới' },
+        ]}
+        badge={isEdit && <StatusBadge status={formData.role} size="md" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => router.back()}
+              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold shadow-2xs transition-colors"
+            >
+              <ArrowLeft size={15} />
+              <span>Quay lại</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={uploading}
+              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50"
+            >
+              <Save size={15} />
+              <span>{uploading ? 'Đang lưu...' : 'Lưu tài khoản'}</span>
+            </button>
+          </div>
+        }
+      />
+
+      <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+        {/* Row 1: Profile Image & Basic Information */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+          <div>
+            <AdminCard title="Ảnh đại diện">
+              <ImageUploader
+                imageUrl={formData.avatarUrl}
+                folder="avatars"
+                onUploadSuccess={(url) => setFormData((prev) => ({ ...prev, avatarUrl: url }))}
+                label=""
+                className="w-full flex flex-col items-center justify-center py-2"
+              />
+            </AdminCard>
+          </div>
+
+          <div className="lg:col-span-2">
+            <AdminCard title="Thông tin cá nhân" icon={<UserIcon size={16} />}>
+              <div className="space-y-3.5">
+                <FormField label="Họ và tên" required>
+                  <input
+                    required
+                    value={formData.fullName}
+                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
+                    className="w-full h-10 px-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                    placeholder="VD: Nguyễn Văn A"
+                  />
+                </FormField>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Email Field with Verification Badge & OTP Change Action */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                        <span>Email đăng nhập</span>
+                        {isEdit && (
+                          formData.isEmailVerified ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              <CheckCircle2 size={11} />
+                              Đã xác thực
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                              <AlertTriangle size={11} />
+                              Chưa xác thực
+                            </span>
+                          )
+                        )}
+                      </label>
+                      {isEdit && (
+                        <button
+                          type="button"
+                          onClick={() => setIsChangeEmailModalOpen(true)}
+                          className="text-[11px] font-bold text-red-600 hover:text-red-700 hover:underline flex items-center gap-1 transition-colors"
+                        >
+                          <Mail size={12} />
+                          <span>Đổi Email qua OTP</span>
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      required
+                      type="email"
+                      disabled={isEdit && formData.isEmailVerified}
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className={`w-full h-10 px-3 text-xs sm:text-sm border rounded-xl outline-none transition-all ${
+                        isEdit && formData.isEmailVerified
+                          ? 'bg-slate-50 border-slate-200 text-slate-500 font-medium cursor-not-allowed'
+                          : 'bg-white border-slate-200 focus:border-red-500 focus:ring-2 focus:ring-red-500/20'
+                      }`}
+                      placeholder="email@example.com"
+                    />
+                    {isEdit && formData.isEmailVerified && (
+                      <p className="text-[11px] text-slate-400">
+                        Email đã xác thực được khóa chỉnh sửa trực tiếp. Bấm <strong>"Đổi Email qua OTP"</strong> để đổi sang email mới.
+                      </p>
+                    )}
+                  </div>
+
+                  <FormField label="Số điện thoại">
+                    <input
+                      value={formData.phone || ''}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      className="w-full h-10 px-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20"
+                      placeholder="0912345678"
+                    />
+                  </FormField>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <FormField label="Tên đăng nhập (Username)">
+                    <input
+                      disabled
+                      value={formData.username || ''}
+                      className="w-full h-10 px-3 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl text-slate-400 cursor-not-allowed"
+                      placeholder="Chưa thiết lập"
+                    />
+                  </FormField>
+                  <FormField label="Ngày sinh">
+                    <input
+                      type="date"
+                      value={formData.birthdate || ''}
+                      onChange={(e) => setFormData({ ...formData, birthdate: e.target.value })}
+                      className="w-full h-10 px-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none"
+                    />
+                  </FormField>
+                </div>
+
+                {/* Security Note: Passwords are managed strictly by customers */}
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-start gap-3 mt-1">
+                  <div className="p-2 rounded-xl bg-slate-100 text-slate-600 shrink-0 mt-0.5">
+                    <Shield size={16} />
+                  </div>
+                  <div className="text-xs text-slate-600 space-y-1">
+                    <p className="font-bold text-slate-800">Chính sách bảo mật mật khẩu tài khoản</p>
+                    <p className="text-slate-500 leading-relaxed">
+                      Để đảm bảo quyền riêng tư và an toàn thông tin, Quản trị viên không được phép xem hoặc chỉnh sửa mật khẩu của người dùng. Khách hàng chỉ có thể tự đặt lại mật khẩu thông qua chức năng <strong>Quên mật khẩu</strong> và xác thực OTP qua email cá nhân.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </AdminCard>
+          </div>
         </div>
-        <button onClick={handleSubmit} disabled={uploading} className="bg-red-600 text-white px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 hover:bg-red-700 disabled:opacity-50 transition-colors">
-          <Save size={18} /> {uploading ? 'Đang lưu...' : 'Lưu Thông Tin'}
-        </button>
-      </div>
 
-      <form className="space-y-6">
-        {/* HÀNG 1: THÔNG TIN CƠ BẢN VÀ AVATAR */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border flex flex-col items-center">
-            <h2 className="text-lg font-bold border-b pb-2 w-full mb-4">Ảnh Đại Diện</h2>
-            <ImageUploader 
-              imageUrl={formData.avatarUrl} 
-              folder="avatars" 
-              onUploadSuccess={(url) => setFormData(prev => ({ ...prev, avatarUrl: url }))} 
-              label=""
-              className="flex flex-col items-center justify-center w-full"
-            />
-          </div>
-
-          <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border space-y-4">
-            <h2 className="text-lg font-bold border-b pb-2">Thông tin Cá nhân</h2>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium mb-1">Họ và Tên *</label>
-                <input required value={formData.fullName || ''} onChange={e => setFormData({...formData, fullName: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="Nguyễn Văn A" />
+        {/* Row 2: Account Security & RBAC Notice */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:gap-5">
+          {/* Thông báo chuẩn Enterprise RBAC */}
+          <AdminCard title="Hệ thống Phân quyền Enterprise RBAC" icon={<Shield size={16} className="text-indigo-600" />}>
+            <div className="p-4 rounded-xl bg-indigo-50/60 border border-indigo-100 text-xs space-y-2">
+              <div className="flex items-center gap-2 text-indigo-950 font-bold">
+                <Shield size={15} className="text-indigo-600" />
+                <span>Phân quyền đa vai trò & đa chi nhánh</span>
               </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Email *</label>
-                <input required type="email" value={formData.email || ''} onChange={e => setFormData({...formData, email: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="abc@email.com" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Số điện thoại</label>
-                <input value={formData.phone || ''} onChange={e => setFormData({...formData, phone: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="0912345678" />
-              </div>
+              <p className="text-indigo-900/80 leading-relaxed">
+                Hệ thống AVORA áp dụng mô hình <strong>Enterprise RBAC</strong>. Tài khoản có thể đảm nhiệm nhiều vai trò độc lập tại các chi nhánh khác nhau.
+              </p>
+              <p className="text-[11px] text-indigo-700/80">
+                👉 Vui lòng sử dụng bảng <strong>Vai trò & Quyền hạn phân nhánh</strong> ở bên dưới để gán hoặc cập nhật quyền chính xác, không bị giới hạn bởi vai trò đơn lẻ.
+              </p>
             </div>
+          </AdminCard>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">Tên đăng nhập</label>
-                <input disabled value={formData.username || ''} className="w-full border rounded-lg px-3 py-2 bg-gray-100 text-gray-500 cursor-not-allowed" placeholder="Không có" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Ngày sinh</label>
-                <input type="date" value={formData.birthdate || ''} onChange={e => setFormData({...formData, birthdate: e.target.value})} className="w-full border rounded-lg px-3 py-2" />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Mật khẩu {isEdit && '(Để trống nếu không muốn đổi)'}</label>
-              <input type="password" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} className="w-full border rounded-lg px-3 py-2" placeholder="Nhập mật khẩu..." />
-            </div>
-          </div>
-        </div>
-
-        {/* HÀNG 2: PHÂN QUYỀN VÀ XUẤT HÓA ĐƠN VAT */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-            <h2 className="text-lg font-bold border-b pb-2 text-red-600">Phân Quyền Hệ Thống</h2>
-            
-            <div>
-              <label className="block text-sm font-medium mb-1">Vai trò (Role)</label>
-              <select value={formData.role} onChange={e => setFormData({...formData, role: e.target.value})} className="w-full border rounded-lg px-3 py-2 font-bold" disabled={role !== 'ADMIN'}>
-                <option value="USER">USER (Khách hàng)</option>
-                {role === 'ADMIN' && (
-                  <>
-                    <option value="CHEF">CHEF (Bếp trưởng)</option>
-                    <option value="MANAGER">MANAGER (Quản lý chi nhánh)</option>
-                    <option value="ADMIN">ADMIN (Quản trị hệ thống)</option>
-                  </>
-                )}
-              </select>
-            </div>
-
-            {(formData.role === 'MANAGER' || formData.role === 'CHEF') && (
-              <div>
-                <label className="block text-sm font-medium mb-1">Thuộc Chi nhánh</label>
-                <select value={formData.branchId} onChange={e => setFormData({...formData, branchId: e.target.value})} className="w-full border rounded-lg px-3 py-2" disabled={role !== 'ADMIN'}>
-                  <option value="">-- Chọn Chi nhánh --</option>
-                  {branches.map(b => (
-                    <option key={b.id} value={b.id}>{b.name}</option>
-                  ))}
-                </select>
-                {formData.branchId === '' && <p className="text-xs text-red-500 mt-1">Vui lòng chọn chi nhánh cho vai trò này!</p>}
-              </div>
-            )}
-          </div>
-
-
-          <div className="bg-white p-6 rounded-xl shadow-sm border space-y-4">
-            <h2 className="text-lg font-bold border-b pb-2 text-indigo-600">Trạng Thái Tài Khoản</h2>
-            
-            <div className="space-y-4">
-              <label className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 opacity-70">
+          {/* Trạng thái bảo mật */}
+          <AdminCard title="Trạng thái tài khoản & Bảo mật" icon={<Lock size={16} />}>
+            <div className="space-y-2.5">
+              <label className="flex items-center justify-between p-3 rounded-xl border border-rose-200 bg-rose-50/50 cursor-pointer">
                 <div>
-                  <div className="font-bold text-sm">Đã xác minh Email</div>
-                  <div className="text-xs text-gray-500">Người dùng đã bấm link xác minh email</div>
+                  <p className="font-bold text-xs sm:text-sm text-rose-900">Khóa tài khoản</p>
+                  <span className="text-[11px] text-rose-700">
+                    Người dùng sẽ bị chặn đăng nhập trên toàn hệ thống
+                  </span>
                 </div>
-                <input type="checkbox" disabled checked={formData.isEmailVerified} className="w-5 h-5 text-indigo-600 rounded cursor-not-allowed" />
+                <input
+                  type="checkbox"
+                  checked={formData.isAccountLocked}
+                  onChange={(e) =>
+                    setFormData({ ...formData, isAccountLocked: e.target.checked })
+                  }
+                  className="w-4 h-4 text-rose-600 rounded"
+                />
               </label>
 
-              <label className="flex items-center justify-between p-3 border rounded-lg bg-gray-50 opacity-70">
+              <label className="flex items-center justify-between p-3 rounded-xl border border-amber-200 bg-amber-50/50 cursor-pointer">
                 <div>
-                  <div className="font-bold text-sm">Đã xác minh SĐT</div>
-                  <div className="text-xs text-gray-500">Người dùng đã nhập OTP xác minh SĐT</div>
+                  <p className="font-bold text-xs sm:text-sm text-amber-900">Buộc đăng nhập lại</p>
+                  <span className="text-[11px] text-amber-700">
+                    Thu hồi toàn bộ phiên đăng nhập hiện tại trên thiết bị
+                  </span>
                 </div>
-                <input type="checkbox" disabled checked={formData.isPhoneVerified} className="w-5 h-5 text-indigo-600 rounded cursor-not-allowed" />
-              </label>
-
-              <label className="flex items-center justify-between p-3 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 cursor-pointer">
-                <div>
-                  <div className="font-bold text-sm text-red-700">Khóa tài khoản</div>
-                  <div className="text-xs text-red-500">Người dùng sẽ không thể đăng nhập nếu bị khóa</div>
-                </div>
-                <input type="checkbox" checked={formData.isAccountLocked} onChange={e => setFormData({...formData, isAccountLocked: e.target.checked})} className="w-5 h-5 text-red-600 rounded focus:ring-red-500 border-red-300" />
-              </label>
-
-              <label className="flex items-center justify-between p-3 border border-orange-200 bg-orange-50 rounded-lg hover:bg-orange-100 cursor-pointer">
-                <div>
-                  <div className="font-bold text-sm text-orange-700">Buộc đăng nhập lại (Force Relogin)</div>
-                  <div className="text-xs text-orange-500">Yêu cầu người dùng này đăng nhập lại ở lần mở app tới</div>
-                </div>
-                <input type="checkbox" checked={formData.forceRelogin} onChange={e => setFormData({...formData, forceRelogin: e.target.checked})} className="w-5 h-5 text-orange-600 rounded focus:ring-orange-500 border-orange-300" />
+                <input
+                  type="checkbox"
+                  checked={formData.forceRelogin}
+                  onChange={(e) => setFormData({ ...formData, forceRelogin: e.target.checked })}
+                  className="w-4 h-4 text-amber-600 rounded"
+                />
               </label>
             </div>
-          </div>
+          </AdminCard>
         </div>
       </form>
 
+      {/* Row 2.5: Role & Branch Assignments (Enterprise RBAC) */}
+      {isEdit && initialData?.id && (
+        <UserRoleAssignmentsSection userId={initialData.id} />
+      )}
+
+      {/* Row 3: Member Stats & Order History */}
       {isEdit && initialData && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-          <div className="md:col-span-1 bg-white rounded-xl shadow-sm border space-y-4 p-6">
-            <h2 className="text-lg font-bold border-b pb-2 text-blue-600">Thống Kê Thành Viên</h2>
-            <div className="space-y-4">
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold">Mã Thành Viên</p>
-                <p className="font-mono font-bold text-lg text-gray-900">{initialData.memberCode || 'Chưa có'}</p>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+          {/* Member Stats */}
+          <AdminCard title="Thông tin thành viên" icon={<Award size={16} />}>
+            <div className="space-y-3 text-xs sm:text-sm">
+              <div className="flex justify-between pb-2 border-b border-slate-50">
+                <span className="text-slate-400">Mã thành viên:</span>
+                <span className="font-mono font-bold text-slate-800">
+                  {initialData.memberCode || 'Chưa có'}
+                </span>
               </div>
-              <div>
-                <p className="text-xs text-gray-500 uppercase font-bold">Tổng chi tiêu</p>
-                <p className="font-bold text-xl text-red-600">{formatMoney(initialData.totalSpending || 0)}</p>
+              <div className="flex justify-between pb-2 border-b border-slate-50">
+                <span className="text-slate-400">Tổng chi tiêu:</span>
+                <span className="font-black text-red-600">
+                  {formatMoney(initialData.totalSpending || 0)}
+                </span>
+              </div>
+              <div className="flex justify-between pb-2 border-b border-slate-50">
+                <span className="text-slate-400">Điểm hiện có:</span>
+                <span className="font-bold text-amber-600">
+                  {initialData.currentPoints || 0} pts
+                </span>
               </div>
               <div className="flex justify-between">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold">Điểm hiện tại</p>
-                  <p className="font-bold text-xl text-orange-500">{initialData.currentPoints || 0}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold">Điểm tích lũy (All)</p>
-                  <p className="font-bold text-xl text-gray-700">{initialData.points || 0}</p>
-                </div>
-              </div>
-              <div className="flex justify-between border-t pt-4">
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold">Ngày tham gia</p>
-                  <p className="font-medium text-sm text-gray-800">{initialData.createdAt ? new Date(initialData.createdAt).toLocaleDateString('vi-VN') : 'Không rõ'}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-gray-500 uppercase font-bold">Đăng nhập qua</p>
-                  <p className="font-medium text-sm text-gray-800">{initialData.authProvider || 'LOCAL'}</p>
-                </div>
+                <span className="text-slate-400">Ngày tham gia:</span>
+                <span className="font-semibold text-slate-700">
+                  {initialData.createdAt
+                    ? new Date(initialData.createdAt).toLocaleDateString('vi-VN')
+                    : '-'}
+                </span>
               </div>
             </div>
-          </div>
+          </AdminCard>
 
-          <div className="md:col-span-2 bg-white rounded-xl shadow-sm border space-y-4">
-            <div className="flex items-center gap-2 font-bold text-gray-800 p-4 border-b">
-              <ShoppingBag className="text-orange-500" size={18} />
-              Lịch sử 10 đơn gần nhất
-            </div>
-            <div className="p-0">
-              {initialData.orders?.length === 0 ? (
-                <div className="text-center py-8 text-gray-500 text-sm">Chưa có đơn hàng nào</div>
-              ) : (
-                <div className="divide-y max-h-[400px] overflow-y-auto">
-                  {initialData.orders?.map((order: any) => (
-                    <div 
-                      key={order.id} 
+          {/* Recent Orders */}
+          <div className="lg:col-span-2">
+            <AdminCard
+              title="Lịch sử đơn hàng gần nhất"
+              icon={<ShoppingBag size={16} />}
+              badge={
+                <span className="text-xs text-slate-400">
+                  {initialData.orders?.length || 0} đơn gần nhất
+                </span>
+              }
+            >
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {!initialData.orders || initialData.orders.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic text-center py-6">
+                    Chưa có lịch sử mua hàng nào.
+                  </p>
+                ) : (
+                  initialData.orders.map((order: any) => (
+                    <div
+                      key={order.id}
                       onClick={() => router.push(`/admin/orders/${order.id}`)}
-                      className="p-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                      className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl border border-slate-100/80 hover:bg-red-50/40 cursor-pointer transition-colors"
                     >
-                      <div className="flex justify-between items-start mb-2">
-                        <div>
-                          <span className="font-bold text-gray-800 text-sm">{order.orderCode || order.id.split('-')[0]}</span>
-                          <span className="text-xs text-gray-500 ml-2">{new Date(order.createdAt).toLocaleString('vi-VN')}</span>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-xs text-slate-900">
+                            {(order.orderCode || order.id.slice(0, 8)).toUpperCase()}
+                          </span>
+                          <StatusBadge status={order.status} size="sm" />
                         </div>
-                        <div className="font-black text-red-600 text-sm">{formatMoney(order.totalAmount)}</div>
-                      </div>
-                      <div className="flex justify-between items-center text-xs">
-                        <span className={`px-2 py-0.5 rounded-full font-bold ${
-                          order.status === 'COMPLETED' ? 'bg-green-100 text-green-700' :
-                          order.status === 'CANCELLED' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
-                        }`}>
-                          {order.status}
+                        <span className="text-[11px] text-slate-400">
+                          {new Date(order.createdAt).toLocaleString('vi-VN')} ·{' '}
+                          {order.branch?.name || '-'}
                         </span>
-                        <span className="text-gray-500 bg-gray-100 px-2 py-0.5 rounded">{order.branch?.name}</span>
                       </div>
+                      <span className="font-black text-xs sm:text-sm text-red-600">
+                        {formatMoney(order.totalAmount)}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl shadow-sm border space-y-4">
-            <div className="flex items-center gap-2 font-bold text-gray-800 p-4 border-b">
-              <MapPin className="text-blue-500" size={18} />
-              Sổ địa chỉ
-            </div>
-            <div className="p-4 space-y-3 max-h-[400px] overflow-y-auto">
-              {initialData.addresses?.length === 0 ? (
-                <div className="text-center py-4 text-gray-500 text-sm">Chưa có địa chỉ lưu</div>
-              ) : (
-                initialData.addresses?.map((addr: any) => (
-                  <div key={addr.id} className="p-3 bg-gray-50 rounded-lg border relative">
-                    {addr.isDefault && <span className="absolute top-2 right-2 text-[9px] bg-blue-100 text-blue-700 font-bold px-1.5 py-0.5 rounded uppercase">Mặc định</span>}
-                    <p className="font-bold text-sm text-gray-800 pr-12 truncate">{addr.recipientName}</p>
-                    <p className="text-xs text-gray-500 mb-1">{addr.phone}</p>
-                    <p className="text-xs text-gray-600">{addr.streetDetail}, {addr.ward}, {addr.district}, {addr.province}</p>
-                  </div>
-                ))
-              )}
-            </div>
+                  ))
+                )}
+              </div>
+            </AdminCard>
           </div>
         </div>
+      )}
+
+      {/* Change Email Modal */}
+      {isEdit && initialData && (
+        <ChangeEmailModal
+          isOpen={isChangeEmailModalOpen}
+          onClose={() => setIsChangeEmailModalOpen(false)}
+          userId={initialData.id}
+          currentEmail={formData.email}
+          onSuccess={(newEmail) => {
+            setFormData((prev) => ({
+              ...prev,
+              email: newEmail,
+              isEmailVerified: true,
+            }));
+          }}
+        />
       )}
     </div>
   );

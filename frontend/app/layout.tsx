@@ -1,10 +1,11 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { CartProvider } from "../context/CartContext";
-import { Toaster } from 'react-hot-toast';
+import { WishlistProvider } from "@/context/WishlistContext";
+import { LanguageProvider } from "@/contexts/LanguageContext";
+import { NotificationProvider } from "@/contexts/NotificationContext";
+import GlobalToaster from "@/components/notifications/GlobalToaster";
 import { FloatingChatbot } from '@/components/FloatingChatbot';
-
 import { Be_Vietnam_Pro } from "next/font/google";
 
 const beVietnamPro = Be_Vietnam_Pro({
@@ -12,6 +13,15 @@ const beVietnamPro = Be_Vietnam_Pro({
   subsets: ["vietnamese", "latin"],
   variable: "--font-be-vietnam-pro",
 });
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: "#da251d",
+};
 
 export const metadata: Metadata = {
   title: "Avora Restaurant",
@@ -25,18 +35,17 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${beVietnamPro.variable} font-sans h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-slate-50">
-        <CartProvider>
-          <Toaster 
-            position="top-center" 
-            containerStyle={{ zIndex: 999999 }}
-            toastOptions={{
-              className: 'text-sm font-medium',
-              duration: 3000,
-            }} 
-          />
-          {children}
-          <FloatingChatbot />
-        </CartProvider>
+        <LanguageProvider>
+          <NotificationProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <GlobalToaster />
+                {children}
+                <FloatingChatbot />
+              </WishlistProvider>
+            </CartProvider>
+          </NotificationProvider>
+        </LanguageProvider>
       </body>
     </html>
   );

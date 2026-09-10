@@ -1,0 +1,24 @@
+{
+  "name": "AVORA Waiter",
+  "short_name": "AVORA",
+  "description": "AVORA Restaurant Waiter Application",
+  "start_url": "/admin/pos/waiter",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#DA251D",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/avora_logo_ngang.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/avora_logo_ngang.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

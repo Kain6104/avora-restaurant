@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import {
-  ArrowRight, Truck, Leaf, ShieldCheck, Zap, Gift, Star, Package, User, Flame, ChevronRight, ChevronLeft, Heart
+  ArrowRight, Truck, Leaf, ShieldCheck, Zap, Gift, Star, Package, User, Flame, ChevronRight, ChevronLeft, Heart, Check
 } from 'lucide-react';
 import Link from 'next/link';
 import HeroBanner from '../../components/HeroBanner';
@@ -18,6 +18,16 @@ interface HomeClientProps {
 
 export default function HomeClient({ banners, categories, bestSellers, aiRecommended }: HomeClientProps) {
   const { currentBranchId, flashSaleQuotas, cartItems } = useCart();
+
+  // Filter banners by branch
+  const filteredBanners = useMemo(() => {
+    if (!banners || !Array.isArray(banners)) return [];
+    return banners.filter((b: any) => {
+      if (!currentBranchId) return true;
+      if (!b.branches || b.branches.length === 0) return true;
+      return b.branches.some((br: any) => br.id === currentBranchId);
+    });
+  }, [banners, currentBranchId]);
 
   // Filter products by branch
   const filteredBestSellers = useMemo(() => {
@@ -70,33 +80,49 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
 
   const [flashSale, setFlashSale] = useState<any>(null);
   const [countdown, setCountdown] = useState<number>(0);
+  const [selectedHomeSlotId, setSelectedHomeSlotId] = useState<string | null>(null);
 
   useEffect(() => {
     fetch('/api/promotions/flash-sale/current')
       .then(res => res.ok ? res.text() : Promise.resolve(null))
       .then(text => text ? JSON.parse(text) : null)
       .then(data => {
-        console.log("Flash Sale API Response:", data);
-        if (data && data.id) {
+        if (data && (data.id || data.hasFlashSale)) {
           setFlashSale(data);
-          setCountdown(data.countdown || 0);
+          const activeSlot = data.activeSlot || (data.slots && data.slots.length > 0 ? data.slots[0] : null);
+          if (activeSlot) {
+            setSelectedHomeSlotId(activeSlot.id);
+            setCountdown(activeSlot.countdown || data.countdown || 0);
+          } else {
+            setCountdown(data.countdown || 0);
+          }
         }
       })
       .catch(err => console.error("Error fetching flash sale:", err));
   }, []);
 
+  const currentHomeSlot = useMemo(() => {
+    if (!flashSale?.slots || flashSale.slots.length === 0) return null;
+    if (selectedHomeSlotId) {
+      const found = flashSale.slots.find((s: any) => s.id === selectedHomeSlotId);
+      if (found) return found;
+    }
+    return flashSale.activeSlot || flashSale.slots[0];
+  }, [flashSale, selectedHomeSlotId]);
+
   const displayFlashSaleItems = useMemo(() => {
-    if (!flashSale || !flashSale.items) return [];
-      return flashSale.items.filter((item: any) => {
-       const quota = flashSaleQuotas[item.productId];
-       if (quota !== undefined) {
-         const cartQty = cartItems?.filter((c: any) => c.productId === item.productId && c.isFlashSaleItem).reduce((acc: number, curr: any) => acc + curr.quantity, 0) || 0;
-         const remaining = quota - cartQty;
-         if (remaining <= 0) return false;
-       }
-       return true;
+    const rawItems = currentHomeSlot?.items || flashSale?.items || [];
+    if (!rawItems || rawItems.length === 0) return [];
+    return rawItems.filter((item: any) => {
+      const quota = flashSaleQuotas[item.productId];
+      if (quota !== undefined) {
+        const cartQty = cartItems?.filter((c: any) => c.productId === item.productId && c.isFlashSaleItem).reduce((acc: number, curr: any) => acc + curr.quantity, 0) || 0;
+        const remaining = quota - cartQty;
+        if (remaining <= 0) return false;
+      }
+      return true;
     });
-  }, [flashSale, flashSaleQuotas, cartItems]);
+  }, [currentHomeSlot, flashSale, flashSaleQuotas, cartItems]);
 
   useEffect(() => {
     let timer: any;
@@ -129,10 +155,10 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
     <div className="bg-[#f8f7f5] font-sans pb-20 md:pb-0 overflow-x-hidden">
 
       {/* ─── HERO BANNER ─── */}
-      <HeroBanner slides={banners} />
+      <HeroBanner slides={filteredBanners} />
 
       {/* ─── CATEGORIES ─── */}
-      <section className="relative z-40 max-w-[1400px] mx-auto px-3 md:px-8 -mt-4 md:-mt-14 mb-8 md:mb-14">
+      <section className="relative z-1 max-w-[1400px] mx-auto px-3 md:px-8 -mt-4 md:-mt-14 mb-8 md:mb-14">
         <div className="bg-white/95 backdrop-blur-md rounded-2xl md:rounded-3xl shadow-[0_8px_48px_rgba(0,0,0,0.08)] py-3 md:py-5 px-4 md:px-10 overflow-x-auto hide-scrollbar flex items-center gap-3 md:gap-5 border border-white/80">
           {/* All */}
           <Link href="/menu" className="flex flex-col items-center gap-1.5 shrink-0 group">
@@ -183,7 +209,9 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-white/70 font-medium text-sm">Kết thúc trong:</span>
+                  <span className="text-white/70 font-medium text-sm">
+                    {currentHomeSlot?.status === 'UPCOMING' ? 'Bắt đầu trong:' : 'Kết thúc trong:'}
+                  </span>
                   <div className="flex gap-1.5 items-center">
                     {timeObj.map((t, i) => (
                       <React.Fragment key={i}>
@@ -197,36 +225,89 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 </div>
               </div>
 
+              {/* Shopee-style time slot tabs */}
+              {flashSale?.slots && flashSale.slots.length > 1 && (
+                <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-1 scrollbar-none">
+                  {flashSale.slots.map((s: any) => {
+                    const isSel = s.id === (currentHomeSlot?.id || selectedHomeSlotId);
+                    const sDate = new Date(s.startTime);
+                    const sTime = sDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setSelectedHomeSlotId(s.id);
+                          if (s.countdown !== undefined) setCountdown(s.countdown);
+                        }}
+                        className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                          isSel
+                            ? 'bg-yellow-400 text-yellow-950 font-black shadow-lg scale-[1.02]'
+                            : 'bg-white/10 hover:bg-white/20 text-white/90 border border-white/20'
+                        }`}
+                      >
+                        <span className="font-mono text-sm">{sTime}</span>
+                        <span className="text-[10px] opacity-80 uppercase tracking-wider">
+                          {s.status === 'ACTIVE'
+                            ? '• ĐANG CHẠY'
+                            : s.status === 'UPCOMING'
+                            ? '• SẮP DIỄN RA'
+                            : '• ĐÃ QUA'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {displayFlashSaleItems.slice(0, 4).map((item: any, idx: number) => {
+                  const origPrice = Number(item.originalPrice || item.product?.price || item.productPrice || item.flashSalePrice || 0);
+                  const fsPrice = Number(item.flashSalePrice || 0);
+                  const prodName = item.productName || item.product?.name || 'Món Flash Sale';
+                  const prodImage = item.productImage || item.product?.imageUrl || '';
+                  const prodSlug = item.productSlug || item.product?.slug || item.productId || '';
+                  const catSlug = item.categorySlug || item.product?.category?.slug || 'sushi-maki';
+                  const discountPercent = origPrice > 0 ? Math.round((1 - fsPrice / origPrice) * 100) : 0;
+                  const itemStock = Number(item.stock || 0);
+                  const itemSold = Number(item.sold || 0);
+                  const progress = itemStock > 0 ? Math.min(100, Math.round((itemSold / itemStock) * 100)) : 0;
+
                   const product = {
-                    ...item.product,
-                    flashSalePrice: item.flashSalePrice,
-                    flashSaleId: item.flashSaleId || flashSale.id,
-                    flashSaleStock: item.stock,
-                    flashSaleSold: item.sold,
-                    maxQuantityPerUser: item.maxQuantityPerUser
+                    id: item.productId || item.product?.id || item.id,
+                    name: prodName,
+                    price: origPrice,
+                    imageUrl: prodImage,
+                    slug: prodSlug,
+                    category: item.product?.category || { slug: catSlug, name: item.categoryName || 'Món ăn' },
+                    flashSalePrice: fsPrice,
+                    flashSaleId: item.flashSaleId || flashSale?.id,
+                    flashSaleStock: itemStock,
+                    flashSaleSold: itemSold,
+                    maxQuantityPerUser: item.maxQuantityPerUser,
                   };
-                  const discountPercent = Math.round((1 - item.flashSalePrice / product.price) * 100);
-                  const progress = Math.min(100, Math.round((item.sold / item.stock) * 100));
+
                   return (
-                  <Link key={idx} href={`/${product.category?.slug || product.categoryId}/${product.slug}`}
+                  <Link key={idx} href={`/${catSlug}/${prodSlug}`}
                     className="bg-white/10 backdrop-blur-sm hover:bg-white/20 border border-white/20 rounded-2xl p-3 flex gap-3 transition-all duration-300 hover:-translate-y-1 group">
                     <div className="w-20 h-20 shrink-0 relative rounded-xl overflow-hidden">
-                      <img src={product.imageUrl} alt="sale" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                      <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-xl">-{discountPercent}%</div>
+                      <img src={prodImage || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'} alt={prodName} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      {discountPercent > 0 && (
+                        <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-xl">-{discountPercent}%</div>
+                      )}
                     </div>
                     <div className="flex flex-col flex-1 justify-center">
-                      <h3 className="font-bold text-white text-sm mb-1 leading-tight line-clamp-2">{product.name}</h3>
+                      <h3 className="font-bold text-white text-sm mb-1 leading-tight line-clamp-2">{prodName}</h3>
                       <div className="flex flex-col items-baseline gap-0.5">
-                        <span className="text-yellow-400 font-black text-base leading-none">{item.flashSalePrice.toLocaleString('vi-VN')}đ</span>
-                        <span className="text-white/50 text-[10px] line-through">{product.price.toLocaleString('vi-VN')}đ</span>
+                        <span className="text-yellow-400 font-black text-base leading-none">{fsPrice.toLocaleString('vi-VN')}đ</span>
+                        {origPrice > 0 && (
+                          <span className="text-white/50 text-[10px] line-through">{origPrice.toLocaleString('vi-VN')}đ</span>
+                        )}
                       </div>
                       <div className="w-full bg-black/30 rounded-full h-1.5 mt-1 overflow-hidden">
                         <div className="bg-gradient-to-r from-yellow-400 to-orange-400 h-1.5 rounded-full animate-pulse" style={{ width: `${progress}%` }} />
                       </div>
                       <div className="flex items-center justify-between mt-1">
-                        <span className="text-white/60 text-[10px]">Đã bán {item.sold}/{item.stock}</span>
+                        <span className="text-white/60 text-[10px]">Đã bán {itemSold}/{itemStock}</span>
                         <div className="scale-90 origin-right">
                           <AddToCartButton item={product} className="w-7 h-7 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm" />
                         </div>
@@ -234,6 +315,21 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     </div>
                   </Link>
                 )})}
+              </div>
+
+              {/* View All Flash Sale Link */}
+              <div className="mt-5 pt-4 border-t border-white/10 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-white/70 text-xs font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                  <span>Đang có {displayFlashSaleItems.length} món giá sốc</span>
+                </div>
+                <Link
+                  href="/flash-sale"
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-yellow-400 hover:bg-yellow-300 text-yellow-950 font-black text-xs transition-all shadow-md hover:shadow-yellow-400/30 group"
+                >
+                  <span>Xem toàn bộ Flash Sale</span>
+                  <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                </Link>
               </div>
             </div>
           </div>
@@ -265,36 +361,85 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
               </div>
             </div>
 
+            {/* Shopee-style mobile slot tabs */}
+            {flashSale?.slots && flashSale.slots.length > 1 && (
+              <div className="relative z-10 flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 scrollbar-none">
+                {flashSale.slots.map((s: any) => {
+                  const isSel = s.id === (currentHomeSlot?.id || selectedHomeSlotId);
+                  const sDate = new Date(s.startTime);
+                  const sTime = sDate.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        setSelectedHomeSlotId(s.id);
+                        if (s.countdown !== undefined) setCountdown(s.countdown);
+                      }}
+                      className={`px-2.5 py-1 rounded-xl text-[10px] font-bold transition flex items-center gap-1 shrink-0 ${
+                        isSel
+                          ? 'bg-yellow-400 text-yellow-950 font-black shadow-md'
+                          : 'bg-white/10 text-white/80 border border-white/20'
+                      }`}
+                    >
+                      <span>{sTime}</span>
+                      <span className="text-[9px]">
+                        {s.status === 'ACTIVE' ? 'Đang chạy' : s.status === 'UPCOMING' ? 'Sắp mở' : 'Đã qua'}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
             <div className="relative z-10 flex gap-2.5 overflow-x-auto hide-scrollbar snap-x snap-mandatory pb-1 -mx-1 px-1">
               {displayFlashSaleItems.map((item: any, idx: number) => {
+                const origPrice = Number(item.originalPrice || item.product?.price || item.productPrice || item.flashSalePrice || 0);
+                const fsPrice = Number(item.flashSalePrice || 0);
+                const prodName = item.productName || item.product?.name || 'Món Flash Sale';
+                const prodImage = item.productImage || item.product?.imageUrl || '';
+                const prodSlug = item.productSlug || item.product?.slug || item.productId || '';
+                const catSlug = item.categorySlug || item.product?.category?.slug || 'sushi-maki';
+                const discountPercent = origPrice > 0 ? Math.round((1 - fsPrice / origPrice) * 100) : 0;
+                const itemStock = Number(item.stock || 0);
+                const itemSold = Number(item.sold || 0);
+                const progress = itemStock > 0 ? Math.min(100, Math.round((itemSold / itemStock) * 100)) : 0;
+
                 const product = {
-                  ...item.product,
-                  flashSalePrice: item.flashSalePrice,
-                  flashSaleId: item.flashSaleId || flashSale.id,
-                  flashSaleStock: item.stock,
-                  flashSaleSold: item.sold,
-                  maxQuantityPerUser: item.maxQuantityPerUser
+                  id: item.productId || item.product?.id || item.id,
+                  name: prodName,
+                  price: origPrice,
+                  imageUrl: prodImage,
+                  slug: prodSlug,
+                  category: item.product?.category || { slug: catSlug, name: item.categoryName || 'Món ăn' },
+                  flashSalePrice: fsPrice,
+                  flashSaleId: item.flashSaleId || flashSale?.id,
+                  flashSaleStock: itemStock,
+                  flashSaleSold: itemSold,
+                  maxQuantityPerUser: item.maxQuantityPerUser,
                 };
-                const discountPercent = Math.round((1 - item.flashSalePrice / product.price) * 100);
-                const progress = Math.min(100, Math.round((item.sold / item.stock) * 100));
+
                 return (
-                <Link key={idx} href={`/${product.category?.slug || product.categoryId}/${product.slug}`}
+                <Link key={idx} href={`/${catSlug}/${prodSlug}`}
                   className="snap-start shrink-0 w-[130px] bg-white/10 backdrop-blur-sm border border-white/20 rounded-xl overflow-hidden active:scale-95 transition-transform">
                   <div className="relative aspect-square overflow-hidden">
-                    <img src={product.imageUrl} alt={product.name} className="w-full h-full object-cover" />
-                    <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-lg">-{discountPercent}%</div>
+                    <img src={prodImage || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'} alt={prodName} className="w-full h-full object-cover" />
+                    {discountPercent > 0 && (
+                      <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 text-[10px] font-black px-1.5 py-0.5 rounded-br-lg">-{discountPercent}%</div>
+                    )}
                     <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-2 py-1.5">
                       <div className="w-full bg-white/30 rounded-full h-1 overflow-hidden">
                         <div className="bg-yellow-400 h-1 rounded-full" style={{ width: `${progress}%` }} />
                       </div>
-                      <span className="text-white/80 text-[9px] font-semibold">Đã bán {item.sold}/{item.stock}</span>
+                      <span className="text-white/80 text-[9px] font-semibold">Đã bán {itemSold}/{itemStock}</span>
                     </div>
                   </div>
                   <div className="px-2.5 py-2">
-                    <p className="font-bold text-white text-[11px] line-clamp-2 leading-tight mb-1">{product.name}</p>
+                    <p className="font-bold text-white text-[11px] line-clamp-2 leading-tight mb-1">{prodName}</p>
                     <div className="flex flex-col gap-0.5">
-                      <span className="text-yellow-400 font-black text-sm">{item.flashSalePrice.toLocaleString('vi-VN')}đ</span>
-                      <span className="text-white/50 text-[9px] line-through">{product.price.toLocaleString('vi-VN')}đ</span>
+                      <span className="text-yellow-400 font-black text-sm">{fsPrice.toLocaleString('vi-VN')}đ</span>
+                      {origPrice > 0 && (
+                        <span className="text-white/50 text-[9px] line-through">{origPrice.toLocaleString('vi-VN')}đ</span>
+                      )}
                     </div>
                     <div className="mt-2 w-full flex justify-end">
                        <AddToCartButton item={product} className="w-6 h-6 bg-yellow-400 hover:bg-yellow-500 text-yellow-900 rounded-full flex items-center justify-center transition-all duration-300 shadow-sm" />
@@ -302,6 +447,20 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                   </div>
                 </Link>
               )})}
+            </div>
+
+            <div className="mt-3 pt-2.5 border-t border-white/10 flex items-center justify-between relative z-10">
+              <span className="text-[10px] text-white/70 font-medium flex items-center gap-1">
+                <Flame className="w-3 h-3 text-yellow-300 fill-yellow-300" />
+                <span>Giảm sốc đến 50%</span>
+              </span>
+              <Link
+                href="/flash-sale"
+                className="inline-flex items-center gap-1 text-[11px] font-black text-yellow-300 hover:text-yellow-200"
+              >
+                <span>Xem tất cả</span>
+                <ChevronRight className="w-3 h-3" />
+              </Link>
             </div>
           </div>
         </div>
@@ -457,7 +616,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 {['Tích 1 điểm / 10.000đ', 'Voucher giảm giá', 'Ưu đãi sinh nhật'].map(t => (
                   <div key={t} className="flex items-center gap-2 text-white/70 text-sm">
                     <div className="w-5 h-5 rounded-full bg-red-600/40 flex items-center justify-center shrink-0">
-                      <span className="text-red-400 text-[10px] font-black">✓</span>
+                      <Check className="w-3 h-3 text-red-400" />
                     </div>
                     {t}
                   </div>

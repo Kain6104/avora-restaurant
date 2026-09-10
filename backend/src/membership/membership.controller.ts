@@ -16,4 +16,10 @@ export class MembershipController {
   async getMyProgress(@Request() req: any) {
     return this.membershipService.getMyProgress(req.user.id);
   }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('points-history')
+  async getPointsHistory(@Request() req: any) {
+    return this.membershipService.getMyPointsHistory(req.user.id);
+  }
 }

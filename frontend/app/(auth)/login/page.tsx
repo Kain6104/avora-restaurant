@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, Lock, User, Eye, EyeOff, X } from 'lucide-react';
+import { ArrowRight, Lock, User, Eye, EyeOff, X, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import Loading from '../../loading';
 
@@ -19,6 +19,38 @@ export default function LoginPage() {
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [showGoogleModal, setShowGoogleModal] = useState(false);
+
+  // Remembered Account State
+  interface RememberedAccount {
+    identifier: string;
+    name?: string;
+    role?: string;
+  }
+  const [rememberedAccount, setRememberedAccount] = useState<RememberedAccount | null>(null);
+  const [isSwitchingAccount, setIsSwitchingAccount] = useState(false);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('avora_remembered_account');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.identifier) {
+          setRememberedAccount(parsed);
+          setIdentifier(parsed.identifier);
+        }
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (rememberedAccount && !isSwitchingAccount) {
+      const timer = setTimeout(() => {
+        passwordInputRef.current?.focus();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [rememberedAccount, isSwitchingAccount]);
 
   // OTP Verification States
   const [step, setStep] = useState<1 | 2>(1);
@@ -71,12 +103,25 @@ export default function LoginPage() {
         } else {
           toast.error(data.message || 'Đã có lỗi xảy ra. Vui lòng thử lại.');
         }
-      } else {
-        toast.success('Đăng nhập thành công!');
-        const redirectURL = new URLSearchParams(window.location.search).get('redirectURL') || '/';
-        router.push(redirectURL);
-        router.refresh();
+        return;
       }
+
+      // Success!
+      toast.success('Đăng nhập thành công!');
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'avora_remembered_account',
+          JSON.stringify({
+            identifier: identifier.trim(),
+            name: data?.user?.fullName || identifier.trim(),
+            role: data?.user?.role,
+          })
+        );
+      }
+      const searchParams = new URLSearchParams(window.location.search);
+      const redirectURL = searchParams.get('redirectURL') || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : '/');
+      router.push(redirectURL);
+      router.refresh();
     } catch (err) {
       console.error('Login error:', err);
       toast.error('Không thể kết nối đến máy chủ.');
@@ -212,22 +257,68 @@ export default function LoginPage() {
 
           {step === 1 ? (
           <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="block text-xs lg:text-sm font-black text-white lg:text-slate-800 mb-2 drop-shadow-md lg:drop-shadow-sm">Tài khoản</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                  <User className="h-5 w-5 text-slate-500" />
+            {/* Remembered Account Card or Identifier Input */}
+            {rememberedAccount && !isSwitchingAccount ? (
+              <div className="p-3.5 bg-white/75 backdrop-blur-md rounded-2xl border border-white/40 shadow-sm flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#da251d] to-red-500 text-white font-bold flex items-center justify-center text-sm shadow-xs shrink-0">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                      {rememberedAccount.name || 'Tài khoản AVORA'}
+                    </div>
+                    <div className="text-[11px] text-slate-600 truncate font-mono">
+                      {rememberedAccount.identifier}
+                    </div>
+                  </div>
                 </div>
-                <input
-                  type="text"
-                  required
-                  className="block w-full pl-11 pr-4 py-3 lg:py-3.5 bg-white/40 border border-slate-200/60 rounded-2xl text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-bold text-sm lg:text-base shadow-sm hover:bg-white/50"
-                  placeholder="Email hoặc Số điện thoại"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsSwitchingAccount(true);
+                    setIdentifier('');
+                  }}
+                  className="px-2.5 py-1.5 bg-white hover:bg-red-50 hover:text-[#da251d] text-slate-700 rounded-xl text-xs font-bold transition-all shrink-0 border border-slate-200 shadow-2xs hover:border-red-200 cursor-pointer flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Đổi tài khoản khác</span>
+                </button>
               </div>
-            </div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <label className="block text-xs lg:text-sm font-black text-white lg:text-slate-800 drop-shadow-md lg:drop-shadow-sm">
+                    Tài khoản
+                  </label>
+                  {rememberedAccount && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsSwitchingAccount(false);
+                        setIdentifier(rememberedAccount.identifier);
+                      }}
+                      className="text-xs font-bold text-red-500 hover:text-red-600 transition-colors"
+                    >
+                      Dùng lại {rememberedAccount.name || rememberedAccount.identifier}
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <User className="h-5 w-5 text-slate-500" />
+                  </div>
+                  <input
+                    type="text"
+                    required
+                    className="block w-full pl-11 pr-4 py-3 lg:py-3.5 bg-white/40 border border-slate-200/60 rounded-2xl text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-bold text-sm lg:text-base shadow-sm hover:bg-white/50"
+                    placeholder="Email hoặc Số điện thoại"
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                  />
+                </div>
+              </div>
+            )}
 
             <div>
               <div className="flex justify-between items-center mb-2">
@@ -241,6 +332,7 @@ export default function LoginPage() {
                   <Lock className="h-5 w-5 text-slate-500" />
                 </div>
                 <input
+                  ref={passwordInputRef}
                   type={showPassword ? 'text' : 'password'}
                   required
                   className="block w-full pl-11 pr-11 py-3 lg:py-3.5 bg-white/40 border border-slate-200/60 rounded-2xl text-slate-900 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all font-bold text-sm lg:text-base backdrop-blur-md shadow-sm hover:bg-white/50"
@@ -366,7 +458,9 @@ export default function LoginPage() {
                 disabled={loading || isGoogleLoading}
                 onClick={() => {
                   setIsGoogleLoading(true);
-                  window.location.href = `${API_URL}/api/auth/google`;
+                  const searchParams = new URLSearchParams(window.location.search);
+                  const targetRedirect = searchParams.get('redirectURL') || (typeof window !== 'undefined' && window.IS_AVORA_DESKTOP ? '/admin/pos' : '/');
+                  window.location.href = `${API_URL}/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
                 }}
                 className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               >
@@ -422,7 +516,9 @@ export default function LoginPage() {
               <button
                 onClick={() => {
                   setIsGoogleLoading(true);
-                  window.location.href = `${API_URL}/api/auth/google`;
+                  const searchParams = new URLSearchParams(window.location.search);
+                  const targetRedirect = searchParams.get('redirectURL') || (typeof window !== 'undefined' && window.IS_AVORA_DESKTOP ? '/admin/pos' : '/');
+                  window.location.href = `${API_URL}/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
                 }}
                 disabled={isGoogleLoading}
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"

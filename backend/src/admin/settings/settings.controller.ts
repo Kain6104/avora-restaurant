@@ -1,25 +1,22 @@
 import { Controller, Get, Patch, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { SettingsService } from './settings.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { RoleType } from '@prisma/client';
-import { PERMISSIONS } from '../../common/constants/permissions';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { PrismaService } from '../../prisma/prisma.service';
+import { RealtimeBroadcastService } from '../../order/realtime-broadcast.service';
 
 @Controller('admin/settings')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class SettingsController {
   constructor(
     private readonly settingsService: SettingsService,
-    private readonly prisma: PrismaService
+    private readonly prisma: PrismaService,
+    private readonly realtimeBroadcastService: RealtimeBroadcastService,
   ) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
-  @Permissions(PERMISSIONS.SETTINGS_VIEW)
+  @RequirePermission('settings.general.view')
   async getSettings(@Query('keys') keys?: string) {
     const keyArray = keys ? keys.split(',') : ['restaurant', 'delivery'];
     const data = await this.settingsService.getSettings(keyArray);
@@ -27,8 +24,7 @@ export class SettingsController {
   }
 
   @Patch()
-  @Roles(RoleType.ADMIN)
-  @Permissions(PERMISSIONS.SETTINGS_UPDATE)
+  @RequirePermission('settings.general.update')
   async updateSettings(@Body() body: Record<string, any>, @Req() req: any) {
     const data = await this.settingsService.updateSettings(body);
     
@@ -40,7 +36,28 @@ export class SettingsController {
           action: 'UPDATE_SETTINGS',
           target: 'System Settings',
           newValue: JSON.stringify(Object.keys(body)),
-        }
+        },
+      });
+    }
+
+    // Realtime Broadcasts
+    if (body.vat_price_mode !== undefined) {
+      this.realtimeBroadcastService.broadcastVatSettingsUpdate({
+        vatPriceMode: String(body.vat_price_mode),
+        vatEnabled: true,
+      });
+    }
+
+    if (
+      body.free_shipping_threshold !== undefined ||
+      body.free_shipping_enabled !== undefined ||
+      body.delivery_fee !== undefined ||
+      body.delivery_min_free !== undefined ||
+      body.delivery_base_fee !== undefined
+    ) {
+      this.realtimeBroadcastService.broadcastShippingSettingsUpdate({
+        threshold: Number(body.free_shipping_threshold || body.delivery_min_free),
+        enabled: body.free_shipping_enabled !== 'false' && body.free_shipping_enabled !== false,
       });
     }
 

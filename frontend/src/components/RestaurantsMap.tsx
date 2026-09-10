@@ -150,6 +150,16 @@ interface MapUpdaterProps {
 function MapUpdater({ branches, selectedBranch, userLocation, routeInfo, locateTrigger }: MapUpdaterProps) {
   const map = useMap();
 
+  useEffect(() => {
+    map.invalidateSize();
+    const t1 = setTimeout(() => map.invalidateSize(), 150);
+    const t2 = setTimeout(() => map.invalidateSize(), 400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [map]);
+
   // ── Auto-zoom to fit all valid branch markers on load / when branches change ──
   useEffect(() => {
     const validBranches = branches.filter(
@@ -167,6 +177,7 @@ function MapUpdater({ branches, selectedBranch, userLocation, routeInfo, locateT
       validBranches.map(b => [b.latitude as number, b.longitude as number])
     );
     map.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 });
+    map.invalidateSize();
   }, [branches, map]);
 
   // ── Pan to selected branch when user picks one (only when no route active) ──
@@ -267,9 +278,10 @@ export default function RestaurantsMap({
         className="w-full h-full"
       >
         <TileLayer
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          attribution="© OpenStreetMap contributors"
-          maxZoom={19}
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
         />
 
         <ZoomControl position="bottomright" />

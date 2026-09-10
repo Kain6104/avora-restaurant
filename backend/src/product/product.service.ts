@@ -221,37 +221,59 @@ export class ProductService {
   }
 
   async getProductDetails(categorySlug: string, productSlug: string, branchId?: string) {
-    const category = await this.prisma.category.findUnique({
+    let category = await this.prisma.category.findUnique({
       where: { slug: categorySlug }
     });
 
-    if (!category) {
-      throw new NotFoundException(`Category with slug ${categorySlug} not found`);
-    }
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productSlug);
+    let product: any = null;
 
-    const product = await this.prisma.product.findFirst({
-      where: { 
-        slug: productSlug,
-        categoryId: category.id,
-        available: true
-      },
-      include: {
-        category: true,
-        branches: { select: { id: true } },
-        optionGroups: {
-          include: {
-            optionItems: true
+    if (!category) {
+      // Fallback: If categorySlug is 'menu' or 'product' or not found, try to locate product by slug or id directly
+      product = await this.prisma.product.findFirst({
+        where: isUUID
+          ? { id: productSlug, available: true }
+          : { slug: productSlug, available: true },
+        include: {
+          category: true,
+          branches: { select: { id: true } },
+          optionGroups: {
+            include: {
+              optionItems: true
+            }
           }
         }
+      });
+
+      if (product && product.category) {
+        category = product.category;
+      } else if (!product) {
+        throw new NotFoundException(`Product with slug or id "${productSlug}" not found`);
       }
-    });
+    } else {
+      product = await this.prisma.product.findFirst({
+        where: isUUID
+          ? { id: productSlug, categoryId: category.id, available: true }
+          : { slug: productSlug, categoryId: category.id, available: true },
+        include: {
+          category: true,
+          branches: { select: { id: true } },
+          optionGroups: {
+            include: {
+              optionItems: true
+            }
+          }
+        }
+      });
+    }
 
     if (!product) {
       throw new NotFoundException(`Product with slug ${productSlug} not found in category ${categorySlug}`);
     }
 
+    const targetCategoryId = category?.id || product.categoryId;
     const relatedWhere: any = {
-      categoryId: category.id,
+      categoryId: targetCategoryId,
       id: { not: product.id },
       available: true
     };

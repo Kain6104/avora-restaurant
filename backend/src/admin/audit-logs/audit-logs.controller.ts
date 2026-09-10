@@ -1,21 +1,16 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { AuditLogsService } from './audit-logs.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
-import { RoleType } from '@prisma/client';
-import { PERMISSIONS } from '../../common/constants/permissions';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 
 @Controller('admin/audit-logs')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class AuditLogsController {
   constructor(private readonly auditLogsService: AuditLogsService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN)
-  @Permissions(PERMISSIONS.SETTINGS_VIEW) // Usually audit logs are part of settings/reports for admins
+  @RequirePermission('audit_logs.view')
   async findAll(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '20',

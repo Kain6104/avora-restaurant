@@ -1,17 +1,16 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseGuards } from '@nestjs/common';
 import { MembershipTiersService } from './membership-tiers.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RoleType } from '@prisma/client';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 
 @Controller('admin/membership-tiers')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class MembershipTiersController {
   constructor(private readonly membershipTiersService: MembershipTiersService) {}
 
   @Get()
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
+  @RequirePermission('membership.view')
   findAll(
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
@@ -20,38 +19,38 @@ export class MembershipTiersController {
     return this.membershipTiersService.findAll({
       skip: (parseInt(page) - 1) * parseInt(limit),
       take: parseInt(limit),
-      search
+      search,
     });
   }
 
   @Post()
-  @Roles(RoleType.ADMIN)
+  @RequirePermission('membership.create')
   create(@Body() data: any) {
     return this.membershipTiersService.create(data);
   }
 
   @Patch(':id')
-  @Roles(RoleType.ADMIN)
+  @RequirePermission('membership.update')
   update(@Param('id') id: string, @Body() data: any) {
     return this.membershipTiersService.update(id, data);
   }
 
   @Get('dashboard-stats')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
+  @RequirePermission('membership.view')
   async getDashboardStats() {
     const data = await this.membershipTiersService.getDashboardStats();
     return { data };
   }
 
   @Get(':id/analytics')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
+  @RequirePermission('membership.view')
   async getAnalytics(@Param('id') id: string) {
     const data = await this.membershipTiersService.getAnalytics(id);
     return { data };
   }
 
   @Delete(':id')
-  @Roles(RoleType.ADMIN)
+  @RequirePermission('membership.delete')
   remove(@Param('id') id: string) {
     return this.membershipTiersService.remove(id);
   }

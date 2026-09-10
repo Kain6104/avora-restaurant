@@ -1,7 +1,8 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ReservationService } from '../reservation/reservation.service';
 import { GoogleGenerativeAI, FunctionDeclaration, SchemaType, Part } from '@google/generative-ai';
-import { ChatActionType } from '@prisma/client';
+import { ChatActionType, ReservationSource } from '@prisma/client';
 
 @Injectable()
 export class ChatbotService {
@@ -31,7 +32,17 @@ export class ChatbotService {
   public triggerVoucherOverlayDeclaration: FunctionDeclaration;
   public handoffToHumanDeclaration: FunctionDeclaration;
   public sendMapLinkDeclaration: FunctionDeclaration;
-  constructor(private readonly prisma: PrismaService) {
+  public listReservationBranchesDeclaration: FunctionDeclaration;
+  public getReservationSlotsDeclaration: FunctionDeclaration;
+  public requestReservationConfirmationDeclaration: FunctionDeclaration;
+  public createReservationDeclaration: FunctionDeclaration;
+  public cancelReservationDeclaration: FunctionDeclaration;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => ReservationService))
+    private readonly reservationService: ReservationService,
+  ) {
     const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
     this.apiKeys = envKeys.split(',').map(k => k.trim()).filter(k => k);
     this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex] || '');
@@ -181,13 +192,12 @@ export class ChatbotService {
           recipientName: { type: SchemaType.STRING, description: 'Tên người nhận' },
           phone: { type: SchemaType.STRING, description: 'Số điện thoại (10 số)' },
           province: { type: SchemaType.STRING, description: 'Tỉnh/Thành phố' },
-          district: { type: SchemaType.STRING, description: 'Quận/Huyện' },
-          ward: { type: SchemaType.STRING, description: 'Phường/Xã' },
+          ward: { type: SchemaType.STRING, description: 'Phường/Xã/Quận' },
           streetDetail: { type: SchemaType.STRING, description: 'Số nhà, đường' },
           latitude: { type: SchemaType.NUMBER, description: 'Vĩ độ (nếu có)' },
           longitude: { type: SchemaType.NUMBER, description: 'Kinh độ (nếu có)' }
         },
-        required: ['recipientName', 'phone', 'province', 'district', 'ward', 'streetDetail']
+        required: ['recipientName', 'phone', 'province', 'ward', 'streetDetail']
       }
     };
 
@@ -242,6 +252,80 @@ export class ChatbotService {
         required: ['reason']
       }
     };
+
+    this.listReservationBranchesDeclaration = {
+      name: 'listReservationBranches',
+      description: 'Lấy danh sách các chi nhánh của nhà hàng Avora có hỗ trợ đặt bàn.',
+      parameters: { type: SchemaType.OBJECT, properties: {} }
+    };
+
+    this.getReservationSlotsDeclaration = {
+      name: 'getReservationSlots',
+      description: 'Kiểm tra các khung giờ đặt bàn còn trống tại một chi nhánh vào ngày cụ thể.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          branchId: { type: SchemaType.STRING, description: 'ID của chi nhánh' },
+          date: { type: SchemaType.STRING, description: 'Ngày đặt bàn theo định dạng YYYY-MM-DD' },
+          partySize: { type: SchemaType.NUMBER, description: 'Số lượng khách' }
+        },
+        required: ['branchId', 'date']
+      }
+    };
+
+    this.requestReservationConfirmationDeclaration = {
+      name: 'requestReservationConfirmation',
+      description: 'Tóm tắt toàn bộ thông tin đặt bàn để khách hàng xác nhận. BẮT BUỘC GỌI HÀM NÀY TRƯỚC KHI TẠO ĐẶT BÀN CHÍNH THỨC.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          branchId: { type: SchemaType.STRING, description: 'ID chi nhánh' },
+          branchName: { type: SchemaType.STRING, description: 'Tên chi nhánh' },
+          reservationDate: { type: SchemaType.STRING, description: 'Ngày đặt (YYYY-MM-DD)' },
+          reservationTime: { type: SchemaType.STRING, description: 'Giờ đặt (HH:mm)' },
+          partySize: { type: SchemaType.NUMBER, description: 'Số lượng khách' },
+          customerName: { type: SchemaType.STRING, description: 'Tên khách' },
+          customerPhone: { type: SchemaType.STRING, description: 'Số điện thoại' },
+          seatingPreference: { type: SchemaType.STRING, description: 'Sở thích chỗ ngồi (Cửa sổ, Trong nhà, Ngoài trời, VIP...)' },
+          specialRequests: { type: SchemaType.STRING, description: 'Ghi chú thêm nếu có' }
+        },
+        required: ['branchId', 'reservationDate', 'reservationTime', 'partySize', 'customerName', 'customerPhone']
+      }
+    };
+
+    this.createReservationDeclaration = {
+      name: 'createReservation',
+      description: 'Tạo đặt bàn chính thức sau khi khách hàng đã xem tóm tắt và đồng ý xác nhận.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          branchId: { type: SchemaType.STRING, description: 'ID chi nhánh' },
+          reservationDate: { type: SchemaType.STRING, description: 'Ngày đặt (YYYY-MM-DD)' },
+          reservationTime: { type: SchemaType.STRING, description: 'Giờ đặt (HH:mm)' },
+          partySize: { type: SchemaType.NUMBER, description: 'Số lượng khách' },
+          customerName: { type: SchemaType.STRING, description: 'Tên khách hàng' },
+          customerPhone: { type: SchemaType.STRING, description: 'Số điện thoại' },
+          seatingPreference: { type: SchemaType.STRING, description: 'Sở thích chỗ ngồi' },
+          specialRequests: { type: SchemaType.STRING, description: 'Yêu cầu đặc biệt' },
+          idempotencyKey: { type: SchemaType.STRING, description: 'Khóa chống tạo lặp' }
+        },
+        required: ['branchId', 'reservationDate', 'reservationTime', 'partySize', 'customerName', 'customerPhone']
+      }
+    };
+
+    this.cancelReservationDeclaration = {
+      name: 'cancelReservation',
+      description: 'Hủy đặt bàn bằng mã đặt bàn (reservationCode) và số điện thoại.',
+      parameters: {
+        type: SchemaType.OBJECT,
+        properties: {
+          reservationCode: { type: SchemaType.STRING, description: 'Mã đặt bàn (VD: AVR-260904-XXXX)' },
+          phone: { type: SchemaType.STRING, description: 'Số điện thoại khi đặt bàn' },
+          reason: { type: SchemaType.STRING, description: 'Lý do hủy đặt bàn' }
+        },
+        required: ['reservationCode', 'phone']
+      }
+    };
   }
 
   private rotateKey() {
@@ -272,7 +356,14 @@ Bạn CÓ ĐẦY ĐỦ CHỨC NĂNG thêm/xóa/giảm món vào giỏ hàng! Kh�
 3. Có addressId, BẮT BUỘC gọi triggerOrderPreview. Chỉ trả lời "Em đang tạo bản xem trước ạ...".
 4. Khách xác nhận đồng ý -> BẮT BUỘC gọi triggerPlaceOrder.
 
-TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng văn bản dài dòng. Nếu dùng tool, câu trả lời bằng văn bản phải cực ngắn (dưới 20 chữ) như đang dẫn chương trình live. TUYỆT ĐỐI KHÔNG ghi bất kỳ đường link, URL hay thẻ Markdown chứa link nào ra văn bản trả lời, VÌ HỆ THỐNG GIỌNG NÓI SẼ ĐỌC LÊN RẤT DÀI (ví dụ: tuyệt đối không ghi "https://..."). Khi cần gửi bản đồ, BẮT BUỘC dùng tool \`sendMapLink\` và chỉ trả lời bằng chữ: "Dạ em gửi vị trí vào khung chat cho mình rồi ạ".`,
+[QUY TRÌNH ĐẶT BÀN THÔNG MINH - BẮT BUỘC TUÂN THỦ]
+1. Nếu khách muốn đặt bàn: Gọi \`listReservationBranches\` để lấy danh sách chi nhánh (hoặc dùng chi nhánh khách chọn).
+2. Kiểm tra khung giờ còn chỗ: Gọi \`getReservationSlots\` với chi nhánh và ngày khách chọn. TUYỆT ĐỐI KHÔNG tự bịa giờ! Báo các khung giờ AVAILABLE cho khách chọn.
+3. Khi đủ thông tin (Chi nhánh, Ngày, Giờ, Số khách, Tên, SĐT): BẮT BUỘC gọi hàm \`requestReservationConfirmation\` để hiện bảng tóm tắt và hỏi xác nhận từ khách. TUYỆT ĐỐI KHÔNG ĐƯỢC TỰ Ý GỌI \`createReservation\` KHI KHÁCH CHƯA XÁC NHẬN!
+4. CHỈ KHI khách xác nhận đồng ý (OK / Xác nhận / Đúng rồi): Gọi \`createReservation\` để tạo đặt bàn thật sự.
+5. Hủy đặt bàn: Gọi \`cancelReservation\` với mã đặt bàn và SĐT.
+
+TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng văn bản dài dòng. Nếu dùng tool, câu trả lời bằng văn bản phải cực ngắn (dưới 20 chữ) như đang dẫn chương trình live. TUYỆT ĐỐI KHÔNG ghi bất kỳ đường link, URL hay thẻ Markdown chứa link nào ra văn bản trả lời. Khi cần gửi bản đồ, BẮT BUỘC dùng tool \`sendMapLink\` và chỉ trả lời bằng chữ: "Dạ em gửi vị trí vào khung chat cho mình rồi ạ".`,
       tools: [{
         functionDeclarations: [
           this.searchMenuDeclaration,
@@ -294,7 +385,12 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           this.stopVoiceDeclaration,
           this.triggerVoucherOverlayDeclaration,
           this.handoffToHumanDeclaration,
-          this.sendMapLinkDeclaration
+          this.sendMapLinkDeclaration,
+          this.listReservationBranchesDeclaration,
+          this.getReservationSlotsDeclaration,
+          this.requestReservationConfirmationDeclaration,
+          this.createReservationDeclaration,
+          this.cancelReservationDeclaration,
         ],
       }],
     });
@@ -694,11 +790,10 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
             recipientName: address.recipientName,
             phone: address.phone,
             province: address.province,
-            district: address.district,
             ward: address.ward,
             streetDetail: address.streetDetail
           };
-          content = `THÔNG TIN ĐỊA CHỈ:\nNgười nhận: ${address.recipientName} - SĐT: ${address.phone}\nĐịa chỉ: ${address.streetDetail}, ${address.ward}, ${address.district}, ${address.province}\n\nBạn có muốn dùng địa chỉ này không?`;
+          content = `THÔNG TIN ĐỊA CHỈ:\nNgười nhận: ${address.recipientName} - SĐT: ${address.phone}\nĐịa chỉ: ${address.streetDetail}, ${address.ward}, ${address.province}\n\nBạn có muốn dùng địa chỉ này không?`;
           suggestedReplies = ["Ok", "Không"];
         } else {
           functionResult = { hasAddress: false };
@@ -708,7 +803,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
       const args = call.args as any;
       functionResult = await this.executeGetAddressFromLocation(args.latitude, args.longitude);
       if (!functionResult.error) {
-        content = `GỢI Ý ĐỊA CHỈ:\nĐịa chỉ: ${functionResult.streetDetail}, ${functionResult.ward}, ${functionResult.district}, ${functionResult.province}`;
+        content = `GỢI Ý ĐỊA CHỈ:\nĐịa chỉ: ${functionResult.streetDetail}, ${functionResult.ward}, ${functionResult.province}`;
       }
     } else if (call.name === 'saveAddress') {
       const args = call.args as any;
@@ -723,7 +818,6 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
               recipientName: args.recipientName,
               phone: args.phone,
               province: args.province,
-              district: args.district,
               ward: args.ward,
               streetDetail: args.streetDetail,
               latitude: args.latitude,
@@ -737,7 +831,6 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
               recipientName: args.recipientName,
               phone: args.phone,
               province: args.province,
-              district: args.district,
               ward: args.ward,
               streetDetail: args.streetDetail,
               latitude: args.latitude,
@@ -748,7 +841,7 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
           addressId = newAddress.id;
         }
         functionResult = { success: true, addressId: addressId };
-        content = `ĐÃ LƯU ĐỊA CHỈ THÀNH CÔNG!\nNgười nhận: ${args.recipientName} - SĐT: ${args.phone}\nĐịa chỉ: ${args.streetDetail}, ${args.ward}, ${args.district}, ${args.province}`;
+        content = `ĐÃ LƯU ĐỊA CHỈ THÀNH CÔNG!\nNgười nhận: ${args.recipientName} - SĐT: ${args.phone}\nĐịa chỉ: ${args.streetDetail}, ${args.ward}, ${args.province}`;
       }
     } else if (call.name === 'autoSuggestVoucher') {
       functionResult = { success: true };
@@ -787,6 +880,110 @@ TUYỆT ĐỐI QUAN TRỌNG: Chỉ dùng tool, không tự trả lời bằng v�
       functionResult = { success: true };
       lastActionType = 'SHOW_MAP_LINK' as any;
       lastActionPayload = args.url;
+    } else if (call.name === 'listReservationBranches') {
+      const branches = await this.prisma.branch.findMany({
+        where: { reservationEnabled: true },
+        select: {
+          id: true,
+          name: true,
+          branchCode: true,
+          phone: true,
+          street: true,
+          province: true,
+          openTime: true,
+          closeTime: true,
+        },
+      });
+      functionResult = { success: true, branches };
+    } else if (call.name === 'getReservationSlots') {
+      const args = call.args as any;
+      try {
+        const avail = await this.reservationService.getAvailability({
+          branchId: args.branchId,
+          date: args.date,
+          partySize: args.partySize || 2,
+        });
+        functionResult = {
+          success: true,
+          branchName: avail.branchName,
+          date: avail.date,
+          availableSlots: (avail.slots || []).filter((s: any) => s.status === 'AVAILABLE' || s.status === 'LIMITED').map((s: any) => s.time),
+          message: avail.message,
+        };
+      } catch (err: any) {
+        functionResult = { error: err.message || 'Không thể kiểm tra khung giờ' };
+      }
+    } else if (call.name === 'requestReservationConfirmation') {
+      const args = call.args as any;
+      functionResult = {
+        success: true,
+        summary: {
+          branchId: args.branchId,
+          branchName: args.branchName,
+          reservationDate: args.reservationDate,
+          reservationTime: args.reservationTime,
+          partySize: args.partySize,
+          customerName: args.customerName,
+          customerPhone: args.customerPhone,
+          seatingPreference: args.seatingPreference,
+          specialRequests: args.specialRequests,
+        },
+        message: 'Vui lòng xác nhận thông tin đặt bàn của quý khách.',
+      };
+      lastActionType = 'CONFIRM_RESERVATION';
+      lastActionPayload = JSON.stringify(functionResult.summary);
+      content = `BẢNG XÁC NHẬN ĐẶT BÀN:\n- Chi nhánh: ${args.branchName || args.branchId}\n- Thời gian: ${args.reservationTime} ngày ${args.reservationDate}\n- Số lượng: ${args.partySize} khách\n- Người đặt: ${args.customerName} (${args.customerPhone})\n${args.seatingPreference ? `- Yêu cầu: ${args.seatingPreference}\n` : ''}\nQuý khách kiểm tra đúng thông tin chưa ạ?`;
+      suggestedReplies = ['Xác nhận đặt bàn', 'Đổi lại giờ khác'];
+    } else if (call.name === 'createReservation') {
+      const args = call.args as any;
+      try {
+        const created = await this.reservationService.createReservation(
+          {
+            branchId: args.branchId,
+            reservationDate: args.reservationDate,
+            reservationTime: args.reservationTime,
+            partySize: args.partySize,
+            customerName: args.customerName,
+            customerPhone: args.customerPhone,
+            seatingPreference: args.seatingPreference,
+            specialRequests: args.specialRequests,
+            source: ReservationSource.CHATBOT,
+            idempotencyKey: args.idempotencyKey,
+          },
+          userId,
+          'USER',
+        );
+        functionResult = {
+          success: true,
+          reservationCode: created.reservationCode,
+          message: `Đặt bàn thành công! Mã đặt bàn của bạn là ${created.reservationCode}.`,
+        };
+        lastActionType = 'CONFIRM_RESERVATION';
+        lastActionPayload = JSON.stringify({
+          reservationCode: created.reservationCode,
+          branchId: args.branchId,
+          startAt: created.startAt,
+          partySize: created.partySize,
+        });
+      } catch (err: any) {
+        functionResult = {
+          success: false,
+          error: err?.response?.error?.message || err.message || 'Lỗi đặt bàn',
+        };
+      }
+    } else if (call.name === 'cancelReservation') {
+      const args = call.args as any;
+      try {
+        await this.reservationService.customerCancelReservation(
+          args.reservationCode,
+          userId,
+          args.phone,
+          args.reason,
+        );
+        functionResult = { success: true, message: `Đã hủy đặt bàn ${args.reservationCode} thành công.` };
+      } catch (err: any) {
+        functionResult = { success: false, error: err?.response?.error?.message || err.message };
+      }
     }
 
     return { functionResult, lastActionType, lastActionPayload, content, suggestedReplies };

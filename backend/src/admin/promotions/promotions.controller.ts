@@ -1,23 +1,19 @@
-import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { PromotionsService } from './promotions.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { Permissions } from '../../common/decorators/permissions.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { BranchScope } from '../../common/decorators/branch-scope.decorator';
-import { RoleType } from '@prisma/client';
-import { PERMISSIONS } from '../../common/constants/permissions';
+import { PreviewVoucherAudienceDto, SendVoucherCampaignDto } from './dto/voucher-campaign.dto';
 
 @Controller('admin/promotions')
-@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PromotionsController {
   constructor(private readonly promotionsService: PromotionsService) {}
 
   // --- VOUCHERS ---
   @Get('vouchers')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_VIEW)
+  @RequirePermission('vouchers.view')
   async findAllVouchers(
     @Query('page') page: string = '1', 
     @Query('limit') limit: string = '10', 
@@ -31,8 +27,7 @@ export class PromotionsController {
   }
 
   @Post('vouchers')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_CREATE)
+  @RequirePermission('vouchers.create')
   async createVoucher(@Body() data: any, @BranchScope() branchIdScope?: string) {
     if (branchIdScope) {
       data.branchIds = [branchIdScope];
@@ -42,17 +37,78 @@ export class PromotionsController {
     return { data: result, message: 'Created voucher successfully' };
   }
 
+  @Get('vouchers/analytics')
+  @RequirePermission('vouchers.view')
+  async getVoucherAnalytics(@BranchScope() branchIdScope?: string) {
+    const result = await this.promotionsService.getVoucherAnalytics(branchIdScope);
+    return { data: result, success: true };
+  }
+
+  @Get('vouchers/fraud-alerts')
+  @RequirePermission('vouchers.view')
+  async getVoucherFraudAlerts(@BranchScope() branchIdScope?: string) {
+    const result = await this.promotionsService.getFraudAlerts(branchIdScope);
+    return { data: result, success: true };
+  }
+
+  @Get('vouchers/recipients/search')
+  @RequirePermission('vouchers.update')
+  async searchVoucherRecipients(@Query('search') search?: string) {
+    const result = await this.promotionsService.searchUsersForVoucher(search);
+    return { data: result, success: true };
+  }
+
+  @Post('vouchers/:id/notify/preview')
+  @RequirePermission('vouchers.update')
+  async previewVoucherAudience(
+    @Param('id') id: string,
+    @Body() dto: PreviewVoucherAudienceDto,
+    @BranchScope() branchIdScope?: string
+  ) {
+    const result = await this.promotionsService.previewVoucherAudience(id, dto, branchIdScope);
+    return { data: result, success: true };
+  }
+
+  @Post('vouchers/:id/notify')
+  @RequirePermission('vouchers.update')
+  async sendVoucherNotification(
+    @Param('id') id: string,
+    @Body() dto: SendVoucherCampaignDto,
+    @Req() req: any,
+    @BranchScope() branchIdScope?: string
+  ) {
+    const userContext = req?.user;
+    const ipAddress = req?.ip || req?.connection?.remoteAddress;
+    const result = await this.promotionsService.sendVoucherNotification(id, dto, userContext, branchIdScope, ipAddress);
+    return { data: result, success: true, message: result.message };
+  }
+
+  @Post('vouchers/:id/auto-distribute')
+  @RequirePermission('vouchers.update')
+  async autoDistributeVoucher(
+    @Param('id') id: string,
+    @BranchScope() branchIdScope?: string
+  ) {
+    const result = await this.promotionsService.autoDistributeVoucher(id, branchIdScope);
+    return { data: result, success: true, message: result.message };
+  }
+
+  @Get('vouchers/:id')
+  @RequirePermission('vouchers.view')
+  async findOneVoucher(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
+    const result = await this.promotionsService.findOneVoucher(id, branchIdScope);
+    return { data: result, success: true };
+  }
+
   @Patch('vouchers/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_UPDATE)
+  @RequirePermission('vouchers.update')
   async updateVoucher(@Param('id') id: string, @Body() data: any, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.updateVoucher(id, data, branchIdScope);
     return { data: result, message: 'Updated voucher successfully' };
   }
 
   @Delete('vouchers/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_DELETE)
+  @RequirePermission('vouchers.delete')
   async deleteVoucher(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.deleteVoucher(id, branchIdScope);
     return { data: result, message: 'Deleted voucher successfully' };
@@ -60,8 +116,7 @@ export class PromotionsController {
 
   // --- FLASH SALES ---
   @Get('flash-sales')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_VIEW)
+  @RequirePermission('flashsales.view')
   async findAllFlashSales(
     @Query('page') page: string = '1', 
     @Query('limit') limit: string = '10', 
@@ -75,8 +130,7 @@ export class PromotionsController {
   }
 
   @Post('flash-sales')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_CREATE)
+  @RequirePermission('flashsales.create')
   async createFlashSale(@Body() data: any, @BranchScope() branchIdScope?: string) {
     if (branchIdScope) {
       data.branchIds = [branchIdScope];
@@ -87,16 +141,14 @@ export class PromotionsController {
   }
 
   @Patch('flash-sales/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_UPDATE)
+  @RequirePermission('flashsales.update')
   async updateFlashSale(@Param('id') id: string, @Body() data: any, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.updateFlashSale(id, data, branchIdScope);
     return { data: result, message: 'Updated flash sale successfully' };
   }
 
   @Delete('flash-sales/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_DELETE)
+  @RequirePermission('flashsales.delete')
   async deleteFlashSale(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.deleteFlashSale(id, branchIdScope);
     return { data: result, message: 'Deleted flash sale successfully' };
@@ -104,8 +156,7 @@ export class PromotionsController {
 
   // --- COMBOS ---
   @Get('combos')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_VIEW)
+  @RequirePermission('combos.view')
   async findAllCombos(
     @Query('page') page: string = '1', 
     @Query('limit') limit: string = '10', 
@@ -119,8 +170,7 @@ export class PromotionsController {
   }
 
   @Post('combos')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_CREATE)
+  @RequirePermission('combos.create')
   async createCombo(@Body() data: any, @BranchScope() branchIdScope?: string) {
     if (branchIdScope) {
       data.branchIds = [branchIdScope];
@@ -131,16 +181,14 @@ export class PromotionsController {
   }
 
   @Patch('combos/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_UPDATE)
+  @RequirePermission('combos.update')
   async updateCombo(@Param('id') id: string, @Body() data: any, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.updateCombo(id, data, branchIdScope);
     return { data: result, message: 'Updated combo successfully' };
   }
 
   @Delete('combos/:id')
-  @Roles(RoleType.ADMIN, RoleType.MANAGER)
-  @Permissions(PERMISSIONS.PROMOTIONS_DELETE)
+  @RequirePermission('combos.delete')
   async deleteCombo(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
     const result = await this.promotionsService.deleteCombo(id, branchIdScope);
     return { data: result, message: 'Deleted combo successfully' };

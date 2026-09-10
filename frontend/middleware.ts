@@ -10,8 +10,9 @@ export function middleware(request: NextRequest) {
                      request.nextUrl.pathname.startsWith('/register');
 
   if (isAuthPage) {
-    if (token) {
-      // If user is already logged in, redirect them to the home page
+    const hasRedirectParam = request.nextUrl.searchParams.has('redirectURL');
+    if (token && !hasRedirectParam) {
+      // If user is already logged in and not explicitly sent to re-login, redirect to home
       return NextResponse.redirect(new URL('/', request.url));
     }
   }

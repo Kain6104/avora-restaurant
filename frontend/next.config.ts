@@ -19,6 +19,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: '/profile/saved-articles',
+        destination: '/favorites?tab=articles',
+        permanent: true,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -5,6 +5,12 @@
   --font-serif: var(--font-be-vietnam-pro), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 }
 
+/* Khóa phóng to thu nhỏ màn hình trên mobile như Native App */
+html, body {
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;
+}
+
 @keyframes shine {
   0% {
     transform: translateX(0) skewX(-20deg);
@@ -16,4 +22,97 @@
 
 .animate-shine {
   animation: shine 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Modern Sleek Minimalist Scrollbar Across App */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+::-webkit-scrollbar-button {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Complete Scrollbar Hide Utility */
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
+
+/* Sleek subtle scrollbar for modals & sidebars */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #e2e8f0 transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Leaflet Map Tile Fixes for Tailwind CSS v4 & Next.js Modals */
+.leaflet-container {
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 0 !important;
+  background-color: #f1f5f9 !important;
+}
+
+.leaflet-container img,
+.leaflet-pane img,
+.leaflet-tile-pane img {
+  max-width: none !important;
+  max-height: none !important;
+  box-shadow: none !important;
+}
+
+.leaflet-tile {
+  visibility: inherit !important;
 }

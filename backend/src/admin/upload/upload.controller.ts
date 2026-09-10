@@ -1,12 +1,11 @@
-import { Controller, Post, UseInterceptors, UploadedFile, UseGuards, BadRequestException, Query, Req } from '@nestjs/common';
+import { Controller, Post, UseInterceptors, UploadedFile, UseGuards, BadRequestException, Query } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import 'multer';
 import { extname } from 'path';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { RoleType } from '@prisma/client';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import * as fs from 'fs';
 
 interface UploadedFilePayload {
@@ -21,10 +20,10 @@ interface UploadedFilePayload {
 }
 
 @Controller('admin/upload')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, PermissionsGuard)
 export class UploadController {
   @Post()
-  @Roles(RoleType.ADMIN, RoleType.MANAGER, RoleType.CHEF)
+  @RequirePermission('admin.access')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
       destination: (req, file, callback) => {
@@ -45,8 +44,8 @@ export class UploadController {
       },
     }),
     fileFilter: (req, file, callback) => {
-      if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
-        return callback(new BadRequestException('Only image files are allowed!'), false);
+      if (!file.originalname.match(/\.(jpg|jpeg|png|gif|webp|svg|ico)$/i)) {
+        return callback(new BadRequestException('Only image files (jpg, jpeg, png, gif, webp, svg, ico) are allowed!'), false);
       }
       callback(null, true);
     },

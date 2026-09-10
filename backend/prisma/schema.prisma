@@ -49,6 +49,13 @@ model User {
   resetPasswordRequestCount Int       @default(0)
   resetPasswordRequestDate  DateTime? @db.Date
 
+  // OTP Đổi Email từ Admin
+  pendingNewEmail          String?
+  changeEmailOtp           String?
+  changeEmailOtpExpires    DateTime?
+  changeEmailOtpAttempts   Int       @default(0)
+  changeEmailOtpLastSentAt DateTime?
+
   // Thông tin xuất hóa đơn VAT
   taxCode      String?
   companyName  String?
@@ -63,6 +70,9 @@ model User {
 
   // Quan hệ
   orders            Order[]
+  cashierShifts     CashShift[]        @relation("CashierShifts")
+  openedShifts      CashShift[]        @relation("ShiftOpenedBy")
+  closedShifts      CashShift[]        @relation("ShiftClosedBy")
   reservations      Reservation[]
   favoriteItems     Product[]          @relation("UserFavoriteItems")
   addresses         Address[]
@@ -72,11 +82,28 @@ model User {
   chatSessions      ChatSession[]
   auditLogs         AuditLog[]
 
+  // Bài viết / Tin tức
+  articles         Article[]                     @relation("ArticleAuthor")
+  articleReactions ArticleReaction[]
+  articleComments  ArticleComment[]
+  savedArticles    ArticleFavorite[]
+  createdCampaigns ArticleNotificationCampaign[]
+
   // Chi nhánh hay ghé/mặc định
   branchId String?
   branch   Branch? @relation(fields: [branchId], references: [id])
-}
 
+  // Phân quyền động RBAC
+  roleAssignments UserRoleAssignment[]
+
+  // Flash Sale Reminders
+  flashSaleReminders FlashSaleReminder[]
+
+  // Ví voucher khách hàng đã lưu
+  savedVouchers CustomerVoucher[]
+  qrOrderGuests QrOrderGuest[]
+  desktopLaunchCodes DesktopLaunchCode[]
+}
 
 model Address {
   id            String   @id @default(uuid())
@@ -84,7 +111,6 @@ model Address {
   recipientName String?
   phone         String?
   province      String
-  district      String?
   ward          String
   streetDetail  String
   isDefault     Boolean  @default(false)
@@ -98,9 +124,9 @@ model Address {
 }
 
 model Branch {
-  id                    String        @id @default(uuid())
+  id                    String          @id @default(uuid())
   name                  String
-  branchCode            String        @unique
+  branchCode            String          @unique
   phone                 String?
   email                 String?
   province              String?
@@ -111,38 +137,122 @@ model Branch {
   longitude             Float?
   openTime              String?
   closeTime             String?
-  onlineOrderingEnabled Boolean       @default(true)
-  servingType           ServingType   @default(DINE_IN)
-  splitKitchenTickets   Boolean       @default(false)
-  printCancelTicket     Boolean       @default(false)
-  allowedRadiusMeters   Int           @default(50)
+  onlineOrderingEnabled Boolean         @default(true)
+  servingType           ServingType     @default(DINE_IN)
+  // Cấu hình In ấn & Phiếu bếp (Branch Print Settings)
+  splitKitchenTickets   Boolean         @default(false)
+  printCancelTicket     Boolean         @default(false)
+  autoPrintReceipt      Boolean         @default(true)
+  autoPrintTempBill     Boolean         @default(false)
+  excludeBuffetItemsFromTempBill Boolean @default(false)
+  removeBuffetItemsOnCheckout    Boolean @default(false)
+  receiptCopies         Int             @default(1)
+  kitchenCopies         Int             @default(1)
+  defaultPaperSize      String?         @default("80mm")
+  defaultReceiptPrinterId String?
+  allowedRadiusMeters   Int             @default(50)
   qrSecretKey           String?
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  qrAutoSendToKitchen   Boolean         @default(false)
+  // Cấu hình Đặt bàn (Reservation)
+  capacity                       Int                   @default(80)
+  reservationSlotMinutes         Int                   @default(30)
+  reservationDurationMinutes     Int                   @default(90)
+  reservationBufferMinutes       Int                   @default(15)
+  minPartySize                   Int                   @default(1)
+  maxPartySize                   Int                   @default(30)
+  advanceBookingDays             Int                   @default(30)
+  minAdvanceMinutes              Int                   @default(60)
+  reservationEnabled             Boolean               @default(true)
+  reservationModifyCutoffMinutes Int                   @default(60)
+  noShowGraceMinutes             Int                   @default(30)
+  reservationMode                String                @default("AUTO") // AUTO, TABLE, CAPACITY
+
+  // Cấu hình Tích điểm & Quy đổi ưu đãi theo chi nhánh (Loyalty Program)
+  isLoyaltyOnlineEnabled         Boolean               @default(true) // Bật/tắt tích điểm đơn Online
+  loyaltyEarnRateOnline          Float                 @default(40)   // Tỷ lệ tích điểm Online: 40đ = 1 điểm
+  isLoyaltyPosEnabled            Boolean               @default(true) // Bật/tắt tích điểm đơn POS/tại quán
+  loyaltyEarnRatePos             Float                 @default(40)   // Tỷ lệ tích điểm POS: 40đ = 1 điểm
+  allowDirectDiscount            Boolean               @default(true) // Bật/tắt quy đổi điểm thành giảm giá trực tiếp
+  pointRedeemRate                Float                 @default(1)    // 1 điểm = X đ (mặc định 1đ)
+  allowRedeemVoucherOnline       Boolean               @default(true) // Bật/tắt quy đổi điểm thành voucher (đặt Online)
+  allowRedeemItemPos             Boolean               @default(true) // Bật/tắt quy đổi điểm sang món (tại cửa hàng POS)
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
   orders                Order[]
   reservations          Reservation[]
   users                 User[]
-  banners               Banner[]      @relation("BannerToBranch")
-  categories            Category[]    @relation("CategoryToBranch")
-  products              Product[]     @relation("ProductToBranch")
-  vouchers              Voucher[]     @relation("VoucherToBranch")
-  flashSales            FlashSale[]   @relation("FlashSaleToBranch")
-  combos                Combo[]       @relation("ComboToBranch")
+  banners               Banner[]        @relation("BannerToBranch")
+  categories            Category[]      @relation("CategoryToBranch")
+  products              Product[]       @relation("ProductToBranch")
+  redeemableProducts    Product[]       @relation("ProductRedeemableBranches")
+  vouchers              Voucher[]       @relation("VoucherToBranch")
+  flashSales            FlashSale[]     @relation("FlashSaleToBranch")
+  combos                Combo[]         @relation("ComboToBranch")
+  operatingSlots        OperatingSlot[]
+  paymentMethods        PaymentMethod[] @relation("PaymentMethodToBranch")
+  articles              Article[]       @relation("ArticleToBranch")
+  restaurantAreas       RestaurantArea[]
+  restaurantTables      RestaurantTable[]
+  specialHours          BranchSpecialHours[]
+  reservationBlocks     ReservationBlock[]
+  slotLocks             ReservationSlotLock[]
+  waitlists             ReservationWaitlist[]
+  tableSessions         TableSession[]
+  cashShifts            CashShift[]
+  printTemplates        PrintTemplate[]
+  kitchenStations       KitchenStation[]
+  printers              Printer[]
+  printAgents           PrintAgent[]
+  productRoutes         ProductPrintRoute[]
+  printJobs             PrintJob[]
+  kitchenEvents         KitchenEvent[]
+  branchPrinterSettings BranchPrinterSetting[]
+  buffetPackages        BuffetPackage[]
+  qrOrderSessions       QrOrderSession[]
+  tableServiceRequests  TableServiceRequest[]
+  orderSequences        OrderSequence[]
+  assignedUserRoles     UserRoleBranch[]
 }
 
 model Banner {
-  id          String    @id @default(uuid())
-  imageUrl    String
-  altText     String?
-  linkUrl     String?
-  active      Boolean   @default(true)
-  bannerOrder Int       @default(0)
-  popup       Boolean   @default(false)
-  startDate   DateTime?
-  endDate     DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  branches    Branch[]  @relation("BannerToBranch")
+  id              String              @id @default(uuid())
+  title           String?
+  description     String?             @db.Text
+  imageUrl        String
+  mobileImageUrl  String?
+  altText         String?
+  linkUrl         String?
+  active          Boolean             @default(true)
+  bannerOrder     Int                 @default(0)
+  popup           Boolean             @default(false)
+  position        String              @default("HERO") // HERO, POPUP, PROMO
+  targetAudience  String              @default("ALL")  // ALL, MEMBERS_ONLY, VIP_ONLY
+  popupFrequency  String              @default("ONCE_PER_SESSION") // ONCE_PER_SESSION, EVERY_PAGE_LOAD
+  startDate       DateTime?
+  endDate         DateTime?
+  viewCount       Int                 @default(0)
+  clickCount      Int                 @default(0)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  branches        Branch[]            @relation("BannerToBranch")
+  interactions    BannerInteraction[]
+}
+
+model BannerInteraction {
+  id        String   @id @default(uuid())
+  bannerId  String
+  banner    Banner   @relation(fields: [bannerId], references: [id], onDelete: Cascade)
+  type      String   // "VIEW" or "CLICK"
+  userId    String?  // Id của người dùng thành viên nếu đã đăng nhập
+  sessionId String?  // Mã phiên duyệt web để chống spam lặp lại
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([bannerId, type])
+  @@index([bannerId, userId])
+  @@index([createdAt])
 }
 
 model Category {
@@ -159,41 +269,48 @@ model Category {
 }
 
 model Product {
-  id                   String          @id @default(uuid())
-  itemCode             String          @unique
+  id                   String           @id @default(uuid())
+  itemCode             String           @unique
   name                 String
-  slug                 String          @unique
-  description          String?         @db.Text
-  post                 String?         @db.Text
+  slug                 String           @unique
+  description          String?          @db.Text
+  post                 String?          @db.Text
   price                Float
   oldPrice             Float?
   discountedPrice      Float?
   flashSalePrice       Float?
-  unit                 String?         @default("phần")
-  taxPercentage        Float           @default(0)
-  isTaxIncludedInPrice Boolean         @default(true)
+  unit                 String?          @default("phần")
+  taxPercentage        Float            @default(0)
   badge                String?
   imageUrl             String?
-  videoUrl             String?         @db.Text
-  available            Boolean         @default(true)
-  isBestSeller         Boolean         @default(false)
-  isAiRecommended      Boolean         @default(false)
-  avgRating            Float           @default(0)
-  soldQuantity         Int             @default(0)
-  isRedeemable         Boolean         @default(false)
+  videoUrl             String?          @db.Text
+  available            Boolean          @default(true)
+  isBestSeller         Boolean          @default(false)
+  isAiRecommended      Boolean          @default(false)
+  avgRating            Float            @default(0)
+  soldQuantity         Int              @default(0)
+  isRedeemable         Boolean          @default(false)
   redemptionPoints     Int?
   categoryId           String
-  createdAt            DateTime        @default(now())
-  updatedAt            DateTime        @updatedAt
-  spiciness            Int             @default(0)
-  targetAudience       String?         @default("Mọi lứa tuổi")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  spiciness            Int              @default(0)
+  targetAudience       String?          @default("Mọi lứa tuổi")
   FlashSaleItem        FlashSaleItem[]
   optionGroups         OptionGroup[]
   orderItems           OrderItem[]
-  category             Category        @relation(fields: [categoryId], references: [id])
-  branches             Branch[]        @relation("ProductToBranch")
-  favoritedBy          User[]          @relation("UserFavoriteItems")
+  category             Category         @relation(fields: [categoryId], references: [id])
+  branches             Branch[]         @relation("ProductToBranch")
+  salesChannels        Json?
+  secondaryImages      Json?
+  redeemAllBranches    Boolean          @default(true)
+  redeemableBranches   Branch[]         @relation("ProductRedeemableBranches")
+  favoritedBy          User[]           @relation("UserFavoriteItems")
   ComboItem            ComboItem[]
+  articleProducts      ArticleProduct[]
+  printRoutes          ProductPrintRoute[]
+  buffetPackageTickets BuffetPackageTicket[]
+  buffetPackageItems   BuffetPackageItem[]
 
   @@index([categoryId], map: "Product_categoryId_fkey")
 }
@@ -231,68 +348,165 @@ model OptionItem {
 
 model Reservation {
   id              String            @id @default(uuid())
-  userId          String
+  reservationCode String?           @unique
+  userId          String?
   branchId        String
+  customerName    String?
+  customerPhone   String?
+  customerEmail   String?
+  startAt         DateTime?
+  endAt           DateTime?
+  // Legacy fields (giữ tương thích)
   reservationDate DateTime          @db.Date
   reservationTime String
   partySize       Int
   tablePreference String?
+  occasion        String?
+  seatingPreference String?
   specialRequests String?           @db.Text
+  internalNote    String?           @db.Text
+  source          ReservationSource @default(WEB)
   status          ReservationStatus @default(PENDING)
+  checkInToken    String?           @unique
+
+  // Trạng thái vận hành & Timeline
+  checkedInAt     DateTime?
+  seatedAt        DateTime?
+  completedAt     DateTime?
+  canceledAt      DateTime?
+  cancelReason    String?           @db.Text
+  canceledBy      String?
+  noShowAt        DateTime?
+
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
+
   branch          Branch            @relation(fields: [branchId], references: [id])
-  user            User              @relation(fields: [userId], references: [id])
+  user            User?             @relation(fields: [userId], references: [id])
+  tables          ReservationTable[]
+  reminderLogs    ReservationReminderLog[]
 
   @@index([branchId], map: "Reservation_branchId_fkey")
   @@index([userId], map: "Reservation_userId_fkey")
+  @@index([branchId, startAt, endAt])
+  @@index([branchId, status, startAt])
+  @@index([userId, startAt])
+  @@index([customerPhone])
 }
 
 model Order {
-  id                 String             @id @default(uuid())
-  orderCode          String             @unique
-  userId             String
-  branchId           String
-  customerName       String
-  customerPhone      String
-  deliveryAddress    String             @db.Text
-  latitude           Float?
-  longitude          Float?
-  note               String?            @db.Text
-  subTotal           Float
-  shippingFee        Float              @default(0)
-  discountAmount     Float              @default(0)
-  totalAmount        Float
-  voucherId          String?
-  paymentMethod      String             @default("COD")
-  paymentStatus      String             @default("PENDING")
-  transactionId      String?
-  pointsUsed         Int                @default(0)
-  pointsAwarded      Int                @default(0)
-  status             OrderStatus        @default(PENDING)
-  cancelReason       String?            @db.Text
-  canceledBy         String?
-  isInvoiceRequested Boolean            @default(false)
-  invoiceCompanyName String?
-  isViewedByAdmin    Boolean            @default(false)
-  invoiceTaxCode     String?
-  invoiceAddress     String?            @db.Text
-  invoiceEmail       String?
-  confirmedAt        DateTime?
-  deliveringAt       DateTime?
-  deliveredAt        DateTime?
-  canceledAt         DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  branch             Branch             @relation(fields: [branchId], references: [id])
-  user               User               @relation(fields: [userId], references: [id])
-  voucher            Voucher?           @relation(fields: [voucherId], references: [id])
-  orderItems         OrderItem[]
-  PointTransaction   PointTransaction[]
+  id                          String             @id @default(uuid())
+  orderCode                   String?            @unique
+  temporaryOrderCode          String?            @unique
+  userId                      String?
+  branchId                    String
+  customerName                String
+  customerPhone               String
+  deliveryAddress             String?            @db.Text
+  latitude                    Float?
+  longitude                   Float?
+  note                        String?            @db.Text
+  subTotal                    Float
+  shippingFee                 Float              @default(0)
+  discountAmount              Float              @default(0)
+  discountReason              String?            @db.Text
+  discountPercent             Float?
+  discountType                String?
+  shippingDiscount            Float              @default(0)
+  shippingDiscountReason      String?            @db.Text
+  serviceChargeTotal          Float              @default(0)
+  taxAmount                   Float              @default(0)
+  vatPriceModeSnapshot        String?
+  totalAmount                 Float
+  voucherId                   String?
+  shippingVoucherId           String?
+  discountVoucherCodeSnapshot String?
+  shippingVoucherCodeSnapshot String?
+  isVoucherRefunded           Boolean            @default(false)
+  paymentMethod               String             @default("COD")
+  paymentStatus               String             @default("PENDING")
+  transactionId               String?
+  pointsUsed                  Int                @default(0)
+  pointsAwarded               Int                @default(0)
+  status                      OrderStatus        @default(PENDING)
+  cancelReason                String?            @db.Text
+  canceledBy                  String?
+  isInvoiceRequested          Boolean            @default(false)
+  invoiceCompanyName          String?
+  isViewedByAdmin             Boolean            @default(false)
+  invoiceTaxCode              String?
+  invoiceAddress              String?            @db.Text
+  invoiceEmail                String?
+  isInvoiceExported           Boolean            @default(false)
+  invoiceExportedAt           DateTime?
+  invoiceExportedBy           String?
+  confirmedAt                 DateTime?
+  deliveringAt                DateTime?
+  deliveredAt                 DateTime?
+  canceledAt                  DateTime?
+  operatingSlotId             String?
+  deliveryDate                DateTime?          @db.Date
+  deliverySlotSnapshot        String?
+  orderType                   SlotOrderType      @default(DELIVERY)
+
+  // Snapshots khoảng cách & Routing thực tế
+  deliveryDistanceMeters      Int?
+  deliveryDurationSeconds     Int?
+  shippingProvider            String?
+  shippingCalculatedAt        DateTime?
+  shippingOriginLatitude      Float?
+  shippingOriginLongitude     Float?
+  shippingDestinationLatitude Float?
+  shippingDestinationLongitude Float?
+
+  // POS Enterprise Engine Fields
+  orderSource                 OrderSource        @default(WEB)
+  tableId                     String?
+  tableSessionId              String?            @unique
+  guestCount                  Int                @default(1)
+  cashierId                   String?
+  cashierName                 String?
+  version                     Int                @default(1)
+  kitchenStatus               KitchenStatus      @default(PENDING)
+  sentToKitchenAt             DateTime?
+  kitchenReadyAt              DateTime?
+  servedAt                    DateTime?
+
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+  branch                      Branch             @relation(fields: [branchId], references: [id])
+  user                        User?              @relation(fields: [userId], references: [id])
+  voucher                     Voucher?           @relation("OrderDiscountVoucher", fields: [voucherId], references: [id])
+  shippingVoucher             Voucher?           @relation("OrderShippingVoucher", fields: [shippingVoucherId], references: [id])
+  operatingSlot               OperatingSlot?     @relation(fields: [operatingSlotId], references: [id])
+  table                       RestaurantTable?   @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSession                TableSession?      @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  orderItems                  OrderItem[]
+  PointTransaction            PointTransaction[]
+  parentRelations             OrderRelation[]    @relation("ParentOrderRelations")
+  childRelations              OrderRelation[]    @relation("ChildOrderRelations")
+  payments                    OrderPayment[]
+  printJobs                   PrintJob[]
+  kitchenEvents               KitchenEvent[]
+  serviceCharges              OrderServiceCharge[]
+  buffetSessions              BuffetSession[]
+  qrOrderSessions             QrOrderSession[]
+  tableServiceRequests        TableServiceRequest[]
 
   @@index([branchId], map: "Order_branchId_fkey")
   @@index([userId], map: "Order_userId_fkey")
   @@index([voucherId], map: "Order_voucherId_fkey")
+  @@index([shippingVoucherId], map: "Order_shippingVoucherId_fkey")
+  @@index([operatingSlotId], map: "Order_operatingSlotId_fkey")
+  @@index([tableId])
+  @@index([cashierId])
+  @@index([orderSource])
+  @@index([status])
+  @@index([kitchenStatus])
+  @@index([temporaryOrderCode])
+  @@index([createdAt])
+  @@index([branchId, createdAt])
+  @@index([status, createdAt])
 }
 
 model OrderItem {
@@ -302,16 +516,63 @@ model OrderItem {
   quantity            Int
   priceAtSale         Float
   originalPriceAtSale Float
+  discountAmount      Float             @default(0)
+  discountReason      String?           @db.Text
   note                String?           @db.Text
   optionsTextSnapshot String?           @db.Text
   isFlashSaleItem     Boolean           @default(false)
   flashSaleId         String?
+  flashSaleSlotId     String?
+  flashSaleNameSnapshot String?
+  flashSalePriceSnapshot Float?
+
+  // Tax Snapshot Fields
+  taxPercentageAtSale Float             @default(0)
+  taxableAmountAtSale Float             @default(0)
+  taxAmountAtSale     Float             @default(0)
+  vatPriceModeSnapshot String?
+  isVatInclusive      Boolean           @default(true)
+
+  // POS & KDS Fields
+  kitchenStatus       KitchenStatus     @default(PENDING)
+  stationId           String?
+  sentToKitchenAt     DateTime?
+  acknowledgedAt      DateTime?
+  readyAt             DateTime?
+  servedAt            DateTime?
+  isKitchenPrinted    Boolean           @default(false)
+  sentQuantity        Int               @default(0)
+  printedQuantity     Int               @default(0)
+  printVersion        Int               @default(0)
+  orderedById         String?
+  orderedByName       String?
+
+  // Buffet & Source Engine Fields
+  pricingMode                  OrderItemPricingMode @default(REGULAR)
+  buffetSessionId              String?
+  buffetPackageId              String?
+  buffetPackageNameSnapshot    String?
+  buffetReferencePriceSnapshot Float?
+  source                       OrderItemSource      @default(POS)
+  qrOrderRoundId               String?
+  excludedFromFinalReceipt     Boolean              @default(false)
+
   order               Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product             Product           @relation(fields: [productId], references: [id])
   selectedOptions     OrderItemOption[]
+  printJobs           PrintJob[]
+  buffetSession       BuffetSession?    @relation(fields: [buffetSessionId], references: [id], onDelete: SetNull)
+  qrOrderRound        QrOrderRound?     @relation(fields: [qrOrderRoundId], references: [id], onDelete: SetNull)
 
   @@index([orderId], map: "OrderItem_orderId_fkey")
   @@index([productId], map: "OrderItem_productId_fkey")
+  @@index([productId, orderId])
+  @@index([kitchenStatus])
+  @@index([stationId])
+  @@index([pricingMode])
+  @@index([buffetSessionId])
+  @@index([source])
+  @@index([qrOrderRoundId])
 }
 
 model OrderItemOption {
@@ -320,6 +581,7 @@ model OrderItemOption {
   optionItemId          String
   nameAtSale            String
   priceAdjustmentAtSale Float
+  quantity              Int        @default(1)
   optionItem            OptionItem @relation(fields: [optionItemId], references: [id])
   orderItem             OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
 
@@ -334,74 +596,203 @@ model Notification {
   content     String           @db.Text
   type        NotificationType @default(SYSTEM)
   isRead      Boolean          @default(false)
+  readAt      DateTime?
   referenceId String?
   url         String?
   imageUrl    String?
+  branchId    String?
+  eventId     String?          @db.VarChar(191)
+  eventType   String?          @db.VarChar(100)
+  category    String?          @db.VarChar(50)
+  priority    Int              @default(1)
+  actorId     String?
+  metadata    Json?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId], map: "Notification_userId_fkey")
+  @@index([userId, isRead])
+  @@index([branchId])
+  @@index([eventType])
+  @@unique([eventId, userId])
 }
 
 model Voucher {
-  id            String       @id @default(uuid())
-  code          String       @unique
-  title         String
-  description   String?      @db.Text
-  discountType  DiscountType @default(FIXED_AMOUNT) // PERCENTAGE, FIXED_AMOUNT, FREE_SHIP
-  discountValue Float // Phần trăm hoặc số tiền
-  maxDiscount       Float? // Giảm tối đa (cho loại %)
-  minOrderValue     Float            @default(0) // Đơn tối thiểu
-  isFirstOrderOnly  Boolean          @default(false)
+  id               String       @id @default(uuid())
+  code             String       @unique
+  title            String
+  description      String?      @db.Text
+  discountType     DiscountType @default(FIXED_AMOUNT) // PERCENTAGE, FIXED_AMOUNT, FREE_SHIP
+  discountValue    Float // Phần trăm hoặc số tiền
+  maxDiscount      Float? // Giảm tối đa (cho loại %)
+  minOrderValue    Float        @default(0) // Đơn tối thiểu
+  isFirstOrderOnly Boolean      @default(false)
 
   usageLimit        Int? // Tổng số lượt dùng của toàn hệ thống
-  usageLimitPerUser Int?             @default(1) // Số lần tối đa 1 user được dùng
-  usedCount         Int              @default(0)
-  isPublic          Boolean          @default(true) // Hiển thị công khai hay mã ẩn phải tự nhập
+  usageLimitPerUser Int?    @default(1) // Số lần tối đa 1 user được dùng
+  usedCount         Int     @default(0)
+  isPublic          Boolean @default(true) // Hiển thị công khai hay mã ẩn phải tự nhập
+  membershipTierId  String?
 
-  startDate         DateTime
-  endDate           DateTime
-  isActive          Boolean          @default(true)
-  imageUrl          String?
+  startDate DateTime
+  endDate   DateTime
+  isActive  Boolean  @default(true)
+  imageUrl  String?
+  applicableScope String @default("ALL") // ALL, POS, ONLINE
+  applicableProductsScope String @default("ALL") // ALL, CATEGORY, SPECIFIC_PRODUCTS, BEST_SELLER, SLOW_SELLER
+  applicableProductIds    String? @db.Text
+  applicableCategoryIds   String? @db.Text
+  targetCustomerScope     String @default("ALL") // ALL, NEW_CUSTOMER, SPECIFIC_CUSTOMERS, MEMBERSHIP_TIER
+  targetCustomerIds       String? @db.Text
 
-  orders            Order[] // Liên kết đến các đơn hàng đã dùng voucher này
-  membershipTiers   MembershipTier[] @relation("VoucherToMembershipTier")
-  branches          Branch[]         @relation("VoucherToBranch")
+  orders          Order[]          @relation("OrderDiscountVoucher")
+  shippingOrders  Order[]          @relation("OrderShippingVoucher")
+  membershipTiers MembershipTier[] @relation("VoucherToMembershipTier")
+  branches        Branch[]         @relation("VoucherToBranch")
+  articleVouchers ArticleVoucher[]
+  appliesToAllPaymentMethods Boolean                @default(true)
+  voucherPaymentMethods      VoucherPaymentMethod[]
+  customerVouchers           CustomerVoucher[]
 
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
+model CustomerVoucher {
+  id        String    @id @default(uuid())
+  userId    String
+  voucherId String
+  savedAt   DateTime  @default(now())
+  isUsed    Boolean   @default(false)
+  usedAt    DateTime?
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voucher   Voucher   @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, voucherId])
+  @@index([userId])
+  @@index([voucherId])
+}
 
 model FlashSale {
-  id        String          @id @default(uuid())
-  name      String
-  startTime DateTime
-  endTime   DateTime
-  isActive  Boolean         @default(true)
-  imageUrl  String?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  items     FlashSaleItem[]
-  branches  Branch[]        @relation("FlashSaleToBranch")
-  membershipTiers MembershipTier[] @relation("FlashSaleToMembershipTier")
+  id                      String              @id @default(uuid())
+  code                    String?             @unique
+  name                    String
+  description             String?             @db.Text
+  status                  String              @default("SCHEDULED") // DRAFT, SCHEDULED, UPCOMING, ACTIVE, PAUSED, ENDED, CANCELLED
+  startTime               DateTime
+  endTime                 DateTime
+  teaserStartAt           DateTime?
+  isActive                Boolean             @default(true)
+  imageUrl                String?
+  bannerImageUrl          String?
+  mobileBannerImageUrl    String?
+  applyOnline             Boolean             @default(true)
+  applyPos                Boolean             @default(true)
+  priority                Int                 @default(0)
+  isFeatured              Boolean             @default(false)
+  allowVouchers           Boolean             @default(true)
+  allowFreeship           Boolean             @default(true)
+  allowPoints             Boolean             @default(true)
+  allowMembershipDiscount Boolean             @default(true)
+  maxQuantityPerOrder     Int?
+  maxQuantityPerUser      Int?
+  createdById             String?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  items                   FlashSaleItem[]
+  slots                   FlashSaleSlot[]
+  auditLogs               FlashSaleAuditLog[]
+  reminders               FlashSaleReminder[]
+  branches                Branch[]            @relation("FlashSaleToBranch")
+  membershipTiers         MembershipTier[]    @relation("FlashSaleToMembershipTier")
+
+  @@index([startTime, endTime, isActive])
+  @@index([status])
+}
+
+model FlashSaleSlot {
+  id            String              @id @default(uuid())
+  flashSaleId   String
+  name          String
+  startTime     DateTime
+  endTime       DateTime
+  teaserStartAt DateTime?
+  sortOrder     Int                 @default(0)
+  isActive      Boolean             @default(true)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  flashSale     FlashSale           @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  items         FlashSaleItem[]
+  reminders     FlashSaleReminder[]
+
+  @@index([flashSaleId])
+  @@index([startTime, endTime])
 }
 
 model FlashSaleItem {
-  id                 String    @id @default(uuid())
-  flashSaleId        String
-  productId          String
-  flashSalePrice     Float
-  stock              Int
-  sold               Int       @default(0)
-  maxQuantityPerUser Int?
-  flashSale          FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
-  product            Product   @relation(fields: [productId], references: [id])
+  id                     String         @id @default(uuid())
+  flashSaleId            String
+  flashSaleSlotId        String?
+  productId              String
+  flashSalePrice         Float
+  originalPriceSnapshot  Float?
+  stock                  Int
+  reservedStock          Int            @default(0)
+  sold                   Int            @default(0)
+  maxQuantityPerUser     Int?
+  maxQuantityPerOrder    Int?
+  sortOrder              Int            @default(0)
+  isActive               Boolean        @default(true)
+
+  flashSale              FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  slot                   FlashSaleSlot? @relation(fields: [flashSaleSlotId], references: [id], onDelete: Cascade)
+  product                Product        @relation(fields: [productId], references: [id])
 
   @@index([flashSaleId], map: "FlashSaleItem_flashSaleId_fkey")
+  @@index([flashSaleSlotId])
   @@index([productId], map: "FlashSaleItem_productId_fkey")
 }
+
+model FlashSaleAuditLog {
+  id          String    @id @default(uuid())
+  flashSaleId String
+  userId      String?
+  userName    String?
+  action      String
+  oldValue    String?   @db.LongText
+  newValue    String?   @db.LongText
+  branchId    String?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  flashSale   FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+
+  @@index([flashSaleId])
+  @@index([createdAt])
+}
+
+model FlashSaleReminder {
+  id          String         @id @default(uuid())
+  userId      String
+  flashSaleId String
+  slotId      String?
+  productId   String?
+  reminded    Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashSale   FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  slot        FlashSaleSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, flashSaleId, slotId, productId])
+  @@index([userId])
+  @@index([flashSaleId])
+}
+
 
 model MembershipTier {
   id                String             @id @default(uuid())
@@ -418,6 +809,7 @@ model MembershipTier {
   vouchers          Voucher[]          @relation("VoucherToMembershipTier")
   flashSales        FlashSale[]        @relation("FlashSaleToMembershipTier")
   combos            Combo[]            @relation("ComboToMembershipTier")
+  articles          Article[]          @relation("ArticleToMembershipTier")
 }
 
 model PointTransaction {
@@ -482,6 +874,7 @@ enum RoleType {
   ADMIN
   MANAGER
   CHEF
+  WAITER
   USER
 }
 
@@ -500,11 +893,30 @@ enum ServingType {
 enum ReservationStatus {
   PENDING
   CONFIRMED
-  CANCELLED
+  CHECKED_IN
+  SEATED
   COMPLETED
+  CANCELLED
+  NO_SHOW
+  REJECTED
+}
+
+enum ReservationSource {
+  WEB
+  CHATBOT
+  VOICE
+  ADMIN
+  WALK_IN
+}
+
+enum TableOperationalStatus {
+  ACTIVE
+  OUT_OF_SERVICE
 }
 
 enum OrderStatus {
+  DRAFT
+  HELD
   PENDING
   CONFIRMED
   PREPARING
@@ -513,11 +925,102 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum OrderSource {
+  ONLINE
+  POS
+  WEB
+  CHATBOT
+  VOICE
+  QR_ORDER
+  ADMIN
+}
+
+enum KitchenStatus {
+  PENDING
+  SENT
+  ACKNOWLEDGED
+  PREPARING
+  READY
+  SERVED
+  CANCELLED
+}
+
+enum OrderRelationType {
+  SPLIT_FROM
+  MERGED_INTO
+}
+
+enum TableSessionStatus {
+  ACTIVE
+  CLOSED
+  CANCELLED
+}
+
+enum PaymentRecordStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  CANCELLED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum ShiftStatus {
+  OPEN
+  CLOSED
+}
+
+enum OrderItemPricingMode {
+  REGULAR
+  BUFFET_TICKET
+  BUFFET_INCLUDED
+}
+
+enum OrderItemSource {
+  POS
+  WAITER
+  QR_ORDER
+  ADMIN
+  CHATBOT
+  VOICE
+}
+
+enum TableServiceRequestType {
+  CALL_STAFF
+  PAYMENT
+  OTHER
+}
+
+enum TableServiceRequestStatus {
+  OPEN
+  ACKNOWLEDGED
+  COMPLETED
+  CANCELLED
+}
+
+enum QrSessionStatus {
+  ACTIVE
+  DISABLED
+  EXPIRED
+  CLOSED
+}
+
+enum BuffetSessionStatus {
+  ACTIVE
+  INACTIVE
+  CLOSED
+}
+
 enum NotificationType {
   ORDER
   PROMOTION
   REWARD
   SYSTEM
+  ARTICLE
+  NEWS
+  RESERVATION
+  KITCHEN
 }
 
 enum DiscountType {
@@ -560,21 +1063,21 @@ enum ChatActionType {
 }
 
 model Combo {
-  id            String      @id @default(uuid())
-  name          String
-  description   String?     @db.Text
-  price         Float
-  originalPrice Float?
-  imageUrl      String?
-  isActive      Boolean     @default(true)
-  usageLimit    Int?
-  usedCount     Int         @default(0)
-  startDate     DateTime?
-  endDate       DateTime?
-  createdAt     DateTime    @default(now())
-  updatedAt     DateTime    @updatedAt
-  branches      Branch[]    @relation("ComboToBranch")
-  items         ComboItem[]
+  id              String           @id @default(uuid())
+  name            String
+  description     String?          @db.Text
+  price           Float
+  originalPrice   Float?
+  imageUrl        String?
+  isActive        Boolean          @default(true)
+  usageLimit      Int?
+  usedCount       Int              @default(0)
+  startDate       DateTime?
+  endDate         DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  branches        Branch[]         @relation("ComboToBranch")
+  items           ComboItem[]
   membershipTiers MembershipTier[] @relation("ComboToMembershipTier")
 }
 
@@ -609,3 +1112,1244 @@ model SystemSetting {
   value     String   @db.Text
   updatedAt DateTime @updatedAt
 }
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum SlotOrderType {
+  DINE_IN
+  TAKEAWAY
+  DELIVERY
+  ONLINE
+}
+
+enum SlotStatus {
+  OPEN
+  FULL
+}
+
+model OperatingSlot {
+  id              String        @id @default(uuid())
+  branchId        String
+  dayOfWeek       DayOfWeek
+  startTime       String // "11:00" (HH:mm)
+  endTime         String // "12:30" (HH:mm)
+  maxOrders       Int           @default(0)
+  currentOrders   Int           @default(0)
+  leadTimeMinutes Int           @default(60)
+  orderType       SlotOrderType @default(DELIVERY)
+  isActive        Boolean       @default(true)
+  status          SlotStatus    @default(OPEN)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  branch         Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  dailyTrackings DailySlotTracking[]
+  orders         Order[]
+  slotLocks      SlotLock[]
+
+  @@index([branchId])
+  @@index([branchId, dayOfWeek, orderType])
+}
+
+model DailySlotTracking {
+  id            String     @id @default(uuid())
+  slotId        String
+  date          DateTime   @db.Date
+  currentOrders Int        @default(0)
+  status        SlotStatus @default(OPEN)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  slot OperatingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@unique([slotId, date])
+  @@index([slotId, date])
+}
+
+model SlotLock {
+  id        String   @id @default(uuid())
+  slotId    String
+  date      DateTime @db.Date
+  sessionId String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  slot OperatingSlot @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  @@index([slotId, date, expiresAt])
+}
+
+model PaymentMethod {
+  id          String  @id @default(uuid())
+  methodCode  String  @unique // VD: COD, TRANSFER, PAYOS, MOMO, VNPAY
+  gatewayType String // VD: COD, TRANSFER, PAYOS, MOMO, VNPAY
+  name        String // Tên hiển thị
+  description String? @db.Text
+  iconUrl     String?
+
+  // Cấu hình API / Cổng thanh toán điện tử
+  configId   String?
+  configKey1 String?
+  configKey2 String?
+  configKey3 String?
+
+  // Cấu hình Chuyển khoản tay
+  bankCode      String?
+  accountNumber String?
+  accountName   String?
+
+  // Điều kiện áp dụng
+  minOrderValue Float    @default(0.0)
+  isAllBranches Boolean  @default(true)
+  branches      Branch[] @relation("PaymentMethodToBranch")
+
+  // Cờ trạng thái
+  isActive       Boolean @default(false)
+  isActiveForPos Boolean @default(false)
+  displayOrder   Int     @default(0)
+
+  vouchers       VoucherPaymentMethod[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum ArticleType {
+  NEWS
+  PROMOTION
+  EVENT
+  PRODUCT
+  BRAND_STORY
+  GUIDE
+}
+
+enum ArticleStatus {
+  DRAFT
+  PUBLISHED
+  SCHEDULED
+  ARCHIVED
+}
+
+enum ArticleVisibility {
+  PUBLIC
+  AUTHENTICATED
+  MEMBERS_ONLY
+  PRIVATE
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  HAHA
+  WOW
+  SAD
+  ANGRY
+}
+
+enum CommentStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+enum ArticleInteractionType {
+  ARTICLE_VIEW
+  PRODUCT_CLICK
+  VOUCHER_CLICK
+  SHARE
+  SAVE
+}
+
+enum CampaignStatus {
+  DRAFT
+  PROCESSING
+  COMPLETED
+  PARTIALLY_FAILED
+  FAILED
+  CANCELLED
+}
+
+model Article {
+  id            String            @id @default(uuid())
+  title         String
+  slug          String            @unique
+  excerpt       String?           @db.Text
+  content       String            @db.LongText
+  thumbnailUrl  String?           @db.Text
+  coverImageUrl String?           @db.Text
+  authorId      String
+  articleType   ArticleType       @default(NEWS)
+  status        ArticleStatus     @default(DRAFT)
+  visibility    ArticleVisibility @default(PUBLIC)
+  publishedAt   DateTime?
+  scheduledAt   DateTime?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  deletedAt     DateTime?
+
+  // Counters & Engagement Flags
+  viewCount     Int     @default(0)
+  shareCount    Int     @default(0)
+  isFeatured    Boolean @default(false)
+  allowComment  Boolean @default(true)
+  allowReaction Boolean @default(true)
+  allowShare    Boolean @default(true)
+
+  // SEO
+  seoTitle       String?
+  seoDescription String? @db.Text
+  canonicalUrl   String?
+
+  // Promotion Details
+  promotionStartAt DateTime?
+  promotionEndAt   DateTime?
+  promotionLabel   String?
+  promotionTerms   String?   @db.Text
+
+  // Relations
+  author            User                          @relation("ArticleAuthor", fields: [authorId], references: [id])
+  branches          Branch[]                      @relation("ArticleToBranch")
+  membershipTiers   MembershipTier[]              @relation("ArticleToMembershipTier")
+  products          ArticleProduct[]
+  vouchers          ArticleVoucher[]
+  reactions         ArticleReaction[]
+  comments          ArticleComment[]
+  favorites         ArticleFavorite[]
+  interactionEvents ArticleInteractionEvent[]
+  campaigns         ArticleNotificationCampaign[]
+
+  @@index([authorId])
+  @@index([status, publishedAt])
+  @@index([articleType, status])
+  @@index([visibility])
+  @@index([isFeatured])
+  @@index([createdAt])
+}
+
+model ArticleProduct {
+  id           String  @id @default(uuid())
+  articleId    String
+  productId    String
+  displayOrder Int     @default(0)
+  article      Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  product      Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, productId])
+  @@index([productId])
+  @@index([articleId])
+}
+
+model ArticleVoucher {
+  id        String  @id @default(uuid())
+  articleId String
+  voucherId String
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  voucher   Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, voucherId])
+  @@index([voucherId])
+  @@index([articleId])
+}
+
+model ArticleReaction {
+  id        String       @id @default(uuid())
+  articleId String
+  userId    String
+  type      ReactionType
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, userId])
+  @@index([articleId, type])
+  @@index([userId])
+}
+
+model ArticleComment {
+  id        String        @id @default(uuid())
+  articleId String
+  userId    String
+  parentId  String?
+  content   String        @db.Text
+  status    CommentStatus @default(ACTIVE)
+  isEdited  Boolean       @default(false)
+  editedAt  DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  deletedAt DateTime?
+
+  article Article          @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  user    User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent  ArticleComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies ArticleComment[] @relation("CommentReplies")
+
+  @@index([articleId, createdAt])
+  @@index([parentId])
+  @@index([userId])
+  @@index([status])
+}
+
+model ArticleFavorite {
+  id        String   @id @default(uuid())
+  articleId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, userId])
+  @@index([userId, createdAt])
+  @@index([articleId])
+}
+
+model ArticleInteractionEvent {
+  id        String                 @id @default(uuid())
+  articleId String
+  userId    String?
+  sessionId String?
+  productId String?
+  voucherId String?
+  type      ArticleInteractionType
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime               @default(now())
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([articleId, type, createdAt])
+  @@index([articleId, productId])
+  @@index([userId, type])
+}
+
+model ArticleNotificationCampaign {
+  id              String         @id @default(uuid())
+  articleId       String
+  createdById     String
+  title           String
+  content         String         @db.Text
+  targetType      String // ALL, BRANCH, MEMBERSHIP_TIER, SPECIFIC_USERS, TIER_AND_BRANCH
+  targetBranchIds String?        @db.Text // JSON string
+  targetTierIds   String?        @db.Text // JSON string
+  targetUserIds   String?        @db.Text // JSON string
+  totalRecipients Int            @default(0)
+  sentCount       Int            @default(0)
+  failedCount     Int            @default(0)
+  status          CampaignStatus @default(DRAFT)
+  idempotencyKey  String?        @unique
+  createdAt       DateTime       @default(now())
+  sentAt          DateTime?
+
+  article   Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  createdBy User    @relation(fields: [createdById], references: [id])
+
+  @@index([articleId])
+  @@index([createdById])
+  @@index([status])
+}
+
+model RestaurantArea {
+  id          String            @id @default(uuid())
+  branchId    String
+  name        String
+  description String?           @db.Text
+  isActive    Boolean           @default(true)
+  sortOrder   Int               @default(0)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  branch      Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tables      RestaurantTable[]
+
+  @@index([branchId])
+}
+
+model RestaurantTable {
+  id           String                 @id @default(uuid())
+  branchId     String
+  areaId       String?
+  tableCode    String
+  name         String
+  capacity     Int
+  minCapacity  Int                    @default(1)
+  status       TableOperationalStatus @default(ACTIVE)
+  isActive     Boolean                @default(true)
+  sortOrder    Int                    @default(0)
+  x            Float?                 @default(0)
+  y            Float?                 @default(0)
+  width        Float?                 @default(80)
+  height       Float?                 @default(80)
+  shape        String?                @default("RECTANGLE")
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+  branch       Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  area         RestaurantArea?        @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  reservations ReservationTable[]
+  sessions     TableSession[]
+  orders       Order[]
+  qrOrderSessions      QrOrderSession[]
+  tableServiceRequests TableServiceRequest[]
+
+  @@unique([branchId, tableCode])
+  @@index([branchId, areaId])
+}
+
+model ReservationTable {
+  reservationId String
+  tableId       String
+  createdAt     DateTime        @default(now())
+  reservation   Reservation     @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  table         RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+
+  @@id([reservationId, tableId])
+  @@index([tableId, reservationId])
+}
+
+model BranchSpecialHours {
+  id        String   @id @default(uuid())
+  branchId  String
+  date      DateTime @db.Date
+  openTime  String?
+  closeTime String?
+  isClosed  Boolean  @default(false)
+  note      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branch    Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, date])
+  @@index([branchId, date])
+}
+
+model ReservationBlock {
+  id              String   @id @default(uuid())
+  branchId        String
+  startAt         DateTime
+  endAt           DateTime
+  blockType       String   @default("FULL_BLOCK") // FULL_BLOCK, CAPACITY_BLOCK
+  blockedCapacity Int?
+  areaId          String?
+  reason          String
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  branch          Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, startAt, endAt])
+}
+
+model ReservationReminderLog {
+  id            String      @id @default(uuid())
+  reservationId String
+  reminderType  String      // REMINDER_24H, REMINDER_2H
+  scheduledFor  DateTime
+  sentAt        DateTime    @default(now())
+  status        String      @default("SENT")
+  error         String?     @db.Text
+  reservation   Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+
+  @@unique([reservationId, reminderType])
+  @@index([reservationId])
+}
+
+model ReservationSlotLock {
+  id                    String   @id @default(uuid())
+  branchId              String
+  slotKey               String   // YYYY-MM-DD_HH:mm
+  currentBookedCapacity Int      @default(0)
+  updatedAt             DateTime @updatedAt
+  branch                Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, slotKey])
+  @@index([branchId, slotKey])
+}
+
+model ReservationWaitlist {
+  id               String    @id @default(uuid())
+  branchId         String
+  userId           String?
+  customerName     String
+  customerPhone    String
+  customerEmail    String?
+  requestedStartAt DateTime
+  partySize        Int
+  status           String    @default("WAITING") // WAITING, NOTIFIED, CONVERTED, CANCELLED, EXPIRED
+  note             String?   @db.Text
+  notifiedAt       DateTime?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  branch           Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@index([branchId, requestedStartAt])
+  @@index([customerPhone])
+}
+
+model OrderRelation {
+  id            String            @id @default(uuid())
+  parentOrderId String
+  childOrderId  String
+  type          OrderRelationType // SPLIT_FROM, MERGED_INTO
+  metadata      String?           @db.Text
+  createdAt     DateTime          @default(now())
+
+  parentOrder Order @relation("ParentOrderRelations", fields: [parentOrderId], references: [id], onDelete: Cascade)
+  childOrder  Order @relation("ChildOrderRelations", fields: [childOrderId], references: [id], onDelete: Cascade)
+
+  @@index([parentOrderId])
+  @@index([childOrderId])
+}
+
+model OrderItemTransferLog {
+  id                 String   @id @default(uuid())
+  sourceOrderId      String
+  targetOrderId      String
+  productId          String
+  quantity           Int
+  actorId            String?
+  reason             String?
+  sourceItemSnapshot String?  @db.Text
+  createdAt          DateTime @default(now())
+
+  @@index([sourceOrderId])
+  @@index([targetOrderId])
+  @@index([createdAt])
+}
+
+model OrderSequence {
+  id         String   @id @default(uuid())
+  branchId   String
+  date       String   // Format: DDMMYY e.g. "070926"
+  type       String   @default("POS")
+  lastNumber Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  branch     Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, date, type])
+  @@index([branchId, date])
+}
+
+model OrderServiceCharge {
+  id            String   @id @default(uuid())
+  orderId       String
+  name          String
+  amount        Float
+  note          String?  @db.Text
+  isTaxable     Boolean  @default(false)
+  taxPercentage Float?   @default(0)
+  createdBy     String?
+  createdByName String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model TableSession {
+  id         String             @id @default(uuid())
+  branchId   String
+  tableId    String
+  status     TableSessionStatus @default(ACTIVE)
+  openedAt   DateTime           @default(now())
+  closedAt   DateTime?
+  guestCount Int                @default(1)
+  cashierId  String?
+  order      Order?
+  table      RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  branch     Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  qrOrderSessions QrOrderSession[]
+
+  @@index([branchId, tableId, status])
+}
+
+model OrderPayment {
+  id             String              @id @default(uuid())
+  orderId        String
+  paymentMethod  String              // CASH, CARD, TRANSFER, PAYOS, MOMO, VNPAY, POINT
+  amount         Float
+  status         PaymentRecordStatus @default(COMPLETED)
+  transactionRef String?
+  cashReceived   Float?
+  cashChange     Float?
+  cardType       String?
+  cardLast4      String?
+  note           String?             @db.Text
+  cashierId      String?
+  shiftId        String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  shift   CashShift?      @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  refunds PaymentRefund[]
+
+  @@index([orderId])
+  @@index([shiftId])
+  @@index([paymentMethod])
+  @@index([createdAt])
+}
+
+model PaymentRefund {
+  id             String   @id @default(uuid())
+  orderPaymentId String
+  amount         Float
+  reason         String?  @db.Text
+  cashierId      String?
+  createdAt      DateTime @default(now())
+
+  payment OrderPayment @relation(fields: [orderPaymentId], references: [id], onDelete: Cascade)
+
+  @@index([orderPaymentId])
+}
+
+model CashShift {
+  id              String      @id @default(uuid())
+  branchId        String
+  cashierId       String
+  status          ShiftStatus @default(OPEN)
+  openedAt        DateTime    @default(now())
+  closedAt        DateTime?
+  openingBalance  Float       @default(0)
+  closingBalance  Float?
+  expectedBalance Float?
+  cashDifference  Float?
+  totalRevenue    Float       @default(0)
+  totalCash       Float       @default(0)
+  totalCard       Float       @default(0)
+  totalTransfer   Float       @default(0)
+  orderCount      Int         @default(0)
+  note            String?     @db.Text
+  openedById      String
+  closedById      String?
+
+  branch   Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  cashier  User           @relation("CashierShifts", fields: [cashierId], references: [id])
+  openedBy User           @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy User?          @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  payments OrderPayment[]
+
+  @@index([branchId, cashierId, status])
+  @@index([openedAt])
+}
+
+model IdempotencyRecord {
+  key       String   @id
+  action    String
+  response  String   @db.LongText
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model PrintTemplate {
+  id        String            @id @default(uuid())
+  name      String
+  type      PrintTemplateType
+  content   String            @db.LongText
+
+  branchId  String
+  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  isDefault Boolean           @default(false)
+
+  paperSize String?           @default("80mm")
+  settings  Json?
+
+  version   Int               @default(1)
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  versions  PrintTemplateVersion[]
+  printJobs PrintJob[]
+
+  @@index([branchId])
+  @@index([branchId, type])
+}
+
+model PrintTemplateVersion {
+  id              String        @id @default(uuid())
+  printTemplateId String
+  version         Int
+  content         String        @db.LongText
+  paperSize       String?
+  settings        Json?
+  createdBy       String?
+  createdAt       DateTime      @default(now())
+
+  printTemplate   PrintTemplate @relation(fields: [printTemplateId], references: [id], onDelete: Cascade)
+
+  @@index([printTemplateId])
+  @@index([printTemplateId, version])
+}
+
+enum PrintTemplateType {
+  RECEIPT
+  TEMP_BILL
+  KITCHEN
+  BAR
+  ITEM_LABEL
+  KITCHEN_TICKET
+  ONLINE_ORDER
+}
+
+model VoucherPaymentMethod {
+  voucherId       String
+  paymentMethodId String
+
+  voucher       Voucher       @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  paymentMethod PaymentMethod @relation(fields: [paymentMethodId], references: [id], onDelete: Cascade)
+
+  @@id([voucherId, paymentMethodId])
+  @@index([paymentMethodId])
+}
+
+enum PrinterConnectionType {
+  NETWORK_DIRECT
+  PRINT_AGENT
+}
+
+enum PrinterStatus {
+  ONLINE
+  OFFLINE
+  ERROR
+}
+
+enum PrinterPayloadType {
+  ESC_POS
+  HTML
+  PDF
+  ZPL
+}
+
+enum PrintRouteRole {
+  PREPARATION
+  LABEL
+  EXPEDITOR
+}
+
+enum PrintJobStatus {
+  PENDING
+  PROCESSING
+  DISPATCHED
+  PRINTED
+  FAILED
+  UNKNOWN
+  CANCELED
+}
+
+enum PrintJobEventType {
+  NEW_ITEM
+  ADD_QUANTITY
+  CANCEL_ITEM
+  RETURN_ITEM
+  ITEM_LABEL
+  REPRINT
+}
+
+model KitchenStation {
+  id          String   @id @default(uuid())
+  branchId    String
+  code        String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  branch          Branch                  @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  stationPrinters KitchenStationPrinter[]
+  productRoutes   ProductPrintRoute[]
+  printJobs       PrintJob[]
+  kitchenEvents   KitchenEvent[]
+
+  @@unique([branchId, code])
+  @@index([branchId])
+}
+
+model Printer {
+  id             String                @id @default(uuid())
+  branchId       String
+  name           String
+  connectionType PrinterConnectionType @default(NETWORK_DIRECT)
+  payloadType    PrinterPayloadType    @default(ESC_POS)
+  ipAddress      String?
+  port           Int                   @default(9100)
+  agentId        String?
+  paperSize      String                @default("80mm")
+  labelWidthMm   Int?
+  labelHeightMm  Int?
+  isActive       Boolean               @default(true)
+  status         PrinterStatus         @default(ONLINE)
+  lastSeenAt     DateTime?
+  lastPrintAt    DateTime?
+  lastError      String?               @db.Text
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  branch          Branch                  @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  agent           PrintAgent?             @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  stationPrinters KitchenStationPrinter[]
+  printJobs       PrintJob[]
+  branchSettings  BranchPrinterSetting[]
+
+  @@index([branchId])
+  @@index([agentId])
+}
+
+model PrintAgent {
+  id          String    @id @default(uuid())
+  branchId    String
+  agentCode   String    @unique
+  name        String
+  secretHash  String
+  salt        String
+  isActive    Boolean   @default(true)
+  ipAddress   String?
+  version     String?
+  lastSeenAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  printers    Printer[]
+
+  @@index([branchId])
+}
+
+model KitchenStationPrinter {
+  id           String   @id @default(uuid())
+  stationId    String
+  printerId    String
+  isPrimary    Boolean  @default(true)
+  priority     Int      @default(1)
+  isActive     Boolean  @default(true)
+  printPurpose String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  station      KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  printer      Printer        @relation(fields: [printerId], references: [id], onDelete: Restrict)
+
+  @@unique([stationId, printerId])
+  @@index([stationId])
+  @@index([printerId])
+}
+
+model ProductPrintRoute {
+  id        String            @id @default(uuid())
+  productId String
+  branchId  String
+  stationId String
+  routeRole PrintRouteRole    @default(PREPARATION)
+  printType PrintTemplateType @default(KITCHEN_TICKET)
+  copies    Int               @default(1)
+  priority  Int               @default(1)
+  isActive  Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station   KitchenStation    @relation(fields: [stationId], references: [id], onDelete: Restrict)
+
+  @@index([productId, branchId])
+  @@index([branchId])
+  @@index([stationId])
+}
+
+model PrintJob {
+  id                 String             @id @default(uuid())
+  orderId            String
+  orderItemId        String?
+  branchId           String
+  stationId          String
+  printerId          String
+  printTemplateId    String?
+  routeId            String?
+  routeRole          PrintRouteRole     @default(PREPARATION)
+  payloadType        PrinterPayloadType @default(ESC_POS)
+  printType          PrintTemplateType  @default(KITCHEN_TICKET)
+  eventType          PrintJobEventType  @default(NEW_ITEM)
+
+  quantity           Int                @default(1)
+  quantityDelta      Int                @default(1)
+  printedQtyBefore   Int                @default(0)
+  copies             Int                @default(1)
+
+  contentHtml        String             @db.LongText
+  payloadData        String?            @db.LongText
+  snapshotData       Json?
+
+  status             PrintJobStatus     @default(PENDING)
+  attemptCount       Int                @default(0)
+  maxAttempts        Int                @default(3)
+  errorMessage       String?            @db.Text
+  idempotencyKey     String             @unique
+
+  reprintOfId        String?
+  reprintReason      String?            @db.Text
+  reprintedBy        String?
+
+  metadata           Json?
+  printedAt          DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  order              Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem          OrderItem?         @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  branch             Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station            KitchenStation     @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  printer            Printer            @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  printTemplate      PrintTemplate?     @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([printerId])
+  @@index([reprintOfId])
+}
+
+model KitchenEvent {
+  id          String            @id @default(uuid())
+  orderId     String
+  branchId    String
+  stationId   String?
+  eventType   PrintJobEventType
+  itemSummary Json
+  createdById String?
+  createdAt   DateTime          @default(now())
+
+  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branch      Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station     KitchenStation?   @relation(fields: [stationId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([branchId, createdAt])
+}
+
+model BranchPrinterSetting {
+  id             String   @id @default(uuid())
+  branchId       String
+  purpose        String   // RECEIPT, TEMP_BILL, KITCHEN, BAR, ITEM_LABEL
+  printerId      String?
+  agentPrinterId String?
+  printerName    String
+  driverName     String?
+  portName       String?
+  paperSize      String   @default("80mm")
+  copies         Int      @default(1)
+  isEnabled      Boolean  @default(true)
+  autoPrint      Boolean  @default(false)
+  lastSeenAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  branch         Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  printer        Printer? @relation(fields: [printerId], references: [id], onDelete: SetNull)
+
+  @@unique([branchId, purpose])
+  @@index([branchId])
+  @@index([printerId])
+}
+
+// ==========================================
+// HỆ THỐNG PHÂN QUYỀN RBAC ENTERPRISE
+// ==========================================
+
+enum ScopeType {
+  GLOBAL
+  BRANCH
+  MIXED
+}
+
+enum BranchScopeType {
+  ALL_BRANCHES
+  SELECTED_BRANCHES
+}
+
+enum RiskLevel {
+  NORMAL
+  SENSITIVE
+  CRITICAL
+}
+
+model AccessRole {
+  id          String               @id @default(uuid())
+  code        String               @unique @db.VarChar(100)
+  name        String               @db.VarChar(200)
+  description String?              @db.Text
+  isSystem    Boolean              @default(false)
+  isActive    Boolean              @default(true)
+  scopeType   ScopeType            @default(BRANCH)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  permissions RolePermission[]
+  assignments UserRoleAssignment[]
+
+  @@index([isSystem])
+  @@index([isActive])
+}
+
+model Permission {
+  key         String               @id @db.VarChar(100)
+  groupKey    String               @db.VarChar(100)
+  name        String               @db.VarChar(200)
+  description String?              @db.Text
+  scopeType   ScopeType            @default(BRANCH)
+  riskLevel   RiskLevel            @default(NORMAL)
+  sortOrder   Int                  @default(0)
+
+  roles       RolePermission[]
+
+  @@index([groupKey])
+}
+
+model RolePermission {
+  id            String             @id @default(uuid())
+  roleId        String
+  permissionKey String
+
+  role          AccessRole         @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission    Permission         @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@unique([roleId, permissionKey])
+  @@index([permissionKey])
+  @@index([roleId])
+}
+
+model UserRoleAssignment {
+  id          String               @id @default(uuid())
+  userId      String
+  roleId      String
+  branchScope BranchScopeType      @default(ALL_BRANCHES)
+  isPrimary   Boolean              @default(false)
+  isActive    Boolean              @default(true)
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        AccessRole           @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  branches    UserRoleBranch[]
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+}
+
+model UserRoleBranch {
+  id           String              @id @default(uuid())
+  assignmentId String
+  branchId     String
+
+  assignment   UserRoleAssignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  branch       Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([assignmentId, branchId])
+  @@index([assignmentId])
+  @@index([branchId])
+}
+
+// ====================================================================
+// BUFFET ENGINE & QR ORDER ENGINE MODELS
+// ====================================================================
+
+model BuffetPackage {
+  id           String   @id @default(uuid())
+  branchId     String
+  name         String
+  description  String?  @db.Text
+  active       Boolean  @default(true)
+  displayOrder Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  branch   Branch                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tickets  BuffetPackageTicket[]
+  items    BuffetPackageItem[]
+  sessions BuffetSession[]
+
+  @@index([branchId, active])
+}
+
+model BuffetPackageTicket {
+  id              String   @id @default(uuid())
+  buffetPackageId String
+  productId       String
+  createdAt       DateTime @default(now())
+
+  buffetPackage BuffetPackage @relation(fields: [buffetPackageId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([buffetPackageId, productId])
+  @@index([productId])
+}
+
+model BuffetPackageItem {
+  id                  String   @id @default(uuid())
+  buffetPackageId     String
+  productId           String
+  displayOrder        Int      @default(0)
+  maxQuantityPerRound Int?
+  availableForQr      Boolean  @default(true)
+  allowRetailPurchase Boolean  @default(true)
+  createdAt           DateTime @default(now())
+
+  buffetPackage BuffetPackage @relation(fields: [buffetPackageId], references: [id], onDelete: Cascade)
+  product       Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([buffetPackageId, productId])
+  @@index([productId])
+}
+
+model BuffetSession {
+  id                  String              @id @default(uuid())
+  orderId             String
+  buffetPackageId     String
+  status              BuffetSessionStatus @default(ACTIVE)
+  activatedAt         DateTime            @default(now())
+  deactivatedAt       DateTime?
+  activatedById       String?
+  packageNameSnapshot String
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  order         Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  buffetPackage BuffetPackage @relation(fields: [buffetPackageId], references: [id])
+  orderItems    OrderItem[]
+
+  @@index([orderId, status])
+  @@index([buffetPackageId])
+}
+
+model QrOrderSession {
+  id             String          @id @default(uuid())
+  orderId        String
+  tableSessionId String
+  branchId       String
+  tableId        String
+  tokenHash      String          @unique
+  status         QrSessionStatus @default(ACTIVE)
+  createdAt      DateTime        @default(now())
+  expiresAt      DateTime?
+  closedAt       DateTime?
+  lastActivityAt DateTime?
+  createdById    String?
+
+  order           Order                 @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tableSession    TableSession          @relation(fields: [tableSessionId], references: [id], onDelete: Cascade)
+  table           RestaurantTable       @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  branch          Branch                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  guests          QrOrderGuest[]
+  rounds          QrOrderRound[]
+  serviceRequests TableServiceRequest[]
+
+  @@index([orderId, status])
+  @@index([tableSessionId])
+  @@index([branchId, tableId])
+}
+
+model QrOrderGuest {
+  id               String   @id @default(uuid())
+  qrOrderSessionId String
+  guestName        String
+  userId           String?
+  deviceSessionId  String
+  memberVerified   Boolean  @default(false)
+  joinedAt         DateTime @default(now())
+  lastSeenAt       DateTime @default(now())
+  status           String   @default("ACTIVE") // ACTIVE, LEFT
+
+  qrOrderSession QrOrderSession @relation(fields: [qrOrderSessionId], references: [id], onDelete: Cascade)
+  user           User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+  rounds         QrOrderRound[]
+
+  @@index([qrOrderSessionId, status])
+  @@index([userId])
+  @@index([deviceSessionId])
+}
+
+model QrOrderRound {
+  id               String    @id @default(uuid())
+  qrOrderSessionId String
+  qrGuestId        String?
+  orderId          String
+  roundNumber      Int       @default(1)
+  idempotencyKey   String    @unique
+  status           String    @default("SUBMITTED")
+  submittedAt      DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+
+  qrOrderSession QrOrderSession @relation(fields: [qrOrderSessionId], references: [id], onDelete: Cascade)
+  guest          QrOrderGuest?  @relation(fields: [qrGuestId], references: [id], onDelete: SetNull)
+  orderItems     OrderItem[]
+
+  @@index([qrOrderSessionId])
+  @@index([orderId])
+  @@index([qrGuestId])
+}
+
+model TableServiceRequest {
+  id                String                    @id @default(uuid())
+  orderId           String?
+  tableId           String
+  tableSessionId    String?
+  branchId          String
+  qrOrderSessionId  String?
+  qrGuestId         String?
+  requestType       TableServiceRequestType
+  paymentMethodCode String?
+  status            TableServiceRequestStatus @default(OPEN)
+  note              String?                   @db.Text
+  acknowledgedAt    DateTime?
+  completedAt       DateTime?
+  acknowledgedById  String?
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+
+  order          Order?          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  table          RestaurantTable @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  branch         Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  qrOrderSession QrOrderSession? @relation(fields: [qrOrderSessionId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status])
+  @@index([tableId, status])
+  @@index([orderId])
+}
+
+model DesktopLaunchCode {
+  id           String    @id @default(uuid())
+  code         String    @unique @db.VarChar(128)
+  userId       String
+  branchId     String?
+  deviceId     String?
+  appVersion   String?
+  expiresAt    DateTime
+  consumedAt   DateTime?
+  consumedByIp String?
+  createdIp    String?
+  createdAt    DateTime  @default(now())
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([code])
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+

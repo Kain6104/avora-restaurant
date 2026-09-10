@@ -42,3 +42,20 @@ Thumbs.db
 
 # Local files
 *.local
+
+# Scratch & Local Debug
+scratch/
+**/scratch/
+
+# .NET / C# / Visual Studio
+**/bin/
+**/obj/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Installer Build Output
+installer/Output/
+**/Output/
