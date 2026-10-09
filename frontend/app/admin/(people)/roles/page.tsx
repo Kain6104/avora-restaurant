@@ -153,16 +153,16 @@ export default function RolesListPage() {
 
   return (
     <AdminPageGuard permission="roles.view">
-      <div className="space-y-6 pb-12">
+      <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-6 rounded-2xl border border-slate-100 shadow-xs">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center">
-              <ShieldCheck className="w-6 h-6" />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4 bg-white p-3.5 sm:p-5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+          <div className="flex items-center gap-2.5 sm:gap-3.5">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
+              <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">{t('roles.title', 'Vai trò & Phân quyền')}</h1>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <h1 className="text-lg sm:text-xl font-bold text-slate-800">{t('roles.title', 'Vai trò & Phân quyền')}</h1>
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
                 {t('roles.subtitle', 'Quản lý phân quyền Enterprise động, phân nhánh linh hoạt (RBAC Multi-Branch)')}
               </p>
             </div>
@@ -172,7 +172,7 @@ export default function RolesListPage() {
             <Can permission="roles.create">
               <Link
                 href="/admin/roles/new"
-                className="inline-flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold rounded-xl transition shadow-sm hover:shadow-md"
+                className="inline-flex items-center gap-2 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold rounded-xl transition shadow-sm hover:shadow-md min-h-[40px]"
               >
                 <Plus className="w-4 h-4" /> {t('roles.add', 'Tạo vai trò mới')}
               </Link>
@@ -181,19 +181,19 @@ export default function RolesListPage() {
         </div>
 
         {/* Search & Filter Bar */}
-        <div className="bg-white p-4 rounded-xl border border-slate-100 flex items-center gap-3">
+        <div className="bg-white p-2.5 sm:p-3.5 rounded-xl border border-slate-100 flex items-center gap-2.5 min-h-[40px]">
           <Search className="w-4 h-4 text-slate-400 shrink-0 ml-1" />
           <input
             type="text"
             placeholder={t('roles.searchPlaceholder', 'Tìm kiếm vai trò theo tên, mã code hoặc mô tả...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full text-sm outline-hidden text-slate-800 placeholder-slate-400 bg-transparent"
+            className="w-full text-xs sm:text-sm outline-hidden text-slate-800 placeholder-slate-400 bg-transparent"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1"
+              className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 min-h-[32px]"
             >
               {t('common.clearFilter', 'Xóa')}
             </button>
@@ -201,18 +201,18 @@ export default function RolesListPage() {
         </div>
 
         {/* System Roles Section */}
-        <div className="space-y-3">
+        <div className="space-y-2.5 sm:space-y-3">
           <div className="flex items-center justify-between px-1">
-            <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
+            <h2 className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
               {t('roles.systemRole', 'Vai trò hệ thống')} ({systemRoles.length})
             </h2>
-            <span className="text-[11px] text-slate-400 font-medium">
-              {locale === 'en' ? 'Protected system default roles' : 'Được bảo vệ, không thể xóa bỏ'}
+            <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium">
+              {locale === 'en' ? 'Protected system default roles' : 'Được bảo vệ'}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
             {systemRoles.map((role) => (
               <RoleCard
                 key={role.id}
@@ -252,7 +252,7 @@ export default function RolesListPage() {
               </Can>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-4">
               {customRoles.map((role) => (
                 <RoleCard
                   key={role.id}
@@ -284,7 +284,7 @@ function RoleCard({
   const { t } = useLanguage();
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md transition p-5 flex flex-col justify-between">
+    <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-2xs hover:shadow-md transition p-3 sm:p-5 flex flex-col justify-between">
       <div>
         <div className="flex items-start justify-between gap-2 mb-2.5">
           <div>

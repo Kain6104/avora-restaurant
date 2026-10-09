@@ -6,7 +6,7 @@ export class GoogleOAuthGuard extends AuthGuard('google') {
   getAuthenticateOptions(context: ExecutionContext) {
     const req = context.switchToHttp().getRequest();
     const redirectURL = req.query?.redirectURL as string | undefined;
-    const isDesktop = req.query?.isDesktop === 'true' || req.query?.isDesktop === true || redirectURL?.startsWith('avora-pos://');
+    const isDesktop = req.query?.isDesktop === 'true' || req.query?.isDesktop === true || redirectURL?.startsWith('avora-pos://') || redirectURL?.startsWith('avora-pos-native://');
 
     let state: string | undefined;
     if (redirectURL || isDesktop) {

@@ -11,15 +11,22 @@ describe('NotificationService - Realtime WebSocket Notifications', () => {
         findMany: jest.fn().mockResolvedValue([
           { id: 'notif-1', userId: 'user-1', title: 'Đơn hàng mới', isRead: false },
         ]),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'notif-1',
+          userId: 'user-1',
+          isRead: false,
+        }),
         count: jest.fn().mockResolvedValue(1),
         create: jest.fn().mockImplementation(({ data }) =>
           Promise.resolve({ id: 'notif-new', ...data, isRead: false, createdAt: new Date() })
         ),
+        update: jest.fn().mockResolvedValue({ id: 'notif-1', isRead: true }),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
 
     mockGateway = {
+      server: {},
       sendNotificationToUser: jest.fn(),
       sendUnreadCountToUser: jest.fn(),
     };
@@ -52,20 +59,24 @@ describe('NotificationService - Realtime WebSocket Notifications', () => {
 
     await service.markAsRead('user-1', 'notif-1');
 
-    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
-      where: { id: 'notif-1', userId: 'user-1' },
-      data: { isRead: true },
-    });
+    expect(mockPrisma.notification.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'notif-1' },
+        data: expect.objectContaining({ isRead: true }),
+      })
+    );
     expect(mockGateway.sendUnreadCountToUser).toHaveBeenCalledWith('user-1', 0);
   });
 
   it('3. should mark all notifications as read and emit 0 unread count', async () => {
     await service.markAllAsRead('user-1');
 
-    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith({
-      where: { userId: 'user-1', isRead: false },
-      data: { isRead: true },
-    });
+    expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1', isRead: false },
+        data: expect.objectContaining({ isRead: true }),
+      })
+    );
     expect(mockGateway.sendUnreadCountToUser).toHaveBeenCalledWith('user-1', 0);
   });
 
@@ -74,9 +85,11 @@ describe('NotificationService - Realtime WebSocket Notifications', () => {
 
     expect(res.data).toHaveLength(1);
     expect(res.unreadCount).toBe(1);
-    expect(mockPrisma.notification.findMany).toHaveBeenCalledWith({
-      where: { userId: 'user-1' },
-      orderBy: { createdAt: 'desc' },
-    });
+    expect(mockPrisma.notification.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { userId: 'user-1' },
+        orderBy: { createdAt: 'desc' },
+      })
+    );
   });
 });

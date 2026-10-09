@@ -7,9 +7,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { NotificationModule } from '../notification/notification.module';
 import { PromotionModule } from '../promotion/promotion.module';
 import { OperatingSlotModule } from '../operating-slot/operating-slot.module';
+import { FarmModule } from '../farm/farm.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule, PromotionModule, MembershipModule, OperatingSlotModule],
+  imports: [PrismaModule, NotificationModule, PromotionModule, MembershipModule, OperatingSlotModule, FarmModule],
   controllers: [OrderController, CheckoutController],
   providers: [OrderService],
   exports: [OrderService],

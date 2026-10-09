@@ -58,4 +58,8 @@ scratch/
 
 # Installer Build Output
 installer/Output/
-**/Output/
+**/Output/
+
+# Uploads runtime data
+backend/uploads/reviews/
+**/uploads/reviews/

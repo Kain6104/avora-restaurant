@@ -60,6 +60,18 @@ export class PosOrderItemDto {
   @IsOptional()
   @IsString()
   source?: 'POS' | 'WAITER' | 'QR_ORDER' | 'ADMIN' | 'CHATBOT' | 'VOICE';
+
+  @IsOptional()
+  @IsString()
+  orderedById?: string;
+
+  @IsOptional()
+  @IsString()
+  orderedByName?: string;
+
+  @IsOptional()
+  @IsString()
+  createdAt?: string;
 }
 
 export class CreatePosOrderDto {

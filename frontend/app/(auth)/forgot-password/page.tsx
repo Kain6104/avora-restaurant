@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, Mail, Eye, EyeOff, ShieldCheck } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import Loading from '../../loading';
+import LoadingOverlay from '@/components/LoadingOverlay';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -171,7 +171,7 @@ export default function ForgotPasswordPage() {
 
   return (
     <>
-      {(loading || !isVideoLoaded) && <Loading />}
+      {(loading || !isVideoLoaded) && <LoadingOverlay />}
       <div className="relative min-h-screen text-white flex">
         {/* Full-screen Background Video */}
         <video

@@ -342,7 +342,7 @@ export default function AdminMembershipTiersPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={t('memberships.title', 'Hạng Thẻ Thành Viên')}
@@ -357,20 +357,20 @@ export default function AdminMembershipTiersPage() {
           </span>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={fetchTiers}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[38px]"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>{t('common.refresh', 'Làm mới')}</span>
+              <span className="hidden xs:inline">{t('common.refresh', 'Làm mới')}</span>
             </button>
             <button
               type="button"
               onClick={openCreateModal}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors min-h-[38px]"
             >
               <Plus size={15} />
               <span>{t('common.add', 'Thêm hạng mới')}</span>
@@ -381,7 +381,7 @@ export default function AdminMembershipTiersPage() {
 
       {/* Distribution Chart & Recent Movements */}
       {dashboardStats && (
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 lg:gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-4 lg:gap-5">
           {/* Donut Chart */}
           <AdminCard title={t('memberships.distribution', 'Phân bố thành viên')} icon={<Crown size={16} />}>
             <div className="h-56 w-full relative">

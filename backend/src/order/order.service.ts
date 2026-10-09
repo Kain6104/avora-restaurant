@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Optional, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationEngineService } from '../notification/notification-engine.service';
@@ -8,10 +8,13 @@ import { MembershipService } from '../membership/membership.service';
 import { OperatingSlotService } from '../operating-slot/operating-slot.service';
 import { ShippingFeeService } from '../shipping/shipping-fee.service';
 import { OrderPricingService } from '../pricing/order-pricing.service';
+import { FarmIntegrationService } from '../farm/farm-integration.service';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class OrderService {
+  private readonly logger = new Logger(OrderService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationService: NotificationService,
@@ -21,6 +24,7 @@ export class OrderService {
     private slotService: OperatingSlotService,
     private shippingFeeService: ShippingFeeService,
     private orderPricingService: OrderPricingService,
+    @Optional() private farmIntegrationService?: FarmIntegrationService,
   ) {}
 
   /**
@@ -1465,6 +1469,7 @@ export class OrderService {
       if (statusWeights[status] >= statusWeights.CONFIRMED && !order.confirmedAt) updateData.confirmedAt = now;
       if (statusWeights[status] >= statusWeights.DELIVERING && !order.deliveringAt) updateData.deliveringAt = now;
       if (statusWeights[status] >= statusWeights.COMPLETED && !order.deliveredAt) updateData.deliveredAt = now;
+      if (status === OrderStatus.COMPLETED && !order.completedAt) updateData.completedAt = now;
       if (status === OrderStatus.CANCELLED && !order.canceledAt) updateData.canceledAt = now;
       if (status === OrderStatus.COMPLETED) updateData.paymentStatus = 'PAID';
 
@@ -1534,6 +1539,9 @@ export class OrderService {
 
     if (status === OrderStatus.COMPLETED && order.userId) {
       await this.membershipService.recalculateUserTier(order.userId);
+      if (this.farmIntegrationService) {
+        await this.farmIntegrationService.onOrderCompleted(order.userId, order.id, order.totalAmount);
+      }
     }
 
     // Gửi thông báo cập nhật trạng thái đơn hàng tới khách hàng
@@ -1564,6 +1572,34 @@ export class OrderService {
           referenceId: displayCode,
           url: `/orders/${displayCode}`,
         });
+      }
+
+      // Nếu đơn chuyển sang COMPLETED: Gửi thông báo xin đánh giá trải nghiệm (Idempotent theo eventId)
+      if (status === OrderStatus.COMPLETED) {
+        try {
+          const setting = await this.prisma.systemSetting.findUnique({
+            where: { key: 'ORDER_REVIEW_REWARD_POINTS' },
+          });
+          const rewardPoints = setting?.value ? parseInt(setting.value, 10) : 999;
+          await this.notificationService.createNotification({
+            userId: order.userId,
+            title: 'Bạn thấy trải nghiệm tại AVORA thế nào?',
+            content: `Hãy chia sẻ trải nghiệm đơn hàng #${displayCode} và nhận ${rewardPoints} điểm AVORA.`,
+            type: 'ORDER',
+            referenceId: displayCode,
+            url: `/orders/${displayCode}?review=1`,
+            eventId: `ORDER_REVIEW_REQUEST:${order.id}:${order.userId}`,
+            category: 'REVIEW',
+            priority: 1,
+            metadata: {
+              orderId: order.id,
+              orderCode: displayCode,
+              rewardPoints,
+            },
+          });
+        } catch (err: any) {
+          this.logger.error(`Error sending review request notification: ${err?.message}`);
+        }
       }
     }
 

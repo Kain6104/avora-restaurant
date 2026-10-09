@@ -201,65 +201,65 @@ export class PrintTemplateTagsService {
         return {
           name: 'Hóa đơn thanh toán 80mm',
           paperSize: '80mm',
-          content: `<div style="font-family: Arial, sans-serif; font-size: 11.5px; line-height: 1.3; color: #000; width: 100%; text-align: center;">
-  <div style="font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 1px;">[Ten_Cua_Hang]</div>
+          content: `<div style="font-family: Arial, sans-serif; font-size: 11.5px; line-height: 1.35; color: #000; width: 100%; text-align: center;">
+  <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">[Ten_Cua_Hang]</div>
   <div style="font-size: 12px; margin-bottom: 2px;">[Ten_Chi_Nhanh]</div>
   <div style="font-size: 10.5px; color: #333; margin-bottom: 1px;">Đ/C: [Dia_Chi_Chi_Nhanh]</div>
   <div style="font-size: 10.5px; color: #333; margin-bottom: 3px;">Hotline: [Dien_Thoai_Chi_Nhanh]</div>
-  <div style="border-top: 1.5px solid #000; margin: 3px 0 2px 0;"></div>
-  <div style="font-size: 16px; font-weight: 900; margin: 2px 0 1px 0; letter-spacing: 0.5px;">HÓA ĐƠN THANH TOÁN</div>
-  <div style="font-size: 11px; font-weight: bold; margin-bottom: 1px; white-space: nowrap;">[Ma_Hoa_Don] - [Gio_In]</div>
+  <div style="border-top: 1px solid #000; margin: 3px 0 2px 0;"></div>
+  <div style="font-size: 15px; font-weight: 600; margin: 2px 0 1px 0; letter-spacing: 0.5px;">HÓA ĐƠN THANH TOÁN</div>
+  <div style="font-size: 11px; margin-bottom: 2px; white-space: nowrap;">[Ma_Hoa_Don] - [Gio_In]</div>
   <div style="border-bottom: 1px dashed #000; margin: 3px 0 4px 0;"></div>
 
   <table style="width: 100%; font-size: 11px; text-align: left; margin-bottom: 3px; border-collapse: collapse;">
     <tr>
-      <td style="padding: 1px 0; font-size: 11px; white-space: nowrap; width: 55%;">Bàn: <b>[Ten_Ban]</b></td>
-      <td style="text-align: right; padding: 1px 0; white-space: nowrap; width: 45%;">Số khách: <b>[So_Luong_Khach]</b></td>
+      <td style="padding: 1.5px 0; white-space: nowrap; width: 55%;">Bàn: [Ten_Ban]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap; width: 45%;">Số khách: [So_Luong_Khach]</td>
     </tr>
     <tr>
-      <td style="padding: 1px 0; white-space: nowrap;">Giờ vào: <b>[Ngay_Tao]</b></td>
-      <td style="text-align: right; padding: 1px 0; white-space: nowrap;">Giờ ra: <b>[Ngay_Hoan_Thanh]</b></td>
+      <td style="padding: 1.5px 0; white-space: nowrap;">Giờ vào: [Ngay_Tao]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">Giờ ra: [Ngay_Hoan_Thanh]</td>
     </tr>
     <tr>
-      <td colspan="2" style="padding: 1px 0; white-space: nowrap;">Thu ngân: <b>[Ten_Thu_Ngan]</b></td>
+      <td colspan="2" style="padding: 1.5px 0; white-space: nowrap;">Thu ngân: [Ten_Thu_Ngan]</td>
     </tr>
     {{#if customer}}
     <tr>
-      <td colspan="2" style="padding: 1px 0; font-size: 11px; white-space: normal; word-break: break-word; border-top: 1px dotted #888;">
-        Khách hàng: <b>[Ten_Khach_Hang]</b> - [Dien_Thoai_Khach_Hang]
+      <td colspan="2" style="padding: 1.5px 0; font-size: 11px; white-space: normal; word-break: break-word; border-top: 1px dotted #888;">
+        Khách hàng: [Ten_Khach_Hang] - [Dien_Thoai_Khach_Hang]
         {{#if membership}}<br/><span style="font-size: 10.5px; color: #333;">[Hang_Thanh_Vien] | Tích điểm: +[Diem_Tich_Luy] (Ví: [Diem_Hien_Tai])</span>{{/if}}
       </td>
     </tr>
     {{/if}}
     {{#if hasDeliveryAddress}}
     <tr>
-      <td colspan="2" style="padding: 1px 0; font-size: 11px; white-space: normal; word-break: break-word; border-top: 1px dotted #888;">
-        Giao đến: <b>[Dia_Chi_Giao_Hang]</b>
+      <td colspan="2" style="padding: 1.5px 0; font-size: 11px; white-space: normal; word-break: break-word; border-top: 1px dotted #888;">
+        Giao đến: [Dia_Chi_Giao_Hang]
       </td>
     </tr>
     {{/if}}
   </table>
 
-  <table style="width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 3px 0;">
+  <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin: 3px 0;">
     <thead>
       <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
-        <th style="text-align: left; padding: 2px 0; width: 46%;">Mặt hàng</th>
-        <th style="text-align: center; padding: 2px 0; width: 9%; white-space: nowrap;">SL</th>
-        <th style="text-align: right; padding: 2px 0; width: 22%; white-space: nowrap;">Đ.Giá</th>
-        <th style="text-align: right; padding: 2px 0; width: 23%; white-space: nowrap;">T.Tiền</th>
+        <th style="text-align: left; padding: 2.5px 0; width: 46%; font-weight: 600;">Mặt hàng</th>
+        <th style="text-align: center; padding: 2.5px 0; width: 9%; white-space: nowrap; font-weight: 600;">SL</th>
+        <th style="text-align: right; padding: 2.5px 0; width: 22%; white-space: nowrap; font-weight: 600;">Đ.Giá</th>
+        <th style="text-align: right; padding: 2.5px 0; width: 23%; white-space: nowrap; font-weight: 600;">T.Tiền</th>
       </tr>
     </thead>
     <tbody>
       {{#items}}
       <tr style="border-bottom: 1px dotted #ccc;">
-        <td style="text-align: left; padding: 2px 0; word-break: break-word; overflow-wrap: break-word;">
-          <div style="font-weight: bold; line-height: 1.25;">[Ten_Mon_An]</div>
-          <div style="font-size: 9px; color: #555;">[Tuy_Chon_Mon]</div>
-          <div style="font-size: 9px; font-style: italic; color: #555;">[Ghi_Chu_Mon]</div>
+        <td style="text-align: left; padding: 2.5px 0; word-break: break-word; overflow-wrap: break-word;">
+          <div style="font-weight: 600; line-height: 1.25;">[Ten_Mon_An]</div>
+          <div style="font-size: 9.5px; color: #555;">[Tuy_Chon_Mon]</div>
+          <div style="font-size: 9.5px; font-style: italic; color: #555;">[Ghi_Chu_Mon]</div>
         </td>
-        <td style="text-align: center; vertical-align: top; padding: 2px 0; white-space: nowrap; font-weight: bold;">[So_Luong]</td>
-        <td style="text-align: right; vertical-align: top; padding: 2px 0; white-space: nowrap;">[Don_Gia]</td>
-        <td style="text-align: right; vertical-align: top; padding: 2px 0; font-weight: bold; white-space: nowrap;">[Thanh_Tien]</td>
+        <td style="text-align: center; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[So_Luong]</td>
+        <td style="text-align: right; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[Don_Gia]</td>
+        <td style="text-align: right; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[Thanh_Tien]</td>
       </tr>
       {{/items}}
     </tbody>
@@ -269,18 +269,18 @@ export class PrintTemplateTagsService {
     {{#if vatExclusive}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền hàng trước VAT([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Thuế VAT:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">([Phan_Tram_VAT]) [Tong_VAT]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">([Phan_Tram_VAT]) [Tong_VAT]</td>
     </tr>
     [Chi_Tiet_VAT]
     {{/if}}
     {{#if vatInclusive}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền hàng([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     <tr>
       <td style="text-align: left; padding: 1px 0; font-size: 10.5px; color: #444;">VAT (đã bao gồm):</td>
@@ -291,77 +291,77 @@ export class PrintTemplateTagsService {
     {{#if noVat}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền hàng([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     {{/if}}
     {{#if hasShippingFee}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Phí vận chuyển:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Phi_Giao_Hang]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Phi_Giao_Hang]</td>
     </tr>
     {{/if}}
     {{#if serviceCharge}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Phụ phí / Dịch vụ:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">+[Tong_Phu_Phi]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">+[Tong_Phu_Phi]</td>
     </tr>
     [Chi_Tiet_Phu_Phi]
     {{/if}}
     {{#if discount}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Giảm giá:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">-[Giam_Gia]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">-[Giam_Gia]</td>
     </tr>
     [Chi_Tiet_Giam_Gia]
     {{/if}}
     {{#if discountVoucher}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Voucher ([Ma_Voucher_Giam_Gia]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">-[Tien_Giam_Voucher]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">-[Tien_Giam_Voucher]</td>
     </tr>
     {{/if}}
     {{#if shippingVoucher}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Freeship ([Ma_Voucher_Freeship]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">-[Tien_Giam_Freeship]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">-[Tien_Giam_Freeship]</td>
     </tr>
     {{/if}}
-    <tr style="border-top: 1.5px dashed #000; border-bottom: 1.5px solid #000;">
-      <td style="text-align: left; padding: 3.5px 0; font-size: 13.5px; font-weight: 900;">TỔNG THANH TOÁN:</td>
-      <td style="text-align: right; padding: 3.5px 0; font-size: 14.5px; font-weight: 900; white-space: nowrap;">[Tong_Cong]</td>
+    <tr style="border-top: 1px dashed #000; border-bottom: 1.5px solid #000;">
+      <td style="text-align: left; padding: 4px 0; font-size: 13px; font-weight: 600;">TỔNG THANH TOÁN:</td>
+      <td style="text-align: right; padding: 4px 0; font-size: 14px; font-weight: 600; white-space: nowrap;">[Tong_Cong]</td>
     </tr>
   </table>
 
   <table style="width: 100%; font-size: 11px; margin-top: 3px; border-collapse: collapse;">
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Phương thức:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Phuong_Thuc_Thanh_Toan]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Phuong_Thuc_Thanh_Toan]</td>
     </tr>
     {{#if cashPayment}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền khách đưa:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tien_Khach_Tra]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tien_Khach_Tra]</td>
     </tr>
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền thối lại:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tien_Thoi]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tien_Thoi]</td>
     </tr>
     {{/if}}
     {{#if vatInvoice}}
     <tr style="border-top: 1px dotted #888;">
       <td colspan="2" style="text-align: left; padding: 3px 0; font-size: 10.5px;">
-        Xuất HĐ VAT: <b>[Ten_Cong_Ty]</b><br/>
+        Xuất HĐ VAT: [Ten_Cong_Ty]<br/>
         MST: [Ma_So_Thue] | Email: [Email_Hoa_Don]
       </td>
     </tr>
     {{/if}}
   </table>
 
-  <div style="margin: 6px 0 3px 0;">
+  <div style="page-break-inside: avoid !important; break-inside: avoid !important; margin: 3px 0 1px 0;">
     [Ma_QR_Website]
+    <div style="font-size: 11px; font-weight: 600; margin-top: 2px;">CẢM ƠN QUÝ KHÁCH VÀ HẸN GẶP LẠI!</div>
+    <div style="font-size: 9.5px; color: #555; margin-top: 1px;">Wifi: AVORA_GUEST | Pass: avora2026</div>
   </div>
-  <div style="font-size: 11.5px; font-weight: bold; margin-top: 2px;">CẢM ƠN QUÝ KHÁCH VÀ HẸN GẶP LẠI!</div>
-  <div style="font-size: 10px; color: #555; margin-top: 1px;">Wifi: AVORA_GUEST | Pass: avora2026</div>
 </div>`,
         };
 
@@ -369,47 +369,47 @@ export class PrintTemplateTagsService {
         return {
           name: 'Phiếu tạm tính 80mm',
           paperSize: '80mm',
-          content: `<div style="font-family: Arial, sans-serif; font-size: 11.5px; line-height: 1.3; color: #000; width: 100%; text-align: center;">
-  <div style="font-size: 16px; font-weight: bold; text-transform: uppercase; margin-bottom: 1px;">[Ten_Cua_Hang]</div>
+          content: `<div style="font-family: Arial, sans-serif; font-size: 11.5px; line-height: 1.35; color: #000; width: 100%; text-align: center;">
+  <div style="font-size: 15px; font-weight: 600; text-transform: uppercase; margin-bottom: 2px;">[Ten_Cua_Hang]</div>
   <div style="font-size: 12px; margin-bottom: 2px;">[Ten_Chi_Nhanh]</div>
-  <div style="border-top: 1.5px solid #000; margin: 3px 0 2px 0;"></div>
-  <div style="font-size: 16px; font-weight: 900; margin: 2px 0 1px 0; letter-spacing: 0.5px;">PHIẾU TẠM TÍNH</div>
-  <div style="font-size: 11px; font-weight: bold; margin-bottom: 1px; white-space: nowrap;">[Ma_Hoa_Don] - [Gio_In]</div>
-  <div style="font-size: 10px; font-style: italic;">(Vui lòng kiểm tra lại món trước khi thanh toán)</div>
+  <div style="border-top: 1px solid #000; margin: 3px 0 2px 0;"></div>
+  <div style="font-size: 15px; font-weight: 600; margin: 2px 0 1px 0; letter-spacing: 0.5px;">PHIẾU TẠM TÍNH</div>
+  <div style="font-size: 11px; margin-bottom: 1px; white-space: nowrap;">[Ma_Hoa_Don] - [Gio_In]</div>
+  <div style="font-size: 10px; font-style: italic; color: #444;">(Vui lòng kiểm tra lại món trước khi thanh toán)</div>
   <div style="border-bottom: 1px dashed #000; margin: 3px 0 4px 0;"></div>
 
   <table style="width: 100%; font-size: 11px; text-align: left; margin-bottom: 3px; border-collapse: collapse;">
     <tr>
-      <td colspan="2" style="padding: 1px 0; font-size: 11px; white-space: nowrap;">Bàn: <b>[Ten_Ban]</b></td>
+      <td colspan="2" style="padding: 1.5px 0; font-size: 11px; white-space: nowrap;">Bàn: [Ten_Ban]</td>
     </tr>
     <tr>
-      <td style="padding: 1px 0; white-space: nowrap; width: 55%;">Giờ vào: <b>[Ngay_Tao]</b></td>
-      <td style="text-align: right; padding: 1px 0; white-space: nowrap; width: 45%;">Số khách: <b>[So_Luong_Khach]</b></td>
+      <td style="padding: 1.5px 0; white-space: nowrap; width: 55%;">Giờ vào: [Ngay_Tao]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap; width: 45%;">Số khách: [So_Luong_Khach]</td>
     </tr>
     <tr>
-      <td colspan="2" style="padding: 1px 0; font-size: 11px; white-space: normal; word-break: break-word;">Khách hàng: <b>[Chi_Tiet_Khach_Hang]</b></td>
+      <td colspan="2" style="padding: 1.5px 0; font-size: 11px; white-space: normal; word-break: break-word;">Khách hàng: [Chi_Tiet_Khach_Hang]</td>
     </tr>
   </table>
 
-  <table style="width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 3px 0;">
+  <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin: 3px 0;">
     <thead>
       <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000;">
-        <th style="text-align: left; padding: 2px 0; width: 46%;">Mặt hàng</th>
-        <th style="text-align: center; padding: 2px 0; width: 9%; white-space: nowrap;">SL</th>
-        <th style="text-align: right; padding: 2px 0; width: 22%; white-space: nowrap;">Đ.Giá</th>
-        <th style="text-align: right; padding: 2px 0; width: 23%; white-space: nowrap;">T.Tiền</th>
+        <th style="text-align: left; padding: 2.5px 0; width: 46%; font-weight: 600;">Mặt hàng</th>
+        <th style="text-align: center; padding: 2.5px 0; width: 9%; white-space: nowrap; font-weight: 600;">SL</th>
+        <th style="text-align: right; padding: 2.5px 0; width: 22%; white-space: nowrap; font-weight: 600;">Đ.Giá</th>
+        <th style="text-align: right; padding: 2.5px 0; width: 23%; white-space: nowrap; font-weight: 600;">T.Tiền</th>
       </tr>
     </thead>
     <tbody>
       {{#items}}
       <tr style="border-bottom: 1px dotted #ccc;">
-        <td style="text-align: left; padding: 2px 0; word-break: break-word; overflow-wrap: break-word;">
-          <div style="font-weight: bold; line-height: 1.25;">[Ten_Mon_An]</div>
-          <div style="font-size: 9px; color: #555;">[Tuy_Chon_Mon]</div>
+        <td style="text-align: left; padding: 2.5px 0; word-break: break-word; overflow-wrap: break-word;">
+          <div style="font-weight: 600; line-height: 1.25;">[Ten_Mon_An]</div>
+          <div style="font-size: 9.5px; color: #555;">[Tuy_Chon_Mon]</div>
         </td>
-        <td style="text-align: center; vertical-align: top; padding: 2px 0; white-space: nowrap; font-weight: bold;">[So_Luong]</td>
-        <td style="text-align: right; vertical-align: top; padding: 2px 0; white-space: nowrap;">[Don_Gia]</td>
-        <td style="text-align: right; vertical-align: top; padding: 2px 0; font-weight: bold; white-space: nowrap;">[Thanh_Tien]</td>
+        <td style="text-align: center; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[So_Luong]</td>
+        <td style="text-align: right; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[Don_Gia]</td>
+        <td style="text-align: right; vertical-align: top; padding: 2.5px 0; white-space: nowrap;">[Thanh_Tien]</td>
       </tr>
       {{/items}}
     </tbody>
@@ -419,18 +419,18 @@ export class PrintTemplateTagsService {
     {{#if vatExclusive}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">TT trước VAT([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">VAT:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">([Phan_Tram_VAT]) [Tong_VAT]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">([Phan_Tram_VAT]) [Tong_VAT]</td>
     </tr>
     [Chi_Tiet_VAT]
     {{/if}}
     {{#if vatInclusive}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tiền hàng([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     <tr>
       <td style="text-align: left; padding: 1px 0; font-size: 10.5px; color: #444;">VAT (đã bao gồm):</td>
@@ -441,44 +441,44 @@ export class PrintTemplateTagsService {
     {{#if noVat}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Tạm tính([Tong_So_Luong]):</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Tam_Tinh]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Tam_Tinh]</td>
     </tr>
     {{/if}}
     {{#if hasShippingFee}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Phí vận chuyển:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">[Phi_Giao_Hang]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">[Phi_Giao_Hang]</td>
     </tr>
     {{/if}}
     {{#if serviceCharge}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Phụ phí / Dịch vụ:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">+[Tong_Phu_Phi]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">+[Tong_Phu_Phi]</td>
     </tr>
     [Chi_Tiet_Phu_Phi]
     {{/if}}
     {{#if discount}}
     <tr>
       <td style="text-align: left; padding: 1.5px 0;">Giảm giá:</td>
-      <td style="text-align: right; padding: 1.5px 0; font-weight: bold; white-space: nowrap;">-[Giam_Gia]</td>
+      <td style="text-align: right; padding: 1.5px 0; white-space: nowrap;">-[Giam_Gia]</td>
     </tr>
     [Chi_Tiet_Giam_Gia]
     {{/if}}
-    <tr style="border-top: 1.5px dashed #000; border-bottom: 1.5px solid #000;">
-      <td style="text-align: left; padding: 3.5px 0; font-size: 13.5px; font-weight: 900;">TỔNG TIỀN:</td>
-      <td style="text-align: right; padding: 3.5px 0; font-size: 14.5px; font-weight: 900; white-space: nowrap;">[Tong_Cong]</td>
+    <tr style="border-top: 1px dashed #000; border-bottom: 1.5px solid #000;">
+      <td style="text-align: left; padding: 4px 0; font-size: 13px; font-weight: 600;">TỔNG TIỀN:</td>
+      <td style="text-align: right; padding: 4px 0; font-size: 14px; font-weight: 600; white-space: nowrap;">[Tong_Cong]</td>
     </tr>
   </table>
 
   {{#if qrPayment}}
-  <div style="margin: 5px 0 2px 0;">
-    <div style="font-size: 10.5px; margin-bottom: 2px;">Quét QR chuyển khoản thanh toán nhanh:</div>
+  <div style="page-break-inside: avoid !important; break-inside: avoid !important; margin: 3px 0 1px 0;">
+    <div style="font-size: 10px; margin-bottom: 1px;">Quét QR chuyển khoản thanh toán nhanh:</div>
     [Ma_QR_Thanh_Toan]
-    <div style="font-size: 10.5px; margin-top: 2px;">[Ngan_Hang] - STK: <b>[So_Tai_Khoan]</b></div>
+    <div style="font-size: 10px; margin-top: 1px;">[Ngan_Hang] - STK: [So_Tai_Khoan]</div>
   </div>
   {{/if}}
 
-  <div style="margin-top: 4px; font-size: 10px; color: #444;">(Phiếu này chưa phải là hóa đơn tài chính)</div>
+  <div style="page-break-inside: avoid !important; break-inside: avoid !important; margin-top: 2px; font-size: 9.5px; color: #444;">(Phiếu này chưa phải là hóa đơn tài chính)</div>
 </div>`,
         };
 

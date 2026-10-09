@@ -329,89 +329,85 @@ export default function FlashSaleManagementPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 pb-16">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-12 sm:pb-20">
       {/* ── HEADER & BREADCRUMB ── */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
-                <span>Khuyến mãi</span>
-                <ChevronRight className="w-3 h-3 text-slate-400" />
-                <span className="text-slate-800 font-semibold">Flash Sale</span>
-              </div>
-              <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2">
-                <span className="p-2 rounded-xl bg-red-50 text-[#da251d] border border-red-100">
-                  <Zap className="w-6 h-6 fill-[#da251d]" />
-                </span>
-                Flash Sale Management Center
-              </h1>
-              <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                Quản lý chương trình Flash Sale, nhiều khung giờ Shopee-style, tồn kho độc quyền và hiệu quả bán hàng
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              <button
-                onClick={fetchData}
-                disabled={loading}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition cursor-pointer"
-                title="Làm mới dữ liệu"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                <span>Làm mới</span>
-              </button>
-
-              <div className="bg-slate-100 p-1 rounded-xl flex items-center border border-slate-200">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                    viewMode === 'list'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <List className="w-3.5 h-3.5" />
-                  <span>Danh sách</span>
-                </button>
-                <button
-                  onClick={() => setViewMode('timeline')}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition ${
-                    viewMode === 'timeline'
-                      ? 'bg-white text-slate-900 shadow-xs'
-                      : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  <CalendarIcon className="w-3.5 h-3.5" />
-                  <span>Lịch Timeline</span>
-                </button>
-              </div>
-
-              <Link
-                href="/admin/flash-sales/reports"
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-xs font-bold text-white transition shadow-sm"
-              >
-                <BarChart3 className="w-4 h-4 text-amber-400" />
-                <span>Báo cáo tổng</span>
-              </Link>
-
-              <Link
-                href="/admin/flash-sales/create"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#da251d] hover:bg-red-700 text-xs font-bold text-white transition shadow-sm shadow-red-600/25"
-              >
-                <Plus className="w-4 h-4 stroke-[3]" />
-                <span>+ Tạo Flash Sale</span>
-              </Link>
-            </div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
+        <div>
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1">
+            <span>Khuyến mãi</span>
+            <ChevronRight className="w-3 h-3 text-slate-400" />
+            <span className="text-slate-800 font-semibold">Flash Sale</span>
           </div>
+          <h1 className="text-lg sm:text-2xl lg:text-3xl font-black tracking-tight text-slate-900 flex items-center gap-2">
+            <span className="p-1.5 sm:p-2 rounded-xl bg-red-50 text-[#da251d] border border-red-100 shrink-0">
+              <Zap className="w-5 h-5 sm:w-6 sm:h-6 fill-[#da251d]" />
+            </span>
+            <span className="truncate">Flash Sale Center</span>
+          </h1>
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+            Quản lý chương trình Flash Sale, nhiều khung giờ Shopee-style, tồn kho độc quyền và hiệu quả bán hàng
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 transition cursor-pointer min-h-[36px]"
+            title="Làm mới dữ liệu"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <span className="hidden xs:inline">Làm mới</span>
+          </button>
+
+          <div className="bg-slate-100 p-0.5 sm:p-1 rounded-xl flex items-center border border-slate-200">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition min-h-[32px] ${
+                viewMode === 'list'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>Danh sách</span>
+            </button>
+            <button
+              onClick={() => setViewMode('timeline')}
+              className={`flex items-center gap-1 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-bold transition min-h-[32px] ${
+                viewMode === 'timeline'
+                  ? 'bg-white text-slate-900 shadow-xs'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              <span>Timeline</span>
+            </button>
+          </div>
+
+          <Link
+            href="/admin/flash-sales/reports"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 sm:py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-xs font-bold text-white transition shadow-sm min-h-[36px]"
+          >
+            <BarChart3 className="w-4 h-4 text-amber-400" />
+            <span className="hidden sm:inline">Báo cáo tổng</span>
+          </Link>
+
+          <Link
+            href="/admin/flash-sales/create"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 sm:py-2 rounded-xl bg-[#da251d] hover:bg-red-700 text-xs font-bold text-white transition shadow-sm shadow-red-600/25 min-h-[36px]"
+          >
+            <Plus className="w-4 h-4 stroke-[3]" />
+            <span>+ Tạo Flash Sale</span>
+          </Link>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6 space-y-6">
+      <div className="space-y-3 sm:space-y-4 md:space-y-6">
         {/* ── REALTIME ENTERPRISE KPI DASHBOARD ── */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5 md:gap-3.5">
           {/* Card 1: Đang chạy */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
             <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
               <span>Đang chạy</span>
               <span className="p-1.5 rounded-lg bg-emerald-50 text-emerald-600">
@@ -430,111 +426,111 @@ export default function FlashSaleManagementPage() {
           </div>
 
           {/* Card 2: Doanh thu Flash Sale */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Doanh thu Flash</span>
-              <span className="p-1.5 rounded-lg bg-amber-50 text-amber-600">
-                <TrendingUp className="w-4 h-4" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] sm:text-xs font-semibold">
+              <span className="truncate">Doanh thu Flash</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-amber-50 text-amber-600">
+                <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
             </div>
-            <div className="mt-2">
-              <span className="text-lg sm:text-xl font-black text-slate-900 block truncate">
+            <div className="mt-1.5 sm:mt-2">
+              <span className="text-sm sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
                 {formatCurrency(kpis?.totalRevenue)}
               </span>
             </div>
-            <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold text-emerald-600">
-              <ArrowUpRight className="w-3 h-3" />
-              <span>+{kpis?.revenueGrowth ?? 12.5}% so kỳ trước</span>
+            <div className="mt-1 flex items-center gap-1 text-[10px] sm:text-[11px] font-semibold text-emerald-600 truncate">
+              <ArrowUpRight className="w-3 h-3 shrink-0" />
+              <span className="truncate">+{kpis?.revenueGrowth ?? 12.5}%</span>
             </div>
           </div>
 
           {/* Card 3: Đã bán & Tồn */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Món bán qua Flash</span>
-              <span className="p-1.5 rounded-lg bg-red-50 text-red-600">
-                <ShoppingBag className="w-4 h-4" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] sm:text-xs font-semibold">
+              <span className="truncate">Món bán Flash</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-red-50 text-red-600">
+                <ShoppingBag className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-sm sm:text-lg lg:text-2xl font-black text-slate-900">
                 {(kpis?.totalUnitsSold ?? 0).toLocaleString()}
               </span>
-              <span className="text-xs text-slate-500">phần</span>
+              <span className="text-[10px] sm:text-xs text-slate-500">phần</span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              Tỷ lệ bán: <strong className="text-emerald-600 font-bold">{kpis?.sellThroughRate ?? 0}%</strong>
+            <div className="mt-1 text-[10px] sm:text-[11px] text-slate-400 truncate">
+              Tỷ lệ: <strong className="text-emerald-600 font-bold">{kpis?.sellThroughRate ?? 0}%</strong>
             </div>
           </div>
 
           {/* Card 4: Tổng đơn & Lượt mua */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Tổng lượt mua</span>
-              <span className="p-1.5 rounded-lg bg-blue-50 text-blue-600">
-                <Users className="w-4 h-4" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] sm:text-xs font-semibold">
+              <span className="truncate">Lượt mua</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-blue-50 text-blue-600">
+                <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
-              <span className="text-2xl font-black text-slate-900">
+            <div className="mt-1.5 sm:mt-2 flex items-baseline gap-1.5">
+              <span className="text-sm sm:text-lg lg:text-2xl font-black text-slate-900">
                 {(kpis?.totalOrders ?? 0).toLocaleString()}
               </span>
-              <span className="text-xs text-slate-500">đơn</span>
+              <span className="text-[10px] sm:text-xs text-slate-500">đơn</span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              Khách mua: <strong className="text-slate-700">{kpis?.totalBuyers ?? 0}</strong>
+            <div className="mt-1 text-[10px] sm:text-[11px] text-slate-400 truncate">
+              Khách: <strong className="text-slate-700">{kpis?.totalBuyers ?? 0}</strong>
             </div>
           </div>
 
           {/* Card 5: Tổng tiền giảm giá */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Đã trợ giá cho khách</span>
-              <span className="p-1.5 rounded-lg bg-purple-50 text-purple-600">
-                <Percent className="w-4 h-4" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] sm:text-xs font-semibold">
+              <span className="truncate">Trợ giá khách</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-purple-50 text-purple-600">
+                <Percent className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
             </div>
-            <div className="mt-2">
-              <span className="text-lg sm:text-xl font-black text-rose-600 block truncate">
+            <div className="mt-1.5 sm:mt-2">
+              <span className="text-sm sm:text-lg lg:text-xl font-black text-rose-600 block truncate">
                 {formatCurrency(kpis?.totalDiscountAmount)}
               </span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              Đóng góp kích cầu F&B
+            <div className="mt-1 text-[10px] sm:text-[11px] text-slate-400 truncate">
+              Kích cầu F&B
             </div>
           </div>
 
           {/* Card 6: Doanh thu 30 ngày */}
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500 text-xs font-semibold">
-              <span>Doanh thu 30 ngày</span>
-              <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
-                <CalendarIcon className="w-4 h-4" />
+          <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs hover:shadow-md transition">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] sm:text-xs font-semibold">
+              <span className="truncate">DT 30 ngày</span>
+              <span className="p-1 sm:p-1.5 rounded-lg bg-indigo-50 text-indigo-600">
+                <CalendarIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </span>
             </div>
-            <div className="mt-2">
-              <span className="text-lg sm:text-xl font-black text-slate-900 block truncate">
+            <div className="mt-1.5 sm:mt-2">
+              <span className="text-sm sm:text-lg lg:text-xl font-black text-slate-900 block truncate">
                 {formatCurrency(kpis?.revenue30d)}
               </span>
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
+            <div className="mt-1 text-[10px] sm:text-[11px] text-slate-400 truncate">
               Hôm nay: <strong className="text-slate-800">{formatCurrency(kpis?.revenueToday)}</strong>
             </div>
           </div>
         </div>
 
         {/* ── FILTER & SEARCH BAR ── */}
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-xs flex flex-col md:flex-row items-center justify-between gap-2.5 sm:gap-4">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 w-full md:w-auto">
             {/* Search Input */}
             <div className="relative flex-1 md:w-72">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Tìm mã hoặc tên Flash Sale..."
+                placeholder="Tìm Flash Sale..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition"
+                className="w-full pl-8 sm:pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:bg-white transition min-h-[40px]"
               />
             </div>
 
@@ -542,7 +538,7 @@ export default function FlashSaleManagementPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer"
+              className="px-2.5 sm:px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-h-[40px]"
             >
               <option value="ALL">Tất cả trạng thái</option>
               <option value="ACTIVE">Đang chạy</option>
@@ -558,7 +554,7 @@ export default function FlashSaleManagementPage() {
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer"
+              className="px-2.5 sm:px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-red-500 cursor-pointer min-h-[40px]"
             >
               <option value="ALL">Tất cả chi nhánh</option>
               {allBranches.map((b) => (
@@ -570,13 +566,13 @@ export default function FlashSaleManagementPage() {
           </div>
 
           {/* Quick Presets */}
-          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+          <div className="flex items-center gap-1.5 overflow-x-auto w-full md:w-auto pb-1 md:pb-0 scrollbar-none">
             {[
               { id: 'all', label: 'Tất cả' },
               { id: 'today', label: 'Hôm nay' },
               { id: 'active', label: 'Đang chạy' },
-              { id: 'upcoming', label: 'Sắp diễn ra' },
-              { id: 'ended', label: 'Đã kết thúc' },
+              { id: 'upcoming', label: 'Sắp tới' },
+              { id: 'ended', label: 'Kết thúc' },
             ].map((preset) => (
               <button
                 key={preset.id}
@@ -587,7 +583,7 @@ export default function FlashSaleManagementPage() {
                   else if (preset.id === 'ended') setStatusFilter('ENDED');
                   else if (preset.id === 'all') setStatusFilter('ALL');
                 }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-bold transition whitespace-nowrap min-h-[34px] ${
                   datePreset === preset.id
                     ? 'bg-red-50 text-[#da251d] border border-red-200'
                     : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -602,9 +598,9 @@ export default function FlashSaleManagementPage() {
         {/* ── CONTENT AREA ── */}
         {viewMode === 'list' ? (
           /* TABLE VIEW */
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+          <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+            <div className="admin-scroll-table">
+              <table className="w-full text-left text-xs border-collapse min-w-[1050px]">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
                     <th className="py-3 px-4">Chương trình</th>

@@ -213,25 +213,25 @@ export default function VouchersPage() {
   const totalAlertCount = fraudData?.totalAlerts || 0;
 
   return (
-    <div className="space-y-6 pb-20">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-12 sm:pb-20">
       
       {/* 1. TOP HEADER WITH ACTION BUTTONS */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <div className="p-2 rounded-xl bg-red-50 text-red-600">
-              <Ticket size={22} />
+            <div className="p-1.5 sm:p-2 rounded-xl bg-red-50 text-red-600 shrink-0">
+              <Ticket size={20} />
             </div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 tracking-tight">
               Quản Lý Mã Ưu Đãi (Vouchers)
             </h1>
           </div>
-          <p className="text-xs sm:text-sm text-slate-500">
+          <p className="text-[11px] sm:text-xs text-slate-500">
             Hệ thống phát hành khuyến mãi, phân tích doanh thu liên kết và cảnh báo gian lận lạm dụng mã.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap w-full sm:w-auto">
           <button
             type="button"
             onClick={() => {
@@ -240,7 +240,7 @@ export default function VouchersPage() {
               fetchFraudAlerts();
               toast.success('Đã làm mới dữ liệu');
             }}
-            className="p-2.5 rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer"
+            className="p-2 sm:p-2.5 min-h-[38px] rounded-xl border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-2xs cursor-pointer flex items-center justify-center"
             title="Làm mới dữ liệu"
           >
             <RefreshCw size={16} />
@@ -249,7 +249,7 @@ export default function VouchersPage() {
           {/* Create Button */}
           <Link
             href="/admin/vouchers/create"
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all cursor-pointer"
+            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 min-h-[38px] px-3.5 sm:px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm shadow-md hover:shadow-lg transition-all cursor-pointer"
           >
             <Plus size={16} strokeWidth={2.5} />
             <span>Thêm Voucher Mới</span>
@@ -258,94 +258,94 @@ export default function VouchersPage() {
       </div>
 
       {/* 2. TOP KPI CARDS STRIP */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5 sm:gap-2.5 md:gap-3">
         
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Đang hoạt động</p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+          <div className="min-w-0 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Đang hoạt động</p>
+            <p className="text-base sm:text-xl md:text-2xl font-black text-slate-900 mt-0.5 truncate">
               {analytics?.summary?.activeVouchers ?? '...'}
-              <span className="text-xs font-normal text-slate-400 ml-1">
-                / {analytics?.summary?.totalVouchers ?? vouchers.length} mã
+              <span className="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">
+                / {analytics?.summary?.totalVouchers ?? vouchers.length}
               </span>
             </p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
-            <Ticket size={20} />
+          <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
+            <Ticket size={18} />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Lượt dùng thành công</p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+          <div className="min-w-0 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Lượt dùng thành công</p>
+            <p className="text-base sm:text-xl md:text-2xl font-black text-slate-900 mt-0.5 truncate">
               {(analytics?.summary?.totalUsageOrders ?? 0).toLocaleString('vi-VN')}
-              <span className="text-xs font-normal text-slate-400 ml-1">đơn</span>
+              <span className="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">đơn</span>
             </p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
-            <Users size={20} />
+          <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+            <Users size={18} />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Tổng ngân sách giảm</p>
-            <p className="text-xl sm:text-2xl font-black text-red-600 mt-0.5">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+          <div className="min-w-0 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Ngân sách giảm</p>
+            <p className="text-base sm:text-xl md:text-2xl font-black text-red-600 mt-0.5 truncate">
               {((analytics?.summary?.totalDiscountAmount ?? 0) / 1000000).toFixed(1)}M
-              <span className="text-xs font-normal text-slate-400 ml-1">VNĐ</span>
+              <span className="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">đ</span>
             </p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold shrink-0">
-            <DollarSign size={20} />
+          <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold shrink-0">
+            <DollarSign size={18} />
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Doanh thu mang lại</p>
-            <p className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
+        <div className="bg-white rounded-xl sm:rounded-2xl p-2.5 sm:p-4 border border-slate-200/80 shadow-2xs flex items-center justify-between">
+          <div className="min-w-0 pr-1">
+            <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-wider truncate">Doanh thu mang lại</p>
+            <p className="text-base sm:text-xl md:text-2xl font-black text-slate-900 mt-0.5 truncate">
               {((analytics?.summary?.totalOrderRevenue ?? 0) / 1000000).toFixed(1)}M
-              <span className="text-xs font-normal text-slate-400 ml-1">VNĐ</span>
+              <span className="text-[10px] sm:text-xs font-normal text-slate-400 ml-1">đ</span>
             </p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shrink-0">
-            <TrendingUp size={20} />
+          <div className="w-8 h-8 sm:w-11 sm:h-11 rounded-lg sm:rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shrink-0">
+            <TrendingUp size={18} />
           </div>
         </div>
 
       </div>
 
       {/* 3. NAVIGATION VIEW TABS */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-3 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 overflow-x-auto scrollbar-none py-1 gap-1.5 sm:gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           <button
             onClick={() => setActiveTab('LIST')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'LIST'
                 ? 'bg-slate-900 text-white shadow-xs'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <Ticket size={16} />
-            <span>Danh sách Vouchers ({vouchers.length})</span>
+            <Ticket size={14} />
+            <span>Vouchers ({vouchers.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('ANALYTICS')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'ANALYTICS'
                 ? 'bg-slate-900 text-white shadow-xs'
                 : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}
           >
-            <BarChart3 size={16} />
-            <span>Báo cáo Thống kê & Hiệu quả</span>
+            <BarChart3 size={14} />
+            <span>Báo cáo & Hiệu quả</span>
           </button>
 
           <button
             onClick={() => setActiveTab('FRAUD_ALERTS')}
-            className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer flex items-center gap-2 relative ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 relative shrink-0 ${
               activeTab === 'FRAUD_ALERTS'
                 ? 'bg-red-600 text-white shadow-xs'
                 : 'bg-white text-red-600 border border-red-200 hover:bg-red-50'
@@ -430,8 +430,8 @@ export default function VouchersPage() {
                 <p className="text-xs text-slate-400 mt-1">Thử thay đổi bộ lọc hoặc thêm voucher mới.</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs sm:text-sm">
+              <div className="admin-scroll-table overflow-x-auto">
+                <table className="w-full min-w-[750px] text-left text-xs sm:text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase text-[11px] font-bold">
                     <tr>
                       <th className="py-3.5 px-4">Mã Voucher & Tiêu đề</th>

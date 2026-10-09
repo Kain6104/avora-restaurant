@@ -265,7 +265,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
   const orderCodeDisplay = (order.orderCode || order.temporaryOrderCode || order.id.slice(0, 8)).toUpperCase();
 
   return (
-    <div className="max-w-5xl mx-auto space-y-4 sm:space-y-6 pb-12">
+    <div className="admin-page-wrapper max-w-5xl mx-auto space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Header */}
       <PageHeader
         title={isPosOrder ? `Đơn bán tại quầy #${orderCodeDisplay}` : `Chi tiết đơn hàng online #${orderCodeDisplay}`}
@@ -276,55 +276,55 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           { label: `#${orderCodeDisplay}` },
         ]}
         badge={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <StatusBadge status={order.status} size="lg" />
             {isPosOrder ? (
               <>
-                <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
+                <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-black bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
                   <Store size={13} />
-                  <span>ĐƠN POS TẠI QUẦY</span>
+                  <span>ĐƠN POS</span>
                 </span>
                 {order.temporaryOrderCode && (
-                  <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  <span className="px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-mono font-bold bg-amber-50 text-amber-800 border border-amber-200">
                     Mã tạm: {order.temporaryOrderCode}
                   </span>
                 )}
                 {order.orderCode && (
-                  <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                  <span className="px-1.5 sm:px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-mono font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
                     Mã HĐ: {order.orderCode}
                   </span>
                 )}
                 {order.table?.name ? (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
+                  <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1">
                     <span>Bàn: {order.table.name}{order.table.area?.name ? ` (${order.table.area.name})` : ''}</span>
                   </span>
                 ) : (
-                  <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
-                    Bán mang về tại quầy
+                  <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                    Bán mang về
                   </span>
                 )}
               </>
             ) : (
               <>
-                <span className="px-2.5 py-1 rounded-lg text-xs font-black bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
+                <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-black bg-blue-50 text-blue-700 border border-blue-200 flex items-center gap-1">
                   <ShoppingBag size={13} />
-                  <span>ĐƠN ONLINE (WEB/APP)</span>
+                  <span>ĐƠN ONLINE</span>
                 </span>
-                <span className="px-2.5 py-1 rounded-lg text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
+                <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg text-[11px] sm:text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 flex items-center gap-1">
                   <Truck size={13} />
-                  <span>Giao hàng tận nơi</span>
+                  <span>Giao hàng</span>
                 </span>
               </>
             )}
           </div>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => router.back()}
               aria-label="Quay lại"
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200 text-xs font-bold shadow-2xs transition-colors"
             >
               <ArrowLeft size={15} />
               <span>Quay lại</span>
@@ -339,7 +339,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   () => setPrinting(false)
                 )
               }
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 min-h-[38px] px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               <Printer size={15} className={printing ? 'animate-spin' : ''} />
               <span>{printing ? 'Đang nạp...' : 'In hóa đơn'}</span>
@@ -857,7 +857,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
       {/* Change Status Action Group */}
       {order.status !== 'CANCELLED' && order.status !== 'COMPLETED' && (
         <AdminCard title="Cập nhật trạng thái đơn" icon={<AlertCircle size={16} />}>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {STATUS_OPTIONS.filter((st) => !isPosOrder || st !== 'DELIVERING').map((st) => {
               const isCurrent = order.status === st;
               const isLocked = STATUS_WEIGHTS[st] < STATUS_WEIGHTS[order.status];
@@ -867,7 +867,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                   type="button"
                   disabled={isLocked || isCurrent}
                   onClick={() => handleOpenStatusModal(st)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+                  className={`min-h-[40px] px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                     isCurrent
                       ? 'bg-red-600 text-white border-red-600 shadow-sm'
                       : isLocked

@@ -6,6 +6,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
 import { printAgent } from '@/lib/print-agent';
 import { PosCartItem, PosTable, PosOrder, PosBranch } from './pos-types';
+import { getItemPriceBreakdown } from './pos-item-price-helper';
+import { ReceiptItemOptionsTable } from './OrderItemPriceBreakdown';
 
 interface ProFormaBillModalProps {
   branch: PosBranch | null;
@@ -139,6 +141,7 @@ export const ProFormaBillModal: React.FC<ProFormaBillModalProps> = ({
               paperSize: paperSize || (branch?.defaultPaperSize as any) || '80mm',
               copies: copies || 1,
               idempotencyKey: `tempbill-${order.id}-${Date.now()}`,
+              receiptPayload: data.data?.receiptPayload,
             });
 
             if (agentRes.success) {
@@ -262,20 +265,23 @@ export const ProFormaBillModal: React.FC<ProFormaBillModalProps> = ({
               </div>
 
               {cartItems.map((item) => (
-                <div key={item.id} className="grid grid-cols-12 text-[10px] py-0.5">
+                <div key={item.id} className="grid grid-cols-12 text-[10px] py-1 border-b border-dotted border-gray-200">
                   <div className="col-span-6 pr-1">
                     <div className="font-bold text-gray-900 leading-tight">{item.product.name}</div>
-                    {item.optionsTextSnapshot && (
-                      <div className="text-[9px] text-gray-500">{item.optionsTextSnapshot}</div>
-                    )}
+                    {/* Added By: Exact Staff + Added Time */}
+                    <div className="text-[8.5px] text-gray-500 font-medium mt-0.5">
+                      {getItemPriceBreakdown(item, order?.createdAt).addedByFormatted}
+                    </div>
+                    {/* Options Breakdown with strict right alignment */}
+                    <ReceiptItemOptionsTable item={item} fallbackOrderCreatedAt={order?.createdAt} />
                     {item.note && (
-                      <div className="text-[9px] text-amber-700">Ghi chú: {item.note}</div>
+                      <div className="text-[9px] text-amber-700 italic mt-0.5">Ghi chú: {item.note}</div>
                     )}
                   </div>
-                  <div className="col-span-2 text-center font-bold text-gray-700">
+                  <div className="col-span-2 text-center font-bold text-gray-700 align-top">
                     {item.quantity}
                   </div>
-                  <div className="col-span-4 text-right font-bold text-gray-900">
+                  <div className="col-span-4 text-right font-bold text-gray-900 align-top font-mono tabular-nums">
                     {(item.priceAtSale * item.quantity).toLocaleString('vi-VN')}đ
                   </div>
                 </div>

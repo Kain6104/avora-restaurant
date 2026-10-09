@@ -30,7 +30,7 @@ const renderFormattedText = (text: string) => {
 };
 
 type ChatSenderType = "USER" | "AI" | "TOOL" | "SYSTEM";
-type ChatActionType = "ADD_TO_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN";
+type ChatActionType = "ADD_TO_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "SELECT_ORDER_SLOT" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN" | "ORDER_PREVIEW" | "PLACE_ORDER";
 
 interface ChatMessage {
   id: string;
@@ -121,12 +121,14 @@ export function FloatingChatbot() {
   useEffect(() => {
     cartItemsRef.current = cartItems;
     if (socketRef.current) {
+      const activeBranch = currentBranchId || (typeof window !== 'undefined' ? (localStorage.getItem('currentBranchId') || localStorage.getItem('selectedBranchId')) : '') || '';
       socketRef.current.emit('update_cart_context', {
         cartSummary,
-        cartTotal
+        cartTotal,
+        branchId: activeBranch,
       });
     }
-  }, [cartItems, cartSummary, cartTotal]);
+  }, [cartItems, cartSummary, cartTotal, currentBranchId]);
 
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -518,11 +520,13 @@ export function FloatingChatbot() {
 
       const socketUrl = process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws') || 'ws://localhost:3001';
 
+      const activeBranch = currentBranchId || (typeof window !== 'undefined' ? (localStorage.getItem('currentBranchId') || localStorage.getItem('selectedBranchId')) : '') || '';
       const socket = io(`${socketUrl}/voice-chat`, {
         withCredentials: true,
         query: { 
           cartSummary: encodeURIComponent(cartSummary),
-          cartTotal: cartTotal.toString()
+          cartTotal: cartTotal.toString(),
+          branchId: activeBranch,
         }
       });
       socketRef.current = socket;
@@ -583,6 +587,17 @@ export function FloatingChatbot() {
         }
       });
 
+      socket.on('barge_in', () => {
+        console.log('[VoiceWS] Barge-in detected, clearing audio playback');
+        if (playbackSourceRef.current) {
+          try { playbackSourceRef.current.stop(); } catch {}
+          playbackSourceRef.current = null;
+        }
+        audioQueueRef.current = [];
+        isPlayingRef.current = false;
+        setVoiceState('LISTENING');
+      });
+
       socket.on('rich_action', (data) => {
         const tempMsg: ChatMessage = {
           id: `voice-${Date.now()}`,
@@ -612,14 +627,6 @@ export function FloatingChatbot() {
           handleAddAllToCart(data.actionPayload, tempMsg.id);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
           handleNavigate(data.actionPayload);
-        } else if (data.actionType === 'ORDER_PREVIEW' && data.actionPayload) {
-          const payload = JSON.parse(data.actionPayload);
-          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
-        } else if (data.actionType === 'PLACE_ORDER' && data.actionPayload) {
-          const payload = JSON.parse(data.actionPayload);
-          handlePlaceOrder(payload.idempotencyKey);
-        } else if (data.actionType === 'SUGGEST_VOUCHER') {
-          handleSuggestVoucher();
         }
       });
 
@@ -961,7 +968,7 @@ export function FloatingChatbot() {
           sessionId,
           userId: currentUserId,
           message: tempMessage.content,
-          branchId: currentBranchId || undefined,
+          branchId: currentBranchId || (typeof window !== 'undefined' ? (localStorage.getItem('currentBranchId') || localStorage.getItem('selectedBranchId')) : '') || undefined,
           history: !currentUserId ? messages : undefined,
           personality,
           cartTotal,
@@ -1000,12 +1007,6 @@ export function FloatingChatbot() {
           handleAddToCart(lastMsg.actionPayload, lastMsg.id);
         } else if (lastMsg && lastMsg.actionType === 'NAVIGATE' && lastMsg.actionPayload) {
           handleNavigate(lastMsg.actionPayload);
-        } else if (lastMsg && lastMsg.actionType === 'ORDER_PREVIEW' && lastMsg.actionPayload) {
-          const payload = JSON.parse(lastMsg.actionPayload);
-          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
-        } else if (lastMsg && lastMsg.actionType === 'PLACE_ORDER' && lastMsg.actionPayload) {
-          const payload = JSON.parse(lastMsg.actionPayload);
-          handlePlaceOrder(payload.idempotencyKey);
         }
       } else {
         setMessages(prev => [...prev.filter(m => m.id !== tempMessage.id), tempMessage, data]);
@@ -1015,12 +1016,6 @@ export function FloatingChatbot() {
           handleUpdateCart(data.actionPayload, data.id);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
           handleNavigate(data.actionPayload);
-        } else if (data.actionType === 'ORDER_PREVIEW' && data.actionPayload) {
-          const payload = JSON.parse(data.actionPayload);
-          handleOrderPreview(payload.addressId, payload.voucherCode || previewVoucherRef.current);
-        } else if (data.actionType === 'PLACE_ORDER' && data.actionPayload) {
-          const payload = JSON.parse(data.actionPayload);
-          handlePlaceOrder(payload.idempotencyKey);
         }
       }
     } catch (error: any) {
@@ -1907,13 +1902,209 @@ export function FloatingChatbot() {
                   </div>
                 )}
 
+                {/* CONFIRM_RESERVATION Card */}
+                {msg.senderType === 'AI' && msg.actionType === 'CONFIRM_RESERVATION' && msg.actionPayload && (() => {
+                  try {
+                    const resData = JSON.parse(msg.actionPayload);
+                    return (
+                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-rose-200 shadow-md flex flex-col gap-3">
+                        <div className="flex items-center gap-2 text-rose-600 font-bold border-b border-slate-100 pb-2.5">
+                          <BookOpen className="w-5 h-5" />
+                          <span>XÁC NHẬN ĐẶT BÀN</span>
+                        </div>
+                        <div className="flex flex-col gap-2 text-sm text-slate-700">
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Chi nhánh:</span>
+                            <span className="font-bold text-slate-900">{resData.branchName || 'Chi nhánh Avora'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Ngày đặt:</span>
+                            <span className="font-semibold text-slate-900">{resData.reservationDate}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Khung giờ:</span>
+                            <span className="font-semibold text-rose-600">{resData.reservationTime}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Số lượng khách:</span>
+                            <span className="font-bold text-slate-900">{resData.partySize} người</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Khách hàng:</span>
+                            <span className="font-medium text-slate-900">{resData.customerName} ({resData.customerPhone})</span>
+                          </div>
+                          {resData.specialRequests && (
+                            <div className="flex justify-between text-xs text-amber-700 bg-amber-50 p-2 rounded-lg">
+                              <span>Ghi chú: {resData.specialRequests}</span>
+                            </div>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleSendMessage("Tôi xác nhận đặt bàn thông tin trên, hãy tạo đặt bàn giúp tôi.")}
+                          disabled={isLoading}
+                          className="mt-1 w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                        >
+                          <Sparkles size={16} /> Xác nhận đặt bàn ngay
+                        </button>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+
+                {/* ORDER_PREVIEW Card */}
+                {msg.senderType === 'AI' && (msg.actionType === 'ORDER_PREVIEW' || msg.actionType === 'SHOW_BEAUTIFUL_ORDER') && msg.actionPayload && (() => {
+                  try {
+                    const previewData = JSON.parse(msg.actionPayload);
+                    const formatter = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+                    return (
+                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-red-200 shadow-md flex flex-col gap-3">
+                        <div className="flex items-center gap-2 text-red-600 font-bold border-b border-slate-100 pb-2.5">
+                          <ShoppingCart className="w-5 h-5" />
+                          <span>CHI TIẾT XÁC NHẬN ĐƠN HÀNG</span>
+                        </div>
+                        <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                          {(previewData.items || []).map((it: any, idx: number) => (
+                            <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
+                              <div>
+                                <div className="font-semibold text-slate-800">{it.productName || it.name} x{it.quantity}</div>
+                                {it.selectedOptions?.length > 0 && (
+                                  <div className="text-[11px] text-slate-500">
+                                    {it.selectedOptions.map((o: any) => o.optionItemName || o.name).join(', ')}
+                                  </div>
+                                )}
+                              </div>
+                              <div className="font-bold text-slate-800">
+                                {formatter.format((it.priceAtSale || it.unitPrice || 0) * (it.quantity || 1))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="space-y-1.5 text-sm border-t border-slate-100 pt-2 text-slate-600">
+                          <div className="flex justify-between">
+                            <span>Tạm tính:</span>
+                            <span>{formatter.format(previewData.subTotal || 0)}</span>
+                          </div>
+                          {previewData.discountAmount > 0 && (
+                            <div className="flex justify-between text-green-600 font-medium">
+                              <span>Giảm giá:</span>
+                              <span>-{formatter.format(previewData.discountAmount)}</span>
+                            </div>
+                          )}
+                          {previewData.shippingFee > 0 && (
+                            <div className="flex justify-between">
+                              <span>Phí giao hàng:</span>
+                              <span>{formatter.format(previewData.shippingFee)}</span>
+                            </div>
+                          )}
+                          {previewData.taxAmount > 0 && (
+                            <div className="flex justify-between text-xs text-slate-500">
+                              <span>Thuế VAT:</span>
+                              <span>{formatter.format(previewData.taxAmount)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-base font-black text-red-600 pt-2 border-t border-slate-200">
+                            <span>Tổng thanh toán:</span>
+                            <span>{formatter.format(previewData.finalTotal || previewData.totalAmount || 0)}</span>
+                          </div>
+                        </div>
+                        <div className="bg-slate-50 p-2.5 rounded-xl text-xs space-y-1 text-slate-600">
+                          <div><span className="font-semibold text-slate-700">Hình thức:</span> {previewData.fulfillmentType || 'Giao hàng'}</div>
+                          {previewData.deliveryAddress && <div><span className="font-semibold text-slate-700">Địa chỉ:</span> {previewData.deliveryAddress}</div>}
+                          {previewData.scheduledTime && <div><span className="font-semibold text-slate-700">Khung giờ:</span> {previewData.scheduledTime}</div>}
+                          <div><span className="font-semibold text-slate-700">Thanh toán:</span> {previewData.paymentMethod || 'COD'}</div>
+                        </div>
+                        <button
+                          onClick={() => handleSendMessage("Tôi xác nhận đơn hàng trên, hãy tạo đơn giúp tôi.")}
+                          disabled={isLoading}
+                          className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                        >
+                          <CreditCard size={16} /> Xác nhận đặt đơn ngay
+                        </button>
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+
+                {/* SELECT_ORDER_SLOT Card */}
+                {msg.senderType === 'AI' && msg.actionType === 'SELECT_ORDER_SLOT' && msg.actionPayload && (() => {
+                  try {
+                    const slotData = JSON.parse(msg.actionPayload);
+                    const slots = slotData.slots || [];
+                    const selectedSlot = slotData.selectedSlot;
+                    return (
+                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-indigo-200 shadow-md flex flex-col gap-3 animate-in fade-in duration-300">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2 text-indigo-600 font-bold">
+                            <Clock className="w-5 h-5" />
+                            <span>CHỌN KHUNG GIỜ NHẬN HÀNG</span>
+                          </div>
+                          {slotData.date && (
+                            <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-semibold">
+                              {slotData.date}
+                            </span>
+                          )}
+                        </div>
+
+                        <p className="text-xs text-slate-500">
+                          {slotData.branchName ? `Chi nhánh phục vụ: ${slotData.branchName}` : 'Khung giờ giao hàng còn khả dụng:'}
+                        </p>
+
+                        {/* Nút bấm nhanh ASAP */}
+                        <button
+                          onClick={() => handleSendMessage("Tôi muốn giao ngay (ASAP)")}
+                          disabled={isLoading}
+                          className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs sm:text-sm rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                        >
+                          <Zap size={16} /> ⚡ Giao ngay (ASAP - Càng sớm càng tốt)
+                        </button>
+
+                        {/* Lưới các khung giờ cụ thể */}
+                        {slots.length > 0 && (
+                          <div className="flex flex-col gap-1.5 mt-1">
+                            <span className="text-xs font-semibold text-slate-700">Hoặc chọn khung giờ hẹn trước:</span>
+                            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-0.5">
+                              {slots.map((s: any, idx: number) => {
+                                const isSelected = selectedSlot && (selectedSlot.id === s.id || (selectedSlot.startTime === s.startTime && selectedSlot.endTime === s.endTime));
+                                return (
+                                  <button
+                                    key={idx}
+                                    disabled={isLoading}
+                                    onClick={() => handleSendMessage(`Tôi chọn khung giờ ${s.startTime} - ${s.endTime}`)}
+                                    className={`py-2 px-2 text-xs font-semibold rounded-xl border transition-all text-center flex items-center justify-center gap-1.5 active:scale-[0.97] ${
+                                      isSelected
+                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                        : 'bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border-slate-200 hover:border-indigo-200'
+                                    }`}
+                                  >
+                                    <Clock size={12} className={isSelected ? 'text-white' : 'text-slate-400'} />
+                                    <span>{s.startTime} - {s.endTime}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+
                 {/* Request Location */}
                 {msg.senderType === 'AI' && msg.actionType === 'REQUEST_LOCATION' && (
-                  <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl p-4 text-blue-800 shadow-sm flex flex-col items-center justify-center gap-3">
-                    <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600">
-                      <MapPin size={24} />
+                  <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 text-emerald-900 shadow-sm flex flex-col items-center justify-center gap-3 animate-in fade-in duration-300">
+                    <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
+                      <MapPin size={24} className="animate-pulse" />
                     </div>
-                    <p className="text-sm text-center font-medium">Chúng tôi cần vị trí của bạn để tìm chi nhánh gần nhất</p>
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-bold text-slate-800">Xác nhận vị trí nhận hàng</p>
+                      <p className="text-xs text-slate-600">Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.</p>
+                    </div>
                     <button
                       disabled={sharedLocationIds.includes(msg.id) || loadingLocationIds.includes(msg.id) || isLoading}
                       onClick={() => {
@@ -1937,7 +2128,7 @@ export function FloatingChatbot() {
                               setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
                             },
                             (error) => {
-                              toast.error('Không thể lấy vị trí thực tế, đang dùng vị trí mặc định để tiếp tục chốt đơn.');
+                              toast.error('Không thể lấy vị trí thực tế, đang dùng vị trí mặc định để tiếp tục.');
                               const lat = 10.762622;
                               const lon = 106.660172;
                               if (isVoiceMode && socketRef.current) {
@@ -1969,9 +2160,9 @@ export function FloatingChatbot() {
                           setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
                         }
                       }}
-                      className="bg-green-500 hover:bg-green-600 active:scale-95 text-white font-bold py-2.5 px-6 rounded-lg text-[14.5px] transition-all w-full flex items-center justify-center gap-2 shadow-md shadow-green-500/20 disabled:opacity-70 disabled:active:scale-100 disabled:cursor-not-allowed disabled:bg-green-400"
+                      className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 active:scale-95 text-white font-bold py-2.5 px-6 rounded-xl text-sm transition-all w-full flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-70 disabled:active:scale-100 disabled:cursor-not-allowed"
                     >
-                      {sharedLocationIds.includes(msg.id) ? "Đã ghi nhận vị trí" : (loadingLocationIds.includes(msg.id) ? <><Loader2 size={16} className="animate-spin" /> Đang lấy vị trí...</> : "Chia sẻ vị trí")}
+                      {sharedLocationIds.includes(msg.id) ? "✓ Đã chia sẻ vị trí thành công" : (loadingLocationIds.includes(msg.id) ? <><Loader2 size={16} className="animate-spin" /> Đang định vị GPS...</> : "📍 Chia sẻ vị trí hiện tại")}
                     </button>
                   </div>
                 )}

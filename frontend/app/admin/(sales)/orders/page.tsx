@@ -22,7 +22,7 @@ import {
   Receipt,
   Lock,
 } from 'lucide-react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   PageHeader,
   FilterBar,
@@ -91,7 +91,6 @@ const STATUS_KEYS = [
 
 export default function AdminOrdersPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const { selectedBranchId, role } = useAdmin();
   const { t, locale } = useLanguage();
 
@@ -510,7 +509,7 @@ export default function AdminOrdersPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6">
       {/* Page Header */}
       <PageHeader
         title={t('orders.title', 'Quản lý Đơn hàng')}
@@ -520,7 +519,7 @@ export default function AdminOrdersPage() {
           { label: t('nav.orders', 'Đơn hàng') },
         ]}
         badge={
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-100">
+          <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold bg-red-50 text-red-600 border border-red-100">
             {t('common.total', 'Tổng')} {meta.total} {t('common.results', 'đơn')}
           </span>
         }
@@ -532,7 +531,7 @@ export default function AdminOrdersPage() {
               fetchStatusCounts();
             }}
             aria-label={t('common.refresh', 'Làm mới danh sách')}
-            className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
           >
             <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
             <span>{t('common.refresh', 'Làm mới')}</span>
@@ -541,7 +540,7 @@ export default function AdminOrdersPage() {
       />
 
       {/* 3 Main Order Source Tabs: TẤT CẢ | ĐƠN HÀNG POS | ĐƠN HÀNG ONLINE */}
-      <div className="flex items-center gap-1.5 p-1 bg-slate-200/70 rounded-2xl border border-slate-200/80 w-fit max-w-full overflow-x-auto no-scrollbar shadow-inner">
+      <div className="flex items-center gap-1 sm:gap-1.5 p-1 bg-slate-200/70 rounded-xl sm:rounded-2xl border border-slate-200/80 w-full sm:w-fit max-w-full overflow-x-auto scrollbar-none shadow-inner py-1 shrink-0">
         {[
           {
             id: 'ALL',
@@ -551,13 +550,13 @@ export default function AdminOrdersPage() {
           },
           {
             id: 'POS',
-            label: 'Đơn hàng POS',
+            label: 'Đơn POS',
             icon: Store,
             count: tabCounts.POS,
           },
           {
             id: 'ONLINE',
-            label: 'Đơn hàng Online',
+            label: 'Đơn Online',
             icon: ShoppingBag,
             count: tabCounts.ONLINE,
           },
@@ -572,16 +571,16 @@ export default function AdminOrdersPage() {
                 setOrderTab(tab.id as any);
                 setPage(1);
               }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer select-none shrink-0 ${
+              className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer select-none shrink-0 ${
                 isActive
                   ? 'bg-white text-slate-900 shadow-sm border border-slate-200/80'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
               }`}
             >
-              <Icon size={14} className={isActive ? 'text-[#5b3eb8]' : 'text-slate-400'} />
+              <Icon size={13} className={isActive ? 'text-[#5b3eb8]' : 'text-slate-400'} />
               <span>{tab.label}</span>
               <span
-                className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                className={`px-1.5 py-0.2 rounded-full text-[9px] sm:text-[10px] font-black ${
                   isActive
                     ? 'bg-purple-100 text-[#5b3eb8]'
                     : 'bg-slate-300/60 text-slate-600'
@@ -595,7 +594,7 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* Status KPI Filter Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5 md:gap-3">
         {STATUS_KEYS.map((key) => {
           const isActive = (modalFilters.status || filterStatus) === key;
           const count = statusCounts[key] ?? 0;
@@ -609,17 +608,17 @@ export default function AdminOrdersPage() {
                 setModalFilters((prev) => ({ ...prev, status: nextStatus }));
                 setPage(1);
               }}
-              className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
+              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
                 isActive
                   ? 'bg-red-50/90 border-red-300 text-red-700 shadow-xs'
                   : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-2xs'
               }`}
             >
-              <span className="text-[11px] font-bold block truncate">
+              <span className="text-[10px] sm:text-[11px] font-bold block truncate">
                 {getStatusLabel(key)}
               </span>
               <span
-                className={`text-base sm:text-lg font-black block mt-0.5 ${
+                className={`text-sm sm:text-base md:text-lg font-black block mt-0.5 ${
                   isActive ? 'text-red-600' : 'text-slate-900'
                 }`}
               >
@@ -794,7 +793,7 @@ export default function AdminOrdersPage() {
                       () => setPrintingOrderId(null),
                     );
                   }}
-                  className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                  className="flex-1 min-h-[40px] py-2 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
                 >
                   <Printer size={14} className={printingOrderId === order.id ? 'animate-spin' : ''} />
                   <span>{printingOrderId === order.id ? 'Đang tải...' : 'In hóa đơn'}</span>
@@ -802,7 +801,7 @@ export default function AdminOrdersPage() {
                 <button
                   type="button"
                   onClick={() => router.push(`/admin/orders/${order.id}`)}
-                  className="flex-1 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                  className="flex-1 min-h-[40px] py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
                   <Eye size={14} />
                   <span>{t('common.details', 'Xem chi tiết')}</span>

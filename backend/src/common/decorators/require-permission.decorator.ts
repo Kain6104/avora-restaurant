@@ -10,6 +10,7 @@ export interface RequirePermissionOptions {
   branchBody?: string;  // e.g. 'branchId'
   resourceResolver?: (req: any, prisma: PrismaService) => Promise<string | null | undefined>;
   allowAllBranchesIfParamMissing?: boolean;
+  anyBranch?: boolean;
 }
 
 export interface PermissionMetadata {

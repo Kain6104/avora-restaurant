@@ -40,6 +40,8 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PosBranch, PosOrder, PosUserData } from './pos-types';
+import { getItemPriceBreakdown } from './pos-item-price-helper';
+import { ReceiptItemOptionsTable } from './OrderItemPriceBreakdown';
 
 interface PosShiftReceiptsViewProps {
   branch: PosBranch | null;
@@ -1179,20 +1181,21 @@ export const PosShiftReceiptsView: React.FC<PosShiftReceiptsViewProps> = ({
                               <div className="font-bold text-slate-900 leading-tight">
                                 {it.product?.name || (it as any).productName || 'Món AVORA'}
                               </div>
-                              {it.optionsTextSnapshot && (
-                                <div className="text-[9px] text-slate-500 italic mt-0.5">
-                                  {it.optionsTextSnapshot}
-                                </div>
-                              )}
+                              {/* Added By: Exact Staff + Added Time */}
+                              <div className="text-[9px] sm:text-[9.5px] text-slate-500 font-medium mt-0.5 select-text">
+                                {getItemPriceBreakdown(it, selectedOrder.createdAt).addedByFormatted}
+                              </div>
+                              {/* Options Breakdown with Strict Vertical Column Alignment */}
+                              <ReceiptItemOptionsTable item={it} fallbackOrderCreatedAt={selectedOrder.createdAt} />
                               {it.note && (
-                                <div className="text-[9px] text-amber-600 italic">Ghi chú: {it.note}</div>
+                                <div className="text-[9px] text-amber-600 italic mt-0.5">Ghi chú: {it.note}</div>
                               )}
                             </td>
-                            <td className="py-1 text-center font-bold text-slate-800">{it.quantity}</td>
-                            <td className="py-1 text-right text-slate-600 font-medium">
+                            <td className="py-1 text-center font-bold text-slate-800 align-top">{it.quantity}</td>
+                            <td className="py-1 text-right text-slate-600 font-medium align-top font-mono tabular-nums">
                               {formatVnd(it.priceAtSale)}
                             </td>
-                            <td className="py-1 text-right font-bold text-slate-900">
+                            <td className="py-1 text-right font-bold text-slate-900 align-top font-mono tabular-nums">
                               {formatVnd(it.priceAtSale * it.quantity)}
                             </td>
                           </tr>

@@ -2,18 +2,21 @@
   "name": "frontend",
   "version": "0.1.0",
   "private": true,
-  "scripts": {
-    "dev": "next dev",
+    "scripts": {
+    "dev": "next dev -p 4000",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start -p 4000",
+    "lint": "eslint",
+    "optimize:farm-images": "node scripts/optimize-farm-images.js"
   },
   "dependencies": {
+    "dayjs": "^1.11.23",
     "dexie": "^4.4.5",
     "dexie-react-hooks": "^4.4.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.32.0",
     "next": "16.3.1",
+    "phaser": "^4.2.1",
     "qrcode.react": "^4.2.0",
     "react": "19.2.8",
     "react-barcode": "^1.6.1",
@@ -22,6 +25,7 @@
     "react-icons": "^5.7.0",
     "react-leaflet": "^5.0.0",
     "recharts": "^3.10.1",
+    "sharp": "^0.35.4",
     "socket.io-client": "^4.8.3",
     "sweetalert2": "^11.26.25",
     "swr": "^2.5.1",
@@ -31,10 +35,12 @@
     "@tailwindcss/postcss": "^4",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^20",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.1",
+    "pngjs": "^7.0.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -204,26 +204,26 @@ export default function AdminTablesPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2.5">
-            <UtensilsCrossed className="w-6 h-6 text-red-600" />
+          <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
+            <UtensilsCrossed className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 shrink-0" />
             <span>{t('tables.title', 'Sơ Đồ Bàn & Khu Vực')}</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-1">
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 sm:mt-1">
             {t('tables.subtitle', 'Quản lý sơ đồ bàn, sức chứa và phân bố chỗ ngồi tại từng chi nhánh AVORA')}
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           {/* Branch selector */}
           {user?.role === 'ADMIN' && (
             <select
               value={selectedBranchId}
               onChange={(e) => setSelectedBranchId(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none"
+              className="flex-1 sm:flex-none bg-white border border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none h-9 sm:h-10"
             >
               {branches.map((b: { id: string; name: string }) => (
                 <option key={b.id} value={b.id}>
@@ -236,7 +236,7 @@ export default function AdminTablesPage() {
           <button
             type="button"
             onClick={openCreateTable}
-            className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold rounded-xl shadow-sm transition-all"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 min-h-[38px] px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             <span>{t('tables.addTable', 'Thêm bàn mới')}</span>
@@ -250,9 +250,9 @@ export default function AdminTablesPage() {
           <span className="text-xs">{t('common.loading', 'Đang tải dữ liệu...')}</span>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Areas summary pills */}
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1.5 sm:gap-2">
             {areas.map((area) => {
               const count = tables.filter((t) => t.areaId === area.id).length;
               const totalCap = tables
@@ -262,13 +262,13 @@ export default function AdminTablesPage() {
               return (
                 <div
                   key={area.id}
-                  className="bg-white px-4 py-2.5 rounded-xl border border-slate-100 shadow-xs flex items-center gap-2.5"
+                  className="bg-white px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl border border-slate-100 shadow-xs flex items-center gap-2 sm:gap-2.5"
                 >
-                  <Layers className="w-4 h-4 text-slate-400" />
+                  <Layers className="w-4 h-4 text-slate-400 shrink-0" />
                   <div>
-                    <strong className="text-xs text-slate-800 block">{area.name}</strong>
+                    <strong className="text-xs text-slate-800 block truncate">{area.name}</strong>
                     <span className="text-[10px] text-slate-400">
-                      {count} {locale === 'en' ? 'tables' : 'bàn'} • {totalCap} {locale === 'en' ? 'seats' : 'chỗ ngồi'}
+                      {count} {locale === 'en' ? 'tables' : 'bàn'} • {totalCap} {locale === 'en' ? 'seats' : 'chỗ'}
                     </span>
                   </div>
                 </div>
@@ -281,25 +281,25 @@ export default function AdminTablesPage() {
             const areaTables = tables.filter((t) => t.areaId === area.id);
 
             return (
-              <div key={area.id} className="bg-white rounded-2xl border border-slate-100 shadow-xs p-5">
-                <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+              <div key={area.id} className="bg-white rounded-2xl border border-slate-100 shadow-xs p-3 sm:p-5">
+                <div className="flex items-center justify-between mb-3 sm:mb-4 pb-2 border-b border-slate-100">
                   <div>
-                    <h3 className="text-sm sm:text-base font-bold text-slate-900">{area.name}</h3>
-                    <p className="text-xs text-slate-400">{area.description || (locale === 'en' ? 'Dining Area' : 'Khu vực phục vụ')}</p>
+                    <h3 className="text-xs sm:text-sm md:text-base font-bold text-slate-900">{area.name}</h3>
+                    <p className="text-[10px] sm:text-xs text-slate-400">{area.description || (locale === 'en' ? 'Dining Area' : 'Khu vực phục vụ')}</p>
                   </div>
-                  <span className="text-xs font-semibold text-slate-500">
+                  <span className="text-[11px] sm:text-xs font-semibold text-slate-500">
                     {areaTables.length} {locale === 'en' ? 'tables' : 'bàn'} ({areaTables.reduce((s, t) => s + t.capacity, 0)} {locale === 'en' ? 'seats' : 'chỗ'})
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
                   {areaTables.map((tbl) => {
                     const isActive = tbl.status === 'ACTIVE';
 
                     return (
                       <div
                         key={tbl.id}
-                        className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
+                        className={`p-2.5 sm:p-3.5 rounded-xl border transition-all flex flex-col justify-between ${
                           isActive
                             ? 'bg-slate-50/80 border-slate-200 hover:border-red-300'
                             : 'bg-rose-50/50 border-rose-200 opacity-80'
@@ -349,18 +349,18 @@ export default function AdminTablesPage() {
 
       {/* CREATE/EDIT TABLE MODAL */}
       {isTableModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-1.5 sm:p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl sm:rounded-3xl p-3.5 sm:p-6 max-w-md w-full shadow-2xl max-h-[96vh] overflow-y-auto flex flex-col">
             <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-1">
               {editingTable ? t('tables.editTable', 'Chỉnh Sửa Thông Tin Bàn') : t('tables.addTable', 'Thêm Bàn Mới')}
             </h3>
-            <p className="text-xs text-slate-500 mb-4">
+            <p className="text-[11px] sm:text-xs text-slate-500 mb-3 sm:mb-4">
               {locale === 'en'
                 ? 'Configure table identifier code, guest capacity, and dining area.'
                 : 'Cấu hình mã bàn, số chỗ ngồi và khu vực phục vụ tương ứng.'}
             </p>
 
-            <form onSubmit={handleSaveTable} className="space-y-3.5">
+            <form onSubmit={handleSaveTable} className="space-y-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   {t('tables.tableCode', 'Mã Bàn (Code)')} *
@@ -371,7 +371,7 @@ export default function AdminTablesPage() {
                   placeholder="VD: M-01, VIP-01"
                   value={tableCode}
                   onChange={(e) => setTableCode(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500 font-mono"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500 font-mono h-9 sm:h-10"
                 />
               </div>
 
@@ -385,11 +385,11 @@ export default function AdminTablesPage() {
                   placeholder="VD: Bàn M01"
                   value={tableName}
                   onChange={(e) => setTableName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500 h-9 sm:h-10"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
                     {t('tables.capacity', 'Sức Chứa (Chỗ)')}
@@ -401,7 +401,7 @@ export default function AdminTablesPage() {
                     required
                     value={capacity}
                     onChange={(e) => setCapacity(parseInt(e.target.value, 10) || 1)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-red-500 h-9 sm:h-10"
                   />
                 </div>
 
@@ -412,7 +412,7 @@ export default function AdminTablesPage() {
                   <select
                     value={tableAreaId}
                     onChange={(e) => setTableAreaId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-red-500"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-red-500 h-9 sm:h-10"
                   >
                     {areas.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -430,25 +430,25 @@ export default function AdminTablesPage() {
                 <select
                   value={tableStatus}
                   onChange={(e: any) => setTableStatus(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-red-500"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:border-red-500 h-9 sm:h-10"
                 >
                   <option value="ACTIVE">{t('tables.statusActive', 'Đang hoạt động (ACTIVE)')}</option>
                   <option value="OUT_OF_SERVICE">{t('tables.statusOutOfService', 'Tạm ngưng phục vụ (OUT_OF_SERVICE)')}</option>
                 </select>
               </div>
 
-              <div className="flex justify-end gap-2.5 pt-3">
+              <div className="flex justify-end gap-2 sm:gap-2.5 pt-2 sm:pt-3">
                 <button
                   type="button"
                   onClick={() => setIsTableModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50"
+                  className="min-h-[40px] px-3.5 sm:px-4 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
                 >
                   {t('common.cancel', 'Hủy')}
                 </button>
                 <button
                   type="submit"
                   disabled={tableSubmitting || !tableCode}
-                  className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all"
+                  className="min-h-[40px] px-4 sm:px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer disabled:opacity-50"
                 >
                   {tableSubmitting ? t('tables.saving', 'Đang lưu...') : t('tables.save', 'Lưu bàn')}
                 </button>

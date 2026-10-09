@@ -97,6 +97,42 @@ namespace AvoraPos.NativePrint
             }
         }
 
+        public string PrintHtml(string payloadJson)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(payloadJson))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Payload in HTML rỗng" }, CamelCaseSettings);
+                }
+
+                var j = JsonConvert.DeserializeObject<dynamic>(payloadJson);
+                string html = (string)(j?.html ?? j?.htmlContent ?? "");
+                string printerName = (string)(j?.printerName ?? j?.targetPrinterId ?? "");
+                string paperSize = (string)(j?.paperSize ?? "80mm");
+                int copies = (int)(j?.copies ?? 1);
+
+                if (string.IsNullOrWhiteSpace(html))
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Nội dung HTML rỗng" }, CamelCaseSettings);
+                }
+
+                if (MainWindow.Instance == null)
+                {
+                    return JsonConvert.SerializeObject(new { success = false, error = "Cửa sổ POS chưa sẵn sàng" }, CamelCaseSettings);
+                }
+
+                var task = MainWindow.Instance.PrintHtmlSilentAsync(html, printerName, paperSize, copies);
+                var result = task.GetAwaiter().GetResult();
+
+                return JsonConvert.SerializeObject(new { success = result.Success, error = result.Error }, CamelCaseSettings);
+            }
+            catch (Exception ex)
+            {
+                return JsonConvert.SerializeObject(new { success = false, error = ex.Message }, CamelCaseSettings);
+            }
+        }
+
         public string PrintReceipt(string payloadJson)
         {
             try
@@ -289,14 +325,14 @@ namespace AvoraPos.NativePrint
                 string fullUrl = url.Trim();
                 if (fullUrl.StartsWith("/"))
                 {
-                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:3000";
+                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000";
                     if (Uri.TryCreate(baseWeb, UriKind.Absolute, out var baseUri))
                     {
                         fullUrl = $"{baseUri.Scheme}://{baseUri.Authority}{fullUrl}";
                     }
                     else
                     {
-                        fullUrl = $"http://localhost:3000{fullUrl}";
+                        fullUrl = $"http://localhost:4000{fullUrl}";
                     }
                 }
 
@@ -452,6 +488,12 @@ namespace AvoraPos.NativePrint
                 else if (path == "/printers" || path == "/api/printers")
                 {
                     responseJson = GetPrintersJson();
+                }
+                else if (path == "/print-html" || path == "/api/print-html")
+                {
+                    using var reader = new StreamReader(req.InputStream, req.ContentEncoding);
+                    string body = await reader.ReadToEndAsync();
+                    responseJson = PrintHtml(body);
                 }
                 else if (path == "/print-receipt" || path == "/api/print-receipt")
                 {

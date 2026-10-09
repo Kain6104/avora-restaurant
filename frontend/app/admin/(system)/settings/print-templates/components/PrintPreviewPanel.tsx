@@ -123,6 +123,8 @@ export const PrintPreviewPanel: React.FC<PrintPreviewPanelProps> = ({
         return 'w-[420px]';
       case 'A4':
         return 'w-[520px]';
+      case 'XP-350B':
+        return 'w-[335px]';
       case '80mm':
       default:
         return 'w-[360px]';

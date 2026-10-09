@@ -63,15 +63,16 @@ export class SepayService {
     const transferAmount = Number(payload.transferAmount || payload.amount || 0);
     const referenceCode = (payload.referenceCode || payload.transactionId || payload.id || `SEPAY-${Date.now()}`).toString();
 
-    // 1.3 Tìm mã đơn hàng trong nội dung chuyển khoản (Regex & Fix lỗi MBBank/VCB & POS)
-    const pattern = /(SW|TMP-?|AVR-?|ORD-?|POS-?)[0-9A-Z-]+/i;
+    // 1.3 Tìm mã đơn hàng trong nội dung chuyển khoản (Hỗ trợ AVO, SW, TMP, AVR, ORD, POS và fix lỗi ngân hàng xóa dấu '-')
+    const normalizedContent = content.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const pattern = /(AVO-?[A-Z0-9-]*|SW[0-9A-Z-]+|TMP-?[0-9A-Z-]+|AVR-?[0-9A-Z-]+|ORD-?[0-9A-Z-]+|POS-?[0-9A-Z-]+)/i;
     const match = content.toUpperCase().match(pattern);
 
     let orderCode: string | null = null;
     if (match) {
       let code = match[0].replace(/[^A-Z0-9-]/g, '');
 
-      // FIX LỖI MBBANK/VCB: Khôi phục dấu "-" nếu bị mất
+      // Khôi phục dấu "-" nếu bị ngân hàng xóa bỏ
       if (code.startsWith('TMP') && !code.startsWith('TMP-')) {
         code = code.replace(/^TMP/, 'TMP-');
       }
@@ -87,34 +88,15 @@ export class SepayService {
       orderCode = code;
     }
 
-    if (!orderCode) {
-      this.logger.warn(`⚠️ Không tìm thấy mã đơn hàng hợp lệ trong nội dung chuyển khoản: "${content}"`);
-      return { success: true, message: `Giao dịch không khớp cú pháp mã đơn hàng (${content}).` };
-    }
-
-    const validOrderCode: string = orderCode;
-    this.logger.log(`🔍 Tìm thấy mã đơn hàng: ${validOrderCode} - Số tiền: ${transferAmount} VNĐ`);
-
     // 1.4 Kiểm tra đơn hàng trong Database
-    const order = await this.prisma.order.findFirst({
-      where: {
-        OR: [
-          { orderCode: validOrderCode },
-          { orderCode: { contains: validOrderCode } },
-          { id: validOrderCode },
-        ],
-      },
-      include: {
-        user: true,
-        branch: true,
-        orderItems: { include: { product: true } },
-      },
-    });
+    const order = await this.findMatchingOrder(orderCode, normalizedContent);
 
     if (!order) {
-      this.logger.warn(`⚠️ Không tìm thấy đơn hàng "${validOrderCode}" trong Database.`);
-      return { success: false, message: `Không tìm thấy đơn hàng "${validOrderCode}" trong hệ thống.` };
+      this.logger.warn(`⚠️ Không tìm thấy đơn hàng phù hợp trong Database cho nội dung: "${content}"`);
+      return { success: false, message: `Không tìm thấy đơn hàng tương ứng với nội dung "${content}" trong hệ thống.` };
     }
+
+    this.logger.log(`🔍 Khớp thành công đơn hàng: ${order.orderCode} - Số tiền: ${transferAmount} VNĐ`);
 
     if (order.paymentStatus === 'PAID') {
       this.logger.log(`ℹ️ Đơn hàng ${order.orderCode} đã được thanh toán từ trước.`);
@@ -310,4 +292,76 @@ export class SepayService {
       transactionCode: order.transactionId,
     };
   }
+
+  /**
+   * Helper tìm đơn hàng phù hợp với cơ chế đa tầng (hỗ trợ trường hợp ngân hàng lọc bỏ dấu '-')
+   */
+  private async findMatchingOrder(orderCode: string | null, normalizedContent: string) {
+    // Tầng 1: Khớp trực tiếp theo orderCode nếu regex nhận diện được
+    if (orderCode) {
+      const directMatch = await this.prisma.order.findFirst({
+        where: {
+          OR: [
+            { orderCode },
+            { orderCode: { contains: orderCode } },
+            { id: orderCode },
+          ],
+        },
+        include: {
+          user: true,
+          branch: true,
+          orderItems: { include: { product: true } },
+        },
+      });
+      if (directMatch) return directMatch;
+    }
+
+    // Tầng 2: Đối sánh chuỗi chuẩn hóa (bỏ dấu '-') với danh sách đơn hàng PENDING trong 48h
+    if (normalizedContent.length >= 6) {
+      const recentPendingOrders = await this.prisma.order.findMany({
+        where: {
+          paymentStatus: 'PENDING',
+          createdAt: {
+            gte: new Date(Date.now() - 48 * 60 * 60 * 1000),
+          },
+        },
+        include: {
+          user: true,
+          branch: true,
+          orderItems: { include: { product: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 100,
+      });
+
+      const matched = recentPendingOrders.find((ord) => {
+        const normOrderCode = (ord.orderCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const normTempCode = (ord.temporaryOrderCode || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        return (
+          (normOrderCode.length >= 6 && normalizedContent.includes(normOrderCode)) ||
+          (normTempCode.length >= 6 && normalizedContent.includes(normTempCode))
+        );
+      });
+      if (matched) return matched;
+    }
+
+    // Tầng 3: Trích xuất hậu tố mã đơn Online dạng ONLxxxxxx (ví dụ: ONL160926WGU)
+    const onlMatch = normalizedContent.match(/ONL[0-9]{6}[A-Z0-9]{3}/i);
+    if (onlMatch) {
+      const onlOrder = await this.prisma.order.findFirst({
+        where: {
+          orderCode: { contains: onlMatch[0] },
+        },
+        include: {
+          user: true,
+          branch: true,
+          orderItems: { include: { product: true } },
+        },
+      });
+      if (onlOrder) return onlOrder;
+    }
+
+    return null;
+  }
 }
+

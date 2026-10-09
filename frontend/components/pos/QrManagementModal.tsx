@@ -86,12 +86,18 @@ export const QrManagementModal: React.FC<QrManagementModalProps> = ({
     }
   };
 
-  const handleRegenerate = async () => {
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    message: string;
+    confirmLabel: string;
+    isDanger?: boolean;
+    onConfirm: () => Promise<void>;
+  } | null>(null);
+
+  const executeRegenerate = async () => {
     if (!order?.id) return;
-    if (!confirm('Tạo lại mã QR sẽ lập tức vô hiệu hóa mã QR cũ. Bạn có chắc chắn muốn tạo lại?')) {
-      return;
-    }
     setActionLoading(true);
+    setConfirmDialog(null);
     try {
       const res = await fetch(`/api/qr-order/admin/tables/${table.id}/qr/regenerate`, {
         method: 'POST',
@@ -114,12 +120,21 @@ export const QrManagementModal: React.FC<QrManagementModalProps> = ({
     }
   };
 
-  const handleDisable = async () => {
+  const handleRegenerate = () => {
     if (!order?.id) return;
-    if (!confirm('Bạn có chắc chắn muốn vô hiệu hóa mã QR của bàn này?')) {
-      return;
-    }
+    setConfirmDialog({
+      title: 'Tạo Lại Mã QR Mới?',
+      message: 'Hành động này sẽ lập tức vô hiệu hóa mã QR cũ của bàn. Bạn có chắc chắn muốn tạo lại mã QR?',
+      confirmLabel: 'Tạo Lại QR',
+      isDanger: false,
+      onConfirm: executeRegenerate,
+    });
+  };
+
+  const executeDisable = async () => {
+    if (!order?.id) return;
     setActionLoading(true);
+    setConfirmDialog(null);
     try {
       const res = await fetch(`/api/qr-order/admin/tables/${table.id}/qr/disable`, {
         method: 'POST',
@@ -139,6 +154,17 @@ export const QrManagementModal: React.FC<QrManagementModalProps> = ({
     } finally {
       setActionLoading(false);
     }
+  };
+
+  const handleDisable = () => {
+    if (!order?.id) return;
+    setConfirmDialog({
+      title: 'Vô Hiệu Hóa Mã QR?',
+      message: 'Khách hàng sẽ không thể quét để xem thực đơn hoặc gọi món trên bàn này nữa. Bạn có chắc chắn muốn vô hiệu hóa?',
+      confirmLabel: 'Vô Hiệu Hóa',
+      isDanger: true,
+      onConfirm: executeDisable,
+    });
   };
 
   const handlePrintQr = () => {
@@ -335,6 +361,45 @@ export const QrManagementModal: React.FC<QrManagementModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Sleek In-App Confirmation Modal (Eliminates Native Browser "localhost:3000 says" Dialog) */}
+      {confirmDialog && (
+        <div className="fixed inset-0 z-60 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-120">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-120">
+            <div className="p-5 text-center">
+              <div
+                className={`w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3 ${
+                  confirmDialog.isDanger ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
+                }`}
+              >
+                {confirmDialog.isDanger ? <Ban className="w-6 h-6" /> : <RotateCcw className="w-6 h-6" />}
+              </div>
+              <h4 className="text-base font-black text-slate-900 mb-1.5">{confirmDialog.title}</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">{confirmDialog.message}</p>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmDialog(null)}
+                className="h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs active:scale-98 transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={confirmDialog.onConfirm}
+                className={`h-11 rounded-xl text-white font-bold text-xs active:scale-98 transition-all cursor-pointer shadow-xs ${
+                  confirmDialog.isDanger
+                    ? 'bg-rose-600 hover:bg-rose-700'
+                    : 'bg-amber-600 hover:bg-amber-700'
+                }`}
+              >
+                {confirmDialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

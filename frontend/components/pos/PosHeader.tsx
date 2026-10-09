@@ -30,6 +30,8 @@ import {
   Bell,
   Monitor,
   Power,
+  FileText,
+  Receipt,
 } from 'lucide-react';
 import { platformBridge } from '@/lib/platform/platform-bridge';
 import { PosBranch, PosActiveTab, PosOrder, PosTable, PosUserData } from './pos-types';
@@ -72,6 +74,7 @@ interface PosHeaderProps {
   onClearCart?: () => void;
   onOpenQrManagement?: () => void;
   onOpenDesktopLaunch?: () => void;
+  onOpenEndOfDayReport?: () => void;
 }
 
 export const PosHeader: React.FC<PosHeaderProps> = ({
@@ -104,6 +107,7 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
   onClearCart,
   onOpenQrManagement,
   onOpenDesktopLaunch,
+  onOpenEndOfDayReport,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -610,6 +614,23 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
                       <span>Mở AVORA POS Desktop</span>
                       <span className="text-[10px] text-slate-400 font-normal">Tự động đăng nhập SSO</span>
                     </div>
+                  </button>
+                </div>
+              )}
+
+              {/* Tổng kết cuối ngày / Kết ca */}
+              {onOpenEndOfDayReport && (
+                <div className="py-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUserMenuOpen(false);
+                      onOpenEndOfDayReport();
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-xs text-slate-800 hover:bg-red-50 hover:text-[#da251d] flex items-center gap-2.5 transition-colors font-bold cursor-pointer"
+                  >
+                    <Receipt className="w-4 h-4 text-[#da251d]" />
+                    <span>Tổng kết cuối ngày</span>
                   </button>
                 </div>
               )}

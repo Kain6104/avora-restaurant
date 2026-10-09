@@ -214,25 +214,55 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             return response;
           }
 
-          if (url && !url.includes('/api/auth/login') && !url.includes('/api/auth/logout')) {
+          const isPublicAuthRoute =
+            url &&
+            (url.includes('/api/auth/login') ||
+              url.includes('/api/auth/logout') ||
+              url.includes('/api/auth/register') ||
+              url.includes('/api/auth/verify-email') ||
+              url.includes('/api/auth/forgot-password') ||
+              url.includes('/api/auth/reset-password'));
+
+          if (url && !isPublicAuthRoute) {
             const hadUser = localStorage.getItem('user');
             
-            // Mọi trường hợp bị 401 đều phải clear cookie HttpOnly ở backend để middleware không bị kẹt
-            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-            originalFetch(`${baseUrl}/api/auth/logout`, {
-              method: 'POST',
-              credentials: 'include',
-              headers: { 'ngrok-skip-browser-warning': 'true' }
-            }).catch(() => {});
-
             if (hadUser) {
               localStorage.removeItem('user');
               setShowInvalidTokenModal(true);
+
+              // Chỉ khi user đã từng đăng nhập nhưng token bị hết hạn/thu hồi thì mới gọi logout dọn cookie
+              const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+              originalFetch(`${baseUrl}/api/auth/logout`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'ngrok-skip-browser-warning': 'true' }
+              }).catch(() => {});
             }
           }
         }
         return response;
-      } catch (error) {
+      } catch (error: any) {
+        // Tự động phục hồi nếu môi trường còn sót URL ngrok đã hết hạn (Tunnel not found / Failed to fetch)
+        const url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof URL ? args[0].href : (args[0] as Request)?.url);
+        if (
+          url &&
+          url.includes('.ngrok-free.app') &&
+          (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError')
+        ) {
+          try {
+            const fallbackBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+            const localFallbackUrl = url.replace(/^https?:\/\/[^/]+/, fallbackBase);
+            const fallbackArgs = [...args];
+            if (typeof fallbackArgs[0] === 'string') {
+              fallbackArgs[0] = localFallbackUrl;
+            } else if (fallbackArgs[0] instanceof URL) {
+              fallbackArgs[0] = new URL(localFallbackUrl);
+            }
+            return await originalFetch(...(fallbackArgs as [any, any]));
+          } catch (fallbackError) {
+            throw error;
+          }
+        }
         throw error;
       }
     };
@@ -439,7 +469,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
 
     } catch (err) {
-      console.error('Failed to sync cart', err);
+      console.warn('Cart sync paused (backend offline or reconnecting):', err);
     }
   };
 

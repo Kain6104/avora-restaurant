@@ -140,32 +140,32 @@ export default function AdminHeader() {
 
   return (
     <>
-      <header className="h-16 lg:h-18 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.02)] px-3 sm:px-4 lg:px-6 flex items-center justify-between gap-3 sticky top-0 z-30 transition-all">
+      <header className="h-13 sm:h-14 lg:h-18 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.02)] px-2 sm:px-4 lg:px-6 flex items-center justify-between gap-1.5 sm:gap-3 sticky top-0 z-30 transition-all">
         {/* Left Area: Mobile Menu Toggle & Dynamic Page Title */}
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0">
           <button
             type="button"
             onClick={toggleMobileSidebar}
             aria-label="Mở menu điều hướng"
-            className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
+            className="lg:hidden p-2 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors shrink-0 min-h-[40px] min-w-[40px] flex items-center justify-center"
           >
-            <Menu size={20} strokeWidth={2} />
+            <Menu size={19} strokeWidth={2} />
           </button>
 
           <div className="min-w-0">
-            <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate leading-tight">
+            <h1 className="text-sm sm:text-lg font-black text-slate-900 tracking-tight truncate leading-tight">
               {pageTitle}
             </h1>
-            <span className="text-[11px] text-slate-400 font-medium hidden sm:block truncate">
+            <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium hidden sm:block truncate">
               AVORA Admin · {userRoleLabel}
             </span>
           </div>
         </div>
 
         {/* Right Area: Branch Selector, Search, Language Selector, Notification, Profile */}
-        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
           {/* Branch Selector (Desktop & Tablet) */}
-          <div className="hidden sm:block">
+          <div className="hidden md:block">
             <BranchSelector />
           </div>
 
@@ -174,11 +174,11 @@ export default function AdminHeader() {
             type="button"
             onClick={() => setIsSearchOpen(true)}
             aria-label="Tìm kiếm toàn hệ thống"
-            className="flex items-center gap-2 h-9 px-3 bg-slate-50 hover:bg-slate-100/80 text-slate-500 rounded-xl border border-slate-200/80 text-xs font-medium transition-all shadow-2xs group"
+            className="flex items-center gap-1.5 h-8 sm:h-9 px-2 sm:px-3 bg-slate-50 hover:bg-slate-100/80 text-slate-500 rounded-xl border border-slate-200/80 text-xs font-medium transition-all shadow-2xs group min-h-[36px]"
           >
             <Search size={14} className="text-slate-400 group-hover:text-red-600 transition-colors" />
-            <span className="hidden xl:inline text-slate-400">
-              {t('header.search', 'Tìm kiếm...')}
+            <span className="hidden sm:inline text-slate-400 text-[11px] sm:text-xs">
+              {t('header.search', 'Tìm...')}
             </span>
             <kbd className="hidden xl:inline-block px-1.5 py-0.5 text-[10px] font-mono font-bold bg-white text-slate-400 rounded border border-slate-200 shadow-2xs">
               Ctrl K
@@ -244,7 +244,7 @@ export default function AdminHeader() {
             type="button"
             onClick={openDrawer}
             aria-label={t('header.notifications', 'Thông báo')}
-            className="relative p-2 sm:p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer"
+            className="relative p-1.5 sm:p-2.5 rounded-xl text-slate-600 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer min-h-[40px] min-w-[40px] flex items-center justify-center"
             title={t('header.notifications', 'Thông báo')}
           >
             <Bell size={18} strokeWidth={2} />
@@ -260,9 +260,9 @@ export default function AdminHeader() {
             <button
               type="button"
               onClick={() => setIsProfileOpen(!isProfileOpen)}
-              className="flex items-center gap-2 pl-1.5 sm:pl-2 border-l border-slate-100 cursor-pointer hover:opacity-90 transition-opacity"
+              className="flex items-center gap-1.5 sm:gap-2 pl-1 sm:pl-2 border-l border-slate-100 cursor-pointer hover:opacity-90 transition-opacity min-h-[40px]"
             >
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-50 to-orange-50 border border-red-100 flex items-center justify-center text-red-600 font-black text-xs sm:text-sm tracking-wider shadow-2xs shrink-0 overflow-hidden">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-gradient-to-br from-red-50 to-orange-50 border border-red-100 flex items-center justify-center text-red-600 font-black text-xs sm:text-sm tracking-wider shadow-2xs shrink-0 overflow-hidden">
                 {user?.avatarUrl && !avatarError ? (
                   <img
                     src={user.avatarUrl}

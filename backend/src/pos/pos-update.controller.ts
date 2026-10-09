@@ -18,14 +18,34 @@ export interface PosUpdateManifest {
 @Controller('pos-desktop/update')
 export class PosUpdateController {
   @Get('latest')
-  getLatestUpdate(): PosUpdateManifest {
+  getLatestUpdate(@Query('product') product?: string): PosUpdateManifest {
+    if (product === 'AVORA_POS_NATIVE') {
+      return {
+        version: '1.0.0',
+        build: 100,
+        releaseDate: '2026-09-11T10:00:00+07:00',
+        updateType: 'OPTIONAL',
+        minimumSupportedVersion: '1.0.0',
+        downloadUrl: `http://localhost:${process.env.PORT || 4001}/api/pos-desktop/update/download?product=AVORA_POS_NATIVE`,
+        sha256: '',
+        fileSize: 45000000,
+        releaseNotes: [
+          'Phiên bản AVORA POS Desktop Native 100% C# .NET 8 WPF',
+          'Không phụ thuộc WebView2 / Chromium',
+          'In ấn nhiệt ESC/POS và tem nhãn TSPL/ZPL tốc độ cao',
+          'Hàng đợi in độc lập cho từng máy in (Per-Printer Queue)',
+          'Sơ đồ bàn và giỏ hàng POS kết nối trực tiếp Backend'
+        ]
+      };
+    }
+
     return {
       version: '1.0.1',
       build: 101,
       releaseDate: '2026-09-10T10:20:00+07:00',
       updateType: 'RECOMMENDED',
       minimumSupportedVersion: '1.0.0',
-      downloadUrl: 'http://localhost:3001/api/pos-desktop/update/download',
+      downloadUrl: `http://localhost:${process.env.PORT || 4001}/api/pos-desktop/update/download`,
       sha256: 'E513E8ACF00E3D57FF12CFE112C6B4D699C30DE791692CBE3EFCA02CB67634EE',
       fileSize: 50045624,
       releaseNotes: [
@@ -39,10 +59,17 @@ export class PosUpdateController {
   }
 
   @Get('download')
-  downloadInstaller(@Res() res: Response) {
-    const installerPath = path.resolve(process.cwd(), '../dist/installer/AVORA-POS-Setup.exe');
+  downloadInstaller(@Query('product') product: string | undefined, @Res() res: Response) {
+    let installerPath = path.resolve(process.cwd(), '../dist/installer/AVORA-POS-Setup.exe');
+    let fileName = 'AVORA-POS-Setup.exe';
+
+    if (product === 'AVORA_POS_NATIVE') {
+      installerPath = path.resolve(process.cwd(), '../dist/native/installer/AVORA-POS-Native-Setup.exe');
+      fileName = 'AVORA-POS-Native-Setup.exe';
+    }
+
     if (fs.existsSync(installerPath)) {
-      return res.download(installerPath, 'AVORA-POS-Setup.exe');
+      return res.download(installerPath, fileName);
     }
     return res.status(HttpStatus.NOT_FOUND).json({
       success: false,

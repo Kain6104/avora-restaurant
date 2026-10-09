@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, User, Eye, EyeOff, X, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import Loading from '../../loading';
+import LoadingOverlay from '@/components/LoadingOverlay';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -80,7 +80,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/login`, {
+      const apiUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? ''
+        : API_URL;
+
+      const res = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,7 +112,18 @@ export default function LoginPage() {
 
       // Success!
       toast.success('Đăng nhập thành công!');
+      const authToken = data?.access_token || data?.token;
       if (typeof window !== 'undefined') {
+        if (authToken) {
+          localStorage.setItem('token', authToken);
+          localStorage.setItem('access_token', authToken);
+          // Set client-side cookie so middleware and fetches always see it
+          document.cookie = `token=${authToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
+        }
+        if (data?.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+          window.dispatchEvent(new CustomEvent('user-updated', { detail: data.user }));
+        }
         localStorage.setItem(
           'avora_remembered_account',
           JSON.stringify({
@@ -119,9 +134,9 @@ export default function LoginPage() {
         );
       }
       const searchParams = new URLSearchParams(window.location.search);
-      const redirectURL = searchParams.get('redirectURL') || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : '/');
-      router.push(redirectURL);
-      router.refresh();
+      const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER') ? '/admin' : '/';
+      const redirectURL = searchParams.get('redirectURL') || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : defaultDest);
+      window.location.href = redirectURL;
     } catch (err) {
       console.error('Login error:', err);
       toast.error('Không thể kết nối đến máy chủ.');
@@ -215,7 +230,7 @@ export default function LoginPage() {
 
   return (
     <>
-      {(loading || !isVideoLoaded) && <Loading />}
+      {(loading || !isVideoLoaded) && <LoadingOverlay />}
       <div className="relative min-h-screen text-white flex">
         {/* Full-screen Background Video */}
       <video

@@ -209,21 +209,21 @@ export default function AdminDashboardPage() {
   }, [summary, t]);
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Top Page Header with Period Tabs & Custom Date Range */}
       <PageHeader
         title={t('nav.dashboard', 'Tổng quan')}
         subtitle="Dữ liệu kinh doanh và báo cáo trực quan thời gian thực trên toàn chuỗi"
         breadcrumbs={[{ label: t('nav.overview', 'Tổng quan') }]}
         badge={
-          <span className="text-xs font-mono font-bold text-slate-700 bg-white px-3 py-1 rounded-full border border-slate-200/80 shadow-2xs">
+          <span className="text-[11px] sm:text-xs font-mono font-bold text-slate-700 bg-white px-2.5 py-1 rounded-full border border-slate-200/80 shadow-2xs">
             {dateRange.from.split('-').reverse().join('/')} - {dateRange.to.split('-').reverse().join('/')}
           </span>
         }
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             {/* Period Selector Tabs */}
-            <div className="flex items-center bg-white p-1 rounded-2xl border border-slate-200/80 shadow-2xs">
+            <div className="flex items-center bg-white p-1 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-2xs">
               {(['7', '30', '90'] as const).map((p) => (
                 <button
                   key={p}
@@ -232,7 +232,7 @@ export default function AdminDashboardPage() {
                     setPeriod(p);
                     setIsCustomOpen(false);
                   }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all min-h-[32px] sm:min-h-0 ${
                     period === p
                       ? 'bg-red-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -251,7 +251,7 @@ export default function AdminDashboardPage() {
                 <button
                   type="button"
                   onClick={() => setIsCustomOpen(!isCustomOpen)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all min-h-[32px] sm:min-h-0 ${
                     period === 'custom'
                       ? 'bg-red-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
@@ -298,7 +298,7 @@ export default function AdminDashboardPage() {
                           setIsCustomOpen(false);
                         }
                       }}
-                      className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5"
+                      className="w-full py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center justify-center gap-1.5 min-h-[40px]"
                     >
                       <Check size={14} />
                       <span>{t('common.apply', 'Áp dụng')}</span>
@@ -313,7 +313,7 @@ export default function AdminDashboardPage() {
               type="button"
               onClick={() => fetchDashboardStats(false)}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="p-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[36px] min-w-[36px] inline-flex items-center justify-center"
             >
               <RotateCw size={15} className={loading ? 'animate-spin' : ''} />
             </button>
@@ -321,52 +321,52 @@ export default function AdminDashboardPage() {
         }
       />
 
-      {/* 4 Main KPI Cards with Real Trends & Sparklines */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 lg:gap-5">
+      {/* 4 Main KPI Cards with Real Trends & Sparklines - 2 cols on mobile */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
         <StatCard
-          title={t('dashboard.periodRevenue', 'Doanh thu tích lũy')}
+          title={t('dashboard.periodRevenue', 'Doanh thu')}
           value={formatMoney(summary.totalRevenue || 0)}
           change={summary.revenueChangePercent}
           changePeriod={t('dashboard.comparePeriod', 'so với kỳ trước')}
-          icon={<DollarSign size={22} strokeWidth={2.5} />}
+          icon={<DollarSign size={20} strokeWidth={2.5} />}
           color="red"
           sparklineData={sparklineRevenue}
           loading={loading}
         />
         <StatCard
-          title={t('dashboard.totalOrders', 'Tổng đơn hàng')}
+          title={t('dashboard.totalOrders', 'Tổng đơn')}
           value={(summary.totalOrders || 0).toLocaleString()}
           change={summary.ordersChangePercent}
           changePeriod={t('dashboard.comparePeriod', 'so với kỳ trước')}
-          icon={<ShoppingBag size={22} strokeWidth={2.5} />}
+          icon={<ShoppingBag size={20} strokeWidth={2.5} />}
           color="blue"
           sparklineData={sparklineOrders}
           loading={loading}
         />
         <StatCard
-          title={t('dashboard.completedOrders', 'Đơn hoàn thành')}
+          title={t('dashboard.completedOrders', 'Đơn xong')}
           value={(summary.completedOrders || 0).toLocaleString()}
           change={summary.completedOrdersChangePercent}
           changePeriod={t('dashboard.comparePeriod', 'so với kỳ trước')}
-          icon={<CheckCircle2 size={22} strokeWidth={2.5} />}
+          icon={<CheckCircle2 size={20} strokeWidth={2.5} />}
           color="green"
           loading={loading}
         />
         <StatCard
-          title={t('dashboard.avgOrderValue', 'Giá trị đơn TB (AOV)')}
+          title={t('dashboard.avgOrderValue', 'AOV')}
           value={formatMoney(summary.averageOrderValue || 0)}
           change={summary.avgOrderChangePercent}
           changePeriod={t('dashboard.comparePeriod', 'so với kỳ trước')}
-          icon={<TrendingUp size={22} strokeWidth={2.5} />}
+          icon={<TrendingUp size={20} strokeWidth={2.5} />}
           color="purple"
           loading={loading}
         />
       </div>
 
       {/* 4 DETAILED BREAKDOWN OVERVIEW CARDS (SAPO F&B STYLE AS IN REFERENCE IMAGE) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-4 lg:gap-6">
         {/* CARD 1: TỔNG DOANH THU GỒM THUẾ (THEO PHƯƠNG THỨC THANH TOÁN) */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs p-3 sm:p-5 flex flex-col justify-between">
           {/* Sub-tab Switcher Header */}
           <div className="flex items-center gap-4 border-b border-slate-100 pb-3">
             <button
@@ -479,7 +479,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* CARD 2: TỔNG DOANH THU SAU THUẾ / CHI TIẾT THUẾ */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs p-3 sm:p-5 flex flex-col justify-between">
           {/* Sub-tab Switcher Header */}
           <div className="flex items-center gap-4 border-b border-slate-100 pb-3">
             <button
@@ -548,7 +548,7 @@ export default function AdminDashboardPage() {
               </div>
             </div>
 
-            <div className="md:col-span-5 h-48 sm:h-56 relative flex items-center justify-center">
+            <div className="md:col-span-5 h-44 sm:h-56 relative flex items-center justify-center">
               {summary.grossRevenue > 0 ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
@@ -578,7 +578,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* CARD 3: MẶT HÀNG THEO DANH MỤC */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs p-3 sm:p-5 flex flex-col justify-between">
           {/* Header */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
@@ -659,7 +659,7 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            <div className="md:col-span-5 h-48 sm:h-56 relative flex items-center justify-center">
+            <div className="md:col-span-5 h-44 sm:h-56 relative flex items-center justify-center">
               {salesByCategory.length === 0 ? (
                 <PieChartIcon size={40} className="text-slate-200" />
               ) : (
@@ -697,7 +697,7 @@ export default function AdminDashboardPage() {
         </div>
 
         {/* CARD 4: MẶT HÀNG BÁN CHẠY */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-xs p-4 sm:p-5 flex flex-col justify-between">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs p-3 sm:p-5 flex flex-col justify-between">
           {/* Header with Limit Selector & Sub-tabs */}
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <h3 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-tight">
@@ -790,7 +790,7 @@ export default function AdminDashboardPage() {
               )}
             </div>
 
-            <div className="md:col-span-5 h-48 sm:h-56 relative flex items-center justify-center">
+            <div className="md:col-span-5 h-44 sm:h-56 relative flex items-center justify-center">
               {topProducts.length === 0 ? (
                 <PieChartIcon size={40} className="text-slate-200" />
               ) : (
@@ -839,8 +839,8 @@ export default function AdminDashboardPage() {
           </span>
         }
       >
-        <div className="h-72 sm:h-80 w-full mt-2">
-          {loading ? (
+        <div className={`h-60 sm:h-72 lg:h-80 w-full mt-2 transition-opacity duration-200 ${loading ? 'opacity-70' : ''}`}>
+          {loading && revenueChart.length === 0 ? (
             <LoadingSkeleton variant="chart" />
           ) : revenueChart.length === 0 ? (
             <EmptyState
@@ -851,7 +851,7 @@ export default function AdminDashboardPage() {
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart
                 data={revenueChart}
-                margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
               >
                 <defs>
                   <linearGradient id="colorRevenueGrad" x1="0" y1="0" x2="0" y2="1">
@@ -869,7 +869,7 @@ export default function AdminDashboardPage() {
                   }}
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
+                  tick={{ fill: '#94a3b8', fontSize: 10 }}
                   dy={8}
                 />
                 <YAxis
@@ -878,8 +878,8 @@ export default function AdminDashboardPage() {
                   }
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#94a3b8', fontSize: 11 }}
-                  dx={-8}
+                  tick={{ fill: '#94a3b8', fontSize: 10 }}
+                  dx={-4}
                 />
                 <Tooltip
                   formatter={(value: any) => [formatMoney(Number(value) || 0), 'Doanh thu']}
@@ -889,7 +889,7 @@ export default function AdminDashboardPage() {
                     border: '1px solid #f1f5f9',
                     borderRadius: '14px',
                     boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 600,
                   }}
                 />
@@ -897,7 +897,7 @@ export default function AdminDashboardPage() {
                   type="monotone"
                   dataKey="revenue"
                   stroke="#ef4444"
-                  strokeWidth={3.5}
+                  strokeWidth={3}
                   fillOpacity={1}
                   fill="url(#colorRevenueGrad)"
                 />
@@ -908,7 +908,7 @@ export default function AdminDashboardPage() {
       </AdminCard>
 
       {/* Row: Recent Orders & Recent Activities */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-5">
         {/* Recent Real Orders Table */}
         <div className="lg:col-span-2">
           <AdminCard
@@ -918,27 +918,27 @@ export default function AdminDashboardPage() {
               <button
                 type="button"
                 onClick={() => router.push('/admin/orders')}
-                className="text-xs font-bold text-red-600 hover:underline"
+                className="text-xs font-bold text-red-600 hover:underline min-h-[36px] inline-flex items-center"
               >
                 {t('common.details', 'Quản lý đơn hàng')}
               </button>
             }
           >
-            <div className="overflow-x-auto">
+            <div className="admin-scroll-table">
               {recentOrders.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-6">
                   {t('dashboard.noRecentOrders', 'Chưa có đơn hàng nào')}
                 </p>
               ) : (
-                <table className="w-full text-left text-xs sm:text-sm">
+                <table className="w-full text-left text-xs sm:text-sm min-w-[550px]">
                   <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 font-bold text-[11px] uppercase tracking-wider">
-                      <th className="pb-3">{t('table.orderCode', 'Mã đơn')}</th>
-                      <th className="pb-3">{t('table.customer', 'Khách hàng')}</th>
-                      <th className="pb-3">{t('table.branch', 'Chi nhánh')}</th>
-                      <th className="pb-3 text-right">{t('table.totalAmount', 'Tổng tiền')}</th>
-                      <th className="pb-3 text-center">{t('table.status', 'Trạng thái')}</th>
-                      <th className="pb-3 text-right">{t('table.action', 'Chi tiết')}</th>
+                    <tr className="border-b border-slate-100 text-slate-400 font-bold text-[10px] sm:text-[11px] uppercase tracking-wider">
+                      <th className="pb-2.5 px-2">{t('table.orderCode', 'Mã đơn')}</th>
+                      <th className="pb-2.5 px-2">{t('table.customer', 'Khách hàng')}</th>
+                      <th className="pb-2.5 px-2">{t('table.branch', 'Chi nhánh')}</th>
+                      <th className="pb-2.5 px-2 text-right">{t('table.totalAmount', 'Tổng tiền')}</th>
+                      <th className="pb-2.5 px-2 text-center">{t('table.status', 'Trạng thái')}</th>
+                      <th className="pb-2.5 px-2 text-right">{t('table.action', 'Chi tiết')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
@@ -948,25 +948,25 @@ export default function AdminDashboardPage() {
                         onClick={() => router.push(`/admin/orders/${order.id}`)}
                         className="hover:bg-slate-50/80 cursor-pointer transition-colors"
                       >
-                        <td className="py-3 font-mono font-bold text-slate-900">
+                        <td className="py-2.5 px-2 font-mono font-bold text-slate-900">
                           {order.orderCode.toUpperCase()}
                         </td>
-                        <td className="py-3 font-semibold text-slate-800">{order.customerName}</td>
-                        <td className="py-3 text-slate-600">{order.branchName}</td>
-                        <td className="py-3 text-right font-black text-red-600">
+                        <td className="py-2.5 px-2 font-semibold text-slate-800">{order.customerName}</td>
+                        <td className="py-2.5 px-2 text-slate-600">{order.branchName}</td>
+                        <td className="py-2.5 px-2 text-right font-black text-red-600">
                           {formatMoney(order.totalAmount)}
                         </td>
-                        <td className="py-3 text-center">
+                        <td className="py-2.5 px-2 text-center">
                           <StatusBadge status={order.status} size="sm" />
                         </td>
-                        <td className="py-3 text-right">
+                        <td className="py-2.5 px-2 text-right">
                           <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
                               router.push(`/admin/orders/${order.id}`);
                             }}
-                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl"
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-xl min-h-[36px] min-w-[36px] inline-flex items-center justify-center"
                           >
                             <Eye size={15} />
                           </button>
@@ -995,8 +995,8 @@ export default function AdminDashboardPage() {
               </button>
             }
           >
-            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-              {loading ? (
+            <div className={`space-y-2 max-h-80 overflow-y-auto pr-1 transition-opacity duration-200 ${loading ? 'opacity-70' : ''}`}>
+              {loading && recentActivities.length === 0 ? (
                 <LoadingSkeleton variant="table" />
               ) : recentActivities.length === 0 ? (
                 <p className="text-xs text-slate-400 text-center py-8">

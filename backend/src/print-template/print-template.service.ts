@@ -421,10 +421,20 @@ export class PrintTemplateService {
   /**
    * Render hóa đơn thật theo orderId và type (POS gọi trực tiếp)
    */
-  async renderForOrder(orderId: string, type: PrintTemplateType, customQrPayload?: string): Promise<{ html: string; paperSize: string }> {
+  async renderForOrder(
+    orderId: string,
+    type: PrintTemplateType,
+    customQrPayload?: string,
+    overridePaperSize?: string,
+  ): Promise<{ html: string; paperSize: string; receiptPayload?: any }> {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { branchId: true, paymentStatus: true, status: true },
+      select: {
+        branchId: true,
+        paymentStatus: true,
+        status: true,
+        branch: { select: { defaultPaperSize: true } },
+      },
     });
 
     if (!order) {
@@ -456,12 +466,11 @@ export class PrintTemplateService {
 
     // 3. Nếu vẫn không có -> Fallback emergency
     let templateContent: string;
-    let paperSize: string = '80mm';
+    let paperSize: string = overridePaperSize || template?.paperSize || (order as any)?.branch?.defaultPaperSize || '80mm';
     let settings: any = {};
 
     if (template) {
       templateContent = template.content;
-      paperSize = template.paperSize || '80mm';
       settings = template.settings;
     } else {
       this.logger.warn(
@@ -469,7 +478,9 @@ export class PrintTemplateService {
       );
       const emergency = this.renderer.getEmergencyTemplate(type);
       templateContent = emergency.content;
-      paperSize = emergency.paperSize;
+      if (!overridePaperSize) {
+        paperSize = emergency.paperSize;
+      }
     }
 
     // 4. Tạo Render Context chuẩn lấy 100% snapshot từ Order
@@ -478,7 +489,35 @@ export class PrintTemplateService {
     // 5. Render qua Unified Render Engine
     const html = await this.renderer.renderTemplate(templateContent, context, paperSize, settings);
 
-    return { html, paperSize };
+    const receiptPayload = {
+      orderId,
+      orderCode: context.orderCode,
+      tableName: context.tableName,
+      orderType: (order as any).orderType || 'DINE_IN',
+      cashierName: context.cashierName,
+      restaurantName: context.storeName || 'AVORA RESTAURANT',
+      branchName: context.branchName,
+      branchAddress: context.branchAddress,
+      branchPhone: context.branchPhone,
+      items: (context.items || []).map((it) => ({
+        name: it.name,
+        quantity: it.quantity,
+        unitPrice: it.priceAtSale,
+        originalPrice: it.originalPriceAtSale,
+        totalPrice: it.priceAtSale * it.quantity,
+        discountAmount: it.discountAmount || 0,
+        note: it.note,
+        options: it.optionsText ? [it.optionsText] : [],
+      })),
+      subTotal: context.subTotal,
+      totalAmount: context.totalAmount,
+      itemDiscountTotal: context.discountAmount || 0,
+      paymentMethod: context.paymentMethodStr || 'CASH',
+      qrData: context.paymentQrPayload,
+      isProForma: type === PrintTemplateType.TEMP_BILL,
+    };
+
+    return { html, paperSize, receiptPayload };
   }
 
   /**
@@ -831,9 +870,14 @@ export class PrintTemplateService {
         discountAmount: item.discountAmount,
         optionsText: item.optionsTextSnapshot || '',
         note: item.note || '',
-        orderedAt: this.renderer.formatDateTime(item.sentToKitchenAt || order.createdAt),
+        addedBy: item.orderedByName || order.user?.fullName || 'Thu ngân',
+        orderedAt: this.renderer.formatDateTime((item as any).createdAt || item.sentToKitchenAt || order.createdAt),
         taxPercent: item.product.taxPercentage || 0,
         taxAmount: (item.priceAtSale * (item.product.taxPercentage || 0)) / 100,
+        selectedOptions: (item.selectedOptions || []).map((so) => ({
+          nameAtSale: so.nameAtSale,
+          priceAdjustmentAtSale: so.priceAdjustmentAtSale,
+        })),
       };
     });
 

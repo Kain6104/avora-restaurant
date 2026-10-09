@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter, useSearchParams, usePathname } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 
 export interface AdminUser {
@@ -75,36 +75,79 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_BRANCH_KEY = 'avora_admin_selected_branch';
 
+const CAPS_CACHE_KEY = 'avora_admin_caps_cache_v1';
+
+const getCachedCapabilities = (): UserCapabilities | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = sessionStorage.getItem(CAPS_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedCapabilities = (caps: UserCapabilities | null) => {
+  if (typeof window === 'undefined') return;
+  try {
+    if (caps) {
+      sessionStorage.setItem(CAPS_CACHE_KEY, JSON.stringify(caps));
+    } else {
+      sessionStorage.removeItem(CAPS_CACHE_KEY);
+    }
+  } catch {}
+};
+
 export function AdminProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const pathname = usePathname();
 
+  // Khởi tạo an toàn cho SSR (tránh hydration mismatch giữa server và client)
   const [capabilities, setCapabilities] = useState<UserCapabilities | null>(null);
   const [user, setUser] = useState<AdminUser | null>(null);
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchIdState] = useState<string>('ALL');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState<boolean>(true);
   const [effectivePermissions, setEffectivePermissions] = useState<Record<string, UserBranchPermission>>({});
   const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const socketRef = useRef<Socket | null>(null);
+
+  // Đồng bộ branch từ URL khi query thay đổi mà không re-fetch capabilities
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const branchFromUrl = urlParams.get('branch');
+    if (branchFromUrl && branchFromUrl !== selectedBranchId) {
+      setSelectedBranchIdState(branchFromUrl);
+    }
+  }, [pathname, selectedBranchId]);
 
   const fetchCapabilities = useCallback(async () => {
     try {
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('access_token')) : null;
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const res = await fetch('/api/auth/me/capabilities', {
         credentials: 'include',
+        headers,
       });
 
       if (!res.ok) {
         // Fallback to /api/auth/me if capabilities endpoint fails
-        const meRes = await fetch('/api/auth/me', { credentials: 'include' });
+        const meRes = await fetch('/api/auth/me', { credentials: 'include', headers });
         if (!meRes.ok) {
+          setCachedCapabilities(null);
           router.push('/login');
           return null;
         }
         const meData = await meRes.json();
         if (!meData?.role || meData.role === 'USER') {
+          setCachedCapabilities(null);
           router.push('/');
           return null;
         }
@@ -113,6 +156,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       const caps: UserCapabilities = await res.json();
+      setCachedCapabilities(caps);
       setCapabilities(caps);
       setUser(caps.user);
       setAllBranches(caps.allBranches || []);
@@ -138,36 +182,88 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
       setAvailableBranches(branchesForUser);
 
-      // Determine selected branch from URL or Storage or Default
-      const branchFromUrl = searchParams.get('branch');
-      const branchFromStorage =
-        typeof window !== 'undefined'
-          ? localStorage.getItem(LOCAL_STORAGE_BRANCH_KEY)
-          : null;
+      // Determine selected branch from Storage or Default if not already selected
+      setSelectedBranchIdState((prev) => {
+        if (prev && prev !== 'ALL' && branchesForUser.some((b) => b.id === prev)) {
+          return prev;
+        }
+        const branchFromStorage =
+          typeof window !== 'undefined'
+            ? localStorage.getItem(LOCAL_STORAGE_BRANCH_KEY)
+            : null;
 
-      if (branchFromUrl) {
-        setSelectedBranchIdState(branchFromUrl);
-      } else if (branchFromStorage && (branchFromStorage === 'ALL' || branchesForUser.some((b) => b.id === branchFromStorage))) {
-        setSelectedBranchIdState(branchFromStorage);
-      } else if (caps.user.branchId && branchesForUser.some((b) => b.id === caps.user.branchId)) {
-        setSelectedBranchIdState(caps.user.branchId);
-      } else if (branchesForUser.length > 0) {
-        setSelectedBranchIdState(isSystemAdmin ? 'ALL' : branchesForUser[0].id);
-      } else {
-        setSelectedBranchIdState('ALL');
-      }
+        if (branchFromStorage && (branchFromStorage === 'ALL' || branchesForUser.some((b) => b.id === branchFromStorage))) {
+          return branchFromStorage;
+        }
+        if (caps.user.branchId && branchesForUser.some((b) => b.id === caps.user.branchId)) {
+          return caps.user.branchId;
+        }
+        if (branchesForUser.length > 0) {
+          return isSystemAdmin ? 'ALL' : branchesForUser[0].id;
+        }
+        return 'ALL';
+      });
 
       return caps;
     } catch (err) {
       console.error('Error fetching admin capabilities:', err);
       return null;
+    } finally {
+      setLoading(false);
     }
-  }, [router, searchParams]);
+  }, [router]);
 
   useEffect(() => {
     let mounted = true;
+
+    // 1. Hydrate tức thì từ client storage ở client mount (0ms chờ)
+    const cached = getCachedCapabilities();
+    if (cached) {
+      setCapabilities(cached);
+      setUser(cached.user || null);
+      setAllBranches(cached.allBranches || []);
+      setEffectivePermissions(cached.effectivePermissions || {});
+
+      const isSysAdmin = cached.roles?.some((r) => r.code === 'ADMIN');
+      if (isSysAdmin) {
+        setAvailableBranches(cached.allBranches || []);
+      } else {
+        const branchMap = new Map<string, Branch>();
+        cached.assignments?.forEach((assignment) => {
+          if (assignment.branchScope === 'ALL_BRANCHES') {
+            cached.allBranches?.forEach((b) => branchMap.set(b.id, b));
+          } else if (assignment.branches) {
+            assignment.branches.forEach((b) => branchMap.set(b.id, b));
+          }
+        });
+        setAvailableBranches(Array.from(branchMap.values()));
+      }
+      setLoading(false);
+    }
+
+    try {
+      if (localStorage.getItem('avora_admin_sidebar_collapsed') === 'true') {
+        setIsSidebarCollapsed(true);
+      }
+    } catch {}
+
+    try {
+      const urlBranch = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('branch') : null;
+      if (urlBranch) {
+        setSelectedBranchIdState(urlBranch);
+      } else {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem(LOCAL_STORAGE_BRANCH_KEY) : null;
+        if (stored) {
+          setSelectedBranchIdState(stored);
+        }
+      }
+    } catch {}
+
+    // 2. Revalidate fresh capabilities ngầm (Stale-While-Revalidate)
     const init = async () => {
-      setLoading(true);
+      if (!cached) {
+        setLoading(true);
+      }
       await fetchCapabilities();
       if (mounted) {
         setLoading(false);
@@ -212,29 +308,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       if (typeof window !== 'undefined') {
         localStorage.setItem(LOCAL_STORAGE_BRANCH_KEY, id);
       }
-      const newParams = new URLSearchParams(searchParams.toString());
+      const newParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : new URLSearchParams();
       if (id && id !== 'ALL') {
         newParams.set('branch', id);
       } else {
         newParams.delete('branch');
       }
       const newQuery = newParams.toString();
-      const currentPath = pathname || window.location.pathname;
+      const currentPath = pathname || (typeof window !== 'undefined' ? window.location.pathname : '/admin');
       router.push(newQuery ? `${currentPath}?${newQuery}` : currentPath);
     },
-    [router, searchParams, pathname]
+    [router, pathname]
   );
 
   const toggleMobileSidebar = useCallback(() => {
     setMobileSidebarOpen((prev) => !prev);
   }, []);
 
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('avora_admin_sidebar_collapsed') === 'true';
-    }
-    return false;
-  });
 
   const toggleSidebarCollapse = useCallback(() => {
     setIsSidebarCollapsed((prev) => {
@@ -316,18 +406,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const permissionsList = Object.keys(effectivePermissions);
   const roleCodes = capabilities?.roles.map((r) => r.code) || (user?.role ? [user.role] : []);
 
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-900 text-white">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 border-3 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Đang tải hệ thống phân quyền...
-          </span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <AdminContext.Provider

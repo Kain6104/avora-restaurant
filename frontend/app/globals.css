@@ -116,3 +116,100 @@ html, body {
 .leaflet-tile {
   visibility: inherit !important;
 }
+
+/* =========================================================================
+   AVORA POS DESKTOP NATIVE MODE (Activated when running inside AvoraPos.exe)
+   ========================================================================= */
+.desktop-pos-mode {
+  overscroll-behavior: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+
+.desktop-pos-mode img {
+  -webkit-user-drag: none !important;
+  user-drag: none !important;
+  pointer-events: auto;
+}
+
+/* Allow text selection only in data inputs and selectable text elements */
+.desktop-pos-mode input,
+.desktop-pos-mode textarea,
+.desktop-pos-mode [contenteditable="true"],
+.desktop-pos-mode .selectable-text,
+.desktop-pos-mode code,
+.desktop-pos-mode pre {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+}
+
+/* Native POS Button Active Press feedback */
+.desktop-pos-mode button:not(:disabled):active,
+.desktop-pos-mode [role="button"]:not([aria-disabled="true"]):active {
+  transform: scale(0.98);
+  transition-duration: 100ms !important;
+}
+
+/* Native POS Touch Targets */
+.desktop-pos-mode .pos-touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Tabular nums for strictly aligned prices */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* =========================================================================
+   AVORA ADMIN MOBILE SUPER-OPTIMIZATION UTILITIES (320px - 767px)
+   ========================================================================= */
+@layer utilities {
+  .admin-touch-target {
+    min-height: 40px;
+    min-width: 40px;
+  }
+  @media (min-width: 640px) {
+    .admin-touch-target {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* Prevent page-level horizontal overflow on narrow mobile screens */
+  .admin-page-wrapper {
+    width: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
+  /* Table horizontal scroll container without extra whitespace */
+  .admin-scroll-table {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* =========================================================================
+   AVORA FARM MOBILE LANDSCAPE GAME MODE (max-height: 520px & pointer: coarse)
+   ========================================================================= */
+@media (orientation: landscape) and (max-height: 520px) {
+  /* Optimize GPU fill-rate on mobile landscape by tempering heavy blur filters */
+  .backdrop-blur-2xl,
+  .backdrop-blur-xl {
+    -webkit-backdrop-filter: blur(8px) !important;
+    backdrop-filter: blur(8px) !important;
+  }
+  
+  .backdrop-blur-md {
+    -webkit-backdrop-filter: blur(5px) !important;
+    backdrop-filter: blur(5px) !important;
+  }
+
+  /* Prevent any page-level pull-to-refresh or rubber-banding in game */
+  body {
+    overscroll-behavior-y: none !important;
+    overscroll-behavior-x: none !important;
+  }
+}

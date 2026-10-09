@@ -28,7 +28,19 @@ export default function EditProductPage() {
     if (params.id) fetchProduct();
   }, [params.id]);
 
-  if (loading) return <div className="p-10 text-center">Đang tải dữ liệu...</div>;
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto space-y-4 p-4 sm:p-6 bg-white rounded-2xl border border-slate-100 shadow-2xs animate-pulse">
+        <div className="h-6 bg-slate-200/70 rounded-lg w-1/3 mb-4" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="h-10 bg-slate-100 rounded-xl" />
+          <div className="h-10 bg-slate-100 rounded-xl" />
+        </div>
+        <div className="h-28 bg-slate-100 rounded-xl" />
+        <div className="h-10 bg-slate-200/50 rounded-xl w-32" />
+      </div>
+    );
+  }
   if (!initialData) return <div className="p-10 text-center text-red-600">Không tìm thấy món ăn!</div>;
 
   return <ProductForm initialData={initialData} isEdit={true} />;

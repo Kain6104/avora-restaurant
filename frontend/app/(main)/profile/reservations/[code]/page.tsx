@@ -27,8 +27,7 @@ interface PageProps {
   params: Promise<{ code: string }>;
 }
 
-export default function ReservationDetailPage({ params }: PageProps) {
-  const { code } = use(params);
+function ReservationDetailContent({ code }: { code: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const guestPhone = searchParams.get('phone');
@@ -461,5 +460,20 @@ export default function ReservationDetailPage({ params }: PageProps) {
         )}
       </div>
     </div>
+  );
+}
+
+export default function ReservationDetailPage({ params }: PageProps) {
+  const { code } = use(params);
+  return (
+    <React.Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="w-8 h-8 border-4 border-red-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <ReservationDetailContent code={code} />
+    </React.Suspense>
   );
 }

@@ -1,0 +1,328 @@
+<UserControl x:Class="AvoraPosNative.Views.OrderView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="700" d:DesignWidth="450"
+             Background="#FFFFFF">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- 1. Order Header -->
+            <RowDefinition Height="Auto"/>
+            <!-- 2. Customer / Loyalty bar -->
+            <RowDefinition Height="Auto"/>
+            <!-- 3. Items List -->
+            <RowDefinition Height="*"/>
+            <!-- 4. Totals Breakdown -->
+            <RowDefinition Height="Auto"/>
+            <!-- 5. Action Buttons -->
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- 1. ORDER HEADER -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Back button -->
+                <Button Command="{Binding BackCommand}" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                        Padding="10,6" Margin="0,0,10,0" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <TextBlock Text="← Bàn" FontWeight="Bold" FontSize="12"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#E2E8F0"/>
+                                    <Setter Property="Foreground" Value="#0F172A"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+
+                <!-- Table & Order info -->
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding CurrentTable.Name, FallbackValue='BÀN ĐANG CHỌN'}" FontWeight="Black" FontSize="16" Foreground="#E11D48"/>
+                        <TextBlock Text=" • " Foreground="#94A3B8"/>
+                        <TextBlock Text="{Binding CurrentTable.GuestCount, StringFormat='{}{0} khách', FallbackValue='1 khách'}" FontSize="13" Foreground="#64748B" FontWeight="SemiBold"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding CurrentOrder.OrderCode, FallbackValue='Đơn hàng mới'}" FontSize="11" Foreground="#94A3B8"/>
+                </StackPanel>
+
+                <!-- Unsaved Changes Dot -->
+                <Border Grid.Column="2" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="10" Padding="8,3"
+                        Visibility="{Binding HasUnsavedChanges, Converter={x:Null}}">
+                    <TextBlock Text="Chưa gửi" FontSize="11" FontWeight="Bold" Foreground="#B45309"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 2. CUSTOMER / LOYALTY BAR -->
+        <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="👤" Margin="0,0,6,0" FontSize="13"/>
+                    <TextBlock Text="{Binding CustomerName, FallbackValue='Khách lẻ'}" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
+                    <TextBlock Text="{Binding CustomerTier, StringFormat=' ({0})'}" Foreground="#2563EB" FontSize="12" FontWeight="Bold" Margin="4,0,0,0"/>
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="🔍 Tích điểm" Command="{Binding SearchCustomerCommand}"
+                        Background="#FFFFFF" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                        Padding="10,5" FontSize="11" FontWeight="Bold" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F1F5F9"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- 3. ITEMS LIST -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#FFFFFF">
+            <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,10" Background="Transparent">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <!-- Row 0: Name & Price -->
+                                <Grid Grid.Row="0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding ProductName}" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding LineTotal, StringFormat='{}{0:N0}đ'}" FontWeight="Bold" FontSize="13.5" Foreground="#E11D48"/>
+                                </Grid>
+
+                                <!-- Row 1: Options & Note -->
+                                <StackPanel Grid.Row="1" Margin="0,3,0,6">
+                                    <TextBlock Text="{Binding OptionsText}" FontSize="11" Foreground="#64748B" TextWrapping="Wrap"
+                                               Visibility="{Binding OptionsText, Converter={x:Null}}"/>
+                                    <TextBlock Text="{Binding Note, StringFormat='Ghi chú: {0}'}" FontSize="11" Foreground="#D97706" FontStyle="Italic"
+                                               Visibility="{Binding Note, Converter={x:Null}}"/>
+                                </StackPanel>
+
+                                <!-- Row 2: Quantity buttons & Actions -->
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <!-- Qty controller: [-] [1] [+] -->
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="−" 
+                                                Command="{Binding DataContext.DecreaseQuantityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Width="28" Height="28" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                FontSize="14" FontWeight="Bold" Cursor="Hand">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                        
+                                        <Button Content="{Binding Quantity}" 
+                                                Command="{Binding DataContext.SetQuantityKeypadCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                MinWidth="36" Height="28" Background="#FFFFFF" Foreground="#0F172A" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                Margin="4,0" FontSize="13" FontWeight="Bold" Cursor="Hand">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+
+                                        <Button Content="+" 
+                                                Command="{Binding DataContext.IncreaseQuantityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Width="28" Height="28" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                FontSize="14" FontWeight="Bold" Cursor="Hand">
+                                            <Button.Template>
+                                                <ControlTemplate TargetType="Button">
+                                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </Border>
+                                                </ControlTemplate>
+                                            </Button.Template>
+                                        </Button>
+                                    </StackPanel>
+
+                                    <!-- Status indicator & Cancel button -->
+                                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                            <TextBlock Text="{Binding Status}" FontSize="10" Foreground="#64748B" FontWeight="SemiBold"/>
+                                        </Border>
+
+                                        <Button Content="🗑️" 
+                                                Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                CommandParameter="{Binding}"
+                                                Background="Transparent" BorderThickness="0" Foreground="#EF4444"
+                                                Cursor="Hand" Padding="4" ToolTip="Hủy món"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 4. TOTALS BREAKDOWN -->
+        <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="14,10">
+            <StackPanel>
+                <!-- Tiền hàng -->
+                <Grid Margin="0,2">
+                    <TextBlock Text="Tiền hàng:" Foreground="#64748B" FontSize="12"/>
+                    <TextBlock Text="{Binding SubTotal, StringFormat='{}{0:N0}đ'}" Foreground="#0F172A" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Right"/>
+                </Grid>
+                <!-- Giảm giá -->
+                <Grid Margin="0,2">
+                    <TextBlock Text="Giảm giá voucher:" Foreground="#64748B" FontSize="12"/>
+                    <TextBlock Text="{Binding DiscountAmount, StringFormat='-{0:N0}đ'}" Foreground="#16A34A" FontWeight="Bold" FontSize="12" HorizontalAlignment="Right"/>
+                </Grid>
+                <!-- Thuế VAT -->
+                <Grid Margin="0,2">
+                    <TextBlock Text="Thuế VAT:" Foreground="#64748B" FontSize="12"/>
+                    <TextBlock Text="{Binding TaxAmount, StringFormat='{}{0:N0}đ'}" Foreground="#64748B" FontSize="12" HorizontalAlignment="Right"/>
+                </Grid>
+                <!-- TỔNG TIỀN -->
+                <Border BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Margin="0,6,0,0" Padding="0,6,0,0">
+                    <Grid>
+                        <TextBlock Text="TỔNG CỘNG:" Foreground="#0F172A" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding TotalAmount, StringFormat='{}{0:N0}đ'}" Foreground="#E11D48" FontWeight="Black" FontSize="20" HorizontalAlignment="Right"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- 5. ACTION BUTTONS -->
+        <Border Grid.Row="4" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="12">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Row 1: Gửi bếp & Tạm tính -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Gửi bếp -->
+                    <Button Grid.Column="0" Content="🍳 GỬI BẾP (F2)" Command="{Binding SendKitchenCommand}"
+                            Background="#2563EB" Foreground="#FFFFFF" BorderThickness="0"
+                            Padding="0,12" FontWeight="Bold" FontSize="13" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1D4ED8"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!-- Tạm tính -->
+                    <Button Grid.Column="2" Content="🧾 TẠM TÍNH (F3)" Command="{Binding TempBillCommand}"
+                            Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                            Padding="0,12" FontWeight="Bold" FontSize="13" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#E2E8F0"/>
+                                        <Setter Property="Foreground" Value="#0F172A"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+
+                <!-- Row 2: THANH TOÁN (F5) -->
+                <Button Grid.Row="1" Content="💰 THANH TOÁN (F5)" Command="{Binding PaymentCommand}"
+                        Background="#16A34A" Foreground="#FFFFFF" BorderThickness="0"
+                        Padding="0,14" FontWeight="Black" FontSize="16" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#15803D"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

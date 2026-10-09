@@ -40,6 +40,10 @@ import {
   Pin,
   Monitor,
   Power,
+  Lock,
+  Mail,
+  Send,
+  KeyRound,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { platformBridge } from '@/lib/platform/platform-bridge';
@@ -72,6 +76,7 @@ interface PosSettingsDrawerProps {
     qrOrders?: number;
     reservations?: number;
   };
+  onOpenEndOfDayReport?: () => void;
 }
 
 // Máy in ảo hệ điều hành
@@ -108,6 +113,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   onUpdateBranchSettings,
   onOpenDesktopLaunch,
   orderCounts = { allOrders: 0, qrOrders: 0, reservations: 0 },
+  onOpenEndOfDayReport,
 }) => {
   // 1. Sidebar menu bên trái:
   // - Máy in & Phiếu chế biến
@@ -117,8 +123,201 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   // - Chi nhánh & Giờ mở cửa
   // - Trang Quản trị Hệ thống
   const [activeSidebarItem, setActiveSidebarItem] = useState<
-    'settings' | 'drawer' | 'sync' | 'invoices' | 'branch' | 'about'
+    'settings' | 'drawer' | 'sync' | 'invoices' | 'branch' | 'security' | 'about'
   >('settings');
+
+  // -------------------------------------------------------------
+  // TAB SECURITY: POS PIN Management & OTP Verification
+  // -------------------------------------------------------------
+  const [hasPosPin, setHasPosPin] = useState<boolean>(false);
+  const [posPinUpdatedAt, setPosPinUpdatedAt] = useState<string | null>(null);
+  const [maskedUserEmail, setMaskedUserEmail] = useState<string | null>(null);
+  const [isLoadingPosPin, setIsLoadingPosPin] = useState<boolean>(false);
+  const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
+  const [pinModalMode, setPinModalMode] = useState<'setup' | 'change' | 'remove'>('setup');
+
+  // Phương thức xác minh danh tính: 'PASSWORD' (Mật khẩu) hoặc 'OTP' (Mã OTP 6 số qua Email)
+  const [pinAuthMethod, setPinAuthMethod] = useState<'PASSWORD' | 'OTP'>('PASSWORD');
+  const [pinPassword, setPinPassword] = useState<string>('');
+  const [pinOtp, setPinOtp] = useState<string>('');
+  const [isSendingOtp, setIsSendingOtp] = useState<boolean>(false);
+  const [otpCooldown, setOtpCooldown] = useState<number>(0);
+  const [otpSentNotice, setOtpSentNotice] = useState<string | null>(null);
+
+  const [pinCode, setPinCode] = useState<string>('');
+  const [pinConfirm, setPinConfirm] = useState<string>('');
+  const [pinError, setPinError] = useState<string | null>(null);
+  const [isSubmittingPin, setIsSubmittingPin] = useState<boolean>(false);
+
+  // Đếm ngược cooldown gửi mã OTP
+  useEffect(() => {
+    if (otpCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setOtpCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpCooldown]);
+
+  const fetchPinStatus = async () => {
+    setIsLoadingPosPin(true);
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('access_token') ||
+            localStorage.getItem('token') ||
+            localStorage.getItem('avora_pos_token')
+          : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/pos/auth/pin/status', {
+        headers,
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHasPosPin(!!data.hasPin);
+        setPosPinUpdatedAt(data.updatedAt || null);
+        if (data.maskedEmail) {
+          setMaskedUserEmail(data.maskedEmail);
+        }
+      }
+    } catch {
+      // Non-fatal
+    } finally {
+      setIsLoadingPosPin(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchPinStatus();
+    }
+  }, [isOpen]);
+
+  // Gửi mã OTP 6 số về Email của người dùng
+  const handleRequestOtp = async () => {
+    if (otpCooldown > 0 || isSendingOtp) return;
+    setIsSendingOtp(true);
+    setPinError(null);
+    setOtpSentNotice(null);
+
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('access_token') ||
+            localStorage.getItem('token') ||
+            localStorage.getItem('avora_pos_token')
+          : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      const res = await fetch('/api/pos/auth/pin/request-otp', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || 'Không thể gửi mã OTP.');
+      }
+
+      setOtpCooldown(60);
+      setOtpSentNotice(data.message || 'Đã gửi mã OTP 6 số về email của bạn!');
+      if (data.maskedEmail) setMaskedUserEmail(data.maskedEmail);
+      toast.success(data.message || 'Đã gửi mã OTP 6 số về email thành công!');
+    } catch (err: any) {
+      setPinError(err.message || 'Lỗi gửi mã OTP xác thực.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleSavePin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPinError(null);
+
+    // 1. Kiểm tra xác thực danh tính
+    if (pinAuthMethod === 'PASSWORD') {
+      if (!pinPassword.trim()) {
+        setPinError('Vui lòng nhập mật khẩu tài khoản hiện tại.');
+        return;
+      }
+    } else {
+      if (!pinOtp.trim() || pinOtp.trim().length !== 6) {
+        setPinError('Vui lòng nhập đầy đủ mã xác thực OTP gồm đúng 6 chữ số.');
+        return;
+      }
+    }
+
+    // 2. Kiểm tra mã PIN (nếu là setup hoặc change)
+    if (pinModalMode !== 'remove') {
+      if (!/^\d{4}$/.test(pinCode.trim())) {
+        setPinError('Mã PIN phải bao gồm đúng 4 chữ số (0-9).');
+        return;
+      }
+      if (pinCode.trim() !== pinConfirm.trim()) {
+        setPinError('Mã PIN xác nhận không khớp.');
+        return;
+      }
+    }
+
+    setIsSubmittingPin(true);
+    try {
+      const token =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('access_token') ||
+            localStorage.getItem('token') ||
+            localStorage.getItem('avora_pos_token')
+          : null;
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+
+      let url = '/api/pos/auth/pin/setup';
+      let method = 'POST';
+      const body: any = {};
+
+      if (pinAuthMethod === 'PASSWORD') {
+        body.password = pinPassword.trim();
+      } else {
+        body.otp = pinOtp.trim();
+      }
+
+      if (pinModalMode === 'setup') {
+        body.pin = pinCode.trim();
+      } else if (pinModalMode === 'change') {
+        url = '/api/pos/auth/pin/change';
+        method = 'PUT';
+        body.newPin = pinCode.trim();
+      } else if (pinModalMode === 'remove') {
+        url = '/api/pos/auth/pin';
+        method = 'DELETE';
+      }
+
+      const res = await fetch(url, {
+        method,
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || 'Thao tác không thành công.');
+      }
+
+      toast.success(data.message || 'Thao tác thành công!');
+      setIsPinModalOpen(false);
+      fetchPinStatus();
+    } catch (err: any) {
+      setPinError(err.message || 'Có lỗi xảy ra.');
+    } finally {
+      setIsSubmittingPin(false);
+    }
+  };
+
 
   // Sub-tabs cấu hình máy in: In hóa đơn / tạm tính | In bar / bếp | In tem mặt hàng
   const [printSubTab, setPrintSubTab] = useState<'bill' | 'kitchen' | 'barcode'>('bill');
@@ -140,7 +339,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   // -------------------------------------------------------------
   const [receiptPrinterName, setReceiptPrinterName] = useState<string>('');
   const [defaultReceiptPrinterId, setDefaultReceiptPrinterId] = useState<string>('');
-  const [defaultPaperSize, setDefaultPaperSize] = useState<'80mm' | '58mm'>('80mm');
+  const [defaultPaperSize, setDefaultPaperSize] = useState<'80mm' | '58mm' | 'XP-350B'>('80mm');
   const [billCopies, setBillCopies] = useState<number>(1);
   const [tempBillCopies, setTempBillCopies] = useState<number>(1);
   const [autoPrintReceipt, setAutoPrintReceipt] = useState<boolean>(true);
@@ -155,14 +354,14 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   const [kitchenEnabled, setKitchenEnabled] = useState<boolean>(true);
   const [kitchenPrinterName, setKitchenPrinterName] = useState<string>('');
   const [kitchenPrinterId, setKitchenPrinterId] = useState<string>('');
-  const [kitchenPaperSize, setKitchenPaperSize] = useState<'80mm' | '58mm'>('80mm');
+  const [kitchenPaperSize, setKitchenPaperSize] = useState<'80mm' | '58mm' | 'XP-350B'>('80mm');
   const [kitchenCopies, setKitchenCopies] = useState<number>(1);
 
   // MÁY IN QUẦY BAR (NƯỚC)
   const [barEnabled, setBarEnabled] = useState<boolean>(true);
   const [barPrinterName, setBarPrinterName] = useState<string>('');
   const [barPrinterId, setBarPrinterId] = useState<string>('');
-  const [barPaperSize, setBarPaperSize] = useState<'80mm' | '58mm'>('80mm');
+  const [barPaperSize, setBarPaperSize] = useState<'80mm' | '58mm' | 'XP-350B'>('80mm');
   const [barCopies, setBarCopies] = useState<number>(1);
 
   // -------------------------------------------------------------
@@ -952,8 +1151,38 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 <Store className="w-3.5 h-3.5 text-[#da251d]" />
                 <span>QUẢN LÝ VẬN HÀNH</span>
               </div>
-              <div className="mt-1 space-y-1">
-                {/* 4. Hóa đơn & Biên lai */}
+              <div className="mt-1 space-y-1.5">
+                {/* 4a. Tổng kết cuối ngày / Kết ca */}
+                {onOpenEndOfDayReport && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenEndOfDayReport();
+                    }}
+                    className="w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 cursor-pointer bg-red-50/60 hover:bg-red-50 border border-red-200/80 hover:border-[#da251d] shadow-2xs group active:scale-[0.99]"
+                    title="Mở tổng kết doanh thu và in phiếu kết ca"
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg bg-[#da251d] text-white flex items-center justify-center shrink-0 shadow-xs">
+                          <FileText className="w-3.5 h-3.5" />
+                        </div>
+                        <span className="text-xs font-black text-slate-900 group-hover:text-[#da251d] truncate">
+                          Tổng kết cuối ngày
+                        </span>
+                      </div>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-white text-[#da251d] border border-red-200 shrink-0">
+                        Báo cáo
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-normal leading-snug group-hover:text-slate-700 pl-8">
+                      Xem doanh thu, phương thức thanh toán, hàng hóa bán ra và in phiếu kết ca.
+                    </p>
+                  </button>
+                )}
+
+                {/* 4b. Hóa đơn & Biên lai */}
                 <button
                   type="button"
                   onClick={() => setActiveSidebarItem('invoices')}
@@ -982,6 +1211,33 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 >
                   <MapPin className="w-4 h-4 shrink-0" />
                   <span>Chi nhánh & Giờ mở cửa</span>
+                </button>
+
+                {/* 5b. Bảo mật & Đăng nhập (Mã PIN POS) */}
+                <button
+                  type="button"
+                  onClick={() => setActiveSidebarItem('security')}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                    activeSidebarItem === 'security'
+                      ? 'bg-[#da251d] text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 shrink-0" />
+                    <span>Bảo mật &amp; Đăng nhập</span>
+                  </div>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                      activeSidebarItem === 'security'
+                        ? 'bg-white/20 text-white'
+                        : hasPosPin
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}
+                  >
+                    {hasPosPin ? 'ĐÃ CÓ PIN' : 'CHƯA CÓ'}
+                  </span>
                 </button>
 
                 {/* 6. Trang Quản trị Hệ thống */}
@@ -1241,8 +1497,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             onChange={(e) => setDefaultPaperSize(e.target.value as any)}
                             className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
                           >
-                            <option value="80mm">80mm</option>
-                            <option value="58mm">58mm</option>
+                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B">Xprinter XP-350B (76mm - Chống rớt giấy / Tiết kiệm)</option>
+                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
@@ -1465,8 +1722,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             disabled={!kitchenEnabled}
                             className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
                           >
-                            <option value="80mm">80mm</option>
-                            <option value="58mm">58mm</option>
+                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B">Xprinter XP-350B (76mm)</option>
+                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
@@ -1578,8 +1836,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             disabled={!barEnabled}
                             className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
                           >
-                            <option value="80mm">80mm</option>
-                            <option value="58mm">58mm</option>
+                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B">Xprinter XP-350B (76mm)</option>
+                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
@@ -1960,6 +2219,115 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
 
 
           {/* ========================================================================= */}
+          {/* MỤC BẢO MẬT & ĐĂNG NHẬP (POS PIN) */}
+          {/* ========================================================================= */}
+          {activeSidebarItem === 'security' && (
+            <div className="p-6 max-w-2xl space-y-6">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-[#da251d]" />
+                  Bảo mật &amp; Đăng nhập POS
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Quản lý mã PIN cá nhân để đăng nhập nhanh tức thì tại máy trạm AVORA POS Desktop
+                </p>
+              </div>
+
+              {/* Card trạng thái PIN */}
+              <div className="p-5 bg-white border border-slate-200 rounded-2xl shadow-xs space-y-4">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <div className="text-sm font-bold text-slate-900">Mã PIN đăng nhập POS</div>
+                    <p className="text-xs text-slate-500 max-w-md leading-relaxed">
+                      Cho phép bạn đăng nhập nhanh vào AVORA POS chỉ bằng mã PIN 4 số. Backend sẽ tự nhận diện danh tính và phân quyền ca làm việc.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border">
+                    {hasPosPin ? (
+                      <span className="flex items-center gap-1.5 text-emerald-700">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Đã thiết lập
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1.5 text-slate-500">
+                        <span className="w-2 h-2 rounded-full bg-slate-300" />
+                        Chưa thiết lập
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {hasPosPin && posPinUpdatedAt && (
+                  <div className="text-[11px] text-slate-400">
+                    Cập nhật lần cuối: {new Date(posPinUpdatedAt).toLocaleString('vi-VN')}
+                  </div>
+                )}
+
+                <div className="pt-3 border-t border-slate-100 flex items-center gap-3">
+                  {!hasPosPin ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPinModalMode('setup');
+                        setPinAuthMethod('PASSWORD');
+                        setPinPassword('');
+                        setPinOtp('');
+                        setOtpSentNotice(null);
+                        setPinCode('');
+                        setPinConfirm('');
+                        setPinError(null);
+                        setIsPinModalOpen(true);
+                      }}
+                      className="px-4 py-2.5 bg-[#da251d] text-white rounded-xl text-xs font-bold hover:bg-[#b91c1c] transition-colors shadow-xs cursor-pointer flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      THIẾT LẬP MÃ PIN
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPinModalMode('change');
+                          setPinAuthMethod('PASSWORD');
+                          setPinPassword('');
+                          setPinOtp('');
+                          setOtpSentNotice(null);
+                          setPinCode('');
+                          setPinConfirm('');
+                          setPinError(null);
+                          setIsPinModalOpen(true);
+                        }}
+                        className="px-4 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors shadow-xs cursor-pointer flex items-center gap-2"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        ĐỔI MÃ PIN
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPinModalMode('remove');
+                          setPinAuthMethod('PASSWORD');
+                          setPinPassword('');
+                          setPinOtp('');
+                          setOtpSentNotice(null);
+                          setPinError(null);
+                          setIsPinModalOpen(true);
+                        }}
+                        className="px-4 py-2.5 bg-red-50 text-red-700 border border-red-200 rounded-xl text-xs font-bold hover:bg-red-100 transition-colors cursor-pointer flex items-center gap-2"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        XÓA MÃ PIN
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ========================================================================= */}
           {/* MỤC 8: GIỚI THIỆU & CẬP NHẬT ỨNG DỤNG (Directives 18, 19, 72, 95) */}
           {/* ========================================================================= */}
           {activeSidebarItem === 'about' && (
@@ -2136,7 +2504,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             ) : (
               <div className="flex items-center gap-1">
                 <span className="font-bold text-slate-800">
-                  {currentBranch?.name || 'Chi nhánh AVORA'}
+                  {currentBranch?.name || 'Đang tải chi nhánh...'}
                 </span>
                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 font-medium">
                   Phân công
@@ -2172,6 +2540,228 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           </button>
         </div>
       </footer>
+
+      {/* Modal Quản Lý Mã PIN POS */}
+      {isPinModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h4 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-[#da251d]" />
+                {pinModalMode === 'setup'
+                  ? 'Thiết lập mã PIN POS mới'
+                  : pinModalMode === 'change'
+                  ? 'Đổi mã PIN POS'
+                  : 'Xóa mã PIN POS'}
+              </h4>
+              <button
+                type="button"
+                onClick={() => setIsPinModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {pinError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+                {pinError}
+              </div>
+            )}
+
+            <form onSubmit={handleSavePin} className="space-y-4">
+              {/* Chọn phương thức xác minh: Mật khẩu hoặc OTP Email */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">
+                  Xác minh danh tính tài khoản <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPinAuthMethod('PASSWORD');
+                      setPinError(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      pinAuthMethod === 'PASSWORD'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Mật khẩu tài khoản</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPinAuthMethod('OTP');
+                      setPinError(null);
+                    }}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                      pinAuthMethod === 'OTP'
+                        ? 'bg-white text-slate-900 shadow-xs'
+                        : 'text-slate-500 hover:text-slate-900'
+                    }`}
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>Mã OTP qua Email</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* PHƯƠNG THỨC 1: XÁC MINH BẰNG MẬT KHẨU */}
+              {pinAuthMethod === 'PASSWORD' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Mật khẩu tài khoản hiện tại <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={pinPassword}
+                    onChange={(e) => setPinPassword(e.target.value)}
+                    placeholder="Nhập mật khẩu tài khoản để xác nhận"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:bg-white focus:border-[#da251d] outline-hidden transition-all"
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Nhập mật khẩu đăng nhập của bạn để bảo mật tài khoản.
+                  </p>
+                </div>
+              )}
+
+              {/* PHƯƠNG THỨC 2: XÁC MINH BẰNG MÃ OTP 6 SỐ QUA EMAIL */}
+              {pinAuthMethod === 'OTP' && (
+                <div className="space-y-3 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-[#da251d]" />
+                        Email nhận mã OTP
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5 font-medium">
+                        {maskedUserEmail || currentUser?.email || 'Email đã đăng ký tài khoản'}
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleRequestOtp}
+                      disabled={isSendingOtp || otpCooldown > 0}
+                      className="px-3 py-1.5 bg-[#da251d] hover:bg-[#b91c1c] text-white text-[11px] font-bold rounded-lg disabled:opacity-50 transition-colors flex items-center gap-1.5 shrink-0 cursor-pointer"
+                    >
+                      {isSendingOtp ? (
+                        <RefreshCw className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <Send className="w-3 h-3" />
+                      )}
+                      <span>
+                        {otpCooldown > 0
+                          ? `Gửi lại (${otpCooldown}s)`
+                          : isSendingOtp
+                          ? 'Đang gửi...'
+                          : 'Gửi mã OTP'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {otpSentNotice && (
+                    <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-2 font-medium flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                      <span>{otpSentNotice}</span>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Nhập mã OTP 6 số <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      maxLength={6}
+                      value={pinOtp}
+                      onChange={(e) => setPinOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="• • • • • •"
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-center text-xl tracking-[0.4em] font-mono font-bold text-slate-900 focus:border-[#da251d] outline-hidden shadow-xs"
+                      autoFocus
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Mã có hiệu lực trong 5 phút. Vui lòng kiểm tra cả thư mục Spam/Rác.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Ô NHẬP MÃ PIN 4 SỐ (CHO SETUP VÀ CHANGE) */}
+              {pinModalMode !== 'remove' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Mã PIN mới (đúng 4 số) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={pinCode}
+                      onChange={(e) => setPinCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="● ● ● ●"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xl tracking-[0.5em] font-mono font-bold text-slate-900 focus:bg-white focus:border-[#da251d] outline-hidden transition-all"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Chỉ 4 số (0-9). Không dùng mã PIN quá dễ đoán (0000, 1234, 1111...).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Xác nhận lại mã PIN <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={pinConfirm}
+                      onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      placeholder="● ● ● ●"
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-center text-xl tracking-[0.5em] font-mono font-bold text-slate-900 focus:bg-white focus:border-[#da251d] outline-hidden transition-all"
+                    />
+                  </div>
+                </>
+              )}
+
+              {/* CẢNH BÁO KHI XÓA PIN */}
+              {pinModalMode === 'remove' && (
+                <div className="text-xs text-amber-800 bg-amber-50 p-3.5 rounded-xl border border-amber-200 leading-relaxed">
+                  <b>Lưu ý quan trọng:</b> Sau khi xóa mã PIN, bạn sẽ không thể đăng nhập nhanh tại máy POS Desktop bằng mã PIN nữa mà phải nhập mật khẩu tài khoản.
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsPinModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPin}
+                  className="px-5 py-2 bg-[#da251d] text-white text-xs font-bold rounded-xl hover:bg-[#b91c1c] disabled:opacity-50 transition-colors shadow-xs cursor-pointer"
+                >
+                  {isSubmittingPin
+                    ? 'Đang xử lý...'
+                    : pinModalMode === 'remove'
+                    ? 'Xác nhận xóa PIN'
+                    : 'Lưu mã PIN'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Modal xác nhận đóng ứng dụng AVORA POS */}
       <PosExitConfirmModal

@@ -33,7 +33,7 @@ namespace AvoraPos.Update
             {
                 string url = manifestUrl
                     ?? Environment.GetEnvironmentVariable("AVORA_UPDATE_URL")
-                    ?? "http://localhost:3001/api/pos-desktop/update/latest";
+                    ?? "http://localhost:4001/api/pos-desktop/update/latest";
 
                 var response = await _httpClient.GetAsync(url);
                 if (!response.IsSuccessStatusCode)

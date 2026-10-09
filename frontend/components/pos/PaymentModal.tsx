@@ -466,10 +466,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       return;
     }
     setIsPrintingTempBill(true);
-    const toastId = toast.loading('Đang gửi lệnh in tạm tính & mã QR...');
     try {
       if (onPrintTempBill) {
-        toast.dismiss(toastId);
         await onPrintTempBill(sepayQrUrl);
         return;
       }
@@ -483,44 +481,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       }
 
       const html = data.data.html;
-      const targetPrinter = receiptPrinterName || 'Xprinter XP-350B';
-      const isOnline = await printAgent.checkHealth().catch(() => false);
+      const resolvedPaperSize = data.data.paperSize || '80mm';
+      const targetPrinter = 'Xprinter XP-350B';
 
-      if (isOnline) {
-        const agentRes = await printAgent.printHtml({
-          printerName: targetPrinter,
-          htmlContent: html,
-          paperSize: paperSize || '80mm',
-          copies: 1,
-          idempotencyKey: `tempbill-qr-${order.id}-${Date.now()}`,
+      const agentRes = await printAgent.printHtml({
+        printerName: targetPrinter,
+        htmlContent: html,
+        paperSize: resolvedPaperSize,
+        copies: 1,
+        idempotencyKey: `tempbill-qr-${order.id}-${Date.now()}`,
+        receiptPayload: data.data?.receiptPayload,
+      });
+
+      if (agentRes.success) {
+        toast.success(`Đã in phiếu tạm tính & mã QR!`, {
+          icon: <Printer className="w-4 h-4 text-emerald-500" />,
         });
-
-        if (agentRes.success) {
-          toast.success(`Đã in phiếu tạm tính & mã QR tới máy in [${targetPrinter}]!`, {
-            id: toastId,
-            icon: <Printer className="w-4 h-4 text-emerald-500" />,
-          });
-          return;
-        }
+      } else {
+        toast.error(`Lỗi máy in: ${agentRes.message || 'Không thể in'}`);
       }
-
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-      iframe.srcdoc = html;
-      iframe.onload = () => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-        setTimeout(() => iframe.remove(), 2000);
-      };
-      toast.success('Đã gửi lệnh in tạm tính qua trình duyệt!', { id: toastId });
     } catch (err: any) {
-      toast.error(err.message || 'Không thể in phiếu tạm tính & mã QR', { id: toastId });
+      toast.error(err.message || 'Không thể in phiếu tạm tính & mã QR');
     } finally {
       setIsPrintingTempBill(false);
     }

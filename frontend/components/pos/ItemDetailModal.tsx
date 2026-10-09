@@ -18,6 +18,8 @@ import {
   Gift,
 } from 'lucide-react';
 import { PosCartItem } from './pos-types';
+import { getItemPriceBreakdown } from './pos-item-price-helper';
+import { OrderItemPriceBreakdown } from './OrderItemPriceBreakdown';
 
 interface ItemDetailModalProps {
   isOpen: boolean;
@@ -244,6 +246,9 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
               <p className="text-slate-500 font-mono text-[11px] mt-0.5">
                 Mã: {item.product.itemCode} • Đơn vị: {item.product.unit || 'phần'}
               </p>
+              <p className="text-slate-600 font-medium text-[11px] mt-0.5 select-text">
+                {getItemPriceBreakdown(item).addedByFormatted}
+              </p>
             </div>
             <div className="text-right">
               <div className="text-base font-black text-[#da251d]">
@@ -331,21 +336,10 @@ export const ItemDetailModal: React.FC<ItemDetailModalProps> = ({
             <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
               {item.selectedOptions?.length > 0 && (
                 <div>
-                  <div className="text-[11px] font-bold text-slate-600 mb-1">
-                    Tùy chọn bổ sung (Options):
+                  <div className="text-[11px] font-bold text-slate-700 mb-1">
+                    Cấu trúc giá món & Tùy chọn (Options):
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.selectedOptions.map((opt, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-medium text-[11px]"
-                      >
-                        {opt.nameAtSale}
-                        {opt.priceAdjustmentAtSale > 0 &&
-                          ` (+${opt.priceAdjustmentAtSale.toLocaleString('vi-VN')}đ)`}
-                      </span>
-                    ))}
-                  </div>
+                  <OrderItemPriceBreakdown item={item} showAddedBy={false} />
                 </div>
               )}
 

@@ -12,6 +12,9 @@ import { PrintTemplateModule } from '../print-template/print-template.module';
 import { BuffetModule } from '../buffet/buffet.module';
 import { QrOrderModule } from '../qr-order/qr-order.module';
 
+import { PosPinController } from './pos-pin.controller';
+import { PosPinService } from './pos-pin.service';
+
 @Module({
   imports: [
     PrismaModule,
@@ -25,8 +28,8 @@ import { QrOrderModule } from '../qr-order/qr-order.module';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  controllers: [PosController, PosUpdateController],
-  providers: [PosService, PosGateway],
-  exports: [PosService, PosGateway],
+  controllers: [PosController, PosUpdateController, PosPinController],
+  providers: [PosService, PosGateway, PosPinService],
+  exports: [PosService, PosGateway, PosPinService],
 })
 export class PosModule {}

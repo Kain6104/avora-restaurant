@@ -1,15 +1,20 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using AvoraPos.Models;
 using AvoraPos.NativePrint;
 using AvoraPos.Security;
 using AvoraPos.Storage;
@@ -20,6 +25,7 @@ namespace AvoraPos
 {
     public partial class MainWindow : Window
     {
+        public static MainWindow? Instance { get; private set; }
         private readonly PrintBridgeHost _bridgeHost = new PrintBridgeHost();
         private static readonly HttpClient _httpClient = new HttpClient();
         private bool _isFullScreen = false;
@@ -30,7 +36,12 @@ namespace AvoraPos
         private string? _currentUserName = null;
         private string? _currentUserEmail = null;
         private bool _isPasswordRevealed = false;
-        private static string BackendUrl => Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:3001";
+        private string _currentPin = "";
+        private RememberedAccount? _rememberedAccount = null;
+        private bool _isReturningPasswordRevealed = false;
+        private DispatcherTimer? _pinRateLimitTimer = null;
+        private int _pinRateLimitRemainingSec = 0;
+        private static string BackendUrl => Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:4001";
 
         private static readonly Geometry EyeOpenGeometry =
             Geometry.Parse("M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z");
@@ -96,6 +107,7 @@ namespace AvoraPos
 
         public MainWindow()
         {
+            Instance = this;
             InitializeComponent();
             SourceInitialized += MainWindow_SourceInitialized;
             Loaded += MainWindow_Loaded;
@@ -324,13 +336,10 @@ namespace AvoraPos
 
         private void ToggleFullScreen()
         {
+            // Bỏ chức năng thu nhỏ cửa sổ bằng F11 - Luôn duy trì Kiosk Fullscreen toàn màn hình
             if (!_isFullScreen)
             {
                 EnterKioskFullscreen();
-            }
-            else
-            {
-                EnterWindowedDebugMode();
             }
         }
 
@@ -408,10 +417,48 @@ namespace AvoraPos
         }
         #endregion
 
-        #region App State Initialization & Native Logout
+        #region App State Initialization & Multi-Mode Native Login
+        private async Task EnsureDeviceHandshakeAsync()
+        {
+            try
+            {
+                var (deviceId, deviceSecret) = SecureSessionManager.GetDeviceCredential();
+                if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(deviceSecret))
+                {
+                    string hwId = DeviceIdentifier.GetHardwareFingerprint();
+                    var payload = new JObject
+                    {
+                        ["deviceId"] = hwId,
+                        ["machineName"] = Environment.MachineName,
+                    };
+                    var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                    var res = await _httpClient.PostAsync($"{BackendUrl}/api/pos/device/handshake", content);
+                    if (res.IsSuccessStatusCode)
+                    {
+                        string body = await res.Content.ReadAsStringAsync();
+                        var json = JObject.Parse(body);
+                        string? newId = json["deviceId"]?.ToString();
+                        string? newSecret = json["deviceSecret"]?.ToString();
+                        if (!string.IsNullOrEmpty(newId) && !string.IsNullOrEmpty(newSecret))
+                        {
+                            SecureSessionManager.SaveDeviceCredential(newId, newSecret);
+                            Debug.WriteLine("[DEVICE] Handshake successful and credential saved with DPAPI.");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[DEVICE] Handshake error: {ex.Message}");
+            }
+        }
+
         private async Task InitializeAppStateAsync()
         {
             txtSplashStatus.Text = "Đang kiểm tra phiên đăng nhập AVORA POS...";
+
+            // Ensure Trusted POS Device handshake
+            await EnsureDeviceHandshakeAsync();
 
             // Check if launched with initial deep link argument
             if (!string.IsNullOrEmpty(App.InitialDeepLinkArg))
@@ -420,20 +467,11 @@ namespace AvoraPos
                 return;
             }
 
-            // Check stored DPAPI session
-            var storedSession = SecureSessionManager.LoadSession();
-            if (storedSession != null && !string.IsNullOrWhiteSpace(storedSession.Token))
-            {
-                Debug.WriteLine("[AUTH] Stored session found, validating profile...");
-                bool isValid = await ValidateAndApplySessionAsync(storedSession.Token);
-                if (isValid)
-                {
-                    return; // Transitioned to POS
-                }
-            }
+            // Load remembered account from DPAPI
+            _rememberedAccount = SecureSessionManager.GetRememberedAccount();
 
-            // No valid session: Show Native Login
-            ShowNativeLogin();
+            // Transition to PIN Login as default POS fast-entry mode
+            ShowPinLogin();
         }
 
         public async Task PerformDesktopLogoutAsync()
@@ -444,15 +482,10 @@ namespace AvoraPos
             _currentUserName = null;
             _currentUserEmail = null;
 
-            // 1. INSTANTLY transition UI to Native Login (Collapsed hides Win32 HWND immediately)
-            posWebViewGrid.Visibility = Visibility.Collapsed;
-            splashOverlay.Visibility = Visibility.Collapsed;
-            nativeLoginOverlay.Visibility = Visibility.Visible;
-
-            // 2. Clear local DPAPI stored credentials
+            // 1. Clear local session
             SecureSessionManager.ClearSession();
 
-            // 3. Clear WebView2 cookies & navigate away from POS safely
+            // 2. Clear WebView2 cookies
             if (posWebView.CoreWebView2 != null)
             {
                 try
@@ -466,35 +499,11 @@ namespace AvoraPos
                 }
             }
 
-            // 4. Reset Native Login form
-            txtPassword.Password = "";
-            txtPasswordVisible.Text = "";
-            txtPasswordVisible.Visibility = Visibility.Collapsed;
-            txtPassword.Visibility = Visibility.Visible;
-            _isPasswordRevealed = false;
-            pathEyeIcon.Data = EyeOpenGeometry;
+            // 3. Reload remembered account
+            _rememberedAccount = SecureSessionManager.GetRememberedAccount();
 
-            // Tự động render lại Email / Username đã đăng nhập trước đó
-            if (string.IsNullOrWhiteSpace(txtEmail.Text))
-            {
-                txtEmail.Text = SecureSessionManager.GetLastIdentifier() ?? "";
-            }
-
-            loginErrorBanner.Visibility = Visibility.Collapsed;
-            loginProgress.Visibility = Visibility.Collapsed;
-            btnLogin.IsEnabled = true;
-            btnLogin.Content = "ĐĂNG NHẬP";
-            btnGoogleLogin.IsEnabled = true;
-
-            if (!string.IsNullOrWhiteSpace(txtEmail.Text))
-            {
-                txtPassword.Focus();
-            }
-            else
-            {
-                txtEmail.Focus();
-            }
-
+            // 4. Return to PIN Login (staff can immediately type 4-digit PIN or click returning user)
+            ShowPinLogin();
             await CheckServerConnectionAsync();
         }
 
@@ -503,16 +512,187 @@ namespace AvoraPos
             RequestSafeExit();
         }
 
-        private void ShowNativeLogin(string? errorMessage = null)
+        public void ShowPinLogin(string? errorMessage = null)
         {
             splashOverlay.Visibility = Visibility.Collapsed;
             posWebViewGrid.Visibility = Visibility.Hidden;
             nativeLoginOverlay.Visibility = Visibility.Visible;
 
+            panelPinLogin.Visibility = Visibility.Visible;
+            panelReturningUser.Visibility = Visibility.Collapsed;
+            panelStandardLogin.Visibility = Visibility.Collapsed;
+
+            _currentPin = "";
+            UpdatePinDots();
+
+            if (_rememberedAccount != null && !string.IsNullOrWhiteSpace(_rememberedAccount.FullName))
+            {
+                btnPinToRememberedUser.Visibility = Visibility.Visible;
+                txtPinToRememberedUserLabel.Text = $"Đăng nhập với {_rememberedAccount.FullName}";
+                txtPinToStandardLabel.Text = "Đăng nhập tài khoản khác";
+            }
+            else
+            {
+                btnPinToRememberedUser.Visibility = Visibility.Collapsed;
+                txtPinToStandardLabel.Text = "Đăng nhập bằng mật khẩu";
+            }
+
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                txtPinErrorMessage.Text = errorMessage;
+                pinErrorBanner.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                pinErrorBanner.Visibility = Visibility.Collapsed;
+            }
+
+            pinSuccessBanner.Visibility = Visibility.Collapsed;
+            _ = CheckServerConnectionAsync();
+        }
+
+        public void ShowReturningUserLogin(string? errorMessage = null)
+        {
+            splashOverlay.Visibility = Visibility.Collapsed;
+            posWebViewGrid.Visibility = Visibility.Hidden;
+            nativeLoginOverlay.Visibility = Visibility.Visible;
+
+            if (_rememberedAccount == null)
+            {
+                _rememberedAccount = SecureSessionManager.GetRememberedAccount();
+            }
+
+            if (_rememberedAccount == null)
+            {
+                ShowStandardLogin(errorMessage);
+                return;
+            }
+
+            panelPinLogin.Visibility = Visibility.Collapsed;
+            panelReturningUser.Visibility = Visibility.Visible;
+            panelStandardLogin.Visibility = Visibility.Collapsed;
+
+            txtRememberedName.Text = _rememberedAccount.FullName;
+            txtRememberedEmail.Text = _rememberedAccount.Email;
+
+            // Render Avatar
+            LoadReturningUserAvatar();
+
+            // Reset Password Inputs
+            txtReturningPassword.Password = "";
+            txtReturningPasswordVisible.Text = "";
+            txtReturningPasswordVisible.Visibility = Visibility.Collapsed;
+            txtReturningPassword.Visibility = Visibility.Visible;
+            _isReturningPasswordRevealed = false;
+            pathReturningEyeIcon.Data = EyeOpenGeometry;
+            txtReturningPlaceholder.Visibility = Visibility.Visible;
+            UpdateCapsLockWarning();
+
+            returningLoginProgress.Visibility = Visibility.Collapsed;
+            btnReturningLogin.IsEnabled = true;
+            btnReturningLogin.Content = "ĐĂNG NHẬP";
+
+            if (!string.IsNullOrEmpty(errorMessage))
+            {
+                txtReturningErrorMessage.Text = errorMessage;
+                returningErrorBanner.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                returningErrorBanner.Visibility = Visibility.Collapsed;
+            }
+
+            txtReturningPassword.Focus();
+            _ = CheckServerConnectionAsync();
+        }
+
+        private void LoadReturningUserAvatar()
+        {
+            try
+            {
+                // 1. Kiểm tra ảnh cache cục bộ
+                if (!string.IsNullOrEmpty(_rememberedAccount?.CachedAvatarPath) &&
+                    File.Exists(_rememberedAccount.CachedAvatarPath))
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = new Uri(_rememberedAccount.CachedAvatarPath, UriKind.Absolute);
+                    bmp.EndInit();
+                    bmp.Freeze();
+
+                    imgReturningAvatar.Source = bmp;
+                    imgReturningAvatar.Visibility = Visibility.Visible;
+                    borderFallbackAvatar.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
+                // 2. Thử URL online nếu hợp lệ
+                if (!string.IsNullOrEmpty(_rememberedAccount?.AvatarUrl) &&
+                    (Uri.TryCreate(_rememberedAccount.AvatarUrl, UriKind.Absolute, out var uri) &&
+                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)))
+                {
+                    var bmp = new BitmapImage();
+                    bmp.BeginInit();
+                    bmp.CacheOption = BitmapCacheOption.OnLoad;
+                    bmp.UriSource = uri;
+                    bmp.EndInit();
+
+                    imgReturningAvatar.Source = bmp;
+                    imgReturningAvatar.Visibility = Visibility.Visible;
+                    borderFallbackAvatar.Visibility = Visibility.Collapsed;
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[AVATAR] Error loading avatar: {ex.Message}");
+            }
+
+            // 3. Fallback chữ cái đầu đẹp mắt
+            imgReturningAvatar.Source = null;
+            imgReturningAvatar.Visibility = Visibility.Collapsed;
+            borderFallbackAvatar.Visibility = Visibility.Visible;
+            txtFallbackInitial.Text = _rememberedAccount?.GetInitialLetter() ?? "A";
+        }
+
+        public void ShowStandardLogin(string? errorMessage = null)
+        {
+            splashOverlay.Visibility = Visibility.Collapsed;
+            posWebViewGrid.Visibility = Visibility.Hidden;
+            nativeLoginOverlay.Visibility = Visibility.Visible;
+
+            panelPinLogin.Visibility = Visibility.Collapsed;
+            panelReturningUser.Visibility = Visibility.Collapsed;
+            panelStandardLogin.Visibility = Visibility.Visible;
+
+            if (_rememberedAccount != null && !string.IsNullOrWhiteSpace(_rememberedAccount.FullName))
+            {
+                btnBackToRememberedUser.Visibility = Visibility.Visible;
+                txtBackToRememberedLabel.Text = $"← Quay lại {_rememberedAccount.FullName}";
+            }
+            else
+            {
+                btnBackToRememberedUser.Visibility = Visibility.Collapsed;
+            }
+
             if (string.IsNullOrWhiteSpace(txtEmail.Text))
             {
                 txtEmail.Text = SecureSessionManager.GetLastIdentifier() ?? "";
             }
+
+            txtPassword.Password = "";
+            txtPasswordVisible.Text = "";
+            txtPasswordVisible.Visibility = Visibility.Collapsed;
+            txtPassword.Visibility = Visibility.Visible;
+            _isPasswordRevealed = false;
+            pathEyeIcon.Data = EyeOpenGeometry;
+            UpdateCapsLockWarning();
+
+            loginProgress.Visibility = Visibility.Collapsed;
+            btnLogin.IsEnabled = true;
+            btnLogin.Content = "ĐĂNG NHẬP";
+            btnGoogleLogin.IsEnabled = true;
 
             if (!string.IsNullOrEmpty(errorMessage))
             {
@@ -535,11 +715,23 @@ namespace AvoraPos
             _ = CheckServerConnectionAsync();
         }
 
+        private void ShowNativeLogin(string? errorMessage = null)
+        {
+            if (_rememberedAccount != null)
+            {
+                ShowReturningUserLogin(errorMessage);
+            }
+            else
+            {
+                ShowPinLogin(errorMessage);
+            }
+        }
+
         private async Task CheckServerConnectionAsync()
         {
             try
             {
-                string apiUrl = Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:3001";
+                string apiUrl = Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:4001";
                 var res = await _httpClient.GetAsync($"{apiUrl}/api/health");
                 if (res.IsSuccessStatusCode)
                 {
@@ -552,7 +744,7 @@ namespace AvoraPos
 
             try
             {
-                var res = await _httpClient.GetAsync("http://localhost:3001/api/health");
+                var res = await _httpClient.GetAsync("http://localhost:4001/api/health");
                 if (res.IsSuccessStatusCode)
                 {
                     dotStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // #10B981
@@ -567,7 +759,423 @@ namespace AvoraPos
         }
         #endregion
 
-        #region Native Login Email / Password Flow
+        #region PIN Keypad & Auto-Submit Flow
+        private void BtnPinKey_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag is string tag)
+            {
+                HandlePinInputChar(tag);
+            }
+        }
+
+        private void HandlePinInputChar(string actionOrDigit)
+        {
+            if (_pinRateLimitRemainingSec > 0)
+                return;
+
+            pinErrorBanner.Visibility = Visibility.Collapsed;
+
+            if (actionOrDigit == "CLEAR")
+            {
+                _currentPin = "";
+            }
+            else if (actionOrDigit == "BACK")
+            {
+                if (_currentPin.Length > 0)
+                {
+                    _currentPin = _currentPin.Substring(0, _currentPin.Length - 1);
+                }
+            }
+            else if (actionOrDigit.Length == 1 && char.IsDigit(actionOrDigit[0]))
+            {
+                if (_currentPin.Length < 4)
+                {
+                    _currentPin += actionOrDigit[0];
+                }
+            }
+
+            UpdatePinDots();
+
+            if (_currentPin.Length == 4)
+            {
+                _ = SubmitPinLoginAsync();
+            }
+        }
+
+        private void UpdatePinDots()
+        {
+            var filledBrush = new SolidColorBrush(Color.FromRgb(218, 37, 29)); // #DA251D
+            var emptyBrush = Brushes.Transparent;
+            var emptyBorder = new SolidColorBrush(Color.FromRgb(203, 213, 225)); // #CBD5E1
+
+            dotPin1.Background = _currentPin.Length >= 1 ? filledBrush : emptyBrush;
+            dotPin1.BorderBrush = _currentPin.Length >= 1 ? filledBrush : emptyBorder;
+
+            dotPin2.Background = _currentPin.Length >= 2 ? filledBrush : emptyBrush;
+            dotPin2.BorderBrush = _currentPin.Length >= 2 ? filledBrush : emptyBorder;
+
+            dotPin3.Background = _currentPin.Length >= 3 ? filledBrush : emptyBrush;
+            dotPin3.BorderBrush = _currentPin.Length >= 3 ? filledBrush : emptyBorder;
+
+            dotPin4.Background = _currentPin.Length >= 4 ? filledBrush : emptyBrush;
+            dotPin4.BorderBrush = _currentPin.Length >= 4 ? filledBrush : emptyBorder;
+
+            btnPinSubmit.IsEnabled = (_currentPin.Length == 4) && (_pinRateLimitRemainingSec <= 0);
+        }
+
+        private void BtnPinSubmit_Click(object sender, RoutedEventArgs e)
+        {
+            if (_currentPin.Length == 4)
+            {
+                _ = SubmitPinLoginAsync();
+            }
+        }
+
+        private async Task SubmitPinLoginAsync()
+        {
+            if (_currentPin.Length != 4)
+                return;
+
+            string pinToSubmit = _currentPin;
+            pinProgress.Visibility = Visibility.Visible;
+            btnPinSubmit.IsEnabled = false;
+            btnPinSubmit.Content = "ĐANG XÁC THỰC...";
+            pinErrorBanner.Visibility = Visibility.Collapsed;
+
+            try
+            {
+                var (deviceId, deviceSecret) = SecureSessionManager.GetDeviceCredential();
+                if (string.IsNullOrEmpty(deviceId) || string.IsNullOrEmpty(deviceSecret))
+                {
+                    await EnsureDeviceHandshakeAsync();
+                    var cred = SecureSessionManager.GetDeviceCredential();
+                    deviceId = cred.deviceId;
+                    deviceSecret = cred.deviceSecret;
+                }
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BackendUrl}/api/pos/auth/pin/login");
+                if (!string.IsNullOrEmpty(deviceId))
+                {
+                    request.Headers.Add("x-pos-device-id", deviceId);
+                }
+                if (!string.IsNullOrEmpty(deviceSecret))
+                {
+                    request.Headers.Add("x-pos-device-secret", deviceSecret);
+                }
+
+                var payload = new JObject { ["pin"] = pinToSubmit };
+                request.Content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _currentPin = "";
+                    UpdatePinDots();
+
+                    string errorMsg = "Mã PIN không chính xác.";
+                    try
+                    {
+                        var errJson = JObject.Parse(responseBody);
+                        string? code = errJson["code"]?.ToString();
+                        string? msg = errJson["message"]?.ToString();
+                        int retryAfter = errJson["retryAfter"]?.Value<int>() ?? 0;
+
+                        if (code == "POS_PIN_RATE_LIMITED" && retryAfter > 0)
+                        {
+                            StartPinRateLimitCountdown(retryAfter);
+                            return;
+                        }
+
+                        if (!string.IsNullOrEmpty(msg))
+                        {
+                            errorMsg = msg;
+                        }
+                    }
+                    catch { }
+
+                    txtPinErrorMessage.Text = errorMsg;
+                    pinErrorBanner.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                // Đăng nhập PIN thành công
+                var result = JObject.Parse(responseBody);
+                string? token = result["access_token"]?.ToString();
+                var user = result["user"] as JObject;
+
+                if (string.IsNullOrEmpty(token))
+                {
+                    txtPinErrorMessage.Text = "Không nhận được token xác thực từ máy chủ.";
+                    pinErrorBanner.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                // Cập nhật RememberedAccount từ user nhận diện được
+                if (user != null)
+                {
+                    string uId = user["id"]?.ToString() ?? "";
+                    string uName = user["fullName"]?.ToString() ?? user["email"]?.ToString() ?? "Nhân viên POS";
+                    string uEmail = user["email"]?.ToString() ?? "";
+                    string? uAvatar = user["avatarUrl"]?.ToString();
+
+                    _rememberedAccount = new RememberedAccount
+                    {
+                        UserId = uId,
+                        FullName = uName,
+                        Email = uEmail,
+                        AvatarUrl = uAvatar,
+                        LastLoginAt = DateTime.UtcNow,
+                    };
+                    SecureSessionManager.SaveRememberedAccount(_rememberedAccount);
+
+                    txtPinSuccessMessage.Text = $"✓ Xin chào, {uName}!";
+                    pinSuccessBanner.Visibility = Visibility.Visible;
+
+                    if (!string.IsNullOrEmpty(uAvatar))
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            string? cached = await SecureSessionManager.CacheAvatarAsync(uId, uAvatar);
+                            if (!string.IsNullOrEmpty(cached))
+                            {
+                                _rememberedAccount.CachedAvatarPath = cached;
+                                SecureSessionManager.SaveRememberedAccount(_rememberedAccount);
+                            }
+                        });
+                    }
+                }
+
+                await Task.Delay(350); // UX transition delay
+                bool valid = await ValidateAndApplySessionAsync(token);
+                if (!valid)
+                {
+                    _currentPin = "";
+                    UpdatePinDots();
+                }
+            }
+            catch (Exception ex)
+            {
+                _currentPin = "";
+                UpdatePinDots();
+                txtPinErrorMessage.Text = $"Không thể kết nối đến máy chủ AVORA ({ex.Message}).";
+                pinErrorBanner.Visibility = Visibility.Visible;
+            }
+            finally
+            {
+                pinProgress.Visibility = Visibility.Collapsed;
+                btnPinSubmit.IsEnabled = (_currentPin.Length == 4) && (_pinRateLimitRemainingSec <= 0);
+                btnPinSubmit.Content = "ĐĂNG NHẬP";
+            }
+        }
+
+        private void StartPinRateLimitCountdown(int seconds)
+        {
+            _pinRateLimitRemainingSec = seconds;
+            _pinRateLimitTimer?.Stop();
+
+            _pinRateLimitTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1)
+            };
+
+            _pinRateLimitTimer.Tick += (s, e) =>
+            {
+                _pinRateLimitRemainingSec--;
+                if (_pinRateLimitRemainingSec <= 0)
+                {
+                    _pinRateLimitTimer.Stop();
+                    pinErrorBanner.Visibility = Visibility.Collapsed;
+                    btnPinSubmit.IsEnabled = (_currentPin.Length == 4);
+                }
+                else
+                {
+                    txtPinErrorMessage.Text = $"Đã nhập sai PIN nhiều lần. Vui lòng thử lại sau {_pinRateLimitRemainingSec} giây hoặc đăng nhập bằng mật khẩu.";
+                    pinErrorBanner.Visibility = Visibility.Visible;
+                    btnPinSubmit.IsEnabled = false;
+                }
+            };
+
+            txtPinErrorMessage.Text = $"Đã nhập sai PIN nhiều lần. Vui lòng thử lại sau {_pinRateLimitRemainingSec} giây hoặc đăng nhập bằng mật khẩu.";
+            pinErrorBanner.Visibility = Visibility.Visible;
+            btnPinSubmit.IsEnabled = false;
+            _pinRateLimitTimer.Start();
+        }
+        #endregion
+
+        #region Returning User Password Flow
+        private async void BtnReturningLogin_Click(object sender, RoutedEventArgs e)
+        {
+            if (_rememberedAccount == null || string.IsNullOrWhiteSpace(_rememberedAccount.Email))
+            {
+                ShowStandardLogin("Vui lòng nhập tài khoản để đăng nhập.");
+                return;
+            }
+
+            string password = _isReturningPasswordRevealed ? txtReturningPasswordVisible.Text : txtReturningPassword.Password;
+
+            if (string.IsNullOrWhiteSpace(password))
+            {
+                txtReturningErrorMessage.Text = "Vui lòng nhập mật khẩu.";
+                returningErrorBanner.Visibility = Visibility.Visible;
+                if (_isReturningPasswordRevealed) txtReturningPasswordVisible.Focus(); else txtReturningPassword.Focus();
+                return;
+            }
+
+            returningErrorBanner.Visibility = Visibility.Collapsed;
+            returningLoginProgress.Visibility = Visibility.Visible;
+            btnReturningLogin.IsEnabled = false;
+            btnReturningLogin.Content = "ĐANG ĐĂNG NHẬP...";
+
+            try
+            {
+                var payload = new JObject
+                {
+                    ["email"] = _rememberedAccount.Email,
+                    ["password"] = password
+                };
+
+                var content = new StringContent(payload.ToString(), Encoding.UTF8, "application/json");
+                var response = await _httpClient.PostAsync($"{BackendUrl}/api/auth/desktop/login", content);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorMsg = "Mật khẩu không chính xác.";
+                    try
+                    {
+                        var errJson = JObject.Parse(responseBody);
+                        string? msg = errJson["message"]?.ToString();
+                        if (!string.IsNullOrEmpty(msg))
+                        {
+                            if (msg.Contains("khóa", StringComparison.OrdinalIgnoreCase))
+                                errorMsg = "Tài khoản đã bị khóa.";
+                            else if (msg.Contains("mật khẩu", StringComparison.OrdinalIgnoreCase))
+                                errorMsg = "Mật khẩu không chính xác.";
+                            else
+                                errorMsg = msg;
+                        }
+                    }
+                    catch { }
+
+                    txtReturningErrorMessage.Text = errorMsg;
+                    returningErrorBanner.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                var resultJson = JObject.Parse(responseBody);
+                string? token = resultJson["access_token"]?.ToString();
+
+                if (string.IsNullOrEmpty(token))
+                {
+                    txtReturningErrorMessage.Text = "Không nhận được token xác thực từ máy chủ.";
+                    returningErrorBanner.Visibility = Visibility.Visible;
+                    return;
+                }
+
+                bool valid = await ValidateAndApplySessionAsync(token);
+                if (!valid) return;
+            }
+            catch (Exception ex)
+            {
+                txtReturningErrorMessage.Text = $"Không thể kết nối đến máy chủ AVORA ({ex.Message}).";
+                returningErrorBanner.Visibility = Visibility.Visible;
+            }
+            finally
+            {
+                returningLoginProgress.Visibility = Visibility.Collapsed;
+                btnReturningLogin.IsEnabled = true;
+                btnReturningLogin.Content = "ĐĂNG NHẬP";
+            }
+        }
+
+        private void BtnToggleReturningPassword_Click(object sender, RoutedEventArgs e)
+        {
+            if (!_isReturningPasswordRevealed)
+            {
+                txtReturningPasswordVisible.Text = txtReturningPassword.Password;
+                txtReturningPassword.Visibility = Visibility.Collapsed;
+                txtReturningPasswordVisible.Visibility = Visibility.Visible;
+                pathReturningEyeIcon.Data = EyeClosedGeometry;
+                _isReturningPasswordRevealed = true;
+                txtReturningPasswordVisible.Focus();
+                txtReturningPasswordVisible.CaretIndex = txtReturningPasswordVisible.Text.Length;
+            }
+            else
+            {
+                txtReturningPassword.Password = txtReturningPasswordVisible.Text;
+                txtReturningPasswordVisible.Visibility = Visibility.Collapsed;
+                txtReturningPassword.Visibility = Visibility.Visible;
+                pathReturningEyeIcon.Data = EyeOpenGeometry;
+                _isReturningPasswordRevealed = false;
+                txtReturningPassword.Focus();
+            }
+        }
+
+        private void TxtReturningPassword_PasswordChanged(object sender, RoutedEventArgs e)
+        {
+            txtReturningPlaceholder.Visibility = string.IsNullOrEmpty(txtReturningPassword.Password) ? Visibility.Visible : Visibility.Collapsed;
+            UpdateCapsLockWarning();
+        }
+
+        private void TxtReturningPasswordVisible_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            txtReturningPlaceholder.Visibility = string.IsNullOrEmpty(txtReturningPasswordVisible.Text) ? Visibility.Visible : Visibility.Collapsed;
+            UpdateCapsLockWarning();
+        }
+
+        private void TxtReturningPassword_KeyDown(object sender, KeyEventArgs e)
+        {
+            UpdateCapsLockWarning();
+            if (e.Key == Key.Enter)
+            {
+                BtnReturningLogin_Click(sender, e);
+            }
+        }
+
+        private void BtnSwitchToStandard_Click(object sender, RoutedEventArgs e)
+        {
+            ShowStandardLogin();
+        }
+
+        private void BtnSwitchToPin_Click(object sender, RoutedEventArgs e)
+        {
+            ShowPinLogin();
+        }
+
+        private void BtnPinToRememberedUser_Click(object sender, RoutedEventArgs e)
+        {
+            ShowReturningUserLogin();
+        }
+
+        private void BtnPinToStandardLogin_Click(object sender, RoutedEventArgs e)
+        {
+            ShowStandardLogin();
+        }
+
+        private void BtnBackToRememberedUser_Click(object sender, RoutedEventArgs e)
+        {
+            ShowReturningUserLogin();
+        }
+
+        private void BtnForgetAccount_Click(object sender, RoutedEventArgs e)
+        {
+            // Xóa thông tin nhận diện tài khoản trên thiết bị này (KHÔNG xóa PIN trên backend)
+            SecureSessionManager.ClearRememberedAccount();
+            _rememberedAccount = null;
+            ShowStandardLogin("Đã xóa thông tin tài khoản ghi nhớ trên thiết bị này.");
+        }
+
+        private void UpdateCapsLockWarning()
+        {
+            bool isCapsLockOn = Keyboard.IsKeyToggled(Key.CapsLock);
+            txtReturningCapsLockWarning.Visibility = isCapsLockOn ? Visibility.Visible : Visibility.Collapsed;
+            txtStandardCapsLockWarning.Visibility = isCapsLockOn ? Visibility.Visible : Visibility.Collapsed;
+        }
+        #endregion
+
+        #region Standard Native Login Email / Password Flow
         private async void BtnLogin_Click(object sender, RoutedEventArgs e)
         {
             string email = txtEmail.Text.Trim();
@@ -580,7 +1188,6 @@ namespace AvoraPos
                 return;
             }
 
-            // Ghi nhớ tài khoản để lần sau mở lại tự điền
             SecureSessionManager.SaveLastIdentifier(email);
 
             if (string.IsNullOrWhiteSpace(password))
@@ -646,14 +1253,8 @@ namespace AvoraPos
                 }
 
                 Debug.WriteLine("[AUTH] TOKEN_RECEIVED");
-
-                // Validate profile, status, and POS access
                 bool valid = await ValidateAndApplySessionAsync(token);
-                if (!valid)
-                {
-                    // Error message already shown by ValidateAndApplySessionAsync
-                    return;
-                }
+                if (!valid) return;
             }
             catch (Exception ex)
             {
@@ -700,6 +1301,7 @@ namespace AvoraPos
 
         private void TxtInput_KeyDown(object sender, KeyEventArgs e)
         {
+            UpdateCapsLockWarning();
             if (e.Key == Key.Enter)
             {
                 BtnLogin_Click(sender, e);
@@ -1058,7 +1660,34 @@ namespace AvoraPos
                 {
                     SecureSessionManager.SaveLastIdentifier(_currentUserEmail);
                 }
-                Debug.WriteLine("[AUTH] TOKEN_STORED with DPAPI");
+
+                // Cập nhật RememberedAccount với DPAPI
+                string? avatarUrl = profile["avatarUrl"]?.ToString();
+                _rememberedAccount = new RememberedAccount
+                {
+                    UserId = _currentUserId ?? "",
+                    FullName = _currentUserName ?? "",
+                    Email = _currentUserEmail ?? "",
+                    AvatarUrl = avatarUrl,
+                    LastLoginAt = DateTime.UtcNow,
+                };
+                SecureSessionManager.SaveRememberedAccount(_rememberedAccount);
+                Debug.WriteLine("[AUTH] REMEMBERED_ACCOUNT_SAVED with DPAPI");
+
+                // Cache avatar trong nền nếu có URL
+                if (!string.IsNullOrEmpty(avatarUrl))
+                {
+                    _ = Task.Run(async () =>
+                    {
+                        string? cachedPath = await SecureSessionManager.CacheAvatarAsync(_rememberedAccount.UserId, avatarUrl);
+                        if (!string.IsNullOrEmpty(cachedPath))
+                        {
+                            _rememberedAccount.CachedAvatarPath = cachedPath;
+                            SecureSessionManager.SaveRememberedAccount(_rememberedAccount);
+                            Debug.WriteLine("[AUTH] AVATAR_CACHED: " + cachedPath);
+                        }
+                    });
+                }
 
                 // Initialize WebView2 & Inject Session
                 await LaunchPosWebViewAsync(token);
@@ -1086,16 +1715,31 @@ namespace AvoraPos
                 if (posWebView.CoreWebView2 == null)
                 {
                     string userDataFolder = AppDataPaths.WebView2DataDir;
-                    var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, new CoreWebView2EnvironmentOptions());
+                    var envOptions = new CoreWebView2EnvironmentOptions
+                    {
+                        AdditionalBrowserArguments = "--kiosk-printing --disable-print-preview"
+                    };
+                    var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
                     await posWebView.EnsureCoreWebView2Async(env);
+                    await silentPrintWebView.EnsureCoreWebView2Async(env);
 
-                    // WebView2 Security Settings
+                    // Silent Print WebView2 Settings
+                    if (silentPrintWebView.CoreWebView2?.Settings != null)
+                    {
+                        silentPrintWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
+                        silentPrintWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
+                        silentPrintWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
+                    }
+
+                    // WebView2 Security & Native Desktop Settings
                     if (posWebView.CoreWebView2?.Settings != null)
                     {
                         posWebView.CoreWebView2.Settings.IsStatusBarEnabled = false;
                         posWebView.CoreWebView2.Settings.AreDefaultContextMenusEnabled = false;
                         posWebView.CoreWebView2.Settings.AreDevToolsEnabled = false;
-                        posWebView.CoreWebView2.Settings.IsZoomControlEnabled = true;
+                        posWebView.CoreWebView2.Settings.IsZoomControlEnabled = false;
+                        posWebView.CoreWebView2.Settings.IsPinchZoomEnabled = false;
+                        posWebView.CoreWebView2.Settings.IsSwipeNavigationEnabled = false;
                     }
 
                     // Add PrintBridgeHost
@@ -1149,9 +1793,15 @@ namespace AvoraPos
                     // Add desktop indicators, shortcut locks, and client-side route interception script
                     await posWebView.CoreWebView2.AddScriptToExecuteOnDocumentCreatedAsync(@"
                         window.IS_AVORA_DESKTOP = true;
+                        window.__AVORA_DESKTOP__ = true;
                         window.AVORA_DESKTOP_VERSION = '1.0.1';
                         window.AVORA_DESKTOP_BUILD = '101';
                         console.log('AVORA POS 1.0.1 Connected.');
+
+                        // Override window.print inside POS to prevent WebView2 print dialog
+                        window.print = function() {
+                            console.warn('[AVORA POS] window.print() intercepted and suppressed.');
+                        };
 
                         // Global Exit App helper for Web code
                         window.AVORA_EXIT_APP = function() {
@@ -1188,9 +1838,16 @@ namespace AvoraPos
                                         return true; // prevent client navigation
                                     }
 
-                                    // 3. ALL OTHER ROUTES (Customer routes: /orders/*, /tin-tuc-va-uu-dai/*, /, /menu, Admin routes: /admin/dashboard, external hosts)
+                                    // 3. Admin routes ngoài POS (/admin/dashboard, /admin/orders, etc.): TỰ ĐỘNG QUAY TRỞ VỀ POS!
+                                    if (path.startsWith('/admin/') && path !== '/admin/pos' && !path.startsWith('/admin/pos/')) {
+                                        console.log('[GUARD] Bấm chuyển trang ngoài POS, tự động quay trở về /admin/pos');
+                                        window.location.replace('/admin/pos');
+                                        return true; // prevent client navigation
+                                    }
+
+                                    // 4. ALL OTHER EXTERNAL ROUTES (Customer routes: /orders/*, external hosts)
                                     // MUST OPEN IN WINDOWS DEFAULT BROWSER!
-                                    console.log('[GUARD] Intercepting non-POS route in JS, opening in external browser:', resolved.href);
+                                    console.log('[GUARD] Intercepting external route in JS, opening in external browser:', resolved.href);
                                     if (window.chrome && window.chrome.webview) {
                                         window.chrome.webview.postMessage({ type: 'OPEN_EXTERNAL', url: resolved.href });
                                     }
@@ -1246,8 +1903,16 @@ namespace AvoraPos
                                 }
                             }, true);
 
-                            // Key Blockers: F12, DevTools, Alt+F4 (Ctrl + zoom is explicitly allowed)
+                            // Key & Zoom Blockers: F12, DevTools, Alt+F4, and Browser Zoom (Ctrl + / - / 0 / = / Wheel)
                             window.addEventListener('keydown', function(e) {
+                                // 0. Block F11 (Tuyệt đối không cho thu nhỏ hay thoát fullscreen bằng F11)
+                                if (e.key === 'F11' || e.keyCode === 122) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    e.stopImmediatePropagation();
+                                    return false;
+                                }
+
                                 // 1. Block F12 and DevTools (Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, Ctrl+U)
                                 if (e.key === 'F12' || e.keyCode === 123 ||
                                     (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j' || e.key === 'C' || e.key === 'c')) ||
@@ -1263,8 +1928,57 @@ namespace AvoraPos
                                     e.preventDefault();
                                     e.stopPropagation();
                                     window.AVORA_EXIT_APP();
+                                    return false;
+                                }
+
+                                // 3. Block Ctrl + / Ctrl - / Ctrl 0 / Ctrl = (No browser zoom in Native POS)
+                                if (e.ctrlKey && (
+                                    e.key === '+' || e.key === '-' || e.key === '=' || e.key === '0' ||
+                                    e.code === 'NumpadAdd' || e.code === 'NumpadSubtract' ||
+                                    e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 107 || e.keyCode === 109 || e.keyCode === 48 || e.keyCode === 96
+                                )) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    e.stopImmediatePropagation();
+                                    return false;
                                 }
                             }, true);
+
+                            // 4. Block Ctrl + Mouse Wheel zoom
+                            window.addEventListener('wheel', function(e) {
+                                if (e.ctrlKey) {
+                                    e.preventDefault();
+                                }
+                            }, { passive: false });
+
+                            // 5. Block dragging images (eliminate web-like drag ghost)
+                            document.addEventListener('dragstart', function(e) {
+                                if (e.target && e.target.nodeName === 'IMG') {
+                                    e.preventDefault();
+                                }
+                            }, true);
+
+                            // 6. Block browser context menu (allow only inside text inputs/textareas)
+                            window.addEventListener('contextmenu', function(e) {
+                                var t = e.target;
+                                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+                                    return;
+                                }
+                                e.preventDefault();
+                            }, true);
+
+                            // 7. Block double-tap zoom on touch POS screens
+                            var lastTouchEnd = 0;
+                            document.addEventListener('touchend', function(e) {
+                                var now = Date.now();
+                                if (now - lastTouchEnd <= 300) {
+                                    var t = e.target;
+                                    if (!t || (t.tagName !== 'INPUT' && t.tagName !== 'TEXTAREA')) {
+                                        e.preventDefault();
+                                    }
+                                }
+                                lastTouchEnd = now;
+                            }, false);
                         })();
                     ");
 
@@ -1294,7 +2008,7 @@ namespace AvoraPos
 
                 // Target POS URL (Directive 6: /admin/pos)
                 string posUrl = Environment.GetEnvironmentVariable("AVORA_POS_URL")
-                    ?? "http://localhost:3000/admin/pos";
+                    ?? "http://localhost:4000/admin/pos";
 
                 Debug.WriteLine($"[AUTH] Navigating to allowed route: {posUrl}");
                 posWebView.CoreWebView2.Navigate(posUrl);
@@ -1370,7 +2084,20 @@ namespace AvoraPos
                 return;
             }
 
-            // 5. ALL OTHER ROUTES (Customer pages /orders/*, /cart, /, Admin pages /admin/dashboard, external sites)
+            // 5. Admin routes ngoài POS (/admin/dashboard, /admin/orders, etc.): TỰ ĐỘNG QUAY TRỞ VỀ POS!
+            if (path.StartsWith("/admin/"))
+            {
+                e.Cancel = true;
+                Debug.WriteLine($"[GUARD] CoreWebView2_NavigationStarting blocked non-POS admin URI, returning to POS: {e.Uri}");
+                Dispatcher.InvokeAsync(() =>
+                {
+                    string targetPosUrl = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000/admin/pos";
+                    posWebView.CoreWebView2?.Navigate(targetPosUrl);
+                });
+                return;
+            }
+
+            // 6. ALL OTHER EXTERNAL ROUTES (Customer pages /orders/*, external sites)
             // MUST NEVER OPEN INSIDE POS! CANCEL & OPEN IN EXTERNAL BROWSER!
             e.Cancel = true;
             Debug.WriteLine($"[GUARD] CoreWebView2_NavigationStarting blocked non-POS URI: {e.Uri}");
@@ -1394,14 +2121,14 @@ namespace AvoraPos
                 string fullUrl = url.Trim();
                 if (fullUrl.StartsWith("/"))
                 {
-                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:3000";
+                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000";
                     if (Uri.TryCreate(baseWeb, UriKind.Absolute, out var baseUri))
                     {
                         fullUrl = $"{baseUri.Scheme}://{baseUri.Authority}{fullUrl}";
                     }
                     else
                     {
-                        fullUrl = $"http://localhost:3000{fullUrl}";
+                        fullUrl = $"http://localhost:4000{fullUrl}";
                     }
                 }
 
@@ -1418,7 +2145,7 @@ namespace AvoraPos
         }
         #endregion
 
-        #region Keyboard Shortcuts (F11 Fullscreen, ESC)
+        #region Keyboard Shortcuts (F11 Fullscreen, PIN Keypad, ESC)
         private void MainWindow_KeyDown(object sender, KeyEventArgs e)
         {
             // Alt+F4 interception (supports Key.System and Alt modifier combinations)
@@ -1431,15 +2158,126 @@ namespace AvoraPos
                 return;
             }
 
-            // F11: Toggle Kiosk Fullscreen <-> Windowed Debug Mode (Directive 4)
+            // BỎ F11: Tuyệt đối không cho phép thu nhỏ hay thoát Kiosk Fullscreen bằng phím F11
             if (e.Key == Key.F11)
             {
-                ToggleFullScreen();
                 e.Handled = true;
                 return;
             }
 
+            // PIN Login hardware keyboard support (0-9, NumPad0-9, Backspace, Clear, Enter)
+            if (nativeLoginOverlay.Visibility == Visibility.Visible && panelPinLogin.Visibility == Visibility.Visible)
+            {
+                if ((e.Key >= Key.D0 && e.Key <= Key.D9) || (e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9))
+                {
+                    int digit = (e.Key >= Key.NumPad0) ? (e.Key - Key.NumPad0) : (e.Key - Key.D0);
+                    HandlePinInputChar(digit.ToString());
+                    e.Handled = true;
+                    return;
+                }
+                if (e.Key == Key.Back)
+                {
+                    HandlePinInputChar("BACK");
+                    e.Handled = true;
+                    return;
+                }
+                if (e.Key == Key.Escape)
+                {
+                    HandlePinInputChar("CLEAR");
+                    e.Handled = true;
+                    return;
+                }
+                if (e.Key == Key.Enter)
+                {
+                    if (_currentPin.Length == 4)
+                    {
+                        _ = SubmitPinLoginAsync();
+                        e.Handled = true;
+                        return;
+                    }
+                }
+            }
+
             // ESC: DO NOT intercept! Allow it to bubble down to React POS Web UI (Directive 13)
+        }
+        #endregion
+
+        #region Silent Background HTML Printing Engine (Zero Dialog, Direct to Target Printer)
+        private readonly System.Threading.SemaphoreSlim _printLock = new System.Threading.SemaphoreSlim(1, 1);
+
+        public async Task<(bool Success, string? Error)> PrintHtmlSilentAsync(string html, string printerName, string? paperSize, int copies)
+        {
+            await _printLock.WaitAsync();
+            try
+            {
+                return await Dispatcher.InvokeAsync(async () =>
+                {
+                    if (silentPrintWebView.CoreWebView2 == null)
+                    {
+                        return (false, (string?)"Lõi in ngầm WebView2 chưa khởi tạo xong");
+                    }
+
+                    // Strip status tags like (ONLINE), (OFFLINE), (READY)
+                    string cleanPrinter = printerName;
+                    if (!string.IsNullOrWhiteSpace(cleanPrinter))
+                    {
+                        cleanPrinter = System.Text.RegularExpressions.Regex.Replace(
+                            cleanPrinter, @"\s*\((ONLINE|OFFLINE|READY|ERROR)\)\s*$", "",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                    }
+
+                    var tcs = new TaskCompletionSource<bool>();
+                    EventHandler<CoreWebView2NavigationCompletedEventArgs>? handler = null;
+                    handler = (s, e) =>
+                    {
+                        silentPrintWebView.NavigationCompleted -= handler;
+                        tcs.TrySetResult(e.IsSuccess);
+                    };
+                    silentPrintWebView.NavigationCompleted += handler;
+
+                    // Navigate to HTML content
+                    silentPrintWebView.NavigateToString(html);
+
+                    // Wait navigation completed with timeout
+                    var completedTask = await Task.WhenAny(tcs.Task, Task.Delay(4000));
+                    if (completedTask != tcs.Task)
+                    {
+                        silentPrintWebView.NavigationCompleted -= handler;
+                    }
+
+                    // Brief render stabilization yield
+                    await Task.Delay(100);
+
+                    // Create print settings
+                    var printSettings = silentPrintWebView.CoreWebView2.Environment.CreatePrintSettings();
+                    if (!string.IsNullOrWhiteSpace(cleanPrinter))
+                    {
+                        printSettings.PrinterName = cleanPrinter;
+                    }
+                    printSettings.ShouldPrintBackgrounds = true;
+                    printSettings.ShouldPrintHeaderAndFooter = false;
+                    printSettings.MarginTop = 0;
+                    printSettings.MarginBottom = 0;
+                    printSettings.MarginLeft = 0;
+                    printSettings.MarginRight = 0;
+                    printSettings.Copies = copies > 0 ? copies : 1;
+
+                    var status = await silentPrintWebView.CoreWebView2.PrintAsync(printSettings);
+                    if (status == CoreWebView2PrintStatus.Succeeded)
+                    {
+                        return (true, (string?)null);
+                    }
+                    return (false, (string?)$"Máy in [{cleanPrinter}] phản hồi trạng thái: {status}");
+                }).Task.Unwrap();
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+            finally
+            {
+                _printLock.Release();
+            }
         }
         #endregion
     }

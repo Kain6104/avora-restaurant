@@ -6,7 +6,9 @@ import { ChevronRight, Star, Heart, MapPin, Leaf, ChefHat, Timer, RotateCcw, Plu
 import { useCart } from '../../../../context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { toast } from 'react-hot-toast';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
+import ProductReviewsSection from '@/components/reviews/ProductReviewsSection';
 
 interface ItemDetailClientProps {
   product: any;
@@ -24,19 +26,35 @@ const getSoldCount = (id: string) => {
 
 export default function ItemDetailClient({ product, relatedDishes }: ItemDetailClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { currentBranchId, flashSaleQuotas, cartItems, setBranchModalProduct, setIsBranchModalOpen, addToCart } = useCart();
   const { isFavorite, toggleFavorite } = useWishlist();
-  const [activeTab, setActiveTab] = useState('description');
+  const [activeTab, setActiveTab] = useState(() => {
+    return (searchParams?.get('openReview') === '1' || searchParams?.get('tab') === 'reviews') ? 'reviews' : 'description';
+  });
   const [localQuantity, setLocalQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(product?.imageUrl);
   const isWishlisted = isFavorite(product?.id);
   const [isZoomModalOpen, setIsZoomModalOpen] = useState(false);
   const [recentlyViewed, setRecentlyViewed] = useState<any[]>([]);
+  const [isMounted, setIsMounted] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    setIsLoggedIn(!!localStorage.getItem('token'));
+    setIsMounted(true);
+    const token = localStorage.getItem('token') || localStorage.getItem('access_token');
+    const user = localStorage.getItem('user');
+    setIsLoggedIn(!!(token || user));
   }, []);
+
+  useEffect(() => {
+    if (searchParams?.get('openReview') === '1' || searchParams?.get('tab') === 'reviews') {
+      setActiveTab('reviews');
+      setTimeout(() => {
+        document.getElementById('product-tabs-section')?.scrollIntoView({ behavior: 'smooth' });
+      }, 300);
+    }
+  }, [searchParams]);
 
   // Add to Recently Viewed
   useEffect(() => {
@@ -292,13 +310,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
             </h1>
 
             <div className="flex items-center gap-3 mb-5">
-              <div className="flex items-center gap-1">
-                {[1,2,3,4,5].map(star => (
-                  <Star key={star} className={`w-3.5 h-3.5 ${star === 5 ? 'fill-yellow-400 text-yellow-400 opacity-50' : 'fill-yellow-400 text-yellow-400'}`} />
-                ))}
-                <span className="text-slate-800 font-bold ml-1 text-sm">{displayProduct.avgRating > 0 ? displayProduct.avgRating.toFixed(1) : "5.0"}</span>
-                <span className="text-slate-400 text-xs ml-1">({displayProduct.soldQuantity > 0 ? displayProduct.soldQuantity : 128} đánh giá)</span>
-              </div>
+              <ProductRatingBadge avgRating={displayProduct.avgRating} ratingCount={displayProduct.ratingCount} size="md" />
               <div className="w-1 h-1 bg-slate-300 rounded-full"></div>
               <span className="text-slate-500 text-xs">Đã bán {displayProduct.soldQuantity > 0 ? displayProduct.soldQuantity : getSoldCount(displayProduct.id)}</span>
             </div>
@@ -436,7 +448,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
             </div>
 
             {/* MEMBER INFO */}
-            {!isLoggedIn && (
+            {isMounted && !isLoggedIn && (
               <div className="bg-[#FCF9F5] rounded-xl p-4 mt-6 border border-[#F2ECE4] flex gap-3">
                 <div className="w-6 h-6 bg-white rounded-full flex items-center justify-center shrink-0 shadow-sm border border-[#F2ECE4]">
                   <Star className="w-3 h-3 text-red-600 fill-red-600" />
@@ -454,10 +466,10 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
         </div>
 
         {/* 4. PRODUCT DETAILS & SIMILAR PRODUCTS */}
-        <div className="flex flex-col lg:flex-row gap-8 xl:gap-12 items-start mb-16 relative">
+        <div id="product-tabs-section" className="flex flex-col lg:flex-row gap-8 xl:gap-12 items-start mb-16 relative">
           
-          {/* TABS (Same width as Left Gallery) */}
-          <div className="w-full lg:w-[42%] flex flex-col bg-white rounded-3xl border border-slate-100 overflow-hidden relative shadow-sm">
+          {/* TABS */}
+          <div className={`w-full ${activeTab === 'reviews' ? 'lg:w-[62%]' : 'lg:w-[42%]'} transition-all duration-300 flex flex-col bg-white rounded-3xl border border-slate-100 overflow-hidden relative shadow-sm`}>
             {/* Japanese decorative background inside tabs */}
             <div className="absolute inset-x-0 bottom-0 h-48 bg-[url('https://www.transparenttextures.com/patterns/japanese-sayagata.png')] opacity-[0.03] pointer-events-none" />
 
@@ -470,7 +482,7 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                 >
                   {tab === 'description' && 'Mô tả'}
                   {tab === 'ingredients' && 'Thành phần'}
-                  {tab === 'reviews' && 'Đánh giá (128)'}
+                  {tab === 'reviews' && `Đánh giá (${displayProduct.ratingCount || 0})`}
                   {activeTab === tab && (
                     <div className="absolute bottom-0 left-0 w-full h-[2px] bg-red-600"></div>
                   )}
@@ -497,33 +509,11 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
               )}
               {activeTab === 'reviews' && (
                 <div className="animate-in fade-in duration-300">
-                  <div className="flex items-center gap-4 mb-6">
-                    <h3 className="text-3xl font-serif text-slate-800 font-bold">4.8</h3>
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex">
-                        {[1,2,3,4,5].map(star => <Star key={star} className={`w-3.5 h-3.5 ${star === 5 ? 'fill-yellow-400 text-yellow-400 opacity-50' : 'fill-yellow-400 text-yellow-400'}`} />)}
-                      </div>
-                      <span className="text-[11px] text-slate-500">Dựa trên 128 đánh giá</span>
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-4">
-                    <div className="pb-4 border-b border-slate-100">
-                      <div className="flex justify-between items-start mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 bg-slate-200 rounded-full flex items-center justify-center font-bold text-slate-500 text-[10px]">P</div>
-                          <div>
-                            <p className="text-[13px] font-bold text-slate-800 leading-none mb-1">Phát Trần</p>
-                            <div className="flex gap-0.5">
-                              {[1,2,3,4,5].map(star => <Star key={star} className="w-2.5 h-2.5 fill-yellow-400 text-yellow-400" />)}
-                            </div>
-                          </div>
-                        </div>
-                        <span className="text-[9px] text-slate-400">2 ngày trước</span>
-                      </div>
-                      <p className="text-[13px] text-slate-600 mt-1.5">Cá hồi rất tươi, sốt béo ngậy. Ăn một lần là ghiền luôn.</p>
-                    </div>
-                    <button className="text-[#E55B32] font-bold text-[13px] w-full py-1.5 hover:bg-[#FFF8F3] rounded-lg transition-colors">Xem tất cả đánh giá</button>
-                  </div>
+                  <ProductReviewsSection
+                    productId={displayProduct.id}
+                    productName={displayProduct.name}
+                    initialOpenComposer={searchParams?.get('openReview') === '1'}
+                  />
                 </div>
               )}
             </div>

@@ -48,15 +48,33 @@ export function AdminPageGuard({
     { label: 'Tổng quan', href: '/admin/dashboard', icon: LayoutDashboard, perm: 'dashboard.view' },
   ].filter((item) => can(item.perm, targetBranch));
 
-  if (loading) {
+  // Khi chưa có dữ liệu quyền (chỉ xảy ra ở lần cold start đầu tiên chưa có cache):
+  // Hiển thị một skeleton placeholder Premium Light thanh lịch, không hiển thị bất kỳ text hay spinner nào,
+  // tuyệt đối không lộ nội dung trang trước khi quyền được xác nhận an toàn.
+  if (loading && !capabilities) {
     return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-9 h-9 border-3 border-amber-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-xs text-slate-500 font-semibold tracking-wide">
-            Đang xác thực quyền truy cập...
-          </span>
+      <div className="w-full space-y-4 animate-pulse">
+        {/* Header placeholder */}
+        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+          <div className="space-y-2">
+            <div className="h-6 bg-slate-200/70 rounded-xl w-48"></div>
+            <div className="h-3.5 bg-slate-100 rounded-md w-72"></div>
+          </div>
+          <div className="h-9 bg-slate-100 rounded-xl w-28"></div>
         </div>
+
+        {/* Local KPI Cards placeholder */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white rounded-2xl border border-slate-100 p-4 space-y-2 shadow-2xs">
+              <div className="h-3 bg-slate-100 rounded w-20"></div>
+              <div className="h-6 bg-slate-200/60 rounded w-28"></div>
+            </div>
+          ))}
+        </div>
+
+        {/* Main Content Area placeholder */}
+        <div className="w-full h-72 bg-white rounded-2xl border border-slate-100 shadow-2xs"></div>
       </div>
     );
   }

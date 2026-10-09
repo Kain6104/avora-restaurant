@@ -96,7 +96,8 @@ export default function StatCard({
     ? 'bg-emerald-50 text-emerald-600'
     : 'bg-red-50 text-red-600';
 
-  if (loading) {
+  // Chỉ hiển thị Skeleton khi đang loading VÀ chưa hề có giá trị (cold load)
+  if (loading && (value === undefined || value === null || value === '')) {
     return (
       <div
         className={`bg-white rounded-2xl border border-slate-100 shadow-[0_1px_3px_rgba(0,0,0,0.03)] p-4 sm:p-5 animate-pulse flex flex-col justify-between ${className}`}
@@ -116,22 +117,24 @@ export default function StatCard({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl border ${styles.border} shadow-[0_1px_3px_rgba(0,0,0,0.03)] p-3.5 sm:p-4 lg:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:border-slate-200 ${
+      className={`bg-white rounded-xl sm:rounded-2xl border ${styles.border} shadow-[0_1px_3px_rgba(0,0,0,0.03)] p-2.5 sm:p-4 lg:p-5 flex flex-col justify-between transition-all duration-200 hover:shadow-md hover:border-slate-200 ${
+        loading ? 'opacity-70' : ''
+      } ${
         onClick ? 'cursor-pointer' : ''
       } ${className}`}
     >
-      <div className="flex justify-between items-start gap-2">
+      <div className="flex justify-between items-start gap-1.5 sm:gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider truncate">
+          <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider truncate">
             {title}
           </p>
-          <h3 className="text-xl sm:text-2xl font-black text-slate-900 mt-1.5 tracking-tight truncate">
+          <h3 className="text-sm sm:text-xl lg:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1.5 tracking-tight truncate">
             {value}
           </h3>
         </div>
         {icon && (
           <div
-            className={`p-2.5 sm:p-3 rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 shadow-sm`}
+            className={`p-1.5 sm:p-3 rounded-lg sm:rounded-xl ${styles.iconBg} flex items-center justify-center shrink-0 shadow-2xs`}
           >
             {icon}
           </div>
@@ -139,27 +142,27 @@ export default function StatCard({
       </div>
 
       {/* Footer / Trend / Sparkline */}
-      <div className="mt-3.5 pt-2 flex items-center justify-between gap-2 border-t border-slate-50">
+      <div className="mt-2 pt-1.5 sm:mt-3.5 sm:pt-2 flex items-center justify-between gap-1.5 border-t border-slate-50">
         {typeof change === 'number' ? (
-          <div className="flex items-center gap-1.5 text-xs">
+          <div className="flex items-center gap-1 sm:gap-1.5 text-xs">
             <span
-              className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md font-bold text-[11px] ${trendBg}`}
+              className={`inline-flex items-center gap-0.5 px-1 sm:px-1.5 py-0.5 rounded-md font-bold text-[10px] sm:text-[11px] ${trendBg}`}
             >
               {isUp ? (
-                <TrendingUp size={12} strokeWidth={2.5} />
+                <TrendingUp size={11} strokeWidth={2.5} />
               ) : isDown ? (
-                <TrendingDown size={12} strokeWidth={2.5} />
+                <TrendingDown size={11} strokeWidth={2.5} />
               ) : (
-                <Minus size={12} strokeWidth={2.5} />
+                <Minus size={11} strokeWidth={2.5} />
               )}
               {isUp ? `+${change}%` : `${change}%`}
             </span>
-            <span className="text-slate-400 text-[11px] truncate font-medium">
+            <span className="text-slate-400 text-[10px] sm:text-[11px] truncate font-medium">
               {changePeriod}
             </span>
           </div>
         ) : (
-          <span className="text-slate-400 text-[11px] font-medium">{changePeriod}</span>
+          <span className="text-slate-400 text-[10px] sm:text-[11px] font-medium truncate">{changePeriod}</span>
         )}
 
         {/* Optional mini sparkline */}

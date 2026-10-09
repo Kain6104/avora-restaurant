@@ -9,10 +9,15 @@ class SoundSynthesizer {
 
   private getContext(): AudioContext | null {
     if (typeof window === 'undefined') return null;
+    if (this.ctx && this.ctx.state === 'closed') {
+      this.ctx = null;
+    }
     if (!this.ctx) {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtx) {
-        this.ctx = new AudioCtx();
+        try {
+          this.ctx = new AudioCtx();
+        } catch {}
       }
     }
     if (this.ctx && this.ctx.state === 'suspended') {
@@ -95,11 +100,12 @@ export function useSoundHaptic() {
     // Tự động mở khóa AudioContext sau lần chạm/click đầu tiên
     const unlockAudio = () => {
       userInteractedRef.current = true;
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioCtx) {
-        const tempCtx = new AudioCtx();
-        tempCtx.resume().then(() => tempCtx.close()).catch(() => {});
-      }
+      try {
+        const sound = synthesizer['getContext']();
+        if (sound && sound.state === 'suspended') {
+          sound.resume().catch(() => {});
+        }
+      } catch {}
       window.removeEventListener('click', unlockAudio);
       window.removeEventListener('touchstart', unlockAudio);
       window.removeEventListener('keydown', unlockAudio);

@@ -87,7 +87,9 @@ export class PermissionsGuard implements CanActivate {
     // 3. Trích xuất branchId mục tiêu và kiểm tra chống IDOR
     let targetBranchId: string | null | undefined = null;
 
-    if (options?.resourceResolver && typeof options.resourceResolver === 'function') {
+    if (options?.anyBranch) {
+      targetBranchId = null;
+    } else if (options?.resourceResolver && typeof options.resourceResolver === 'function') {
       // Đọc trực tiếp thực thể từ DB để lấy branchId thật, chặn giả mạo IDOR
       try {
         targetBranchId = await options.resourceResolver(request, this.prisma);

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Cho phép tất cả subdomain của ngrok
-  allowedDevOrigins: ['*.ngrok-free.app', 'localhost:3000'],
+  allowedDevOrigins: ['*.ngrok-free.app', 'localhost:3000', 'localhost:4000'],
   images: {
     remotePatterns: [
       {
@@ -15,7 +15,11 @@ const nextConfig: NextConfig = {
     return [
       {
         source: '/api/:path*',
-        destination: 'http://127.0.0.1:3001/api/:path*',
+        destination: 'http://127.0.0.1:4001/api/:path*',
+      },
+      {
+        source: '/socket.io/:path*',
+        destination: 'http://127.0.0.1:4001/socket.io/:path*',
       },
     ];
   },

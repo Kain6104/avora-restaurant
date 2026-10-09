@@ -24,6 +24,8 @@ namespace AvoraPos.Storage
         public static string LogsDir => Ensure(Path.Combine(Root, "Logs"));
         public static string UpdatesDir => Ensure(Path.Combine(Root, "Updates"));
         public static string WebView2DataDir => Ensure(Path.Combine(Root, "WebView2Data"));
+        public static string CacheDir => Ensure(Path.Combine(Root, "Cache"));
+        public static string AvatarsDir => Ensure(Path.Combine(CacheDir, "Avatars"));
 
         public static string DatabasePath => Path.Combine(DataDir, "avora_pos_offline.db");
 

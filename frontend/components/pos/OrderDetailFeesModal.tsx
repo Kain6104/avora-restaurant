@@ -226,10 +226,11 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
     setNewChargeAmount(amount);
   };
 
-  // Remove Service Charge
-  const handleRemoveServiceCharge = async (chargeId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa khoản phụ thu này khỏi đơn hàng?')) return;
+  const [chargeToDelete, setChargeToDelete] = useState<{ id: string; name: string } | null>(null);
 
+  // Remove Service Charge
+  const executeRemoveServiceCharge = async (chargeId: string) => {
+    setChargeToDelete(null);
     setDeletingChargeId(chargeId);
     try {
       const res = await fetch(`${baseUrl}/api/pos/orders/${order.id}/service-charges/${chargeId}`, {
@@ -583,7 +584,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                           <button
                             type="button"
                             disabled={deletingChargeId === sc.id}
-                            onClick={() => handleRemoveServiceCharge(sc.id)}
+                            onClick={() => setChargeToDelete({ id: sc.id, name: sc.name })}
                             className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
                             title="Xóa phụ thu"
                           >
@@ -808,6 +809,39 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
           </form>
         </div>
       </div>
+
+      {/* In-App Confirmation Modal for Deleting Service Charge */}
+      {chargeToDelete && (
+        <div className="fixed inset-0 z-60 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-120">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-120">
+            <div className="p-5 text-center">
+              <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3 bg-rose-50 text-rose-600">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h4 className="text-base font-black text-slate-900 mb-1.5">Xóa Khoản Phụ Thu?</h4>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Bạn có chắc chắn muốn xóa khoản phụ thu <b className="text-slate-800">"{chargeToDelete.name}"</b> khỏi đơn hàng?
+              </p>
+            </div>
+            <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setChargeToDelete(null)}
+                className="h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs active:scale-98 transition-all cursor-pointer"
+              >
+                Hủy bỏ
+              </button>
+              <button
+                type="button"
+                onClick={() => executeRemoveServiceCharge(chargeToDelete.id)}
+                className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs active:scale-98 transition-all cursor-pointer shadow-xs"
+              >
+                Xác nhận xóa
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,4 +1,6 @@
-export default function Loading() {
+import React from 'react';
+
+export default function LoadingOverlay() {
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-white/80 backdrop-blur-md">
       {/* Logo */}

@@ -245,7 +245,7 @@ export default function AdminCategoriesPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6">
       {/* Page Header */}
       <PageHeader
         title={t('categories.title', 'Danh mục Thực đơn')}
@@ -255,17 +255,17 @@ export default function AdminCategoriesPage() {
           { label: t('nav.categories', 'Danh mục') },
         ]}
         badge={
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-100">
+          <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold bg-red-50 text-red-600 border border-red-100">
             {t('common.total', 'Tổng')} {totalCount} {t('common.results', 'danh mục')}
           </span>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={fetchCategories}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
               <span>{t('common.refresh', 'Làm mới')}</span>
@@ -274,7 +274,7 @@ export default function AdminCategoriesPage() {
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+                className="flex items-center gap-1.5 min-h-[38px] px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
               >
                 <Plus size={15} />
                 <span>{t('common.add', 'Thêm danh mục')}</span>

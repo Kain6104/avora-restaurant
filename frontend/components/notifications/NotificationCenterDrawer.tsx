@@ -106,8 +106,6 @@ export default function NotificationCenterDrawer({
     });
   }, [notifications, activeCategory]);
 
-  if (!isOpen) return null;
-
   const getCategoryIcon = (category?: string, type?: string) => {
     const cat = (category || type || '').toUpperCase();
     if (cat === 'ORDER') {
@@ -205,14 +203,14 @@ export default function NotificationCenterDrawer({
 
     const isCurrentPos = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/pos');
 
-    // 1. In Desktop POS app: NEVER navigate WebView to non-POS pages!
+    // 1. In Desktop POS app: NEVER navigate WebView away from POS!
     if (platformBridge.isDesktop) {
       if (!targetUrl.startsWith('/admin/pos')) {
-        platformBridge.openExternalBrowser(targetUrl);
+        // Automatically stay on POS
         return;
       }
     } else if (isCurrentPos) {
-      // 2. On Web POS: Do not lose active table/order cashier session
+      // 2. On Web POS: Do not leave POS session
       if (!targetUrl.startsWith('/admin/pos')) {
         window.open(targetUrl, '_blank');
         return;
@@ -221,6 +219,8 @@ export default function NotificationCenterDrawer({
 
     router.push(targetUrl);
   };
+
+  if (!isOpen) return null;
 
   return (
     <>

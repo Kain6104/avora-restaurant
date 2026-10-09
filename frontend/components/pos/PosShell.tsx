@@ -18,6 +18,7 @@ import { usePosSocket } from './usePosSocket';
 import { usePosShortcuts } from './usePosShortcuts';
 import { removeVietnameseTones, getCartLineIdentity, isOnlineOrder } from './pos-utils';
 import { PosSettingsDrawer } from './PosSettingsDrawer';
+import { EndOfDayReportModal } from './EndOfDayReportModal';
 import { PosUpdateModal } from './PosUpdateModal';
 import { platformBridge, UpdateManifestInfo } from '@/lib/platform/platform-bridge';
 import { NumericKeypadModal } from './NumericKeypadModal';
@@ -85,11 +86,13 @@ import { PosConcurrencyLockModal } from './PosConcurrencyLockModal';
 import { PosMobileNoticeModal } from './PosMobileNoticeModal';
 import { PosDesktopLaunchModal } from './PosDesktopLaunchModal';
 import { PosWebBlocker } from './PosWebBlocker';
+import { useDesktopUx } from './useDesktopUx';
 
 export const PosShell: React.FC = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [isPending, startTransition] = useTransition();
+  const { isDesktop } = useDesktopUx();
 
   // Authentication State
   const [currentUser, setCurrentUser] = useState<PosUserData | null>(null);
@@ -219,6 +222,7 @@ export const PosShell: React.FC = () => {
   const [isCancelOrderModalOpen, setIsCancelOrderModalOpen] = useState(false);
   const [isCancellingOrder, setIsCancellingOrder] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
+  const [isEndOfDayReportModalOpen, setIsEndOfDayReportModalOpen] = useState(false);
   const [isSplitModalOpen, setIsSplitModalOpen] = useState(false);
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [isMoveTableModalOpen, setIsMoveTableModalOpen] = useState(false);
@@ -437,6 +441,9 @@ export const PosShell: React.FC = () => {
 
   const handleLogout = useCallback(async () => {
     isLoggingOutRef.current = true;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('avora_pos_selected_branch');
+    }
     // 1. Nếu ở trên Desktop, lập tức kích hoạt chuyển về màn hình đăng nhập native không để trễ
     if (platformBridge.isDesktop) {
       platformBridge.logout?.();
@@ -597,6 +604,13 @@ export const PosShell: React.FC = () => {
 
   // Auto-Update startup check (Directives 65, 70)
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      if (platformBridge.isDesktop || Boolean((window as any).IS_AVORA_DESKTOP)) {
+        sessionStorage.setItem('avora_pos_active', 'true');
+      } else {
+        sessionStorage.removeItem('avora_pos_active');
+      }
+    }
     if (!platformBridge.isDesktop) return;
     const checkTimer = setTimeout(async () => {
       try {
@@ -687,7 +701,21 @@ export const PosShell: React.FC = () => {
     try {
       const savedBranch = typeof window !== 'undefined' ? localStorage.getItem('avora_pos_selected_branch') : null;
       const branchParam = savedBranch ? `?branchId=${savedBranch}` : '';
-      const res = await fetch(`${baseUrl}/api/pos/init${branchParam}`, { credentials: 'include' });
+      let res = await fetch(`${baseUrl}/api/pos/init${branchParam}`, { credentials: 'include' });
+      
+      // Self-healing: Nếu gọi với branchId lưu trong localStorage thất bại (403/lỗi), xóa cache và thử lại không có branchId
+      if (!res.ok && savedBranch) {
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('avora_pos_selected_branch');
+        }
+        res = await fetch(`${baseUrl}/api/pos/init`, { credentials: 'include' });
+      }
+
+      if (!res.ok) {
+        console.error('Failed to fetch POS init data, HTTP status:', res.status);
+        return;
+      }
+
       const json = await res.json();
       if (json.success && json.data) {
         setBranches(json.data.branches || []);
@@ -1239,6 +1267,7 @@ export const PosShell: React.FC = () => {
         buffetPackageId: buffetPackageId || null,
         buffetReferencePriceSnapshot: pricingMode === 'BUFFET_INCLUDED' ? product.price : undefined,
         source,
+        createdAt: new Date().toISOString(),
       };
       return [...prevItems, newItem];
     });
@@ -1606,6 +1635,7 @@ export const PosShell: React.FC = () => {
           printedQuantity: printedQty,
           orderedById: (oi as any).orderedById || undefined,
           orderedByName: (oi as any).orderedByName || undefined,
+          createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (order.createdAt ? new Date(order.createdAt).toISOString() : undefined),
         };
       }),
     );
@@ -1924,6 +1954,7 @@ export const PosShell: React.FC = () => {
             discountType: orderDiscount?.discountType,
             discountPercent: orderDiscount?.discountPercent,
             items: cartItems.map((it) => ({
+              id: it.id && !it.id.startsWith('item-') ? it.id : undefined,
               productId: it.productId,
               quantity: it.quantity,
               note: it.note,
@@ -1935,6 +1966,9 @@ export const PosShell: React.FC = () => {
               buffetPackageId: it.buffetPackageId || undefined,
               buffetPackageNameSnapshot: (it as any).buffetPackageNameSnapshot || undefined,
               source: it.source || 'POS',
+              orderedById: it.orderedById,
+              orderedByName: it.orderedByName,
+              createdAt: it.createdAt,
             })),
           }),
         });
@@ -1976,6 +2010,7 @@ export const PosShell: React.FC = () => {
                 printedQuantity: printedQty,
                 orderedById: (oi as any).orderedById || undefined,
                 orderedByName: (oi as any).orderedByName || undefined,
+                createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
                 pricingMode: oi.pricingMode || 'REGULAR',
                 buffetSessionId: oi.buffetSessionId || null,
                 buffetPackageId: oi.buffetPackageId || null,
@@ -2003,6 +2038,7 @@ export const PosShell: React.FC = () => {
           credentials: 'include',
           body: JSON.stringify({
             items: cartItems.map((it) => ({
+              id: it.id && !it.id.startsWith('item-') ? it.id : undefined,
               productId: it.productId,
               quantity: it.quantity,
               note: it.note,
@@ -2014,6 +2050,9 @@ export const PosShell: React.FC = () => {
               buffetPackageId: it.buffetPackageId || undefined,
               buffetPackageNameSnapshot: (it as any).buffetPackageNameSnapshot || undefined,
               source: it.source || 'POS',
+              orderedById: it.orderedById,
+              orderedByName: it.orderedByName,
+              createdAt: it.createdAt,
             })),
             guestCount,
             customerName,
@@ -2074,6 +2113,7 @@ export const PosShell: React.FC = () => {
                 printedQuantity: printedQty,
                 orderedById: (oi as any).orderedById || undefined,
                 orderedByName: (oi as any).orderedByName || undefined,
+                createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
                 pricingMode: oi.pricingMode || 'REGULAR',
                 buffetSessionId: oi.buffetSessionId || null,
                 buffetPackageId: oi.buffetPackageId || null,
@@ -2419,7 +2459,6 @@ export const PosShell: React.FC = () => {
       (isOnline ? branchPrintSettings.find((s) => s.purpose === 'ONLINE_ORDER')?.copies : undefined) ||
       branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.copies || 1;
 
-    const toastId = toast.loading(`Đang gửi lệnh in ${typeLabel}...`);
     try {
       // Luôn lưu đơn trước khi in để đảm bảo ghi chú và thay đổi số lượng được lưu DB
       if (!isOnline) {
@@ -2436,14 +2475,14 @@ export const PosShell: React.FC = () => {
         }
       }
 
-
       if (!orderId) {
-        toast.error(`Không thể tạo đơn hàng để in ${typeLabel}`, { id: toastId });
+        toast.error(`Không thể tạo đơn hàng để in ${typeLabel}`);
         return;
       }
 
       const qrParam = customQrUrl ? `&qrPayload=${encodeURIComponent(customQrUrl)}` : '';
-      const res = await fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=${printType}${qrParam}`, {
+      const paperSizeParam = targetPaperSize ? `&paperSize=${encodeURIComponent(targetPaperSize)}` : '';
+      const res = await fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=${printType}${qrParam}${paperSizeParam}`, {
         credentials: 'include',
       });
       const data = await res.json();
@@ -2452,48 +2491,27 @@ export const PosShell: React.FC = () => {
       }
 
       const html = data.data.html;
-      const isAgentOnline = await printAgent.checkHealth().catch(() => false);
+      const agentRes = await printAgent.printHtml({
+        printerName: targetPrinter,
+        htmlContent: html,
+        paperSize: targetPaperSize || data.data?.paperSize || '80mm',
+        copies: targetCopies,
+        idempotencyKey: `tempbill-${orderId}-${Date.now()}`,
+        receiptPayload: data.data?.receiptPayload,
+      });
 
-      if (isAgentOnline) {
-        const agentRes = await printAgent.printHtml({
-          printerName: targetPrinter,
-          htmlContent: html,
-          paperSize: targetPaperSize === '58mm' ? '58mm' : '80mm',
-          copies: targetCopies,
-          idempotencyKey: `tempbill-${orderId}-${Date.now()}`,
-        });
-
-        if (agentRes.success) {
-          toast.success(
-            customQrUrl
-              ? `Đã in ${typeLabel} & mã QR tới máy in [${targetPrinter}]!`
-              : `Đã in ${typeLabel} tới máy in [${targetPrinter}]!`,
-            { id: toastId, icon: <Printer className="w-4 h-4 text-emerald-500" /> }
-          );
-          return;
-        } else {
-          toast.error(`Máy in [${targetPrinter}] lỗi: ${agentRes.message || 'Không thể in'}`, { id: toastId });
-        }
+      if (agentRes.success) {
+        toast.success(
+          customQrUrl
+            ? `Đã in ${typeLabel} & mã QR!`
+            : `Đã in ${typeLabel}!`,
+          { icon: <Printer className="w-4 h-4 text-emerald-500" /> }
+        );
+      } else {
+        toast.error(`Máy in [${targetPrinter}] lỗi: ${agentRes.message || 'Không thể in'}`);
       }
-
-      // Fallback in trực tiếp qua iframe nếu Print Agent không khả dụng
-      const iframe = document.createElement('iframe');
-      iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
-      iframe.style.border = '0';
-      document.body.appendChild(iframe);
-      iframe.srcdoc = html;
-      iframe.onload = () => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-        setTimeout(() => iframe.remove(), 2000);
-      };
-      toast.success(`Đã gửi lệnh in ${typeLabel} qua trình duyệt!`, { id: toastId });
     } catch (err: any) {
-      toast.error(err.message || `Không thể in ${typeLabel}`, { id: toastId });
+      toast.error(err.message || `Không thể in ${typeLabel}`);
     }
   };
 
@@ -2697,7 +2715,7 @@ export const PosShell: React.FC = () => {
         const paperSize = (rSetting?.paperSize || currentBranch?.defaultPaperSize || '80mm') as any;
         const copies = rSetting?.copies || currentBranch?.receiptCopies || 1;
 
-        fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=RECEIPT`, {
+        fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=RECEIPT&paperSize=${encodeURIComponent(paperSize)}`, {
           credentials: 'include',
         })
           .then((r) => r.json())
@@ -2709,6 +2727,7 @@ export const PosShell: React.FC = () => {
                 paperSize,
                 copies,
                 idempotencyKey: `receipt-${orderId}-${Date.now()}`,
+                receiptPayload: tplJson.data?.receiptPayload,
               });
 
               if (printRes.success) {
@@ -2732,6 +2751,7 @@ export const PosShell: React.FC = () => {
                             htmlContent: tplJson.data.html,
                             paperSize,
                             copies,
+                            receiptPayload: tplJson.data?.receiptPayload,
                           });
                         }}
                         className="px-2 py-1 bg-[#da251d] hover:bg-[#b81d16] text-white text-[11px] font-bold rounded cursor-pointer"
@@ -3107,6 +3127,7 @@ export const PosShell: React.FC = () => {
           onClearCart={handleClearCart}
           onOpenQrManagement={() => setIsQrManagementModalOpen(true)}
           onOpenDesktopLaunch={() => setIsDesktopLaunchModalOpen(true)}
+          onOpenEndOfDayReport={() => setIsEndOfDayReportModalOpen(true)}
         />
       )}
 
@@ -3552,6 +3573,7 @@ export const PosShell: React.FC = () => {
           onClose={() => setIsShiftModalOpen(false)}
           onOpenShift={handleOpenShift}
           onCloseShift={handleCloseShift}
+          onOpenEndOfDayReport={() => setIsEndOfDayReportModalOpen(true)}
         />
       )}
 
@@ -3671,6 +3693,7 @@ export const PosShell: React.FC = () => {
                       printedQuantity: printedQty,
                       orderedById: (oi as any).orderedById || undefined,
                       orderedByName: (oi as any).orderedByName || undefined,
+                      createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
                     };
                   })
                 );
@@ -3706,6 +3729,9 @@ export const PosShell: React.FC = () => {
         currentUser={currentUser}
         onSelectBranch={(b) => {
           setCurrentBranch(b);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('avora_pos_selected_branch', b.id);
+          }
           fetchProducts(b.id);
           fetchTables(b.id);
           fetchOrdersSnapshot(b.id);
@@ -3753,6 +3779,7 @@ export const PosShell: React.FC = () => {
           if (updatedBranch.id) fetchPrintSettings(updatedBranch.id);
         }}
         onOpenDesktopLaunch={() => setIsDesktopLaunchModalOpen(true)}
+        onOpenEndOfDayReport={() => setIsEndOfDayReportModalOpen(true)}
       />
 
       {/* Numeric Keypad Touch Modal */}
@@ -3940,6 +3967,19 @@ export const PosShell: React.FC = () => {
       <PosDesktopLaunchModal
         isOpen={isDesktopLaunchModalOpen}
         onClose={() => setIsDesktopLaunchModalOpen(false)}
+      />
+
+      {/* End-of-Day / Shift Close Summary Modal */}
+      <EndOfDayReportModal
+        isOpen={isEndOfDayReportModalOpen}
+        onClose={() => setIsEndOfDayReportModalOpen(false)}
+        currentBranch={currentBranch}
+        branches={branches}
+        canSwitchBranch={canSwitchBranch}
+        activeShiftOpenedAt={activeShift?.openedAt}
+        activeShiftId={activeShift?.id}
+        currentCashierId={currentUser?.id}
+        currentCashierName={currentUser?.fullName || currentUser?.email}
       />
     </div>
   );

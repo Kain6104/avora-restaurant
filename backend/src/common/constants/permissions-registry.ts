@@ -41,9 +41,10 @@ export const PERMISSION_GROUPS: PermissionGroupDefinition[] = [
   { key: 'roles', name: 'Vai trò & Phân quyền', category: 'QUẢN LÝ KHÁCH HÀNG', sortOrder: 15 },
   { key: 'membership', name: 'Thẻ thành viên & Hội viên', category: 'QUẢN LÝ KHÁCH HÀNG', sortOrder: 16 },
   { key: 'points', name: 'Điểm thưởng tích lũy', category: 'QUẢN LÝ KHÁCH HÀNG', sortOrder: 17 },
+  { key: 'reviews', name: 'Đánh giá & Trải nghiệm', category: 'QUẢN LÝ KHÁCH HÀNG', sortOrder: 18 },
 
   // MARKETING
-  { key: 'articles', name: 'Tin tức & Bài viết', category: 'MARKETING', sortOrder: 18 },
+  { key: 'articles', name: 'Tin tức & Bài viết', category: 'MARKETING', sortOrder: 19 },
   { key: 'comments', name: 'Duyệt bình luận', category: 'MARKETING', sortOrder: 19 },
   { key: 'vouchers', name: 'Mã giảm giá (Vouchers)', category: 'MARKETING', sortOrder: 20 },
   { key: 'flashsales', name: 'Chương trình Flash Sale', category: 'MARKETING', sortOrder: 21 },
@@ -283,6 +284,22 @@ export const PERMISSIONS_CATALOG: PermissionDefinition[] = [
   { key: 'cash_shift.open', groupKey: 'cash_shift', name: 'Mở ca làm việc', description: 'Bắt đầu ca thu ngân và ghi nhận tiền đầu ca', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.NORMAL, sortOrder: 175 },
   { key: 'cash_shift.close', groupKey: 'cash_shift', name: 'Chốt ca làm việc', description: 'Đóng ca, kiểm kê doanh thu và tiền thực tế trong két', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.SENSITIVE, sortOrder: 176 },
   { key: 'cash_shift.history.view', groupKey: 'cash_shift', name: 'Xem lịch sử các ca', description: 'Xem các ca thu ngân trước đây', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.NORMAL, sortOrder: 177 },
+
+  // 24. AVORA FARM
+  { key: 'farm.view', groupKey: 'farm', name: 'Xem Nông trại AVORA', description: 'Truy cập trung tâm quản trị nông trại', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.NORMAL, sortOrder: 178 },
+  { key: 'farm.manage_crop', groupKey: 'farm', name: 'Quản lý cây trồng & hạt', description: 'Thêm, sửa, xóa thông số cây trồng', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 179 },
+  { key: 'farm.manage_mutation', groupKey: 'farm', name: 'Quản lý đột biến', description: 'Cấu hình tỷ lệ và biến dị sinh học của cây', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 180 },
+  { key: 'farm.manage_event', groupKey: 'farm', name: 'Quản lý sự kiện Farm', description: 'Tạo mùa vụ và lễ hội hoa anh đào/tết', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 181 },
+  { key: 'farm.manage_shop', groupKey: 'farm', name: 'Quản lý cửa hàng Farm', description: 'Cấu hình vật phẩm, hạt giống và phân bón', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 182 },
+  { key: 'farm.manage_reward', groupKey: 'farm', name: 'Quản lý kho quà đổi thưởng', description: 'Cấu hình đổi điểm loyalty sang voucher', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.CRITICAL, sortOrder: 183 },
+  { key: 'farm.view_economy', groupKey: 'farm', name: 'Xem chỉ số kinh tế Farm', description: 'Theo dõi lạm phát coin và tỷ lệ phát hành điểm', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 184 },
+  { key: 'farm.view_security', groupKey: 'farm', name: 'Giám sát gian lận Farm', description: 'Xem cảnh báo gian lận và kiểm tra nông trại khách', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 185 },
+
+  // 25. REVIEWS & CUSTOMER EXPERIENCE
+  { key: 'reviews.view', groupKey: 'reviews', name: 'Xem danh sách đánh giá', description: 'Xem đánh giá món ăn và đơn hàng', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.NORMAL, sortOrder: 186 },
+  { key: 'reviews.reply', groupKey: 'reviews', name: 'Phản hồi đánh giá', description: 'Gửi phản hồi chính thức từ AVORA tới khách hàng', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.NORMAL, sortOrder: 187 },
+  { key: 'reviews.moderate', groupKey: 'reviews', name: 'Kiểm duyệt đánh giá', description: 'Ẩn hoặc khôi phục đánh giá của khách hàng', scopeType: ScopeType.BRANCH, riskLevel: RiskLevel.SENSITIVE, sortOrder: 188 },
+  { key: 'reviews.settings', groupKey: 'reviews', name: 'Cài đặt đánh giá & điểm thưởng', description: 'Cấu hình điểm thưởng và thời hạn đánh giá đơn', scopeType: ScopeType.GLOBAL, riskLevel: RiskLevel.SENSITIVE, sortOrder: 189 },
 ];
 
 export const SYSTEM_ROLE_CODES = {
@@ -452,6 +469,10 @@ export const DEFAULT_SYSTEM_ROLE_PERMISSIONS: Record<SystemRoleCode, string[]> =
     'cash_shift.open',
     'cash_shift.close',
     'cash_shift.history.view',
+    'reviews.view',
+    'reviews.reply',
+    'reviews.moderate',
+    'farm.view',
   ],
 
   // 3. BRANCH_STAFF: Thu ngân / bán hàng

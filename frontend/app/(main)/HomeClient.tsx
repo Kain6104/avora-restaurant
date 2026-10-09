@@ -8,6 +8,7 @@ import Link from 'next/link';
 import HeroBanner from '../../components/HeroBanner';
 import AddToCartButton from '../../components/AddToCartButton';
 import { useCart } from '../../context/CartContext';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 
 interface HomeClientProps {
   banners: any[];
@@ -567,9 +568,8 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`}>
                       <h3 className="font-bold text-slate-900 text-[12px] md:text-[14px] leading-tight mb-1.5 line-clamp-2 group-hover:text-red-600 transition-colors">{item.name}</h3>
                     </Link>
-                    <div className="flex items-center gap-1 mb-2 text-[10px] text-slate-500">
-                      <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                      <span className="text-slate-700 font-semibold">4.9</span>
+                    <div className="flex items-center gap-1.5 mb-2 text-[10px] text-slate-500 flex-wrap">
+                      <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                       <span className="text-slate-300">•</span>
                       <span>{(item.name.length * 5) % 50 + 10} đã bán</span>
                     </div>
@@ -685,9 +685,8 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`}>
                   <h3 className="font-bold text-slate-900 text-[12px] md:text-[13px] leading-tight mb-1.5 group-hover:text-red-600 transition-colors line-clamp-2">{item.name}</h3>
                 </Link>
-                <div className="flex items-center gap-1 mb-2 text-[10px]">
-                  <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                  <span className="text-slate-700 font-semibold">4.9</span>
+                <div className="mb-2">
+                  <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                 </div>
                 <div className="mt-auto flex items-center justify-between gap-2">
                   <div>

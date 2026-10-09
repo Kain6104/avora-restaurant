@@ -45,7 +45,8 @@ export default function DataTable<T>({
   onRowClick,
   className = '',
 }: DataTableProps<T>) {
-  if (loading) {
+  // Chỉ hiển thị TableSkeleton khi chưa hề có dữ liệu (cold load / initial fetch)
+  if (loading && (!data || data.length === 0)) {
     return <TableSkeleton rows={6} cols={columns.length} />;
   }
 
@@ -67,7 +68,18 @@ export default function DataTable<T>({
   };
 
   return (
-    <div className={`w-full ${className}`}>
+    <div
+      className={`w-full relative transition-opacity duration-200 ${
+        loading ? 'opacity-65 pointer-events-none' : ''
+      } ${className}`}
+    >
+      {/* Thanh shimmer tinh tế chạy ở mép bảng khi re-fetch dữ liệu cũ */}
+      {loading && (
+        <div className="absolute top-0 left-0 right-0 h-[2px] z-20 overflow-hidden bg-slate-100 rounded-t-2xl">
+          <div className="h-full w-1/3 bg-[#800020] animate-pulse" />
+        </div>
+      )}
+
       {/* Mobile view (< md / 768px): Card layout */}
       <div className="md:hidden space-y-2.5">
         {data.map((item, index) => {

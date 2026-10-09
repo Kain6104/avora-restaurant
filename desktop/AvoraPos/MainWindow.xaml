@@ -16,7 +16,7 @@
         Background="#0B1120">
 
     <Window.Resources>
-        <!-- Modern Rounded Button Style -->
+        <!-- Modern Rounded Button Style (Primary Solid) -->
         <Style x:Key="ModernButtonStyle" TargetType="Button">
             <Setter Property="Foreground" Value="White" />
             <Setter Property="FontWeight" Value="SemiBold" />
@@ -46,12 +46,84 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- Secondary Outline Button Style -->
+        <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FFFFFF" />
+            <Setter Property="BorderBrush" Value="#CBD5E1" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#334155" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F8FAFC" />
+                                <Setter TargetName="border" Property="BorderBrush" Value="#94A3B8" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F1F5F9" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- POS Touch Keypad Button Style -->
+        <Style x:Key="KeypadButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="#F8FAFC" />
+            <Setter Property="BorderBrush" Value="#E2E8F0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="#0F172A" />
+            <Setter Property="FontSize" Value="20" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="Height" Value="52" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F1F5F9" />
+                                <Setter TargetName="border" Property="BorderBrush" Value="#CBD5E1" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E2E8F0" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="border" Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid>
         <!-- Layer 1: POS WebView2 UI (Hidden until authenticated & authorized) -->
         <Grid x:Name="posWebViewGrid" Visibility="Hidden">
             <wv2:WebView2 x:Name="posWebView" />
+            <!-- Silent Background Printing WebView2: Direct Spool to Windows Printer, Zero Dialog -->
+            <wv2:WebView2 x:Name="silentPrintWebView" Width="0" Height="0" HorizontalAlignment="Left" VerticalAlignment="Top" />
         </Grid>
 
         <!-- Layer 2: Startup Splash Overlay -->
@@ -65,7 +137,7 @@
             </StackPanel>
         </Border>
 
-        <!-- Layer 3: 100% Native WPF Luxury Enterprise Login View (Directives 17-33) -->
+        <!-- Layer 3: 100% Native WPF Luxury Enterprise Login View -->
         <Border x:Name="nativeLoginOverlay" Background="#F1F5F9" Visibility="Collapsed">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -75,7 +147,7 @@
                     <ColumnDefinition Width="9*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- LEFT PANEL: Visual Restaurant Showcase -->
+                <!-- LEFT PANEL: Visual Restaurant Showcase (Unchanged) -->
                 <Grid Grid.Column="0">
                     <!-- Background Restaurant Photography -->
                     <Image Source="Assets/restaurant_bg.png" Stretch="UniformToFill" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -148,7 +220,7 @@
                     </Grid>
                 </Grid>
 
-                <!-- RIGHT PANEL: Clean Minimal Luxury Login Form (45%) -->
+                <!-- RIGHT PANEL: Clean Minimal Luxury Multi-Mode Login Card (45%) -->
                 <Grid Grid.Column="1" Background="#FFFFFF">
                     <!-- Nút Đóng Ứng Dụng ở góc trên bên phải màn hình Đăng nhập -->
                     <Button x:Name="btnExitAppLogin" HorizontalAlignment="Right" VerticalAlignment="Top" 
@@ -164,113 +236,385 @@
                     </Button>
 
                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                        <Grid Margin="48,36" MaxWidth="440" VerticalAlignment="Center">
+                        <Grid Margin="48,30" MaxWidth="440" VerticalAlignment="Center">
                             <StackPanel>
-                                <!-- AVORA Red Badge & Form Header -->
-                                <Border Background="#FEF2F2" BorderBrush="#FEE2E2" BorderThickness="1" CornerRadius="6" Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,12">
-                                    <TextBlock Text="AVORA POS" FontSize="10" FontWeight="Bold" Foreground="#DC2626" />
-                                </Border>
 
-                                <TextBlock Text="Chào mừng trở lại" FontSize="28" FontWeight="Black" Foreground="#0F172A" Margin="0,0,0,6" />
-                                <TextBlock Text="Đăng nhập để bắt đầu ca làm việc của bạn." FontSize="13" Foreground="#64748B" Margin="0,0,0,24" />
+                                <!-- ========================================================= -->
+                                <!-- MODE 1: POS STAFF PIN LOGIN (MẶC ĐỊNH ĐĂNG NHẬP NHANH)   -->
+                                <!-- ========================================================= -->
+                                <StackPanel x:Name="panelPinLogin" Visibility="Visible">
+                                    <!-- AVORA Red Badge -->
+                                    <Border Background="#FEF2F2" BorderBrush="#FEE2E2" BorderThickness="1" CornerRadius="6" Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,10">
+                                        <TextBlock Text="AVORA POS" FontSize="10" FontWeight="Bold" Foreground="#DC2626" />
+                                    </Border>
 
-                                <!-- Inline Error Banner (Clean Vector, No Emojis) -->
-                                <Border x:Name="loginErrorBanner" Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,18" Visibility="Collapsed">
-                                    <Grid>
+                                    <TextBlock Text="ĐĂNG NHẬP NHANH" FontSize="26" FontWeight="Black" Foreground="#0F172A" Margin="0,0,0,4" />
+                                    <TextBlock Text="Nhập mã PIN 4 số của bạn để tiếp tục." FontSize="13" Foreground="#64748B" Margin="0,0,0,16" />
+
+                                    <!-- Inline Error Banner -->
+                                    <Border x:Name="pinErrorBanner" Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,14" Visibility="Collapsed">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
+                                                  Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" x:Name="txtPinErrorMessage" Text="Mã PIN không chính xác." 
+                                                       Foreground="#991B1B" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Success Banner (trước khi vào POS) -->
+                                    <Border x:Name="pinSuccessBanner" Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,14" Visibility="Collapsed">
+                                        <TextBlock x:Name="txtPinSuccessMessage" Text="✓ Xác thực thành công! Đang mở POS..." Foreground="#065F46" FontSize="13" FontWeight="Bold" HorizontalAlignment="Center" />
+                                    </Border>
+
+                                    <!-- 4 PIN Dots Indicator -->
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,0,0,18">
+                                        <Border x:Name="dotPin1" Width="18" Height="18" CornerRadius="9" BorderThickness="2" BorderBrush="#CBD5E1" Background="Transparent" Margin="8,0" />
+                                        <Border x:Name="dotPin2" Width="18" Height="18" CornerRadius="9" BorderThickness="2" BorderBrush="#CBD5E1" Background="Transparent" Margin="8,0" />
+                                        <Border x:Name="dotPin3" Width="18" Height="18" CornerRadius="9" BorderThickness="2" BorderBrush="#CBD5E1" Background="Transparent" Margin="8,0" />
+                                        <Border x:Name="dotPin4" Width="18" Height="18" CornerRadius="9" BorderThickness="2" BorderBrush="#CBD5E1" Background="Transparent" Margin="8,0" />
+                                    </StackPanel>
+
+                                    <!-- 3x4 Touch Keypad Grid -->
+                                    <Grid Margin="0,0,0,14" MaxWidth="340" HorizontalAlignment="Center">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
                                         <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="96" />
+                                            <ColumnDefinition Width="96" />
+                                            <ColumnDefinition Width="96" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <!-- Row 1: 1, 2, 3 -->
+                                        <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource KeypadButtonStyle}" Content="1" Tag="1" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource KeypadButtonStyle}" Content="2" Tag="2" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="0" Grid.Column="2" Style="{StaticResource KeypadButtonStyle}" Content="3" Tag="3" Margin="4" Click="BtnPinKey_Click" />
+
+                                        <!-- Row 2: 4, 5, 6 -->
+                                        <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource KeypadButtonStyle}" Content="4" Tag="4" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource KeypadButtonStyle}" Content="5" Tag="5" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="1" Grid.Column="2" Style="{StaticResource KeypadButtonStyle}" Content="6" Tag="6" Margin="4" Click="BtnPinKey_Click" />
+
+                                        <!-- Row 3: 7, 8, 9 -->
+                                        <Button Grid.Row="2" Grid.Column="0" Style="{StaticResource KeypadButtonStyle}" Content="7" Tag="7" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="2" Grid.Column="1" Style="{StaticResource KeypadButtonStyle}" Content="8" Tag="8" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="2" Grid.Column="2" Style="{StaticResource KeypadButtonStyle}" Content="9" Tag="9" Margin="4" Click="BtnPinKey_Click" />
+
+                                        <!-- Row 4: C (Clear), 0, ⌫ (Backspace) -->
+                                        <Button Grid.Row="3" Grid.Column="0" Style="{StaticResource KeypadButtonStyle}" Content="C" Tag="CLEAR" Margin="4" Foreground="#DC2626" FontSize="16" Click="BtnPinKey_Click" ToolTip="Xóa tất cả số" />
+                                        <Button Grid.Row="3" Grid.Column="1" Style="{StaticResource KeypadButtonStyle}" Content="0" Tag="0" Margin="4" Click="BtnPinKey_Click" />
+                                        <Button Grid.Row="3" Grid.Column="2" Style="{StaticResource KeypadButtonStyle}" Content="⌫" Tag="BACK" Margin="4" Foreground="#475569" FontSize="18" Click="BtnPinKey_Click" ToolTip="Xóa ký tự vừa nhập" />
+                                    </Grid>
+
+                                    <!-- Progress Bar during PIN verification -->
+                                    <ProgressBar x:Name="pinProgress" IsIndeterminate="True" Height="3" Foreground="#DA251D" Background="#F1F5F9" BorderThickness="0" Margin="0,0,0,12" Visibility="Collapsed" />
+
+                                    <!-- Submit PIN Button -->
+                                    <Button x:Name="btnPinSubmit" Style="{StaticResource ModernButtonStyle}" Background="#DA251D" Height="46" FontSize="14" FontWeight="Bold" Content="ĐĂNG NHẬP" Click="BtnPinSubmit_Click" Margin="0,0,0,14" />
+
+                                    <!-- Divider -->
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <Path Grid.Column="0" Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
-                                              Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
-                                        <TextBlock Grid.Column="1" x:Name="txtErrorMessage" Text="Sai tài khoản hoặc mật khẩu." 
-                                                   Foreground="#991B1B" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" VerticalAlignment="Center" />
+                                        <Border Grid.Column="0" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="HOẶC" Foreground="#94A3B8" FontSize="11" FontWeight="Bold" Margin="12,0" />
+                                        <Border Grid.Column="2" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
                                     </Grid>
-                                </Border>
 
-                                <!-- Email Input -->
-                                <TextBlock Text="Tài khoản Email / Tên đăng nhập" Foreground="#475569" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
-                                <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Height="48" Margin="0,0,0,16">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="42" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <!-- Vector Mail Icon -->
-                                        <Path Grid.Column="0" Data="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" 
-                                              Fill="#94A3B8" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        <TextBox Grid.Column="1" x:Name="txtEmail" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
-                                                 Padding="0,0,12,0" FontSize="14" VerticalContentAlignment="Center" KeyDown="TxtInput_KeyDown" />
-                                    </Grid>
-                                </Border>
+                                    <!-- Nút Chuyển sang Đăng nhập với Remembered User (Nếu có) -->
+                                    <Button x:Name="btnPinToRememberedUser" Style="{StaticResource SecondaryButtonStyle}" Height="44" Margin="0,0,0,8" Click="BtnPinToRememberedUser_Click" Visibility="Collapsed">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" 
+                                                  Fill="#475569" Width="16" Height="16" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="txtPinToRememberedUserLabel" Text="Đăng nhập với HTP Offical" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
 
-                                <!-- Password Input -->
-                                <TextBlock Text="Mật khẩu" Foreground="#475569" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
-                                <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Height="48" Margin="0,0,0,14">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="42" />
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="44" />
-                                        </Grid.ColumnDefinitions>
-                                        <!-- Vector Lock Icon -->
-                                        <Path Grid.Column="0" Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" 
-                                              Fill="#94A3B8" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        
-                                        <PasswordBox Grid.Column="1" x:Name="txtPassword" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
-                                                     Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" KeyDown="TxtInput_KeyDown" />
-                                        <TextBox Grid.Column="1" x:Name="txtPasswordVisible" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
-                                                 Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" Visibility="Collapsed" KeyDown="TxtInput_KeyDown" />
-                                        
-                                        <!-- Vector Eye Toggle Button (NO EMOJIS) -->
-                                        <Button Grid.Column="2" x:Name="btnTogglePassword" Width="40" Height="40" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="BtnTogglePassword_Click" ToolTip="Hiện / ẩn mật khẩu">
-                                            <Path x:Name="pathEyeIcon" Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" 
-                                                  Fill="#64748B" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                        </Button>
-                                    </Grid>
-                                </Border>
+                                    <!-- Nút Đăng nhập bằng Mật khẩu (Standard Login hoặc Thay đổi tài khoản) -->
+                                    <Button x:Name="btnPinToStandardLogin" Style="{StaticResource SecondaryButtonStyle}" Height="44" Click="BtnPinToStandardLogin_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" 
+                                                  Fill="#475569" Width="15" Height="15" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="txtPinToStandardLabel" Text="Đăng nhập bằng mật khẩu" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
 
-                                <!-- Progress Bar during auth -->
-                                <ProgressBar x:Name="loginProgress" IsIndeterminate="True" Height="3" Foreground="#DA251D" Background="#F1F5F9" BorderThickness="0" Margin="0,0,0,12" Visibility="Collapsed" />
+                                <!-- ========================================================= -->
+                                <!-- MODE 2: RETURNING USER LOGIN (AVATAR + NAME + PASSWORD)   -->
+                                <!-- ========================================================= -->
+                                <StackPanel x:Name="panelReturningUser" Visibility="Collapsed">
+                                    <!-- AVORA Red Badge -->
+                                    <Border Background="#FEF2F2" BorderBrush="#FEE2E2" BorderThickness="1" CornerRadius="6" Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,10">
+                                        <TextBlock Text="AVORA POS" FontSize="10" FontWeight="Bold" Foreground="#DC2626" />
+                                    </Border>
 
-                                <!-- Submit Button (Height 48px >= 48px touch friendly) -->
-                                <Button x:Name="btnLogin" Style="{StaticResource ModernButtonStyle}" Background="#DA251D" Height="48" FontSize="15" FontWeight="Bold" Content="ĐĂNG NHẬP" Click="BtnLogin_Click" Margin="0,0,0,16" />
+                                    <TextBlock Text="Chào mừng trở lại" FontSize="26" FontWeight="Black" Foreground="#0F172A" Margin="0,0,0,4" />
+                                    <TextBlock Text="Vui lòng nhập mật khẩu để tiếp tục." FontSize="13" Foreground="#64748B" Margin="0,0,0,18" />
 
-                                <!-- Divider -->
-                                <Grid Margin="0,0,0,16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Border Grid.Column="0" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="HOẶC TIẾP TỤC VỚI" Foreground="#94A3B8" FontSize="11" FontWeight="Bold" Margin="12,0" />
-                                    <Border Grid.Column="2" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
-                                </Grid>
+                                    <!-- Inline Error Banner -->
+                                    <Border x:Name="returningErrorBanner" Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
+                                                  Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" x:Name="txtReturningErrorMessage" Text="Mật khẩu không chính xác." 
+                                                       Foreground="#991B1B" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
 
-                                <!-- Google Login Button with Official 4-Color Vector Logo -->
-                                <Button x:Name="btnGoogleLogin" Style="{StaticResource ModernButtonStyle}" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Height="48" Click="BtnGoogleLogin_Click">
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                        <Canvas Width="18" Height="18" Margin="0,0,10,0">
-                                            <!-- Blue -->
-                                            <Path Fill="#4285F4" Data="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.61z" />
-                                            <!-- Green -->
-                                            <Path Fill="#34A853" Data="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.95v2.33C2.43 15.93 5.48 18 9 18z" />
-                                            <!-- Yellow -->
-                                            <Path Fill="#FBBC05" Data="M3.96 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.95A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.95 4.04l3.01-2.33z" />
-                                            <!-- Red -->
-                                            <Path Fill="#EA4335" Data="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0 5.48 0 2.43 2.07.95 4.96l3.01 2.33c.71-2.13 2.7-3.71 5.04-3.71z" />
-                                        </Canvas>
-                                        <TextBlock Text="Đăng nhập với Google" Foreground="#1E293B" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <!-- User Avatar & Profile Showcase -->
+                                    <StackPanel HorizontalAlignment="Center" Margin="0,0,0,20">
+                                        <Grid Width="96" Height="96" HorizontalAlignment="Center">
+                                            <!-- Circle Container with White Border & Soft Shadow -->
+                                            <Border Width="96" Height="96" CornerRadius="48" BorderThickness="3" BorderBrush="#FFFFFF" Background="#F1F5F9">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="16" Direction="270" ShadowDepth="4" Opacity="0.14" Color="#000000" />
+                                                </Border.Effect>
+                                                <Grid>
+                                                    <!-- Real / Cached Avatar -->
+                                                    <Image x:Name="imgReturningAvatar" Stretch="UniformToFill" RenderOptions.BitmapScalingMode="HighQuality">
+                                                        <Image.Clip>
+                                                            <EllipseGeometry Center="45,45" RadiusX="45" RadiusY="45" />
+                                                        </Image.Clip>
+                                                    </Image>
+                                                    <!-- Fallback Initial Avatar (Khi chưa có ảnh hoặc tải lỗi) -->
+                                                    <Border x:Name="borderFallbackAvatar" CornerRadius="45" Visibility="Collapsed">
+                                                        <Border.Background>
+                                                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                                                <GradientStop Color="#EF4444" Offset="0.0" />
+                                                                <GradientStop Color="#991B1B" Offset="1.0" />
+                                                            </LinearGradientBrush>
+                                                        </Border.Background>
+                                                        <TextBlock x:Name="txtFallbackInitial" Text="H" FontSize="36" FontWeight="Black" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                    </Border>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Green Online Status Dot at bottom right (with white border) -->
+                                            <Border Width="22" Height="22" CornerRadius="11" Background="#10B981" BorderBrush="#FFFFFF" BorderThickness="3"
+                                                    HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,2,2">
+                                                <Border.Effect>
+                                                    <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.25" Color="#000000" />
+                                                </Border.Effect>
+                                            </Border>
+                                        </Grid>
+
+                                        <!-- User Full Name & Email -->
+                                        <TextBlock x:Name="txtRememberedName" Text="HTP Offical" FontSize="20" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center" Margin="0,12,0,2" />
+                                        <TextBlock x:Name="txtRememberedEmail" Text="phatmydang@gmail.com" FontSize="13" Foreground="#64748B" HorizontalAlignment="Center" />
                                     </StackPanel>
-                                </Button>
 
-                                <!-- Status text when waiting for Google callback -->
-                                <TextBlock x:Name="txtGoogleStatus" Text="Đang mở trình duyệt ngoài để xác thực tài khoản Google..." Foreground="#D97706" FontSize="11" HorizontalAlignment="Center" Margin="0,10,0,0" Visibility="Collapsed" TextWrapping="Wrap" />
+                                    <!-- Password Input -->
+                                    <TextBlock Text="Mật khẩu" Foreground="#475569" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Height="48" Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="44" />
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Vector Lock Icon -->
+                                            <Path Grid.Column="0" Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" 
+                                                  Fill="#94A3B8" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
 
+                                            <!-- Watermark Placeholder -->
+                                            <TextBlock Grid.Column="1" x:Name="txtReturningPlaceholder" Text="Nhập mật khẩu của bạn" Foreground="#94A3B8" FontSize="14" VerticalAlignment="Center" IsHitTestVisible="False" Margin="2,0,0,0" />
 
+                                            <PasswordBox Grid.Column="1" x:Name="txtReturningPassword" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
+                                                         Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" KeyDown="TxtReturningPassword_KeyDown" PasswordChanged="TxtReturningPassword_PasswordChanged" />
+                                            <TextBox Grid.Column="1" x:Name="txtReturningPasswordVisible" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
+                                                     Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" Visibility="Collapsed" KeyDown="TxtReturningPassword_KeyDown" TextChanged="TxtReturningPasswordVisible_TextChanged" />
 
-                                <!-- System Status & Version Footer (Directives 27, 28) -->
+                                            <!-- Eye Toggle Button -->
+                                            <Button Grid.Column="2" x:Name="btnToggleReturningPassword" Width="40" Height="40" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="BtnToggleReturningPassword_Click" ToolTip="Hiện / ẩn mật khẩu">
+                                                <Path x:Name="pathReturningEyeIcon" Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" 
+                                                      Fill="#64748B" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Caps Lock Warning -->
+                                    <TextBlock x:Name="txtReturningCapsLockWarning" Text="⚠️ Phím Caps Lock đang bật" Foreground="#D97706" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" Visibility="Collapsed" />
+
+                                    <!-- Progress Bar during auth -->
+                                    <ProgressBar x:Name="returningLoginProgress" IsIndeterminate="True" Height="3" Foreground="#DA251D" Background="#F1F5F9" BorderThickness="0" Margin="0,4,0,12" Visibility="Collapsed" />
+
+                                    <!-- Submit Button -->
+                                    <Button x:Name="btnReturningLogin" Style="{StaticResource ModernButtonStyle}" Background="#DA251D" Height="48" FontSize="15" FontWeight="Bold" Content="ĐĂNG NHẬP" Click="BtnReturningLogin_Click" Margin="0,0,0,14" />
+
+                                    <!-- Divider -->
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="HOẶC" Foreground="#94A3B8" FontSize="11" FontWeight="Bold" Margin="12,0" />
+                                        <Border Grid.Column="2" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <!-- Button: ⇄ Thay đổi tài khoản (Chuyển sang Standard Login) -->
+                                    <Button x:Name="btnSwitchToStandard" Style="{StaticResource SecondaryButtonStyle}" Height="46" Click="BtnSwitchToStandard_Click" Margin="0,0,0,8">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z" 
+                                                  Fill="#475569" Width="16" Height="16" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Thay đổi tài khoản" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Button: ← Đăng nhập nhanh bằng mã PIN -->
+                                    <Button x:Name="btnReturningToPin" Style="{StaticResource SecondaryButtonStyle}" Height="46" Click="BtnSwitchToPin_Click" Margin="0,0,0,12">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z" 
+                                                  Fill="#475569" Width="16" Height="16" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Đăng nhập nhanh bằng mã PIN" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Nút Quên tài khoản này trên thiết bị -->
+                                    <TextBlock HorizontalAlignment="Center">
+                                        <Hyperlink Click="BtnForgetAccount_Click" Foreground="#94A3B8" TextDecorations="{x:Null}">
+                                            <TextBlock Text="Quên tài khoản này trên thiết bị" FontSize="11" />
+                                        </Hyperlink>
+                                    </TextBlock>
+                                </StackPanel>
+
+                                <!-- ========================================================= -->
+                                <!-- MODE 3: STANDARD LOGIN (EMAIL + PASSWORD + GOOGLE)        -->
+                                <!-- ========================================================= -->
+                                <StackPanel x:Name="panelStandardLogin" Visibility="Collapsed">
+                                    <!-- AVORA Red Badge & Form Header -->
+                                    <Border Background="#FEF2F2" BorderBrush="#FEE2E2" BorderThickness="1" CornerRadius="6" Padding="10,4" HorizontalAlignment="Left" Margin="0,0,0,10">
+                                        <TextBlock Text="AVORA POS" FontSize="10" FontWeight="Bold" Foreground="#DC2626" />
+                                    </Border>
+
+                                    <TextBlock Text="Đăng nhập tài khoản" FontSize="26" FontWeight="Black" Foreground="#0F172A" Margin="0,0,0,4" />
+                                    <TextBlock Text="Đăng nhập để bắt đầu ca làm việc của bạn." FontSize="13" Foreground="#64748B" Margin="0,0,0,18" />
+
+                                    <!-- Inline Error Banner -->
+                                    <Border x:Name="loginErrorBanner" Background="#FEF2F2" BorderBrush="#FCA5A5" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,16" Visibility="Collapsed">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
+                                                  Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" x:Name="txtErrorMessage" Text="Sai tài khoản hoặc mật khẩu." 
+                                                       Foreground="#991B1B" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Email Input -->
+                                    <TextBlock Text="Tài khoản Email / Tên đăng nhập" Foreground="#475569" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Height="48" Margin="0,0,0,14">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" 
+                                                  Fill="#94A3B8" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            <TextBox Grid.Column="1" x:Name="txtEmail" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
+                                                     Padding="0,0,12,0" FontSize="14" VerticalContentAlignment="Center" KeyDown="TxtInput_KeyDown" />
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Password Input -->
+                                    <TextBlock Text="Mật khẩu" Foreground="#475569" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Height="48" Margin="0,0,0,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="42" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="44" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z" 
+                                                  Fill="#94A3B8" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                                            <PasswordBox Grid.Column="1" x:Name="txtPassword" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
+                                                         Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" KeyDown="TxtInput_KeyDown" />
+                                            <TextBox Grid.Column="1" x:Name="txtPasswordVisible" Background="Transparent" Foreground="#0F172A" BorderThickness="0" 
+                                                     Padding="0,0,8,0" FontSize="14" VerticalContentAlignment="Center" Visibility="Collapsed" KeyDown="TxtInput_KeyDown" />
+
+                                            <!-- Eye Toggle Button -->
+                                            <Button Grid.Column="2" x:Name="btnTogglePassword" Width="40" Height="40" Background="Transparent" BorderThickness="0" Cursor="Hand" Click="BtnTogglePassword_Click" ToolTip="Hiện / ẩn mật khẩu">
+                                                <Path x:Name="pathEyeIcon" Data="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" 
+                                                      Fill="#64748B" Width="18" Height="18" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Button>
+                                        </Grid>
+                                    </Border>
+
+                                    <!-- Caps Lock Warning -->
+                                    <TextBlock x:Name="txtStandardCapsLockWarning" Text="⚠️ Phím Caps Lock đang bật" Foreground="#D97706" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,10" Visibility="Collapsed" />
+
+                                    <!-- Progress Bar during auth -->
+                                    <ProgressBar x:Name="loginProgress" IsIndeterminate="True" Height="3" Foreground="#DA251D" Background="#F1F5F9" BorderThickness="0" Margin="0,4,0,12" Visibility="Collapsed" />
+
+                                    <!-- Submit Button -->
+                                    <Button x:Name="btnLogin" Style="{StaticResource ModernButtonStyle}" Background="#DA251D" Height="48" FontSize="15" FontWeight="Bold" Content="ĐĂNG NHẬP" Click="BtnLogin_Click" Margin="0,0,0,14" />
+
+                                    <!-- Divider -->
+                                    <Grid Margin="0,0,0,14">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border Grid.Column="0" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="HOẶC TIẾP TỤC VỚI" Foreground="#94A3B8" FontSize="11" FontWeight="Bold" Margin="12,0" />
+                                        <Border Grid.Column="2" Height="1" Background="#E2E8F0" VerticalAlignment="Center" />
+                                    </Grid>
+
+                                    <!-- Google Login Button -->
+                                    <Button x:Name="btnGoogleLogin" Style="{StaticResource ModernButtonStyle}" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Height="46" Click="BtnGoogleLogin_Click" Margin="0,0,0,10">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Canvas Width="18" Height="18" Margin="0,0,10,0">
+                                                <Path Fill="#4285F4" Data="M17.64 9.2c0-.63-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.26h2.92c1.71-1.57 2.68-3.89 2.68-6.61z" />
+                                                <Path Fill="#34A853" Data="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.91-2.26c-.81.54-1.84.86-3.05.86-2.34 0-4.33-1.58-5.04-3.71H.95v2.33C2.43 15.93 5.48 18 9 18z" />
+                                                <Path Fill="#FBBC05" Data="M3.96 10.71c-.18-.54-.28-1.12-.28-1.71s.1-1.17.28-1.71V4.96H.95A8.996 8.996 0 0 0 0 9c0 1.45.35 2.82.95 4.04l3.01-2.33z" />
+                                                <Path Fill="#EA4335" Data="M9 3.58c1.32 0 2.51.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0 5.48 0 2.43 2.07.95 4.96l3.01 2.33c.71-2.13 2.7-3.71 5.04-3.71z" />
+                                            </Canvas>
+                                            <TextBlock Text="Đăng nhập với Google" Foreground="#1E293B" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Status text when waiting for Google callback -->
+                                    <TextBlock x:Name="txtGoogleStatus" Text="Đang mở trình duyệt ngoài để xác thực tài khoản Google..." Foreground="#D97706" FontSize="11" HorizontalAlignment="Center" Margin="0,0,0,10" Visibility="Collapsed" TextWrapping="Wrap" />
+
+                                    <!-- Nút quay lại Returning User nếu đã có RememberedAccount -->
+                                    <Button x:Name="btnBackToRememberedUser" Style="{StaticResource SecondaryButtonStyle}" Height="44" Margin="0,0,0,8" Click="BtnBackToRememberedUser_Click" Visibility="Collapsed">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <TextBlock x:Name="txtBackToRememberedLabel" Text="← Quay lại HTP Offical" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+
+                                    <!-- Nút chuyển sang PIN Login -->
+                                    <Button x:Name="btnStandardToPin" Style="{StaticResource SecondaryButtonStyle}" Height="44" Click="BtnSwitchToPin_Click">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Path Data="M4 8h4V4H4v4zm6 12h4v-4h-4v4zm-6 0h4v-4H4v4zm0-6h4v-4H4v4zm6 0h4v-4h-4v4zm6-10v4h4V4h-4zm-6 4h4V4h-4v4zm6 6h4v-4h-4v4zm0 6h4v-4h-4v4z" 
+                                                  Fill="#475569" Width="16" Height="16" Stretch="Uniform" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Đăng nhập nhanh bằng mã PIN" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+
+                                <!-- System Status & Version Footer (Shared by all modes) -->
                                 <Border Margin="0,20,0,0" Padding="0,14,0,0" BorderBrush="#F1F5F9" BorderThickness="0,1,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -278,7 +622,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         
-                                        <!-- Server Connection Status with Vector Status Dot (NO EMOJIS) -->
+                                        <!-- Server Connection Status with Vector Status Dot -->
                                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                                             <Ellipse x:Name="dotStatus" Width="8" Height="8" Fill="#10B981" Margin="0,0,6,0" VerticalAlignment="Center" />
                                             <TextBlock x:Name="txtServerStatus" Text="Máy chủ: Đã kết nối" FontSize="11" FontWeight="Medium" Foreground="#64748B" VerticalAlignment="Center" />

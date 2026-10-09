@@ -18,6 +18,7 @@ export interface RenderItemData {
   orderedAt?: string;
   taxAmount?: number;
   taxPercent?: number;
+  selectedOptions?: Array<{ nameAtSale: string; priceAdjustmentAtSale: number }>;
 }
 
 export interface RenderContext {
@@ -390,6 +391,57 @@ export class PrintTemplateRendererService {
   }
 
   /**
+   * Format chi tiết các tùy chọn (Option) kèm giá gốc món ăn căn thẳng hàng mép phải tuyệt đối
+   */
+  public formatItemOptionsHtml(it: RenderItemData): string {
+    const options: Array<{ name: string; price: number }> = [];
+
+    if (it.selectedOptions && it.selectedOptions.length > 0) {
+      for (const opt of it.selectedOptions) {
+        options.push({
+          name: opt.nameAtSale,
+          price: Number(opt.priceAdjustmentAtSale || 0),
+        });
+      }
+    } else if (it.optionsText) {
+      const parts = it.optionsText.split(/,\s*/);
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        const match = trimmed.match(/^(.*?)\s*\(\+?([0-9.,]+)\s*(?:đ|vnd)?\)$/i);
+        if (match) {
+          const rawName = match[1].trim();
+          const rawPrice = match[2].replace(/[.,]/g, '');
+          options.push({
+            name: rawName,
+            price: Number(rawPrice) || 0,
+          });
+        } else {
+          options.push({
+            name: trimmed,
+            price: 0,
+          });
+        }
+      }
+    }
+
+    if (options.length === 0) return '';
+
+    const optionTotal = options.reduce((sum, o) => sum + o.price, 0);
+    const basePrice = Math.max(0, it.priceAtSale - optionTotal);
+
+    let html = `<table style="width: 100%; border-collapse: collapse; margin-top: 1.5px; font-size: 9px; color: #444;">`;
+    html += `<tr><td style="text-align: left; padding: 0.5px 0;">Giá món:</td><td style="text-align: right; padding: 0.5px 0; font-variant-numeric: tabular-nums; white-space: nowrap;">+${this.formatCurrency(basePrice)}</td></tr>`;
+
+    for (const opt of options) {
+      html += `<tr><td style="text-align: left; padding: 0.5px 0;">${opt.name}:</td><td style="text-align: right; padding: 0.5px 0; font-variant-numeric: tabular-nums; white-space: nowrap;">+${this.formatCurrency(opt.price)}</td></tr>`;
+    }
+
+    html += `</table>`;
+    return html;
+  }
+
+  /**
    * Xử lý vòng lặp món ăn {{#items}} ... {{/items}}
    */
   private processItemLoop(html: string, items: RenderItemData[]): string {
@@ -418,7 +470,7 @@ export class PrintTemplateRendererService {
           );
           row = row.replace(/\[Thue_Mon\]/g, this.formatCurrency(it.taxAmount || 0));
           row = row.replace(/\[Thanh_Tien\]/g, this.formatCurrency(totalItemPrice));
-          row = row.replace(/\[Tuy_Chon_Mon\]/g, it.optionsText ? `${it.optionsText}` : '');
+          row = row.replace(/\[Tuy_Chon_Mon\]/g, this.formatItemOptionsHtml(it));
           row = row.replace(/\[Ghi_Chu_Mon\]/g, it.note ? `* ${it.note}` : '');
           row = row.replace(/\[Nguoi_Them_Mon\]/g, it.addedBy || '');
           row = row.replace(/\[Ngay_Gio_Goi_Mon\]/g, it.orderedAt || '');
@@ -463,7 +515,7 @@ export class PrintTemplateRendererService {
       /\[Thanh_Tien\]/g,
       singleItem ? this.formatCurrency(totalItemPrice) : '',
     );
-    result = result.replace(/\[Tuy_Chon_Mon\]/g, singleItem?.optionsText ? `${singleItem.optionsText}` : '');
+    result = result.replace(/\[Tuy_Chon_Mon\]/g, singleItem ? this.formatItemOptionsHtml(singleItem) : '');
     result = result.replace(/\[Ghi_Chu_Mon\]/g, singleItem?.note ? `* ${singleItem.note}` : '');
     result = result.replace(/\[Nguoi_Them_Mon\]/g, singleItem?.addedBy || '');
     result = result.replace(/\[Ngay_Gio_Goi_Mon\]/g, singleItem?.orderedAt || '');
@@ -491,13 +543,13 @@ export class PrintTemplateRendererService {
     try {
       // 1. QR Website
       const webUrl = context.websiteUrl || 'https://avora.vn';
-      const webQr = await QRCode.toDataURL(webUrl, { width: 110, margin: 1 });
-      map['[Ma_QR_Website]'] = `<img src="${webQr}" width="110" height="110" alt="QR Website" style="display:inline-block; border:1px solid #000;" />`;
+      const webQr = await QRCode.toDataURL(webUrl, { width: 90, margin: 0 });
+      map['[Ma_QR_Website]'] = `<img src="${webQr}" width="90" height="90" alt="QR Website" style="display:inline-block;" />`;
 
       // 2. QR Đơn hàng
       const orderUrl = context.orderTrackUrl || `https://avora.vn/orders/${context.orderCode}`;
-      const orderQr = await QRCode.toDataURL(orderUrl, { width: 110, margin: 1 });
-      map['[Ma_QR_Don_Hang]'] = `<img src="${orderQr}" width="110" height="110" alt="QR Order" style="display:inline-block; border:1px solid #000;" />`;
+      const orderQr = await QRCode.toDataURL(orderUrl, { width: 90, margin: 0 });
+      map['[Ma_QR_Don_Hang]'] = `<img src="${orderQr}" width="90" height="90" alt="QR Order" style="display:inline-block;" />`;
 
       // 3. QR Thanh toán (SePay / VietQR)
       if (context.paymentQrPayload) {
@@ -506,14 +558,14 @@ export class PrintTemplateRendererService {
           context.paymentQrPayload.startsWith('https://') ||
           context.paymentQrPayload.startsWith('data:image')
         ) {
-          map['[Ma_QR_Thanh_Toan]'] = `<img src="${context.paymentQrPayload}" width="110" height="110" alt="QR Pay" style="display:inline-block; border:1px solid #000; max-width:110px;" />`;
+          map['[Ma_QR_Thanh_Toan]'] = `<img src="${context.paymentQrPayload}" width="90" height="90" alt="QR Pay" style="display:inline-block; max-width:90px;" />`;
         } else {
-          const payQr = await QRCode.toDataURL(context.paymentQrPayload, { width: 110, margin: 1 });
-          map['[Ma_QR_Thanh_Toan]'] = `<img src="${payQr}" width="110" height="110" alt="QR Pay" style="display:inline-block; border:1px solid #000;" />`;
+          const payQr = await QRCode.toDataURL(context.paymentQrPayload, { width: 90, margin: 0 });
+          map['[Ma_QR_Thanh_Toan]'] = `<img src="${payQr}" width="90" height="90" alt="QR Pay" style="display:inline-block;" />`;
         }
       } else if (context.bankAccountNo && context.totalAmount > 0) {
         const qrUrl = `https://qr.sepay.vn/img?acc=${encodeURIComponent(context.bankAccountNo)}&bank=${encodeURIComponent(context.bankName || 'OCB')}&amount=${context.totalAmount}&des=${encodeURIComponent(context.transferContent || context.orderCode)}`;
-        map['[Ma_QR_Thanh_Toan]'] = `<img src="${qrUrl}" width="110" height="110" alt="QR Pay" style="display:inline-block; border:1px solid #000; max-width:110px;" />`;
+        map['[Ma_QR_Thanh_Toan]'] = `<img src="${qrUrl}" width="90" height="90" alt="QR Pay" style="display:inline-block; max-width:90px;" />`;
       } else {
         map['[Ma_QR_Thanh_Toan]'] = '';
       }
@@ -704,6 +756,7 @@ export class PrintTemplateRendererService {
     settings?: Record<string, any>,
   ): string {
     const isLabel = paperSize === '50x30mm' || paperSize === '30x50mm' || paperSize === '50x70mm';
+    const isXP350 = paperSize === 'XP-350B' || paperSize === 'XP350B' || paperSize === '76mm';
     let widthCss = '68mm';
     let pageSizeDirective = '72mm auto';
 
@@ -711,6 +764,12 @@ export class PrintTemplateRendererService {
       case '58mm':
         widthCss = '46mm';
         pageSizeDirective = '48mm auto';
+        break;
+      case 'XP-350B':
+      case 'XP350B':
+      case '76mm':
+        widthCss = '72mm';
+        pageSizeDirective = '76mm auto';
         break;
       case '50x30mm':
       case '30x50mm':
@@ -742,9 +801,9 @@ export class PrintTemplateRendererService {
         break;
     }
 
-    const containerPadding = isLabel ? '3mm 3.5mm 1.5mm 2.5mm' : '2px 1.5mm';
-    const baseFontSize = isLabel ? '10px' : '13px';
-    const baseLineHeight = isLabel ? '1.15' : '1.35';
+    const containerPadding = isLabel ? '3mm 3.5mm 1.5mm 2.5mm' : isXP350 ? '1mm 1mm 1.5mm 1mm' : '2px 1.5mm';
+    const baseFontSize = isLabel ? '10px' : isXP350 ? '11px' : '11.5px';
+    const baseLineHeight = isLabel ? '1.15' : '1.3';
 
     return `<!DOCTYPE html>
 <html>
@@ -754,22 +813,33 @@ export class PrintTemplateRendererService {
   <style>
     @page {
       size: ${pageSizeDirective};
-      margin: 0;
+      margin: 0mm !important;
+    }
+    @page :left {
+      margin: 0mm !important;
+    }
+    @page :right {
+      margin: 0mm !important;
     }
     *, *:before, *:after {
       box-sizing: border-box;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
     }
     html, body {
-      margin: 0;
-      padding: 0;
+      margin: 0 !important;
+      padding: 0 !important;
       background: #ffffff;
       color: #000000;
       font-family: ${settings?.fontFamily || "'Helvetica Neue', Arial, sans-serif"};
       font-size: ${settings?.fontSize ? `${settings.fontSize}px` : baseFontSize};
       line-height: ${baseLineHeight};
       font-weight: ${settings?.fontWeight || 'normal'};
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
     }
     .print-container {
       width: ${widthCss};
@@ -778,6 +848,13 @@ export class PrintTemplateRendererService {
       padding: ${containerPadding};
       background: #ffffff;
       box-sizing: border-box;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      page-break-before: avoid !important;
+      break-before: avoid !important;
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+      overflow: hidden !important;
       ${isLabel ? 'overflow: hidden;' : ''}
     }
     table {
@@ -785,6 +862,12 @@ export class PrintTemplateRendererService {
       width: 100%;
       table-layout: fixed;
       box-sizing: border-box;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    tr, td, th {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
     }
     th, td {
       color: #000000;
@@ -809,9 +892,19 @@ export class PrintTemplateRendererService {
       word-break: break-word;
     }
     @media print {
-      body {
-        margin: 0;
-        padding: 0;
+      @page {
+        size: ${pageSizeDirective};
+        margin: 0mm !important;
+      }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+        overflow: hidden !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+        text-rendering: geometricPrecision;
       }
       .print-container {
         padding: ${containerPadding} !important;
@@ -819,6 +912,14 @@ export class PrintTemplateRendererService {
         max-width: ${widthCss} !important;
         margin: 0 auto !important;
         box-sizing: border-box !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+      }
+      table, tr, td, th, div, span, img {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
       }
     }
   </style>

@@ -15,6 +15,7 @@ import {
   Upload,
   RotateCw,
   CheckCircle,
+  MessageSquare,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { PageHeader, AdminCard, FormField } from '@/app/admin/components/ui';
@@ -44,7 +45,7 @@ export default function AdminSettingsPage() {
   const fetchSettings = async () => {
     try {
       const res = await fetch(
-        '/api/admin/settings?keys=restaurant_name,restaurant_phone,restaurant_address,logo_desktop_url,logo_mobile_url,favicon_url,delivery_fee,delivery_min_free,delivery_radius,maintenance_mode,max_orders_per_day,vat_price_mode,vat_show_on_invoice,vat_show_on_pos,vat_show_on_checkout,delivery_enabled,delivery_max_distance_km,delivery_base_distance_km,delivery_base_fee,delivery_price_per_km,delivery_min_fee,delivery_max_fee,delivery_routing_provider,delivery_quote_ttl_minutes',
+        '/api/admin/settings?keys=restaurant_name,restaurant_phone,restaurant_address,logo_desktop_url,logo_mobile_url,favicon_url,delivery_fee,delivery_min_free,delivery_radius,maintenance_mode,max_orders_per_day,vat_price_mode,vat_show_on_invoice,vat_show_on_pos,vat_show_on_checkout,delivery_enabled,delivery_max_distance_km,delivery_base_distance_km,delivery_base_fee,delivery_price_per_km,delivery_min_fee,delivery_max_fee,delivery_routing_provider,delivery_quote_ttl_minutes,ORDER_REVIEW_REWARD_POINTS,ORDER_REVIEW_WINDOW_DAYS,REVIEW_REWARD_ENABLED,ORDER_REVIEW_REQUEST_ENABLED,PRODUCT_REVIEW_MEDIA_ENABLED',
         { credentials: 'include' }
       );
       const data = await res.json();
@@ -146,11 +147,12 @@ export default function AdminSettingsPage() {
     { id: 'restaurant', label: t('settings.tabRestaurant', 'Thông tin chung & Thương hiệu'), icon: Store },
     { id: 'delivery', label: t('settings.tabDelivery', 'Giao hàng & Phí ship (Tọa độ)'), icon: Truck },
     { id: 'tax', label: t('settings.tabTax', 'Thuế giá trị gia tăng (VAT)'), icon: Receipt },
+    { id: 'reviews', label: 'Đánh giá & Trải nghiệm', icon: MessageSquare },
     { id: 'system', label: t('settings.tabSystem', 'Cấu hình nâng cao'), icon: Settings2 },
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6 max-w-5xl">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 max-w-5xl pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={t('settings.title', 'Cài đặt Hệ thống')}
@@ -162,15 +164,15 @@ export default function AdminSettingsPage() {
         actions={
           <div className="flex items-center gap-2">
             {!canManageSettings && (
-              <span className="text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200">
-                Chỉ xem (Không có quyền chỉnh sửa)
+              <span className="text-[11px] sm:text-xs text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 truncate">
+                Chỉ xem
               </span>
             )}
             <button
               type="button"
               onClick={handleSave}
               disabled={saving || !canManageSettings}
-              className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed min-h-[40px]"
             >
               <Save size={15} />
               <span>{saving ? t('settings.saving', 'Đang lưu...') : t('settings.save', 'Lưu cài đặt')}</span>
@@ -179,9 +181,9 @@ export default function AdminSettingsPage() {
         }
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 lg:gap-6">
-        {/* Navigation Tabs */}
-        <div className="md:col-span-1 space-y-1">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-6">
+        {/* Navigation Tabs - Horizontal scroll on mobile */}
+        <div className="md:col-span-1 flex md:flex-col overflow-x-auto md:overflow-x-visible scrollbar-none gap-1 pb-1 md:pb-0 shrink-0">
           {tabItems.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -190,13 +192,13 @@ export default function AdminSettingsPage() {
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all text-left ${
+                className={`flex items-center gap-2 px-3 py-2 sm:px-3.5 sm:py-2.5 rounded-xl text-xs font-bold transition-all text-left whitespace-nowrap md:whitespace-normal shrink-0 md:shrink min-h-[38px] ${
                   isActive
                     ? 'bg-red-50 text-red-600 shadow-2xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    : 'bg-white md:bg-transparent border md:border-0 border-slate-100 text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <Icon size={16} className={isActive ? 'text-red-600' : 'text-slate-400'} />
+                <Icon size={15} className={isActive ? 'text-red-600' : 'text-slate-400'} />
                 <span>{tab.label}</span>
               </button>
             );
@@ -673,6 +675,120 @@ export default function AdminSettingsPage() {
                           setSettings({
                             ...settings,
                             vat_show_on_checkout: e.target.checked ? 'true' : 'false',
+                          })
+                        }
+                        className="w-4 h-4 text-red-600 rounded"
+                      />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'reviews' && (
+                <div className="space-y-4">
+                  <div className="p-3.5 bg-rose-50/60 rounded-2xl border border-rose-100 mb-2">
+                    <h3 className="text-xs sm:text-sm font-bold text-rose-900 mb-0.5">
+                      Cấu hình Đánh giá món ăn & Trải nghiệm đơn hàng
+                    </h3>
+                    <p className="text-[11px] text-rose-700">
+                      Thiết lập điểm thưởng hội viên, thời hạn gửi đánh giá và các chính sách kiểm duyệt truyền thông.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <FormField label="Điểm thưởng khi đánh giá đơn hàng hoàn thành (mặc định: 999)">
+                      <input
+                        type="number"
+                        min="0"
+                        value={settings.ORDER_REVIEW_REWARD_POINTS !== undefined ? settings.ORDER_REVIEW_REWARD_POINTS : 999}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            ORDER_REVIEW_REWARD_POINTS: Number(e.target.value),
+                          })
+                        }
+                        className="w-full h-10 px-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 font-bold text-red-600"
+                      />
+                    </FormField>
+
+                    <FormField label="Thời hạn cho phép gửi đánh giá đơn (ngày, mặc định: 14)">
+                      <input
+                        type="number"
+                        min="1"
+                        max="90"
+                        value={settings.ORDER_REVIEW_WINDOW_DAYS !== undefined ? settings.ORDER_REVIEW_WINDOW_DAYS : 14}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            ORDER_REVIEW_WINDOW_DAYS: Number(e.target.value),
+                          })
+                        }
+                        className="w-full h-10 px-3 text-xs sm:text-sm bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500 focus:ring-2 focus:ring-red-500/20 font-bold text-slate-800"
+                      />
+                    </FormField>
+                  </div>
+
+                  <div className="space-y-3 pt-2">
+                    <label className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors cursor-pointer">
+                      <div>
+                        <p className="font-bold text-xs sm:text-sm text-slate-900">
+                          Bật tặng điểm thưởng đánh giá đơn hàng
+                        </p>
+                        <span className="text-[11px] text-slate-500">
+                          Hệ thống tự động cộng điểm thưởng vào ví thành viên khi gửi đánh giá đơn lần đầu.
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.REVIEW_REWARD_ENABLED !== 'false' && settings.REVIEW_REWARD_ENABLED !== false}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            REVIEW_REWARD_ENABLED: e.target.checked ? 'true' : 'false',
+                          })
+                        }
+                        className="w-4 h-4 text-red-600 rounded"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors cursor-pointer">
+                      <div>
+                        <p className="font-bold text-xs sm:text-sm text-slate-900">
+                          Tự động gửi thông báo xin đánh giá
+                        </p>
+                        <span className="text-[11px] text-slate-500">
+                          Gửi notification kèm link đánh giá ngay khi đơn hàng chuyển sang trạng thái Hoàn thành.
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.ORDER_REVIEW_REQUEST_ENABLED !== 'false' && settings.ORDER_REVIEW_REQUEST_ENABLED !== false}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            ORDER_REVIEW_REQUEST_ENABLED: e.target.checked ? 'true' : 'false',
+                          })
+                        }
+                        className="w-4 h-4 text-red-600 rounded"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between p-3.5 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors cursor-pointer">
+                      <div>
+                        <p className="font-bold text-xs sm:text-sm text-slate-900">
+                          Cho phép đính kèm ảnh và video trong đánh giá món ăn
+                        </p>
+                        <span className="text-[11px] text-slate-500">
+                          Hỗ trợ tải lên tối đa 5 tệp (ảnh hoặc video tự động tối ưu &le; 5MB).
+                        </span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.PRODUCT_REVIEW_MEDIA_ENABLED !== 'false' && settings.PRODUCT_REVIEW_MEDIA_ENABLED !== false}
+                        onChange={(e) =>
+                          setSettings({
+                            ...settings,
+                            PRODUCT_REVIEW_MEDIA_ENABLED: e.target.checked ? 'true' : 'false',
                           })
                         }
                         className="w-4 h-4 text-red-600 rounded"

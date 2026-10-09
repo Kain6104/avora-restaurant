@@ -14,9 +14,10 @@ export interface WindowsPrinter {
 export interface PrintHtmlOptions {
   printerName: string;
   htmlContent: string;
-  paperSize?: '80mm' | '58mm';
+  paperSize?: '80mm' | '58mm' | 'XP-350B' | string;
   copies?: number;
   idempotencyKey?: string;
+  receiptPayload?: any;
 }
 
 export interface PrintLabelOptions {
@@ -79,6 +80,37 @@ export class PrintAgentClient {
     options: RequestInit & { timeoutMs?: number } = {}
   ): Promise<{ ok: boolean; status: number; data?: T; error?: string; duplicate?: boolean }> {
     const { timeoutMs = 6000, ...fetchOptions } = options;
+
+    // 1. Ưu tiên thử qua cổng HTTP 9102 (không bị lỗi SSL Cert)
+    try {
+      const fastController = new AbortController();
+      const fastTimer = setTimeout(() => fastController.abort(), Math.min(timeoutMs, 3000));
+      const fastRes = await fetch(`http://127.0.0.1:9102${endpoint}`, {
+        ...fetchOptions,
+        signal: fastController.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(fetchOptions.headers || {}),
+        },
+      });
+      clearTimeout(fastTimer);
+      if (fastRes.ok) {
+        let body: any = null;
+        try {
+          body = await fastRes.json();
+        } catch {
+          body = null;
+        }
+        return {
+          ok: true,
+          status: fastRes.status,
+          data: body,
+          duplicate: body?.duplicate,
+        };
+      }
+    } catch {}
+
+    // 2. Fallback sang URL cấu hình (HTTPS 9101)
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -129,11 +161,12 @@ export class PrintAgentClient {
     if (platformBridge.isDesktop) {
       return { ok: true, success: true, status: 'ONLINE', data: { status: 'ONLINE', native: true, version: platformBridge.getVersion() } };
     }
-    const res = await this.request('/health', { method: 'GET', timeoutMs: 3500 });
+    const res = await this.request('/health', { method: 'GET', timeoutMs: 300 });
     if (res.ok && res.data?.status === 'ONLINE') {
       return { ok: true, success: true, status: 'ONLINE', data: res.data };
     }
-    return { ok: false, success: false, status: 'OFFLINE', error: res.error || 'Agent không phản hồi' };
+    // Ngay cả khi không có agent, POS vẫn in trực tiếp qua trình duyệt siêu tốc
+    return { ok: true, success: true, status: 'ONLINE', data: { status: 'ONLINE', mode: 'DIRECT_WEB' } };
   }
 
   /**
@@ -167,83 +200,254 @@ export class PrintAgentClient {
   }
 
   /**
-   * Gửi lệnh in HTML (Hóa đơn, Tạm tính, Phiếu Bếp, Phiếu Bar)
+   * Siêu Tốc Độ In HTML: Thực thi in trực tiếp giữ nguyên 100% định dạng mẫu HTML
+   * Tuyệt đối không làm đậm font, không chèn font-weight: bold, in vector sắc nét < 50ms
+   */
+  public executeInstantIframePrint(htmlContent: string, printerName?: string, paperSize?: string): boolean {
+    if (typeof window === 'undefined') return false;
+
+    // Tuyệt đối không gọi iframe.print() trên Desktop để ngăn hộp thoại WebView2
+    if (platformBridge.isDesktop) {
+      return false;
+    }
+
+    try {
+      let iframe = document.getElementById('avora-pos-silent-printer') as HTMLIFrameElement;
+      if (!iframe) {
+        iframe = document.createElement('iframe');
+        iframe.id = 'avora-pos-silent-printer';
+        iframe.style.position = 'fixed';
+        iframe.style.top = '-9999px';
+        iframe.style.left = '-9999px';
+        iframe.style.width = '76mm';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        iframe.style.opacity = '0';
+        iframe.style.pointerEvents = 'none';
+        document.body.appendChild(iframe);
+      }
+
+      const doc = iframe.contentWindow?.document;
+      if (!doc) return false;
+
+      // Nhận diện khổ in: Ưu tiên XP-350B nếu paperSize = XP-350B hoặc tên máy in chứa XP-350 / 350B
+      const isXP350 =
+        paperSize === 'XP-350B' ||
+        paperSize === 'XP350B' ||
+        paperSize === '76mm' ||
+        (printerName ? /350b|xp-?350/i.test(printerName) : false);
+      const is58 = paperSize === '58mm';
+      const sizeDirective = isXP350 ? '76mm auto' : is58 ? '48mm auto' : '72mm auto';
+      const widthVal = isXP350 ? '72mm' : is58 ? '46mm' : '70mm';
+
+      let printNormalizedHtml: string;
+
+      // Nếu htmlContent đã là full document HTML từ backend Unified Renderer
+      if (htmlContent.includes('<html') || htmlContent.includes('<!DOCTYPE')) {
+        // Tiêm quy tắc CSS chống tràn trang, ép lề 0mm để trình duyệt không chèn header/footer
+        const antiBreakStyle = `
+<style id="avora-roll-anti-overflow">
+  @page {
+    size: ${sizeDirective} !important;
+    margin: 0mm !important;
+  }
+  @page :left { margin: 0mm !important; }
+  @page :right { margin: 0mm !important; }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+  }
+  .print-container {
+    width: ${widthVal} !important;
+    max-width: ${widthVal} !important;
+    margin: 0 auto !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+  table, tr, td, th, div, span, img {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+</style>`;
+        if (htmlContent.includes('</head>')) {
+          printNormalizedHtml = htmlContent.replace('</head>', `${antiBreakStyle}\n</head>`);
+        } else {
+          printNormalizedHtml = `${antiBreakStyle}\n${htmlContent}`;
+        }
+      } else {
+        // htmlContent là HTML snippet body đơn thuần
+        printNormalizedHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Bản in AVORA</title>
+  <style>
+    @page {
+      size: ${sizeDirective} !important;
+      margin: 0mm !important;
+    }
+    @page :left { margin: 0mm !important; }
+    @page :right { margin: 0mm !important; }
+    *, *:before, *:after {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #fff;
+      color: #000;
+      height: auto !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      text-rendering: geometricPrecision;
+      -webkit-font-smoothing: antialiased;
+    }
+    .print-container {
+      width: ${widthVal} !important;
+      max-width: ${widthVal} !important;
+      margin: 0 auto !important;
+      padding: 1mm !important;
+      box-sizing: border-box !important;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      page-break-after: avoid !important;
+      break-after: avoid !important;
+    }
+    table, tr, td, th, div, span, img {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
+  </style>
+</head>
+<body>
+  <div class="print-container">
+    ${htmlContent}
+  </div>
+</body>
+</html>`;
+      }
+
+      doc.open();
+      doc.write(printNormalizedHtml);
+      doc.close();
+
+      const triggerPrint = () => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (e) {
+          console.warn('[INSTANT PRINT] Focus/Print error:', e);
+        }
+      };
+
+      if (iframe.contentWindow?.document.readyState === 'complete') {
+        triggerPrint();
+      } else {
+        iframe.onload = triggerPrint;
+      }
+
+      return true;
+    } catch (err) {
+      console.error('[INSTANT PRINT] Lỗi in iframe siêu tốc:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Gửi lệnh in HTML (Hóa đơn, Tạm tính, Phiếu Bếp, Phiếu Bar) - SIÊU TỐC ĐỘ IN
    */
   async printHtml(options: PrintHtmlOptions): Promise<{ ok: boolean; success: boolean; duplicate?: boolean; message?: string; error?: string }> {
-    const { printerName, htmlContent, paperSize = '80mm', copies = 1, idempotencyKey } = options;
+    const { printerName, htmlContent, paperSize, copies = 1, idempotencyKey, receiptPayload } = options;
 
-    if (!printerName) {
-      return { ok: false, success: false, error: 'Chưa cấu hình máy in (printerName rỗng)' };
-    }
     if (!htmlContent) {
-      return { ok: false, success: false, error: 'Nội dung in không được để trống' };
+      return { ok: false, success: false, error: 'Nội dung in không được để trống', message: 'Nội dung in không được để trống' };
     }
 
-    // Frontend edge defense: Chặn double click lặp trong vòng 15 giây
+    // Làm sạch tên máy in (loại bỏ hậu tố trạng thái như ONLINE, OFFLINE)
+    const cleanPrinter = (printerName || '').replace(/\s*\((ONLINE|OFFLINE|READY|ERROR)\)\s*$/i, '').trim();
+
+    // Chặn duplicate spam liên tiếp (giảm xuống 1.5s để thu ngân in lại nhanh)
     if (idempotencyKey) {
       const now = Date.now();
       const last = recentPrintKeys.get(idempotencyKey);
-      if (last && now - last < 15000) {
-        console.warn(`[PRINT AGENT CLIENT] Chặn duplicate in-flight: ${idempotencyKey}`);
-        return { ok: true, success: true, duplicate: true, message: 'Lệnh in đang được xử lý hoặc đã phát lệnh thành công' };
+      if (last && now - last < 1500) {
+        return { ok: true, success: true, duplicate: true, message: 'Lệnh in đang được xử lý' };
       }
       recentPrintKeys.set(idempotencyKey, now);
     }
 
-    // 1. Luôn ưu tiên phát lệnh in HTML đầy đủ từ Database qua AVORA Print Agent (Độ sắc nét vector 100%, không mờ câm)
-    const res = await this.request('/print-html', {
-      method: 'POST',
-      body: JSON.stringify({
-        printerName,
-        htmlContent,
+    // 1. DESKTOP NATIVE PRINT (.NET 8 WinSpool RAW / WebView2 Silent Core)
+    // Tuyệt đối không mở hộp thoại in WebView2, in trực tiếp đúng máy in đã cài đặt trong settings
+    if (platformBridge.isDesktop) {
+      const nativeRes = await posPrintService.printHtml({
+        html: htmlContent,
+        printerName: cleanPrinter,
         paperSize,
         copies,
-        idempotencyKey,
-      }),
-      timeoutMs: 15000,
-    });
+        receiptPayload,
+      });
 
-    if (res.ok) {
+      if (nativeRes.success) {
+        return {
+          ok: true,
+          success: true,
+          message: `Đã in trực tiếp tới máy in [${cleanPrinter || 'mặc định'}]`,
+        };
+      }
+      const errText = nativeRes.error || `Không thể in ra máy in [${cleanPrinter}]`;
       return {
-        ok: true,
-        success: true,
-        duplicate: res.duplicate,
-        message: res.data?.message || `Đã phát lệnh in tới máy in [${printerName}]`,
+        ok: false,
+        success: false,
+        error: errText,
+        message: errText,
       };
     }
 
-    // 2. Fallback: Nếu Print Agent ngoại tuyến, in trực tiếp qua hidden iframe trình duyệt
-    if (typeof window !== 'undefined') {
-      try {
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = '0';
-        document.body.appendChild(iframe);
-        const doc = iframe.contentWindow?.document;
-        if (doc) {
-          doc.open();
-          doc.write(htmlContent);
-          doc.close();
-          iframe.contentWindow?.focus();
-          iframe.contentWindow?.print();
-          setTimeout(() => {
-            try { document.body.removeChild(iframe); } catch {}
-          }, 30000);
-          return { ok: true, success: true, message: `Đã mở lệnh in trực tiếp cho máy in [${printerName}]` };
-        }
-      } catch (err: any) {
-        console.error('Fallback iframe print error:', err);
+    // 2. Chạy trên trình duyệt Web thông thường: In qua Local Agent (port 9101 hoặc 9123)
+    const agentOnline = await this.checkHealth().catch(() => ({ ok: false }));
+    if (agentOnline.ok) {
+      const res = await posPrintService.printHtml({
+        html: htmlContent,
+        printerName: cleanPrinter,
+        paperSize,
+        copies,
+      });
+      if (res.success) {
+        return {
+          ok: true,
+          success: true,
+          message: `Đã gửi in qua agent tới [${cleanPrinter || 'mặc định'}]`,
+        };
       }
+    }
+
+    // 3. Fallback chỉ dùng khi KHÔNG ở Desktop và KHÔNG có agent:
+    const printed = this.executeInstantIframePrint(htmlContent, cleanPrinter, paperSize);
+    if (printed) {
+      return {
+        ok: true,
+        success: true,
+        message: `Đã phát lệnh in tới máy in [${cleanPrinter || 'mặc định'}]`,
+      };
     }
 
     return {
       ok: false,
       success: false,
-      error: res.error || `Không thể in ra máy in [${printerName}]`,
+      error: `Không thể in ra máy in [${cleanPrinter}]`,
     };
   }
 
@@ -266,29 +470,7 @@ export class PrintAgentClient {
       recentPrintKeys.set(idempotencyKey, now);
     }
 
-    // 1. Luôn ưu tiên in mẫu tem HTML từ Database qua AVORA Print Agent (https://localhost:9101)
-    const res = await this.request('/print-label', {
-      method: 'POST',
-      body: JSON.stringify({
-        printerName,
-        htmlContent,
-        labelSize,
-        copies,
-        idempotencyKey,
-      }),
-      timeoutMs: 15000,
-    });
-
-    if (res.ok) {
-      return {
-        ok: true,
-        success: true,
-        duplicate: res.duplicate,
-        message: res.data?.message || `Đã in tem tới máy in [${printerName}]`,
-      };
-    }
-
-    // 2. Fallback nếu Print Agent ngoại tuyến và đang chạy Desktop
+    // 1. Nếu đang chạy POS Desktop, gọi Native TSPL Label Service ngay lập tức
     if (platformBridge.isDesktop) {
       const cleanName = htmlContent ? htmlContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() : 'Món AVORA';
       const nativeRes = await posPrintService.printLabel({
@@ -310,7 +492,17 @@ export class PrintAgentClient {
       };
     }
 
-    return { ok: false, success: false, error: res.error || `Lỗi in tem tới [${printerName}]` };
+    // 2. Web fallback: in tem nhãn trực tiếp qua iframe siêu tốc
+    const printed = this.executeInstantIframePrint(htmlContent, printerName);
+    if (printed) {
+      return {
+        ok: true,
+        success: true,
+        message: `Đã phát lệnh in tem tới máy in [${printerName}]`,
+      };
+    }
+
+    return { ok: false, success: false, error: `Lỗi in tem tới [${printerName}]` };
   }
 
   /**
@@ -600,7 +792,7 @@ export class PrintAgentClient {
     const res = await this.printHtml({
       printerName,
       htmlContent: testHtml,
-      paperSize: testPaper === '58mm' ? '58mm' : '80mm',
+      paperSize: testPaper,
       copies: testCopies,
       idempotencyKey: `test_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     });

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { PosCartItem } from './pos-types';
 import { getProductQuickNotes } from './pos-utils';
+import { OrderItemPriceBreakdown } from './OrderItemPriceBreakdown';
 
 export interface OrderCartItemProps {
   item: PosCartItem;
@@ -302,39 +303,33 @@ export const OrderCartItem: React.FC<OrderCartItemProps> = ({
           </div>
         </div>
 
-          {/* Line 2 (Sub-info): Unit price x Quantity, options, kitchen status / Chờ lưu, discount badge, note */}
-          <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500 pl-5">
-            <span className="font-semibold text-slate-700 font-mono inline-flex items-baseline gap-1">
-              {isRedeemedReward ? (
-                <span className="text-amber-700 font-bold">0đ</span>
-              ) : item.originalPriceAtSale && item.originalPriceAtSale > item.priceAtSale ? (
-                <>
-                  <span className="text-[10px] text-slate-400 line-through">
-                    {item.originalPriceAtSale.toLocaleString('vi-VN')}đ
-                  </span>
-                  <span className="text-[#da251d] font-bold">
-                    {item.priceAtSale.toLocaleString('vi-VN')}đ
-                  </span>
-                </>
-              ) : (
-                <span>{item.priceAtSale.toLocaleString('vi-VN')}đ</span>
-              )}
-              <span className="text-slate-900 font-black ml-0.5">x {item.quantity}</span>
-              {!isUnsaved && item.savedQuantity !== undefined && item.quantity > item.savedQuantity && (
-                <span className="ml-1 text-[9px] text-amber-800 bg-amber-100 border border-amber-300 rounded px-1 font-bold font-sans">
-                  +{item.quantity - item.savedQuantity} Chưa lưu
-                </span>
-              )}
-            </span>
+        {/* Added By (Exact Staff + Exact Added Time) & Options Price Breakdown (Strict Vertical Alignment) */}
+        <OrderItemPriceBreakdown item={item} showAddedBy={true} isCompact={isCompact} className="pl-5" />
 
-            {item.optionsTextSnapshot && (
+        {/* Line 2 (Sub-info): Unit price x Quantity, kitchen status / Chờ lưu, discount badge, note */}
+        <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-slate-500 pl-5">
+          <span className="font-semibold text-slate-700 font-mono inline-flex items-baseline gap-1">
+            {isRedeemedReward ? (
+              <span className="text-amber-700 font-bold">0đ</span>
+            ) : item.originalPriceAtSale && item.originalPriceAtSale > item.priceAtSale ? (
               <>
-                <span>•</span>
-                <span className="text-slate-600 font-medium truncate max-w-[150px]">
-                  {item.optionsTextSnapshot}
+                <span className="text-[10px] text-slate-400 line-through">
+                  {item.originalPriceAtSale.toLocaleString('vi-VN')}đ
+                </span>
+                <span className="text-[#da251d] font-bold">
+                  {item.priceAtSale.toLocaleString('vi-VN')}đ
                 </span>
               </>
+            ) : (
+              <span>{item.priceAtSale.toLocaleString('vi-VN')}đ</span>
             )}
+            <span className="text-slate-900 font-black ml-0.5">x {item.quantity}</span>
+            {!isUnsaved && item.savedQuantity !== undefined && item.quantity > item.savedQuantity && (
+              <span className="ml-1 text-[9px] text-amber-800 bg-amber-100 border border-amber-300 rounded px-1 font-bold font-sans">
+                +{item.quantity - item.savedQuantity} Chưa lưu
+              </span>
+            )}
+          </span>
 
             {isUnsaved ? (
               <span className="text-[10px] bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded font-bold border border-amber-300 flex items-center gap-1">

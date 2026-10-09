@@ -18,7 +18,7 @@ namespace AvoraPos.Storage
 
         public event Action<bool>? NetworkStatusChanged;
         public bool IsOnline { get; private set; } = true;
-        public string BackendBaseUrl { get; set; } = "http://localhost:3001";
+        public string BackendBaseUrl { get; set; } = "http://localhost:4001";
         public string? AuthToken { get; set; }
 
         private readonly HttpClient _httpClient = new HttpClient();

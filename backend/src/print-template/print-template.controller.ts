@@ -70,8 +70,9 @@ export class PrintTemplateController {
     @Param('orderId') orderId: string,
     @Query('type') type: PrintTemplateType = PrintTemplateType.RECEIPT,
     @Query('qrPayload') qrPayload?: string,
+    @Query('paperSize') paperSize?: string,
   ) {
-    const result = await this.printTemplateService.renderForOrder(orderId, type, qrPayload);
+    const result = await this.printTemplateService.renderForOrder(orderId, type, qrPayload, paperSize);
     return {
       success: true,
       data: result,

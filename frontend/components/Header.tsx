@@ -218,11 +218,28 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   /* ── fetch user ── */
   const fetchCurrentUser = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/auth/me`, {
+      const apiUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        ? ''
+        : (process.env.NEXT_PUBLIC_API_URL || '');
+      const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('access_token')) : null;
+      const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`${apiUrl}/api/auth/me`, {
         credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+        headers,
       });
-      setUser(res.ok ? await res.json() : null);
+      if (res.ok) {
+        const userData = await res.json();
+        setUser(userData);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(userData));
+        }
+      } else {
+        setUser(null);
+      }
     } catch { setUser(null); }
   }, []);
 

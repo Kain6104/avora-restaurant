@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Sparkles, Utensils, Users, Plus, Minus, Check, AlertCircle, Loader2 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { PosProduct } from './pos-types';
 
 export interface BuffetTicketOption {
@@ -135,7 +136,7 @@ export const PosBuffetApplyModal: React.FC<PosBuffetApplyModalProps> = ({
     }
 
     if (itemsToAdd.length === 0) {
-      alert('Vui lòng chọn ít nhất 1 vé Buffet!');
+      toast.error('Vui lòng chọn ít nhất 1 vé Buffet!');
       return;
     }
 

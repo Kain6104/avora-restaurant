@@ -149,7 +149,7 @@ export default function AdminAuditLogsPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={t('auditLogs.title', 'Nhật ký Hoạt động (Audit Logs)')}
@@ -168,10 +168,10 @@ export default function AdminAuditLogsPage() {
             type="button"
             onClick={fetchLogs}
             aria-label={t('common.refresh', 'Làm mới')}
-            className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+            className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[38px]"
           >
             <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>{t('common.refresh', 'Làm mới')}</span>
+            <span className="hidden xs:inline">{t('common.refresh', 'Làm mới')}</span>
           </button>
         }
       />
@@ -186,7 +186,7 @@ export default function AdminAuditLogsPage() {
                 setSearch('');
                 setPage(1);
               }}
-              className="px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+              className="px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors min-h-[36px]"
             >
               Xóa lọc
             </button>
@@ -246,10 +246,10 @@ export default function AdminAuditLogsPage() {
               <button
                 type="button"
                 onClick={() => setSelectedLog(l)}
-                className="w-full py-1.5 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-600 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors"
+                className="w-full py-2 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-600 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-colors min-h-[38px]"
               >
-                <Eye size={13} />
-                <span>Xem chi tiết Payload</span>
+                <Eye size={14} />
+                <span>Xem chi tiết</span>
               </button>
             }
           />

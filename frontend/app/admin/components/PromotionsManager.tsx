@@ -571,7 +571,7 @@ export default function PromotionsManager({ activeTab }: PromotionsManagerProps)
   };
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={pageTitle}
@@ -581,15 +581,15 @@ export default function PromotionsManager({ activeTab }: PromotionsManagerProps)
           { label: pageTitle },
         ]}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={fetchData}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[38px]"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>{t('common.refresh', 'Làm mới')}</span>
+              <span className="hidden xs:inline">{t('common.refresh', 'Làm mới')}</span>
             </button>
             <button
               type="button"
@@ -598,7 +598,7 @@ export default function PromotionsManager({ activeTab }: PromotionsManagerProps)
                 else if (activeTab === 'flash-sales') openFlashSaleModal();
                 else openComboModal();
               }}
-              className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors min-h-[38px]"
             >
               <Plus size={15} />
               <span>{t('common.create', 'Tạo mới')}</span>

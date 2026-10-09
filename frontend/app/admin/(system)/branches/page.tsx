@@ -440,7 +440,7 @@ export default function BranchesPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={t('branches.title', 'Hệ thống Chi nhánh')}
@@ -455,21 +455,21 @@ export default function BranchesPage() {
           </span>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={fetchBranches}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[38px]"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>{t('common.refresh', 'Làm mới')}</span>
+              <span className="hidden xs:inline">{t('common.refresh', 'Làm mới')}</span>
             </button>
             {role === 'ADMIN' && (
               <button
                 type="button"
                 onClick={openCreateModal}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors min-h-[38px]"
               >
                 <Plus size={15} />
                 <span>{t('common.add', 'Thêm chi nhánh')}</span>
@@ -503,10 +503,10 @@ export default function BranchesPage() {
             details={[
               {
                 label: 'Địa chỉ',
-                value: `${b.street}, ${b.ward}, ${b.district}`,
+                value: [b.street, b.ward, b.province].filter(Boolean).join(', ') || 'Chưa cập nhật',
               },
               {
-                label: 'Điện thoại',
+                label: 'Hotline',
                 value: b.phone || 'Chưa cập nhật',
               },
               {
@@ -514,34 +514,35 @@ export default function BranchesPage() {
                 value: `${b.openTime || '--:--'} - ${b.closeTime || '--:--'}`,
               },
               {
-                label: 'Thiết lập in',
-                value: `${b.splitKitchenTickets ? 'Tách món' : 'Gộp phiếu'} (${b.defaultPaperSize || '80mm'})`,
-              },
-              {
-                label: 'Tích điểm (Web / POS)',
-                value: `${b.isLoyaltyOnlineEnabled !== false ? `${b.loyaltyEarnRateOnline || 40}đ/đ` : 'Tắt'} (Web) / ${b.isLoyaltyPosEnabled !== false ? `${b.loyaltyEarnRatePos || 40}đ/đ` : 'Tắt'} (POS)`,
+                label: 'Cấu hình in',
+                value: `${b.splitKitchenTickets ? 'Tách món' : 'Gộp phiếu'} • ${b.defaultPaperSize || '80mm'}`,
               },
             ]}
             actions={
-              role === 'ADMIN' && (
-                <div className="flex items-center gap-2 w-full">
+              role === 'ADMIN' ? (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => openEditModal(b)}
-                    className="flex-1 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl transition-colors flex items-center justify-center gap-1"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openEditModal(b);
+                    }}
+                    className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 text-xs font-semibold flex items-center gap-1 min-h-[36px]"
                   >
-                    <Edit2 size={13} />
-                    <span>Sửa</span>
+                    <Edit2 size={14} /> Sửa
                   </button>
                   <button
                     type="button"
-                    onClick={() => setDeleteId(b.id)}
-                    className="p-1.5 text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteId(b.id);
+                    }}
+                    className="p-2 rounded-xl text-slate-500 hover:text-red-600 hover:bg-red-50 border border-slate-200 text-xs font-semibold flex items-center gap-1 min-h-[36px]"
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={14} /> Xóa
                   </button>
                 </div>
-              )
+              ) : undefined
             }
           />
         )}
@@ -559,7 +560,7 @@ export default function BranchesPage() {
             <button
               type="button"
               onClick={() => setIsModalOpen(false)}
-              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+              className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl min-h-[40px]"
             >
               Hủy
             </button>
@@ -567,7 +568,7 @@ export default function BranchesPage() {
               type="button"
               disabled={submitLoading}
               onClick={handleSubmit}
-              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50"
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm disabled:opacity-50 min-h-[40px]"
             >
               {submitLoading ? 'Đang lưu...' : editingBranch ? 'Cập nhật' : 'Tạo mới'}
             </button>
@@ -576,11 +577,11 @@ export default function BranchesPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Modal Navigation Tabs */}
-          <div className="flex items-center gap-1 border-b border-slate-100 pb-3 mb-2 text-xs">
+          <div className="flex items-center gap-1 border-b border-slate-100 pb-2.5 mb-2 text-xs overflow-x-auto scrollbar-none py-1 shrink-0">
             <button
               type="button"
               onClick={() => setModalTab('info')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap min-h-[36px] ${
                 modalTab === 'info'
                   ? 'bg-red-50 text-red-700'
                   : 'text-slate-600 hover:bg-slate-100'
@@ -592,7 +593,7 @@ export default function BranchesPage() {
             <button
               type="button"
               onClick={() => setModalTab('print')}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-colors ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold transition-colors whitespace-nowrap min-h-[36px] ${
                 modalTab === 'print'
                   ? 'bg-red-50 text-red-700'
                   : 'text-slate-600 hover:bg-slate-100'
@@ -880,6 +881,7 @@ export default function BranchesPage() {
                     className="w-full h-10 px-3 text-xs bg-white border border-slate-200 rounded-xl outline-none"
                   >
                     <option value="80mm">80mm (Khổ chuẩn K80 - Phổ biến nhất)</option>
+                    <option value="XP-350B">Xprinter XP-350B (76mm - Chống rớt giấy / Tiết kiệm)</option>
                     <option value="58mm">58mm (Khổ nhỏ K58 / POS cầm tay)</option>
                   </select>
                 </FormField>

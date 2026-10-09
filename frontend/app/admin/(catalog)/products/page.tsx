@@ -32,7 +32,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import {
   PageHeader,
   FilterBar,
@@ -109,7 +109,6 @@ export default function AdminProductsPage() {
   const { selectedBranchId, role, can } = useAdmin();
   const { t, locale } = useLanguage();
   const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -614,7 +613,7 @@ export default function AdminProductsPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6">
       {/* Page Header */}
       <PageHeader
         title={t('products.title', 'Quản lý Món ăn')}
@@ -624,17 +623,17 @@ export default function AdminProductsPage() {
           { label: t('nav.products', 'Món ăn') },
         ]}
         badge={
-          <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-100">
+          <span className="px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-[11px] sm:text-xs font-bold bg-red-50 text-red-600 border border-red-100">
             {t('common.total', 'Tổng')} {meta.total} {t('common.results', 'món')}
           </span>
         }
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={fetchProducts}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors cursor-pointer"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
               <span>{t('common.refresh', 'Làm mới')}</span>
@@ -645,7 +644,7 @@ export default function AdminProductsPage() {
                 type="button"
                 onClick={handleExportExcel}
                 disabled={exporting}
-                className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
               >
                 {exporting ? (
                   <RotateCw size={14} className="animate-spin" />
@@ -664,7 +663,7 @@ export default function AdminProductsPage() {
                   setImportResult(null);
                   setIsImportModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold shadow-2xs transition-colors"
+                className="flex items-center gap-1.5 min-h-[38px] px-2.5 sm:px-3 py-1.5 sm:py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
               >
                 <Upload size={14} />
                 <span>Nhập Excel</span>
@@ -675,7 +674,7 @@ export default function AdminProductsPage() {
               <button
                 type="button"
                 onClick={() => router.push('/admin/products/create')}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+                className="flex items-center gap-1.5 min-h-[38px] px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors cursor-pointer"
               >
                 <Plus size={15} />
                 <span>{t('common.add', 'Thêm món mới')}</span>
@@ -686,52 +685,52 @@ export default function AdminProductsPage() {
       />
 
       {/* Mini Overview Metric Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-            <ChefHat size={20} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 lg:gap-4">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0">
+            <ChefHat size={18} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500 truncate">Tổng số món ăn</p>
-            <p className="text-base sm:text-lg font-black text-slate-900">{meta.total}</p>
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 truncate">Tổng số món ăn</p>
+            <p className="text-sm sm:text-base md:text-lg font-black text-slate-900">{meta.total}</p>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-            <CheckCircle2 size={20} />
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+            <CheckCircle2 size={18} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500 truncate">Đang mở bán</p>
-            <p className="text-base sm:text-lg font-black text-emerald-600">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 truncate">Đang mở bán</p>
+            <p className="text-sm sm:text-base md:text-lg font-black text-emerald-600">
               {products.filter((p) => p.available).length}{' '}
-              <span className="text-[11px] font-normal text-slate-400">/ {products.length} trên trang</span>
+              <span className="text-[10px] sm:text-[11px] font-normal text-slate-400">/ {products.length}</span>
             </p>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-            <Globe size={20} />
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <Globe size={18} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500 truncate">Bán Online Delivery</p>
-            <p className="text-base sm:text-lg font-black text-blue-600">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 truncate">Bán Online</p>
+            <p className="text-sm sm:text-base md:text-lg font-black text-blue-600">
               {products.filter((p) => !p.salesChannels || p.salesChannels.includes('ONLINE_DELIVERY')).length}
-              <span className="text-[11px] font-normal text-slate-400"> món</span>
+              <span className="text-[10px] sm:text-[11px] font-normal text-slate-400"> món</span>
             </p>
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-3.5 sm:p-4 shadow-2xs flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-            <Award size={20} />
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-2.5 sm:p-4 shadow-2xs flex items-center gap-2 sm:gap-3">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+            <Award size={18} />
           </div>
           <div className="min-w-0">
-            <p className="text-[11px] font-medium text-slate-500 truncate">Cho phép đổi điểm</p>
-            <p className="text-base sm:text-lg font-black text-amber-600">
+            <p className="text-[10px] sm:text-[11px] font-medium text-slate-500 truncate">Đổi điểm</p>
+            <p className="text-sm sm:text-base md:text-lg font-black text-amber-600">
               {products.filter((p) => p.allowPointExchange || p.isRedeemable).length}
-              <span className="text-[11px] font-normal text-slate-400"> món</span>
+              <span className="text-[10px] sm:text-[11px] font-normal text-slate-400"> món</span>
             </p>
           </div>
         </div>
@@ -929,23 +928,23 @@ export default function AdminProductsPage() {
 
       {/* Modal Nhập Dữ Liệu Excel */}
       {isImportModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
-          <div className="relative bg-white rounded-2xl border border-slate-200/80 shadow-2xl max-w-xl w-full p-5 sm:p-6 my-8 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-1.5 sm:p-4 overflow-y-auto">
+          <div className="relative bg-white rounded-2xl border border-slate-200/80 shadow-2xl max-w-xl w-full p-3.5 sm:p-6 my-4 sm:my-8 space-y-3 sm:space-y-4 max-h-[96vh] overflow-y-auto flex flex-col animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100">
-                  <FileSpreadsheet size={22} />
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 sm:pb-3.5">
+              <div className="flex items-center gap-2 sm:gap-2.5">
+                <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center border border-red-100 shrink-0">
+                  <FileSpreadsheet size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Nhập dữ liệu Món ăn từ Excel</h3>
-                  <p className="text-xs text-slate-500">Cập nhật hoặc thêm mới danh mục, món, tùy chọn và máy in</p>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900">Nhập dữ liệu Món ăn từ Excel</h3>
+                  <p className="text-[10px] sm:text-xs text-slate-500">Cập nhật hoặc thêm mới danh mục, món, tùy chọn</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={resetImportModal}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -1130,7 +1129,7 @@ export default function AdminProductsPage() {
                     type="button"
                     onClick={resetImportModal}
                     disabled={importing}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+                    className="min-h-[40px] px-3.5 sm:px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
                     Hủy
                   </button>
@@ -1138,12 +1137,12 @@ export default function AdminProductsPage() {
                     type="button"
                     onClick={handleExecuteImport}
                     disabled={!selectedFile || importing}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="min-h-[40px] flex items-center gap-1.5 px-3.5 sm:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                   >
                     {importing ? (
                       <>
                         <RotateCw size={14} className="animate-spin" />
-                        <span>Đang xử lý dữ liệu...</span>
+                        <span>Đang xử lý...</span>
                       </>
                     ) : (
                       <>

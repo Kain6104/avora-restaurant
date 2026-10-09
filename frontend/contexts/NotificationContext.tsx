@@ -41,6 +41,14 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   // Kiểm tra user hiện tại
   useEffect(() => {
     const checkUser = async () => {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        if (path.startsWith('/login') || path.startsWith('/register') || path.startsWith('/forgot-password')) {
+          setCurrentUser(null);
+          setLoading(false);
+          return;
+        }
+      }
       try {
         const res = await fetch(`${API_URL}/api/auth/me`, {
           credentials: 'include',

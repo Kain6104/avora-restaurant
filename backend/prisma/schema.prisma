@@ -35,6 +35,16 @@ model User {
   deviceToken     String? @db.VarChar(500)
   zaloId          String? @unique
 
+  // POS PIN Security (HMAC-SHA256 Lookup Unique Index + bcrypt Hash)
+  posPinEnabled       Boolean   @default(false)
+  posPinHash          String?
+  posPinLookup        String?   @unique
+  posPinUpdatedAt     DateTime?
+  posPinOtp           String?
+  posPinOtpExpires    DateTime?
+  posPinOtpAttempts   Int       @default(0)
+  posPinOtpLastSentAt DateTime?
+
   // OTP Đăng ký & Xác thực tài khoản
   verificationOtp           String?
   verificationOtpExpires    DateTime?
@@ -100,9 +110,29 @@ model User {
   flashSaleReminders FlashSaleReminder[]
 
   // Ví voucher khách hàng đã lưu
-  savedVouchers CustomerVoucher[]
-  qrOrderGuests QrOrderGuest[]
+  savedVouchers      CustomerVoucher[]
+  qrOrderGuests      QrOrderGuest[]
   desktopLaunchCodes DesktopLaunchCode[]
+
+  // AVORA Farm
+  userFarm                    UserFarm?
+  farmFriendActions           FarmFriendAction[]         @relation("FarmFriendActor")
+  farmFriendsInitiated        FarmFriendship[]           @relation("UserFarmFriends")
+  farmFriendsReceived         FarmFriendship[]           @relation("FriendFarmUsers")
+  luckyEnvelopeOpenings       FarmLuckyEnvelopeOpening[]
+  farmTransactions            FarmTransaction[]          @relation("UserFarmTransactions")
+  farmUserMails               FarmUserMail[]             @relation("UserFarmMails")
+  farmOwnerActivities         FarmSocialActivity[]       @relation("FarmOwnerActivities")
+  actorSocialActivities       FarmSocialActivity[]       @relation("ActorSocialActivities")
+  farmLayoutVersionsCreated   FarmGardenLayoutVersion[]  @relation("GardenLayoutCreatedBy")
+  farmLayoutVersionsPublished FarmGardenLayoutVersion[]  @relation("GardenLayoutPublishedBy")
+
+  // Đánh giá & Trải nghiệm khách hàng
+  productReviews       ProductReview[]
+  orderReviews         OrderReview[]
+  reviewReactions      ReviewReaction[]
+  adminReviewReplies   ReviewReply[]         @relation("AdminReviewReplies")
+  orderReviewFollowUps OrderReviewFollowUp[]
 }
 
 model Address {
@@ -124,74 +154,74 @@ model Address {
 }
 
 model Branch {
-  id                    String          @id @default(uuid())
-  name                  String
-  branchCode            String          @unique
-  phone                 String?
-  email                 String?
-  province              String?
-  district              String?
-  ward                  String?
-  street                String?
-  latitude              Float?
-  longitude             Float?
-  openTime              String?
-  closeTime             String?
-  onlineOrderingEnabled Boolean         @default(true)
-  servingType           ServingType     @default(DINE_IN)
+  id                             String      @id @default(uuid())
+  name                           String
+  branchCode                     String      @unique
+  phone                          String?
+  email                          String?
+  province                       String?
+  district                       String?
+  ward                           String?
+  street                         String?
+  latitude                       Float?
+  longitude                      Float?
+  openTime                       String?
+  closeTime                      String?
+  onlineOrderingEnabled          Boolean     @default(true)
+  servingType                    ServingType @default(DINE_IN)
   // Cấu hình In ấn & Phiếu bếp (Branch Print Settings)
-  splitKitchenTickets   Boolean         @default(false)
-  printCancelTicket     Boolean         @default(false)
-  autoPrintReceipt      Boolean         @default(true)
-  autoPrintTempBill     Boolean         @default(false)
-  excludeBuffetItemsFromTempBill Boolean @default(false)
-  removeBuffetItemsOnCheckout    Boolean @default(false)
-  receiptCopies         Int             @default(1)
-  kitchenCopies         Int             @default(1)
-  defaultPaperSize      String?         @default("80mm")
-  defaultReceiptPrinterId String?
-  allowedRadiusMeters   Int             @default(50)
-  qrSecretKey           String?
-  qrAutoSendToKitchen   Boolean         @default(false)
+  splitKitchenTickets            Boolean     @default(false)
+  printCancelTicket              Boolean     @default(false)
+  autoPrintReceipt               Boolean     @default(true)
+  autoPrintTempBill              Boolean     @default(false)
+  excludeBuffetItemsFromTempBill Boolean     @default(false)
+  removeBuffetItemsOnCheckout    Boolean     @default(false)
+  receiptCopies                  Int         @default(1)
+  kitchenCopies                  Int         @default(1)
+  defaultPaperSize               String?     @default("80mm")
+  defaultReceiptPrinterId        String?
+  allowedRadiusMeters            Int         @default(50)
+  qrSecretKey                    String?
+  qrAutoSendToKitchen            Boolean     @default(false)
   // Cấu hình Đặt bàn (Reservation)
-  capacity                       Int                   @default(80)
-  reservationSlotMinutes         Int                   @default(30)
-  reservationDurationMinutes     Int                   @default(90)
-  reservationBufferMinutes       Int                   @default(15)
-  minPartySize                   Int                   @default(1)
-  maxPartySize                   Int                   @default(30)
-  advanceBookingDays             Int                   @default(30)
-  minAdvanceMinutes              Int                   @default(60)
-  reservationEnabled             Boolean               @default(true)
-  reservationModifyCutoffMinutes Int                   @default(60)
-  noShowGraceMinutes             Int                   @default(30)
-  reservationMode                String                @default("AUTO") // AUTO, TABLE, CAPACITY
+  capacity                       Int         @default(80)
+  reservationSlotMinutes         Int         @default(30)
+  reservationDurationMinutes     Int         @default(90)
+  reservationBufferMinutes       Int         @default(15)
+  minPartySize                   Int         @default(1)
+  maxPartySize                   Int         @default(30)
+  advanceBookingDays             Int         @default(30)
+  minAdvanceMinutes              Int         @default(60)
+  reservationEnabled             Boolean     @default(true)
+  reservationModifyCutoffMinutes Int         @default(60)
+  noShowGraceMinutes             Int         @default(30)
+  reservationMode                String      @default("AUTO") // AUTO, TABLE, CAPACITY
 
   // Cấu hình Tích điểm & Quy đổi ưu đãi theo chi nhánh (Loyalty Program)
-  isLoyaltyOnlineEnabled         Boolean               @default(true) // Bật/tắt tích điểm đơn Online
-  loyaltyEarnRateOnline          Float                 @default(40)   // Tỷ lệ tích điểm Online: 40đ = 1 điểm
-  isLoyaltyPosEnabled            Boolean               @default(true) // Bật/tắt tích điểm đơn POS/tại quán
-  loyaltyEarnRatePos             Float                 @default(40)   // Tỷ lệ tích điểm POS: 40đ = 1 điểm
-  allowDirectDiscount            Boolean               @default(true) // Bật/tắt quy đổi điểm thành giảm giá trực tiếp
-  pointRedeemRate                Float                 @default(1)    // 1 điểm = X đ (mặc định 1đ)
-  allowRedeemVoucherOnline       Boolean               @default(true) // Bật/tắt quy đổi điểm thành voucher (đặt Online)
-  allowRedeemItemPos             Boolean               @default(true) // Bật/tắt quy đổi điểm sang món (tại cửa hàng POS)
+  isLoyaltyOnlineEnabled   Boolean @default(true) // Bật/tắt tích điểm đơn Online
+  loyaltyEarnRateOnline    Float   @default(40) // Tỷ lệ tích điểm Online: 40đ = 1 điểm
+  isLoyaltyPosEnabled      Boolean @default(true) // Bật/tắt tích điểm đơn POS/tại quán
+  loyaltyEarnRatePos       Float   @default(40) // Tỷ lệ tích điểm POS: 40đ = 1 điểm
+  allowDirectDiscount      Boolean @default(true) // Bật/tắt quy đổi điểm thành giảm giá trực tiếp
+  pointRedeemRate          Float   @default(1) // 1 điểm = X đ (mặc định 1đ)
+  allowRedeemVoucherOnline Boolean @default(true) // Bật/tắt quy đổi điểm thành voucher (đặt Online)
+  allowRedeemItemPos       Boolean @default(true) // Bật/tắt quy đổi điểm sang món (tại cửa hàng POS)
 
-  createdAt             DateTime        @default(now())
-  updatedAt             DateTime        @updatedAt
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
   orders                Order[]
   reservations          Reservation[]
   users                 User[]
-  banners               Banner[]        @relation("BannerToBranch")
-  categories            Category[]      @relation("CategoryToBranch")
-  products              Product[]       @relation("ProductToBranch")
-  redeemableProducts    Product[]       @relation("ProductRedeemableBranches")
-  vouchers              Voucher[]       @relation("VoucherToBranch")
-  flashSales            FlashSale[]     @relation("FlashSaleToBranch")
-  combos                Combo[]         @relation("ComboToBranch")
+  banners               Banner[]               @relation("BannerToBranch")
+  categories            Category[]             @relation("CategoryToBranch")
+  products              Product[]              @relation("ProductToBranch")
+  redeemableProducts    Product[]              @relation("ProductRedeemableBranches")
+  vouchers              Voucher[]              @relation("VoucherToBranch")
+  flashSales            FlashSale[]            @relation("FlashSaleToBranch")
+  combos                Combo[]                @relation("ComboToBranch")
   operatingSlots        OperatingSlot[]
-  paymentMethods        PaymentMethod[] @relation("PaymentMethodToBranch")
-  articles              Article[]       @relation("ArticleToBranch")
+  paymentMethods        PaymentMethod[]        @relation("PaymentMethodToBranch")
+  articles              Article[]              @relation("ArticleToBranch")
   restaurantAreas       RestaurantArea[]
   restaurantTables      RestaurantTable[]
   specialHours          BranchSpecialHours[]
@@ -216,36 +246,36 @@ model Branch {
 }
 
 model Banner {
-  id              String              @id @default(uuid())
-  title           String?
-  description     String?             @db.Text
-  imageUrl        String
-  mobileImageUrl  String?
-  altText         String?
-  linkUrl         String?
-  active          Boolean             @default(true)
-  bannerOrder     Int                 @default(0)
-  popup           Boolean             @default(false)
-  position        String              @default("HERO") // HERO, POPUP, PROMO
-  targetAudience  String              @default("ALL")  // ALL, MEMBERS_ONLY, VIP_ONLY
-  popupFrequency  String              @default("ONCE_PER_SESSION") // ONCE_PER_SESSION, EVERY_PAGE_LOAD
-  startDate       DateTime?
-  endDate         DateTime?
-  viewCount       Int                 @default(0)
-  clickCount      Int                 @default(0)
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  branches        Branch[]            @relation("BannerToBranch")
-  interactions    BannerInteraction[]
+  id             String              @id @default(uuid())
+  title          String?
+  description    String?             @db.Text
+  imageUrl       String
+  mobileImageUrl String?
+  altText        String?
+  linkUrl        String?
+  active         Boolean             @default(true)
+  bannerOrder    Int                 @default(0)
+  popup          Boolean             @default(false)
+  position       String              @default("HERO") // HERO, POPUP, PROMO
+  targetAudience String              @default("ALL") // ALL, MEMBERS_ONLY, VIP_ONLY
+  popupFrequency String              @default("ONCE_PER_SESSION") // ONCE_PER_SESSION, EVERY_PAGE_LOAD
+  startDate      DateTime?
+  endDate        DateTime?
+  viewCount      Int                 @default(0)
+  clickCount     Int                 @default(0)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  branches       Branch[]            @relation("BannerToBranch")
+  interactions   BannerInteraction[]
 }
 
 model BannerInteraction {
   id        String   @id @default(uuid())
   bannerId  String
   banner    Banner   @relation(fields: [bannerId], references: [id], onDelete: Cascade)
-  type      String   // "VIEW" or "CLICK"
-  userId    String?  // Id của người dùng thành viên nếu đã đăng nhập
-  sessionId String?  // Mã phiên duyệt web để chống spam lặp lại
+  type      String // "VIEW" or "CLICK"
+  userId    String? // Id của người dùng thành viên nếu đã đăng nhập
+  sessionId String? // Mã phiên duyệt web để chống spam lặp lại
   ipAddress String?
   userAgent String?
   createdAt DateTime @default(now())
@@ -269,48 +299,50 @@ model Category {
 }
 
 model Product {
-  id                   String           @id @default(uuid())
-  itemCode             String           @unique
+  id                   String                @id @default(uuid())
+  itemCode             String                @unique
   name                 String
-  slug                 String           @unique
-  description          String?          @db.Text
-  post                 String?          @db.Text
+  slug                 String                @unique
+  description          String?               @db.Text
+  post                 String?               @db.Text
   price                Float
   oldPrice             Float?
   discountedPrice      Float?
   flashSalePrice       Float?
-  unit                 String?          @default("phần")
-  taxPercentage        Float            @default(0)
+  unit                 String?               @default("phần")
+  taxPercentage        Float                 @default(0)
   badge                String?
   imageUrl             String?
-  videoUrl             String?          @db.Text
-  available            Boolean          @default(true)
-  isBestSeller         Boolean          @default(false)
-  isAiRecommended      Boolean          @default(false)
-  avgRating            Float            @default(0)
-  soldQuantity         Int              @default(0)
-  isRedeemable         Boolean          @default(false)
+  videoUrl             String?               @db.Text
+  available            Boolean               @default(true)
+  isBestSeller         Boolean               @default(false)
+  isAiRecommended      Boolean               @default(false)
+  avgRating            Float                 @default(0)
+  ratingCount          Int                   @default(0)
+  soldQuantity         Int                   @default(0)
+  isRedeemable         Boolean               @default(false)
   redemptionPoints     Int?
   categoryId           String
-  createdAt            DateTime         @default(now())
-  updatedAt            DateTime         @updatedAt
-  spiciness            Int              @default(0)
-  targetAudience       String?          @default("Mọi lứa tuổi")
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  spiciness            Int                   @default(0)
+  targetAudience       String?               @default("Mọi lứa tuổi")
   FlashSaleItem        FlashSaleItem[]
   optionGroups         OptionGroup[]
   orderItems           OrderItem[]
-  category             Category         @relation(fields: [categoryId], references: [id])
-  branches             Branch[]         @relation("ProductToBranch")
+  category             Category              @relation(fields: [categoryId], references: [id])
+  branches             Branch[]              @relation("ProductToBranch")
   salesChannels        Json?
   secondaryImages      Json?
-  redeemAllBranches    Boolean          @default(true)
-  redeemableBranches   Branch[]         @relation("ProductRedeemableBranches")
-  favoritedBy          User[]           @relation("UserFavoriteItems")
+  redeemAllBranches    Boolean               @default(true)
+  redeemableBranches   Branch[]              @relation("ProductRedeemableBranches")
+  favoritedBy          User[]                @relation("UserFavoriteItems")
   ComboItem            ComboItem[]
   articleProducts      ArticleProduct[]
   printRoutes          ProductPrintRoute[]
   buffetPackageTickets BuffetPackageTicket[]
   buffetPackageItems   BuffetPackageItem[]
+  reviews              ProductReview[]
 
   @@index([categoryId], map: "Product_categoryId_fkey")
 }
@@ -347,44 +379,45 @@ model OptionItem {
 }
 
 model Reservation {
-  id              String            @id @default(uuid())
-  reservationCode String?           @unique
-  userId          String?
-  branchId        String
-  customerName    String?
-  customerPhone   String?
-  customerEmail   String?
-  startAt         DateTime?
-  endAt           DateTime?
+  id                String            @id @default(uuid())
+  reservationCode   String?           @unique
+  userId            String?
+  branchId          String
+  customerName      String?
+  customerPhone     String?
+  customerEmail     String?
+  startAt           DateTime?
+  endAt             DateTime?
   // Legacy fields (giữ tương thích)
-  reservationDate DateTime          @db.Date
-  reservationTime String
-  partySize       Int
-  tablePreference String?
-  occasion        String?
+  reservationDate   DateTime          @db.Date
+  reservationTime   String
+  partySize         Int
+  tablePreference   String?
+  occasion          String?
   seatingPreference String?
-  specialRequests String?           @db.Text
-  internalNote    String?           @db.Text
-  source          ReservationSource @default(WEB)
-  status          ReservationStatus @default(PENDING)
-  checkInToken    String?           @unique
+  specialRequests   String?           @db.Text
+  internalNote      String?           @db.Text
+  source            ReservationSource @default(WEB)
+  status            ReservationStatus @default(PENDING)
+  checkInToken      String?           @unique
+  idempotencyKey    String?           @unique
 
   // Trạng thái vận hành & Timeline
-  checkedInAt     DateTime?
-  seatedAt        DateTime?
-  completedAt     DateTime?
-  canceledAt      DateTime?
-  cancelReason    String?           @db.Text
-  canceledBy      String?
-  noShowAt        DateTime?
+  checkedInAt  DateTime?
+  seatedAt     DateTime?
+  completedAt  DateTime?
+  canceledAt   DateTime?
+  cancelReason String?   @db.Text
+  canceledBy   String?
+  noShowAt     DateTime?
 
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  branch          Branch            @relation(fields: [branchId], references: [id])
-  user            User?             @relation(fields: [userId], references: [id])
-  tables          ReservationTable[]
-  reminderLogs    ReservationReminderLog[]
+  branch       Branch                   @relation(fields: [branchId], references: [id])
+  user         User?                    @relation(fields: [userId], references: [id])
+  tables       ReservationTable[]
+  reminderLogs ReservationReminderLog[]
 
   @@index([branchId], map: "Reservation_branchId_fkey")
   @@index([userId], map: "Reservation_userId_fkey")
@@ -395,103 +428,107 @@ model Reservation {
 }
 
 model Order {
-  id                          String             @id @default(uuid())
-  orderCode                   String?            @unique
-  temporaryOrderCode          String?            @unique
+  id                          String        @id @default(uuid())
+  orderCode                   String?       @unique
+  temporaryOrderCode          String?       @unique
+  idempotencyKey              String?       @unique
   userId                      String?
   branchId                    String
   customerName                String
   customerPhone               String
-  deliveryAddress             String?            @db.Text
+  deliveryAddress             String?       @db.Text
   latitude                    Float?
   longitude                   Float?
-  note                        String?            @db.Text
+  note                        String?       @db.Text
   subTotal                    Float
-  shippingFee                 Float              @default(0)
-  discountAmount              Float              @default(0)
-  discountReason              String?            @db.Text
+  shippingFee                 Float         @default(0)
+  discountAmount              Float         @default(0)
+  discountReason              String?       @db.Text
   discountPercent             Float?
   discountType                String?
-  shippingDiscount            Float              @default(0)
-  shippingDiscountReason      String?            @db.Text
-  serviceChargeTotal          Float              @default(0)
-  taxAmount                   Float              @default(0)
+  shippingDiscount            Float         @default(0)
+  shippingDiscountReason      String?       @db.Text
+  serviceChargeTotal          Float         @default(0)
+  taxAmount                   Float         @default(0)
   vatPriceModeSnapshot        String?
   totalAmount                 Float
   voucherId                   String?
   shippingVoucherId           String?
   discountVoucherCodeSnapshot String?
   shippingVoucherCodeSnapshot String?
-  isVoucherRefunded           Boolean            @default(false)
-  paymentMethod               String             @default("COD")
-  paymentStatus               String             @default("PENDING")
+  isVoucherRefunded           Boolean       @default(false)
+  paymentMethod               String        @default("COD")
+  paymentStatus               String        @default("PENDING")
   transactionId               String?
-  pointsUsed                  Int                @default(0)
-  pointsAwarded               Int                @default(0)
-  status                      OrderStatus        @default(PENDING)
-  cancelReason                String?            @db.Text
+  pointsUsed                  Int           @default(0)
+  pointsAwarded               Int           @default(0)
+  status                      OrderStatus   @default(PENDING)
+  cancelReason                String?       @db.Text
   canceledBy                  String?
-  isInvoiceRequested          Boolean            @default(false)
+  isInvoiceRequested          Boolean       @default(false)
   invoiceCompanyName          String?
-  isViewedByAdmin             Boolean            @default(false)
+  isViewedByAdmin             Boolean       @default(false)
   invoiceTaxCode              String?
-  invoiceAddress              String?            @db.Text
+  invoiceAddress              String?       @db.Text
   invoiceEmail                String?
-  isInvoiceExported           Boolean            @default(false)
+  isInvoiceExported           Boolean       @default(false)
   invoiceExportedAt           DateTime?
   invoiceExportedBy           String?
   confirmedAt                 DateTime?
   deliveringAt                DateTime?
   deliveredAt                 DateTime?
+  completedAt                 DateTime?
   canceledAt                  DateTime?
   operatingSlotId             String?
-  deliveryDate                DateTime?          @db.Date
+  deliveryDate                DateTime?     @db.Date
   deliverySlotSnapshot        String?
-  orderType                   SlotOrderType      @default(DELIVERY)
+  orderType                   SlotOrderType @default(DELIVERY)
 
   // Snapshots khoảng cách & Routing thực tế
-  deliveryDistanceMeters      Int?
-  deliveryDurationSeconds     Int?
-  shippingProvider            String?
-  shippingCalculatedAt        DateTime?
-  shippingOriginLatitude      Float?
-  shippingOriginLongitude     Float?
-  shippingDestinationLatitude Float?
+  deliveryDistanceMeters       Int?
+  deliveryDurationSeconds      Int?
+  shippingProvider             String?
+  shippingCalculatedAt         DateTime?
+  shippingOriginLatitude       Float?
+  shippingOriginLongitude      Float?
+  shippingDestinationLatitude  Float?
   shippingDestinationLongitude Float?
 
   // POS Enterprise Engine Fields
-  orderSource                 OrderSource        @default(WEB)
-  tableId                     String?
-  tableSessionId              String?            @unique
-  guestCount                  Int                @default(1)
-  cashierId                   String?
-  cashierName                 String?
-  version                     Int                @default(1)
-  kitchenStatus               KitchenStatus      @default(PENDING)
-  sentToKitchenAt             DateTime?
-  kitchenReadyAt              DateTime?
-  servedAt                    DateTime?
+  orderSource     OrderSource   @default(WEB)
+  tableId         String?
+  tableSessionId  String?       @unique
+  guestCount      Int           @default(1)
+  cashierId       String?
+  cashierName     String?
+  version         Int           @default(1)
+  kitchenStatus   KitchenStatus @default(PENDING)
+  sentToKitchenAt DateTime?
+  kitchenReadyAt  DateTime?
+  servedAt        DateTime?
 
-  createdAt                   DateTime           @default(now())
-  updatedAt                   DateTime           @updatedAt
-  branch                      Branch             @relation(fields: [branchId], references: [id])
-  user                        User?              @relation(fields: [userId], references: [id])
-  voucher                     Voucher?           @relation("OrderDiscountVoucher", fields: [voucherId], references: [id])
-  shippingVoucher             Voucher?           @relation("OrderShippingVoucher", fields: [shippingVoucherId], references: [id])
-  operatingSlot               OperatingSlot?     @relation(fields: [operatingSlotId], references: [id])
-  table                       RestaurantTable?   @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  tableSession                TableSession?      @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
-  orderItems                  OrderItem[]
-  PointTransaction            PointTransaction[]
-  parentRelations             OrderRelation[]    @relation("ParentOrderRelations")
-  childRelations              OrderRelation[]    @relation("ChildOrderRelations")
-  payments                    OrderPayment[]
-  printJobs                   PrintJob[]
-  kitchenEvents               KitchenEvent[]
-  serviceCharges              OrderServiceCharge[]
-  buffetSessions              BuffetSession[]
-  qrOrderSessions             QrOrderSession[]
-  tableServiceRequests        TableServiceRequest[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+  branch                 Branch                @relation(fields: [branchId], references: [id])
+  user                   User?                 @relation(fields: [userId], references: [id])
+  voucher                Voucher?              @relation("OrderDiscountVoucher", fields: [voucherId], references: [id])
+  shippingVoucher        Voucher?              @relation("OrderShippingVoucher", fields: [shippingVoucherId], references: [id])
+  operatingSlot          OperatingSlot?        @relation(fields: [operatingSlotId], references: [id])
+  table                  RestaurantTable?      @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSession           TableSession?         @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  orderItems             OrderItem[]
+  PointTransaction       PointTransaction[]
+  parentRelations        OrderRelation[]       @relation("ParentOrderRelations")
+  childRelations         OrderRelation[]       @relation("ChildOrderRelations")
+  payments               OrderPayment[]
+  printJobs              PrintJob[]
+  kitchenEvents          KitchenEvent[]
+  serviceCharges         OrderServiceCharge[]
+  buffetSessions         BuffetSession[]
+  qrOrderSessions        QrOrderSession[]
+  tableServiceRequests   TableServiceRequest[]
+  review                 OrderReview?
+  verifiedProductReviews ProductReview[]       @relation("VerifiedOrderReviews")
 
   @@index([branchId], map: "Order_branchId_fkey")
   @@index([userId], map: "Order_userId_fkey")
@@ -502,6 +539,7 @@ model Order {
   @@index([cashierId])
   @@index([orderSource])
   @@index([status])
+  @@index([completedAt])
   @@index([kitchenStatus])
   @@index([temporaryOrderCode])
   @@index([createdAt])
@@ -510,42 +548,43 @@ model Order {
 }
 
 model OrderItem {
-  id                  String            @id @default(uuid())
-  orderId             String
-  productId           String
-  quantity            Int
-  priceAtSale         Float
-  originalPriceAtSale Float
-  discountAmount      Float             @default(0)
-  discountReason      String?           @db.Text
-  note                String?           @db.Text
-  optionsTextSnapshot String?           @db.Text
-  isFlashSaleItem     Boolean           @default(false)
-  flashSaleId         String?
-  flashSaleSlotId     String?
-  flashSaleNameSnapshot String?
+  id                     String  @id @default(uuid())
+  orderId                String
+  productId              String
+  quantity               Int
+  priceAtSale            Float
+  originalPriceAtSale    Float
+  discountAmount         Float   @default(0)
+  discountReason         String? @db.Text
+  note                   String? @db.Text
+  optionsTextSnapshot    String? @db.Text
+  isFlashSaleItem        Boolean @default(false)
+  flashSaleId            String?
+  flashSaleSlotId        String?
+  flashSaleNameSnapshot  String?
   flashSalePriceSnapshot Float?
 
   // Tax Snapshot Fields
-  taxPercentageAtSale Float             @default(0)
-  taxableAmountAtSale Float             @default(0)
-  taxAmountAtSale     Float             @default(0)
+  taxPercentageAtSale  Float   @default(0)
+  taxableAmountAtSale  Float   @default(0)
+  taxAmountAtSale      Float   @default(0)
   vatPriceModeSnapshot String?
-  isVatInclusive      Boolean           @default(true)
+  isVatInclusive       Boolean @default(true)
 
   // POS & KDS Fields
-  kitchenStatus       KitchenStatus     @default(PENDING)
-  stationId           String?
-  sentToKitchenAt     DateTime?
-  acknowledgedAt      DateTime?
-  readyAt             DateTime?
-  servedAt            DateTime?
-  isKitchenPrinted    Boolean           @default(false)
-  sentQuantity        Int               @default(0)
-  printedQuantity     Int               @default(0)
-  printVersion        Int               @default(0)
-  orderedById         String?
-  orderedByName       String?
+  kitchenStatus    KitchenStatus @default(PENDING)
+  stationId        String?
+  sentToKitchenAt  DateTime?
+  acknowledgedAt   DateTime?
+  readyAt          DateTime?
+  servedAt         DateTime?
+  isKitchenPrinted Boolean       @default(false)
+  sentQuantity     Int           @default(0)
+  printedQuantity  Int           @default(0)
+  printVersion     Int           @default(0)
+  orderedById      String?
+  orderedByName    String?
+  createdAt        DateTime      @default(now())
 
   // Buffet & Source Engine Fields
   pricingMode                  OrderItemPricingMode @default(REGULAR)
@@ -557,12 +596,13 @@ model OrderItem {
   qrOrderRoundId               String?
   excludedFromFinalReceipt     Boolean              @default(false)
 
-  order               Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product             Product           @relation(fields: [productId], references: [id])
-  selectedOptions     OrderItemOption[]
-  printJobs           PrintJob[]
-  buffetSession       BuffetSession?    @relation(fields: [buffetSessionId], references: [id], onDelete: SetNull)
-  qrOrderRound        QrOrderRound?     @relation(fields: [qrOrderRoundId], references: [id], onDelete: SetNull)
+  order                  Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product                Product           @relation(fields: [productId], references: [id])
+  selectedOptions        OrderItemOption[]
+  printJobs              PrintJob[]
+  buffetSession          BuffetSession?    @relation(fields: [buffetSessionId], references: [id], onDelete: SetNull)
+  qrOrderRound           QrOrderRound?     @relation(fields: [qrOrderRoundId], references: [id], onDelete: SetNull)
+  verifiedProductReviews ProductReview[]   @relation("VerifiedOrderItemReviews")
 
   @@index([orderId], map: "OrderItem_orderId_fkey")
   @@index([productId], map: "OrderItem_productId_fkey")
@@ -611,11 +651,11 @@ model Notification {
   updatedAt   DateTime         @updatedAt
   user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@unique([eventId, userId])
   @@index([userId], map: "Notification_userId_fkey")
   @@index([userId, isRead])
   @@index([branchId])
   @@index([eventType])
-  @@unique([eventId, userId])
 }
 
 model Voucher {
@@ -635,25 +675,26 @@ model Voucher {
   isPublic          Boolean @default(true) // Hiển thị công khai hay mã ẩn phải tự nhập
   membershipTierId  String?
 
-  startDate DateTime
-  endDate   DateTime
-  isActive  Boolean  @default(true)
-  imageUrl  String?
-  applicableScope String @default("ALL") // ALL, POS, ONLINE
-  applicableProductsScope String @default("ALL") // ALL, CATEGORY, SPECIFIC_PRODUCTS, BEST_SELLER, SLOW_SELLER
-  applicableProductIds    String? @db.Text
-  applicableCategoryIds   String? @db.Text
-  targetCustomerScope     String @default("ALL") // ALL, NEW_CUSTOMER, SPECIFIC_CUSTOMERS, MEMBERSHIP_TIER
-  targetCustomerIds       String? @db.Text
+  startDate               DateTime
+  endDate                 DateTime
+  isActive                Boolean  @default(true)
+  imageUrl                String?
+  applicableScope         String   @default("ALL") // ALL, POS, ONLINE
+  applicableProductsScope String   @default("ALL") // ALL, CATEGORY, SPECIFIC_PRODUCTS, BEST_SELLER, SLOW_SELLER
+  applicableProductIds    String?  @db.Text
+  applicableCategoryIds   String?  @db.Text
+  targetCustomerScope     String   @default("ALL") // ALL, NEW_CUSTOMER, SPECIFIC_CUSTOMERS, MEMBERSHIP_TIER
+  targetCustomerIds       String?  @db.Text
 
-  orders          Order[]          @relation("OrderDiscountVoucher")
-  shippingOrders  Order[]          @relation("OrderShippingVoucher")
-  membershipTiers MembershipTier[] @relation("VoucherToMembershipTier")
-  branches        Branch[]         @relation("VoucherToBranch")
-  articleVouchers ArticleVoucher[]
+  orders                     Order[]                @relation("OrderDiscountVoucher")
+  shippingOrders             Order[]                @relation("OrderShippingVoucher")
+  membershipTiers            MembershipTier[]       @relation("VoucherToMembershipTier")
+  branches                   Branch[]               @relation("VoucherToBranch")
+  articleVouchers            ArticleVoucher[]
   appliesToAllPaymentMethods Boolean                @default(true)
   voucherPaymentMethods      VoucherPaymentMethod[]
   customerVouchers           CustomerVoucher[]
+  farmRewards                FarmReward[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -667,8 +708,8 @@ model CustomerVoucher {
   isUsed    Boolean   @default(false)
   usedAt    DateTime?
 
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  voucher   Voucher   @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Cascade)
 
   @@unique([userId, voucherId])
   @@index([userId])
@@ -676,81 +717,81 @@ model CustomerVoucher {
 }
 
 model FlashSale {
-  id                      String              @id @default(uuid())
-  code                    String?             @unique
+  id                      String    @id @default(uuid())
+  code                    String?   @unique
   name                    String
-  description             String?             @db.Text
-  status                  String              @default("SCHEDULED") // DRAFT, SCHEDULED, UPCOMING, ACTIVE, PAUSED, ENDED, CANCELLED
+  description             String?   @db.Text
+  status                  String    @default("SCHEDULED") // DRAFT, SCHEDULED, UPCOMING, ACTIVE, PAUSED, ENDED, CANCELLED
   startTime               DateTime
   endTime                 DateTime
   teaserStartAt           DateTime?
-  isActive                Boolean             @default(true)
+  isActive                Boolean   @default(true)
   imageUrl                String?
   bannerImageUrl          String?
   mobileBannerImageUrl    String?
-  applyOnline             Boolean             @default(true)
-  applyPos                Boolean             @default(true)
-  priority                Int                 @default(0)
-  isFeatured              Boolean             @default(false)
-  allowVouchers           Boolean             @default(true)
-  allowFreeship           Boolean             @default(true)
-  allowPoints             Boolean             @default(true)
-  allowMembershipDiscount Boolean             @default(true)
+  applyOnline             Boolean   @default(true)
+  applyPos                Boolean   @default(true)
+  priority                Int       @default(0)
+  isFeatured              Boolean   @default(false)
+  allowVouchers           Boolean   @default(true)
+  allowFreeship           Boolean   @default(true)
+  allowPoints             Boolean   @default(true)
+  allowMembershipDiscount Boolean   @default(true)
   maxQuantityPerOrder     Int?
   maxQuantityPerUser      Int?
   createdById             String?
-  createdAt               DateTime            @default(now())
-  updatedAt               DateTime            @updatedAt
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
-  items                   FlashSaleItem[]
-  slots                   FlashSaleSlot[]
-  auditLogs               FlashSaleAuditLog[]
-  reminders               FlashSaleReminder[]
-  branches                Branch[]            @relation("FlashSaleToBranch")
-  membershipTiers         MembershipTier[]    @relation("FlashSaleToMembershipTier")
+  items           FlashSaleItem[]
+  slots           FlashSaleSlot[]
+  auditLogs       FlashSaleAuditLog[]
+  reminders       FlashSaleReminder[]
+  branches        Branch[]            @relation("FlashSaleToBranch")
+  membershipTiers MembershipTier[]    @relation("FlashSaleToMembershipTier")
 
   @@index([startTime, endTime, isActive])
   @@index([status])
 }
 
 model FlashSaleSlot {
-  id            String              @id @default(uuid())
+  id            String    @id @default(uuid())
   flashSaleId   String
   name          String
   startTime     DateTime
   endTime       DateTime
   teaserStartAt DateTime?
-  sortOrder     Int                 @default(0)
-  isActive      Boolean             @default(true)
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
+  sortOrder     Int       @default(0)
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  flashSale     FlashSale           @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
-  items         FlashSaleItem[]
-  reminders     FlashSaleReminder[]
+  flashSale FlashSale           @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  items     FlashSaleItem[]
+  reminders FlashSaleReminder[]
 
   @@index([flashSaleId])
   @@index([startTime, endTime])
 }
 
 model FlashSaleItem {
-  id                     String         @id @default(uuid())
-  flashSaleId            String
-  flashSaleSlotId        String?
-  productId              String
-  flashSalePrice         Float
-  originalPriceSnapshot  Float?
-  stock                  Int
-  reservedStock          Int            @default(0)
-  sold                   Int            @default(0)
-  maxQuantityPerUser     Int?
-  maxQuantityPerOrder    Int?
-  sortOrder              Int            @default(0)
-  isActive               Boolean        @default(true)
+  id                    String  @id @default(uuid())
+  flashSaleId           String
+  flashSaleSlotId       String?
+  productId             String
+  flashSalePrice        Float
+  originalPriceSnapshot Float?
+  stock                 Int
+  reservedStock         Int     @default(0)
+  sold                  Int     @default(0)
+  maxQuantityPerUser    Int?
+  maxQuantityPerOrder   Int?
+  sortOrder             Int     @default(0)
+  isActive              Boolean @default(true)
 
-  flashSale              FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
-  slot                   FlashSaleSlot? @relation(fields: [flashSaleSlotId], references: [id], onDelete: Cascade)
-  product                Product        @relation(fields: [productId], references: [id])
+  flashSale FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  slot      FlashSaleSlot? @relation(fields: [flashSaleSlotId], references: [id], onDelete: Cascade)
+  product   Product        @relation(fields: [productId], references: [id])
 
   @@index([flashSaleId], map: "FlashSaleItem_flashSaleId_fkey")
   @@index([flashSaleSlotId])
@@ -758,41 +799,40 @@ model FlashSaleItem {
 }
 
 model FlashSaleAuditLog {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   flashSaleId String
   userId      String?
   userName    String?
   action      String
-  oldValue    String?   @db.LongText
-  newValue    String?   @db.LongText
+  oldValue    String?  @db.LongText
+  newValue    String?  @db.LongText
   branchId    String?
   ipAddress   String?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime @default(now())
 
-  flashSale   FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  flashSale FlashSale @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
 
   @@index([flashSaleId])
   @@index([createdAt])
 }
 
 model FlashSaleReminder {
-  id          String         @id @default(uuid())
+  id          String   @id @default(uuid())
   userId      String
   flashSaleId String
   slotId      String?
   productId   String?
-  reminded    Boolean        @default(false)
-  createdAt   DateTime       @default(now())
+  reminded    Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  flashSale   FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
-  slot        FlashSaleSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  flashSale FlashSale      @relation(fields: [flashSaleId], references: [id], onDelete: Cascade)
+  slot      FlashSaleSlot? @relation(fields: [slotId], references: [id], onDelete: Cascade)
 
   @@unique([userId, flashSaleId, slotId, productId])
   @@index([userId])
   @@index([flashSaleId])
 }
-
 
 model MembershipTier {
   id                String             @id @default(uuid())
@@ -831,6 +871,7 @@ model PointTransaction {
   membershipTier     MembershipTier?        @relation(fields: [membershipTierId], references: [id])
   order              Order?                 @relation(fields: [orderId], references: [id])
   user               User                   @relation(fields: [userId], references: [id])
+  orderReview        OrderReview?
 
   @@index([userId, createdAt])
   @@index([userId, source])
@@ -842,13 +883,15 @@ model PointTransaction {
 }
 
 model ChatSession {
-  id        String        @id @default(uuid())
-  userId    String?
-  title     String?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  messages  ChatMessage[]
-  user      User?         @relation(fields: [userId], references: [id])
+  id          String        @id @default(uuid())
+  userId      String?
+  title       String?
+  contextData String?       @db.Text
+  channel     String?       @default("TEXT")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  messages    ChatMessage[]
+  user        User?         @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([updatedAt])
@@ -1216,7 +1259,7 @@ model PaymentMethod {
   isActiveForPos Boolean @default(false)
   displayOrder   Int     @default(0)
 
-  vouchers       VoucherPaymentMethod[]
+  vouchers VoucherPaymentMethod[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1474,28 +1517,28 @@ model RestaurantArea {
 }
 
 model RestaurantTable {
-  id           String                 @id @default(uuid())
-  branchId     String
-  areaId       String?
-  tableCode    String
-  name         String
-  capacity     Int
-  minCapacity  Int                    @default(1)
-  status       TableOperationalStatus @default(ACTIVE)
-  isActive     Boolean                @default(true)
-  sortOrder    Int                    @default(0)
-  x            Float?                 @default(0)
-  y            Float?                 @default(0)
-  width        Float?                 @default(80)
-  height       Float?                 @default(80)
-  shape        String?                @default("RECTANGLE")
-  createdAt    DateTime               @default(now())
-  updatedAt    DateTime               @updatedAt
-  branch       Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  area         RestaurantArea?        @relation(fields: [areaId], references: [id], onDelete: SetNull)
-  reservations ReservationTable[]
-  sessions     TableSession[]
-  orders       Order[]
+  id                   String                 @id @default(uuid())
+  branchId             String
+  areaId               String?
+  tableCode            String
+  name                 String
+  capacity             Int
+  minCapacity          Int                    @default(1)
+  status               TableOperationalStatus @default(ACTIVE)
+  isActive             Boolean                @default(true)
+  sortOrder            Int                    @default(0)
+  x                    Float?                 @default(0)
+  y                    Float?                 @default(0)
+  width                Float?                 @default(80)
+  height               Float?                 @default(80)
+  shape                String?                @default("RECTANGLE")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+  branch               Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  area                 RestaurantArea?        @relation(fields: [areaId], references: [id], onDelete: SetNull)
+  reservations         ReservationTable[]
+  sessions             TableSession[]
+  orders               Order[]
   qrOrderSessions      QrOrderSession[]
   tableServiceRequests TableServiceRequest[]
 
@@ -1550,7 +1593,7 @@ model ReservationBlock {
 model ReservationReminderLog {
   id            String      @id @default(uuid())
   reservationId String
-  reminderType  String      // REMINDER_24H, REMINDER_2H
+  reminderType  String // REMINDER_24H, REMINDER_2H
   scheduledFor  DateTime
   sentAt        DateTime    @default(now())
   status        String      @default("SENT")
@@ -1564,7 +1607,7 @@ model ReservationReminderLog {
 model ReservationSlotLock {
   id                    String   @id @default(uuid())
   branchId              String
-  slotKey               String   // YYYY-MM-DD_HH:mm
+  slotKey               String // YYYY-MM-DD_HH:mm
   currentBookedCapacity Int      @default(0)
   updatedAt             DateTime @updatedAt
   branch                Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -1628,13 +1671,13 @@ model OrderItemTransferLog {
 model OrderSequence {
   id         String   @id @default(uuid())
   branchId   String
-  date       String   // Format: DDMMYY e.g. "070926"
+  date       String // Format: DDMMYY e.g. "070926"
   type       String   @default("POS")
   lastNumber Int      @default(0)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  branch     Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branch Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([branchId, date, type])
   @@index([branchId, date])
@@ -1653,23 +1696,23 @@ model OrderServiceCharge {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
 }
 
 model TableSession {
-  id         String             @id @default(uuid())
-  branchId   String
-  tableId    String
-  status     TableSessionStatus @default(ACTIVE)
-  openedAt   DateTime           @default(now())
-  closedAt   DateTime?
-  guestCount Int                @default(1)
-  cashierId  String?
-  order      Order?
-  table      RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  branch     Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  id              String             @id @default(uuid())
+  branchId        String
+  tableId         String
+  status          TableSessionStatus @default(ACTIVE)
+  openedAt        DateTime           @default(now())
+  closedAt        DateTime?
+  guestCount      Int                @default(1)
+  cashierId       String?
+  order           Order?
+  table           RestaurantTable    @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  branch          Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
   qrOrderSessions QrOrderSession[]
 
   @@index([branchId, tableId, status])
@@ -1678,7 +1721,7 @@ model TableSession {
 model OrderPayment {
   id             String              @id @default(uuid())
   orderId        String
-  paymentMethod  String              // CASH, CARD, TRANSFER, PAYOS, MOMO, VNPAY, POINT
+  paymentMethod  String // CASH, CARD, TRANSFER, PAYOS, MOMO, VNPAY, POINT
   amount         Float
   status         PaymentRecordStatus @default(COMPLETED)
   transactionRef String?
@@ -1756,23 +1799,23 @@ model IdempotencyRecord {
 }
 
 model PrintTemplate {
-  id        String            @id @default(uuid())
-  name      String
-  type      PrintTemplateType
-  content   String            @db.LongText
+  id      String            @id @default(uuid())
+  name    String
+  type    PrintTemplateType
+  content String            @db.LongText
 
-  branchId  String
-  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
-  isDefault Boolean           @default(false)
+  isDefault Boolean @default(false)
 
-  paperSize String?           @default("80mm")
+  paperSize String? @default("80mm")
   settings  Json?
 
-  version   Int               @default(1)
+  version Int @default(1)
 
-  createdAt DateTime          @default(now())
-  updatedAt DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   versions  PrintTemplateVersion[]
   printJobs PrintJob[]
@@ -1782,16 +1825,16 @@ model PrintTemplate {
 }
 
 model PrintTemplateVersion {
-  id              String        @id @default(uuid())
+  id              String   @id @default(uuid())
   printTemplateId String
   version         Int
-  content         String        @db.LongText
+  content         String   @db.LongText
   paperSize       String?
   settings        Json?
   createdBy       String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime @default(now())
 
-  printTemplate   PrintTemplate @relation(fields: [printTemplateId], references: [id], onDelete: Cascade)
+  printTemplate PrintTemplate @relation(fields: [printTemplateId], references: [id], onDelete: Cascade)
 
   @@index([printTemplateId])
   @@index([printTemplateId, version])
@@ -1913,21 +1956,21 @@ model Printer {
 }
 
 model PrintAgent {
-  id          String    @id @default(uuid())
-  branchId    String
-  agentCode   String    @unique
-  name        String
-  secretHash  String
-  salt        String
-  isActive    Boolean   @default(true)
-  ipAddress   String?
-  version     String?
-  lastSeenAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id         String    @id @default(uuid())
+  branchId   String
+  agentCode  String    @unique
+  name       String
+  secretHash String
+  salt       String
+  isActive   Boolean   @default(true)
+  ipAddress  String?
+  version    String?
+  lastSeenAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
-  branch      Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  printers    Printer[]
+  branch   Branch    @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  printers Printer[]
 
   @@index([branchId])
 }
@@ -1943,8 +1986,8 @@ model KitchenStationPrinter {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  station      KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
-  printer      Printer        @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  station KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  printer Printer        @relation(fields: [printerId], references: [id], onDelete: Restrict)
 
   @@unique([stationId, printerId])
   @@index([stationId])
@@ -1964,9 +2007,9 @@ model ProductPrintRoute {
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
 
-  product   Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  branch    Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  station   KitchenStation    @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  product Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  branch  Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
 
   @@index([productId, branchId])
   @@index([branchId])
@@ -1974,49 +2017,49 @@ model ProductPrintRoute {
 }
 
 model PrintJob {
-  id                 String             @id @default(uuid())
-  orderId            String
-  orderItemId        String?
-  branchId           String
-  stationId          String
-  printerId          String
-  printTemplateId    String?
-  routeId            String?
-  routeRole          PrintRouteRole     @default(PREPARATION)
-  payloadType        PrinterPayloadType @default(ESC_POS)
-  printType          PrintTemplateType  @default(KITCHEN_TICKET)
-  eventType          PrintJobEventType  @default(NEW_ITEM)
+  id              String             @id @default(uuid())
+  orderId         String
+  orderItemId     String?
+  branchId        String
+  stationId       String
+  printerId       String
+  printTemplateId String?
+  routeId         String?
+  routeRole       PrintRouteRole     @default(PREPARATION)
+  payloadType     PrinterPayloadType @default(ESC_POS)
+  printType       PrintTemplateType  @default(KITCHEN_TICKET)
+  eventType       PrintJobEventType  @default(NEW_ITEM)
 
-  quantity           Int                @default(1)
-  quantityDelta      Int                @default(1)
-  printedQtyBefore   Int                @default(0)
-  copies             Int                @default(1)
+  quantity         Int @default(1)
+  quantityDelta    Int @default(1)
+  printedQtyBefore Int @default(0)
+  copies           Int @default(1)
 
-  contentHtml        String             @db.LongText
-  payloadData        String?            @db.LongText
-  snapshotData       Json?
+  contentHtml  String  @db.LongText
+  payloadData  String? @db.LongText
+  snapshotData Json?
 
-  status             PrintJobStatus     @default(PENDING)
-  attemptCount       Int                @default(0)
-  maxAttempts        Int                @default(3)
-  errorMessage       String?            @db.Text
-  idempotencyKey     String             @unique
+  status         PrintJobStatus @default(PENDING)
+  attemptCount   Int            @default(0)
+  maxAttempts    Int            @default(3)
+  errorMessage   String?        @db.Text
+  idempotencyKey String         @unique
 
-  reprintOfId        String?
-  reprintReason      String?            @db.Text
-  reprintedBy        String?
+  reprintOfId   String?
+  reprintReason String? @db.Text
+  reprintedBy   String?
 
-  metadata           Json?
-  printedAt          DateTime?
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  metadata  Json?
+  printedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
-  order              Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderItem          OrderItem?         @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
-  branch             Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  station            KitchenStation     @relation(fields: [stationId], references: [id], onDelete: Restrict)
-  printer            Printer            @relation(fields: [printerId], references: [id], onDelete: Restrict)
-  printTemplate      PrintTemplate?     @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
+  order         Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem     OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station       KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
+  printer       Printer        @relation(fields: [printerId], references: [id], onDelete: Restrict)
+  printTemplate PrintTemplate? @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
 
   @@index([branchId, status])
   @@index([orderId])
@@ -2035,33 +2078,33 @@ model KitchenEvent {
   createdById String?
   createdAt   DateTime          @default(now())
 
-  order       Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  branch      Branch            @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  station     KitchenStation?   @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  order   Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  branch  Branch          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
 
   @@index([orderId])
   @@index([branchId, createdAt])
 }
 
 model BranchPrinterSetting {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   branchId       String
-  purpose        String   // RECEIPT, TEMP_BILL, KITCHEN, BAR, ITEM_LABEL
+  purpose        String // RECEIPT, TEMP_BILL, KITCHEN, BAR, ITEM_LABEL
   printerId      String?
   agentPrinterId String?
   printerName    String
   driverName     String?
   portName       String?
-  paperSize      String   @default("80mm")
-  copies         Int      @default(1)
-  isEnabled      Boolean  @default(true)
-  autoPrint      Boolean  @default(false)
+  paperSize      String    @default("80mm")
+  copies         Int       @default(1)
+  isEnabled      Boolean   @default(true)
+  autoPrint      Boolean   @default(false)
   lastSeenAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
-  branch         Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  printer        Printer? @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  branch  Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  printer Printer? @relation(fields: [printerId], references: [id], onDelete: SetNull)
 
   @@unique([branchId, purpose])
   @@index([branchId])
@@ -2090,15 +2133,15 @@ enum RiskLevel {
 }
 
 model AccessRole {
-  id          String               @id @default(uuid())
-  code        String               @unique @db.VarChar(100)
-  name        String               @db.VarChar(200)
-  description String?              @db.Text
-  isSystem    Boolean              @default(false)
-  isActive    Boolean              @default(true)
-  scopeType   ScopeType            @default(BRANCH)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  id          String    @id @default(uuid())
+  code        String    @unique @db.VarChar(100)
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  isSystem    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  scopeType   ScopeType @default(BRANCH)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   permissions RolePermission[]
   assignments UserRoleAssignment[]
@@ -2108,26 +2151,26 @@ model AccessRole {
 }
 
 model Permission {
-  key         String               @id @db.VarChar(100)
-  groupKey    String               @db.VarChar(100)
-  name        String               @db.VarChar(200)
-  description String?              @db.Text
-  scopeType   ScopeType            @default(BRANCH)
-  riskLevel   RiskLevel            @default(NORMAL)
-  sortOrder   Int                  @default(0)
+  key         String    @id @db.VarChar(100)
+  groupKey    String    @db.VarChar(100)
+  name        String    @db.VarChar(200)
+  description String?   @db.Text
+  scopeType   ScopeType @default(BRANCH)
+  riskLevel   RiskLevel @default(NORMAL)
+  sortOrder   Int       @default(0)
 
-  roles       RolePermission[]
+  roles RolePermission[]
 
   @@index([groupKey])
 }
 
 model RolePermission {
-  id            String             @id @default(uuid())
+  id            String @id @default(uuid())
   roleId        String
   permissionKey String
 
-  role          AccessRole         @relation(fields: [roleId], references: [id], onDelete: Cascade)
-  permission    Permission         @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+  role       AccessRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
 
   @@unique([roleId, permissionKey])
   @@index([permissionKey])
@@ -2135,18 +2178,18 @@ model RolePermission {
 }
 
 model UserRoleAssignment {
-  id          String               @id @default(uuid())
+  id          String          @id @default(uuid())
   userId      String
   roleId      String
-  branchScope BranchScopeType      @default(ALL_BRANCHES)
-  isPrimary   Boolean              @default(false)
-  isActive    Boolean              @default(true)
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  branchScope BranchScopeType @default(ALL_BRANCHES)
+  isPrimary   Boolean         @default(false)
+  isActive    Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
-  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
-  role        AccessRole           @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  branches    UserRoleBranch[]
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role     AccessRole       @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  branches UserRoleBranch[]
 
   @@unique([userId, roleId])
   @@index([userId])
@@ -2154,12 +2197,12 @@ model UserRoleAssignment {
 }
 
 model UserRoleBranch {
-  id           String              @id @default(uuid())
+  id           String @id @default(uuid())
   assignmentId String
   branchId     String
 
-  assignment   UserRoleAssignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  branch       Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  assignment UserRoleAssignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  branch     Branch             @relation(fields: [branchId], references: [id], onDelete: Cascade)
 
   @@unique([assignmentId, branchId])
   @@index([assignmentId])
@@ -2286,15 +2329,15 @@ model QrOrderGuest {
 }
 
 model QrOrderRound {
-  id               String    @id @default(uuid())
+  id               String   @id @default(uuid())
   qrOrderSessionId String
   qrGuestId        String?
   orderId          String
-  roundNumber      Int       @default(1)
-  idempotencyKey   String    @unique
-  status           String    @default("SUBMITTED")
-  submittedAt      DateTime  @default(now())
-  createdAt        DateTime  @default(now())
+  roundNumber      Int      @default(1)
+  idempotencyKey   String   @unique
+  status           String   @default("SUBMITTED")
+  submittedAt      DateTime @default(now())
+  createdAt        DateTime @default(now())
 
   qrOrderSession QrOrderSession @relation(fields: [qrOrderSessionId], references: [id], onDelete: Cascade)
   guest          QrOrderGuest?  @relation(fields: [qrGuestId], references: [id], onDelete: SetNull)
@@ -2346,10 +2389,1056 @@ model DesktopLaunchCode {
   createdIp    String?
   createdAt    DateTime  @default(now())
 
-  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([code])
   @@index([userId, createdAt])
   @@index([expiresAt])
 }
 
+model PosDevice {
+  id           String    @id @default(uuid())
+  deviceId     String    @unique @db.VarChar(128)
+  deviceSecret String    @db.VarChar(255)
+  name         String?   @db.VarChar(100)
+  isActive     Boolean   @default(true)
+  lastSeenAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([deviceId])
+}
+
+// ==========================================
+// AVORA FARM DOMAIN MODELS & ENUMS
+// ==========================================
+
+enum FarmPlotStatus {
+  LOCKED
+  EMPTY
+  PLOWED
+  PLANTED
+  DRY
+  WATERED
+  GROWING
+  READY
+  WITHERED
+}
+
+enum FarmCropCategory {
+  JAPANESE_INGREDIENT
+  FRUIT
+  FANTASY_FOOD
+}
+
+enum FarmRarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+  MYTHIC
+}
+
+enum FarmMutationType {
+  COLOR_MUTATION
+  GIANT_MUTATION
+  GOLDEN_MUTATION
+  CRYSTAL_MUTATION
+  SAKURA_MUTATION
+  MOONLIGHT_MUTATION
+  RAINBOW_MUTATION
+  AVORA_MUTATION
+}
+
+enum FarmItemType {
+  SEED
+  CROP
+  MUTATION_CROP
+  FERTILIZER
+  TOOL
+  DECORATION
+  EVENT
+}
+
+enum FarmWeatherType {
+  SUNNY
+  RAIN
+  SAKURA_WIND
+  MOONLIGHT
+  GOLDEN_HOUR
+  AURORA
+  FESTIVAL_NIGHT
+}
+
+enum FarmMissionType {
+  DAILY
+  WEEKLY
+  ACHIEVEMENT
+  EVENT
+}
+
+enum FarmRewardCategory {
+  VOUCHER
+  FOOD_DISCOUNT
+  FREE_SHIPPING
+  SPECIAL_GIFT
+  COSMETIC
+}
+
+model UserFarm {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  level                Int      @default(1)
+  exp                  Int      @default(0)
+  totalExp             Int      @default(0)
+  farmCoin             Int      @default(100)
+  energy               Int      @default(100)
+  maxEnergy            Int      @default(100)
+  lastEnergyRecoveryAt DateTime @default(now())
+
+  treeExp            Int    @default(0)
+  treeLevel          Int    @default(1)
+  selectedTheme      String @default("JAPANESE_GARDEN")
+  unlockedPlotsCount Int    @default(6)
+
+  activeWeather    FarmWeatherType @default(SUNNY)
+  weatherExpiresAt DateTime?
+
+  dailyWaterCount      Int      @default(0)
+  dailyWaterResetAt    DateTime @default(now())
+  dailyGatherCount     Int      @default(0)
+  dailyGatherResetAt   DateTime @default(now())
+  hasCompletedTutorial Boolean  @default(false)
+  pendingLevelUp       Boolean  @default(false)
+
+  luckyEnvelopeTickets            Int @default(0)
+  totalLuckyEnvelopesOpened       Int @default(0)
+  totalLuckyEnvelopeTicketsEarned Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plots           FarmPlot[]
+  inventory       FarmInventoryItem[]
+  collections     FarmCollection[]
+  activityLogs    FarmActivityLog[]
+  redemptions     FarmRewardRedemption[]
+  userDecorations FarmUserDecoration[]
+  transactions    FarmTransaction[]
+
+  @@index([level])
+  @@index([farmCoin])
+}
+
+model FarmPlot {
+  id     String   @id @default(uuid())
+  farmId String
+  farm   UserFarm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  plotIndex Int // 0..24
+  gridRow   Int
+  gridCol   Int
+  worldX    Float?
+  worldY    Float?
+
+  status        FarmPlotStatus @default(LOCKED)
+  soilQuality   Float          @default(1.0)
+  waterLevel    Float          @default(100.0)
+  lastWateredAt DateTime?
+
+  fertilizerItemId String?
+  fertilizerBonus  Float   @default(0.0)
+
+  cropInstanceId String?           @unique
+  cropInstance   FarmCropInstance? @relation(fields: [cropInstanceId], references: [id], onDelete: SetNull)
+
+  unlockCost  Int @default(0)
+  unlockLevel Int @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([farmId, plotIndex])
+  @@index([farmId, status])
+}
+
+model FarmCrop {
+  id             String           @id @default(uuid())
+  code           String           @unique
+  name           String
+  category       FarmCropCategory
+  rarity         FarmRarity       @default(COMMON)
+  description    String?          @db.Text
+  iconUrl        String?
+  spriteAtlasKey String?
+
+  growDuration        Int // Tính bằng giây
+  seedPrice           Int
+  sellPrice           Int
+  baseYield           Int @default(4)
+  rewardExp           Int @default(20)
+  rewardFarmCoin      Int @default(15)
+  rewardLoyaltyPoints Int @default(0)
+
+  baseMutationRate Float   @default(0.05)
+  minFarmLevel     Int     @default(1)
+  isAvailable      Boolean @default(true)
+  isEventOnly      Boolean @default(false)
+  eventId          String?
+  sortOrder        Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mutations         FarmCropMutation[]
+  instances         FarmCropInstance[]
+  collections       FarmCollection[]
+  recipeIngredients FarmRecipeIngredient[]
+
+  @@index([category])
+  @@index([rarity])
+  @@index([minFarmLevel])
+}
+
+model FarmCropMutation {
+  id           String   @id @default(uuid())
+  code         String   @unique
+  name         String
+  sourceCropId String
+  sourceCrop   FarmCrop @relation(fields: [sourceCropId], references: [id], onDelete: Cascade)
+
+  mutationType   FarmMutationType
+  rarity         FarmRarity       @default(RARE)
+  description    String?          @db.Text
+  spriteKey      String?
+  colorHex       String?
+  glowEffect     String?
+  particleEffect String?
+  soundEffect    String?
+
+  mutationChance      Float // Tỷ lệ tương đối
+  yieldMultiplier     Float   @default(1.5)
+  rewardExp           Int     @default(60)
+  rewardFarmCoin      Int     @default(50)
+  rewardLoyaltyPoints Int     @default(1)
+  sellPrice           Int?
+  collectionScore     Int     @default(100)
+  isEventOnly         Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  instances   FarmCropInstance[]
+  collections FarmCollection[]
+
+  @@index([sourceCropId])
+  @@index([rarity])
+}
+
+model FarmCropInstance {
+  id         String            @id @default(uuid())
+  cropId     String
+  crop       FarmCrop          @relation(fields: [cropId], references: [id])
+  mutationId String?
+  mutation   FarmCropMutation? @relation(fields: [mutationId], references: [id])
+
+  plot FarmPlot?
+
+  plantedAt   DateTime  @default(now())
+  stage1At    DateTime
+  stage2At    DateTime
+  stage3At    DateTime
+  readyAt     DateTime
+  harvestedAt DateTime?
+
+  isMutated Boolean @default(false)
+
+  cropNameSnapshot       String
+  growDurationSnapshot   Int
+  baseYieldSnapshot      Int
+  mutationRateSnapshot   Float
+  rewardExpSnapshot      Int
+  rewardFarmCoinSnapshot Int
+
+  calculatedYield  Int?
+  gatheredCount    Int  @default(0)
+  maxGatherAllowed Int  @default(1)
+  wateredCount     Int  @default(0)
+  fertilizedCount  Int  @default(0)
+  version          Int  @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([cropId])
+  @@index([readyAt])
+  @@index([harvestedAt])
+}
+
+model FarmInventoryItem {
+  id     String   @id @default(uuid())
+  farmId String
+  farm   UserFarm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  itemType    FarmItemType
+  referenceId String
+  itemName    String
+  itemCode    String
+  rarity      FarmRarity   @default(COMMON)
+  quantity    Int          @default(0)
+  isLocked    Boolean      @default(false)
+  isSeen      Boolean      @default(false)
+  seenAt      DateTime?
+  metadata    Json?
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([farmId, itemType, referenceId])
+  @@index([farmId, itemType])
+  @@index([farmId, isSeen])
+}
+
+model FarmCollection {
+  id     String   @id @default(uuid())
+  farmId String
+  farm   UserFarm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  cropId     String
+  crop       FarmCrop          @relation(fields: [cropId], references: [id])
+  mutationId String?
+  mutation   FarmCropMutation? @relation(fields: [mutationId], references: [id])
+
+  isUnlocked        Boolean  @default(true)
+  firstDiscoveredAt DateTime @default(now())
+  harvestCount      Int      @default(1)
+  highestYield      Int      @default(1)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([farmId, cropId, mutationId])
+  @@index([farmId])
+}
+
+model FarmMission {
+  id          String          @id @default(uuid())
+  code        String          @unique
+  title       String
+  description String?         @db.Text
+  type        FarmMissionType
+  actionType  String // PLANT, WATER, HARVEST, DISCOVER_MUTATION, HELP_FRIEND, ORDER_COMPLETED
+  targetCount Int
+
+  rewardExp           Int           @default(50)
+  rewardFarmCoin      Int           @default(30)
+  rewardLoyaltyPoints Int           @default(0)
+  rewardItemId        String?
+  rewardItemType      FarmItemType?
+  rewardItemQty       Int           @default(0)
+
+  startDate DateTime?
+  endDate   DateTime?
+  isActive  Boolean   @default(true)
+  sortOrder Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  progress FarmMissionProgress[]
+}
+
+model FarmMissionProgress {
+  id        String      @id @default(uuid())
+  userId    String
+  missionId String
+  mission   FarmMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  currentCount Int       @default(0)
+  isCompleted  Boolean   @default(false)
+  isClaimed    Boolean   @default(false)
+  periodKey    String // "2026-09-13" (Daily), "2026-W37" (Weekly), "LIFETIME" (Achievement)
+  completedAt  DateTime?
+  claimedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, missionId, periodKey])
+  @@index([userId, isClaimed])
+}
+
+model FarmReward {
+  id          String             @id @default(uuid())
+  code        String             @unique
+  title       String
+  description String?            @db.Text
+  imageUrl    String?
+  category    FarmRewardCategory
+
+  voucherId String?
+  voucher   Voucher? @relation(fields: [voucherId], references: [id])
+
+  costFarmCoin      Int     @default(0)
+  costLoyaltyPoints Int     @default(0)
+  stock             Int?
+  redeemedCount     Int     @default(0)
+  limitPerUser      Int     @default(1)
+  minFarmLevel      Int     @default(1)
+  requiredTierId    String?
+
+  isActive  Boolean   @default(true)
+  startDate DateTime?
+  endDate   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  redemptions FarmRewardRedemption[]
+
+  @@index([category])
+  @@index([isActive])
+}
+
+model FarmRewardRedemption {
+  id       String     @id @default(uuid())
+  userId   String
+  farmId   String
+  farm     UserFarm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  rewardId String
+  reward   FarmReward @relation(fields: [rewardId], references: [id])
+
+  farmCoinSpent      Int     @default(0)
+  loyaltyPointsSpent Int     @default(0)
+  voucherCodeIssued  String?
+  customerVoucherId  String?
+  pointTxId          String?
+  status             String  @default("COMPLETED")
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, rewardId])
+  @@index([createdAt])
+}
+
+model FarmFriendAction {
+  id           String   @id @default(uuid())
+  actorUserId  String
+  actorUser    User     @relation("FarmFriendActor", fields: [actorUserId], references: [id], onDelete: Cascade)
+  targetFarmId String
+  plotIndex    Int
+  actionType   String // WATER, GATHER
+  yieldTaken   Int      @default(0)
+  isFriend     Boolean  @default(false)
+  actionDate   DateTime @db.Date
+  createdAt    DateTime @default(now())
+
+  @@index([actorUserId, actionDate])
+  @@index([targetFarmId, actionDate])
+}
+
+model FarmFriendship {
+  id        String   @id @default(uuid())
+  userId    String
+  friendId  String
+  status    String   @default("ACCEPTED") // PENDING, ACCEPTED
+  createdAt DateTime @default(now())
+
+  user   User @relation("UserFarmFriends", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendFarmUsers", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, friendId])
+  @@index([userId])
+  @@index([friendId])
+}
+
+model FarmActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  farmId    String
+  farm      UserFarm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  action    String // PLANT, WATER, FERTILIZE, HARVEST, MUTATION, PURCHASE, REDEEM, FRIEND_HELP, FRIEND_GATHER
+  plotIndex Int?
+  details   Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, action, createdAt])
+  @@index([farmId, createdAt])
+}
+
+model FarmDecoration {
+  id            String  @id @default(uuid())
+  code          String  @unique
+  name          String
+  category      String // FENCE, LANTERN, SAKURA, BENCH, STATUE, KOI_POND, PATH
+  iconUrl       String?
+  spriteKey     String
+  priceFarmCoin Int     @default(100)
+  buffType      String? // GROWTH_SPEED, MUTATION_CHANCE, TREE_XP
+  buffValue     Float   @default(0.0)
+  unlockLevel   Int     @default(1)
+  isAvailable   Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FarmUserDecoration {
+  id     String   @id @default(uuid())
+  farmId String
+  farm   UserFarm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  decorationCode String
+  placedX        Float
+  placedY        Float
+  isPlaced       Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([farmId])
+}
+
+model FarmRecipe {
+  id                  String  @id @default(uuid())
+  code                String  @unique
+  name                String
+  description         String? @db.Text
+  dishImageUrl        String?
+  rewardExp           Int     @default(100)
+  rewardFarmCoin      Int     @default(80)
+  rewardLoyaltyPoints Int     @default(5)
+  voucherRewardId     String?
+  unlockLevel         Int     @default(5)
+  isActive            Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ingredients FarmRecipeIngredient[]
+}
+
+model FarmRecipeIngredient {
+  id          String     @id @default(uuid())
+  recipeId    String
+  recipe      FarmRecipe @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  cropId      String
+  crop        FarmCrop   @relation(fields: [cropId], references: [id])
+  requiredQty Int        @default(1)
+
+  @@unique([recipeId, cropId])
+}
+
+model FarmPlantAsset {
+  id           String  @id @default(uuid())
+  cropCode     String // e.g. "JAPANESE_RICE", "STRAWBERRY", "GRAPE"
+  cropName     String?
+  assetType    String // "STAGE" or "MUTATION"
+  stageIndex   Int? // 0..5
+  mutationCode String? // e.g. "MOONLIGHT_RICE", "GOLDEN_RICE"
+  mutationName String? // e.g. "Lúa Nguyệt Quang"
+
+  originalUrl String?
+  avifUrl     String
+  webpUrl     String
+  fallbackUrl String?
+
+  originalFormat   String? @default("png")
+  originalFileSize Int?    @default(0)
+  avifFileSize     Int?    @default(0)
+  webpFileSize     Int?    @default(0)
+
+  width    Int?    @default(128)
+  height   Int?    @default(136)
+  hasAlpha Boolean @default(true)
+
+  renderScale   Float @default(1.0)
+  renderOffsetX Float @default(0.0)
+  renderOffsetY Float @default(0.0)
+  anchorX       Float @default(0.5)
+  anchorY       Float @default(0.85)
+
+  version  Int     @default(1)
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cropCode, assetType, stageIndex, mutationCode])
+  @@index([cropCode])
+  @@index([assetType])
+}
+
+model FarmLuckyEnvelopeConfig {
+  id                         String   @id @default(uuid())
+  key                        String   @unique @default("DEFAULT")
+  isEventActive              Boolean  @default(true)
+  allowExistingTicketsToOpen Boolean  @default(true)
+  maxVisibleEnvelopes        Int      @default(8)
+  ticketsPerMission          Int      @default(1)
+  updatedAt                  DateTime @updatedAt
+}
+
+model FarmLuckyEnvelopeReward {
+  id           String     @id @default(uuid())
+  name         String
+  description  String?    @db.Text
+  rewardType   String // COIN, EXP, ENERGY, SEED, FERTILIZER, MUTATION_CROP, DECORATION, CUSTOM
+  referenceId  String? // e.g. 'ORGANIC_MUTATION_FERTILIZER', 'JAPANESE_RICE'
+  minAmount    Int        @default(1)
+  maxAmount    Int        @default(1)
+  rarity       FarmRarity @default(COMMON)
+  weight       Float      @default(50) // Weighted Random Selection
+  imageUrl     String?
+  isActive     Boolean    @default(true)
+  globalStock  Int? // null = unlimited
+  claimedStock Int        @default(0)
+  perUserLimit Int? // null = unlimited
+  startDate    DateTime?
+  endDate      DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  openings FarmLuckyEnvelopeOpening[]
+
+  @@index([rarity])
+  @@index([isActive])
+}
+
+model FarmLuckyEnvelopeOpening {
+  id       String                  @id @default(uuid())
+  userId   String
+  user     User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rewardId String
+  reward   FarmLuckyEnvelopeReward @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+
+  rewardType   String
+  rewardName   String
+  rewardAmount Int
+  rarity       FarmRarity
+  referenceId  String?
+  ticketSource String     @default("MISSION")
+  missionId    String?
+
+  openedAt DateTime @default(now())
+
+  @@index([userId, openedAt])
+  @@index([rewardId])
+}
+
+model FarmTransaction {
+  id                String    @id @default(uuid())
+  userId            String
+  user              User      @relation("UserFarmTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  farmId            String?
+  farm              UserFarm? @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  type              String // SEED_PURCHASE, ITEM_PURCHASE, PRODUCE_SALE, VOUCHER_REDEMPTION, COIN_TO_POINT_EXCHANGE, MISSION_REWARD, LEVEL_REWARD, ADMIN_GIFT, MAINTENANCE_GIFT, FRIEND_STEAL_GAIN, FRIEND_STEAL_LOSS, FRIEND_WATER, SYSTEM_COMPENSATION, LUCKY_ENVELOPE_REWARD
+  source            String    @default("SYSTEM") // SHOP, REDEMPTION, EXCHANGE, MAILBOX, SOCIAL, MISSION, LUCKY_ENVELOPE, ADMIN
+  referenceId       String?
+  itemId            String?
+  itemCode          String?
+  itemNameSnapshot  String?
+  itemIconUrl       String?
+  quantity          Int       @default(0)
+  unitPrice         Float     @default(0)
+  totalValue        Float     @default(0)
+  farmCoinDelta     Int       @default(0)
+  avoraPointDelta   Int       @default(0)
+  balanceCoinAfter  Int?
+  balancePointAfter Int?
+  status            String    @default("COMPLETED")
+  metadata          Json?
+  createdAt         DateTime  @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, type])
+  @@index([type, createdAt])
+  @@index([referenceId])
+  @@index([farmId])
+}
+
+model FarmMail {
+  id          String    @id @default(uuid())
+  title       String
+  sender      String    @default("Hệ thống AVORA")
+  content     String    @db.Text
+  bannerUrl   String?
+  type        String    @default("SYSTEM") // MAINTENANCE, EVENT, COMPENSATION, ADMIN_CUSTOM, SYSTEM, SEASONAL
+  targetType  String    @default("ALL") // ALL, SPECIFIC_USERS, LEVEL_RANGE, MEMBERSHIP_TIER, INACTIVE_USERS, BRANCH
+  targetValue String?
+  rewards     Json // Array of rewards: [{ type: 'COIN'|'AVORA_POINT'|'SEED'|'PRODUCE'|'ITEM'|'MYSTERY_PACK'|'VOUCHER'|'DECORATION', code?: string, name: string, quantity: number, iconUrl?: string, voucherId?: string }]
+  sentAt      DateTime  @default(now())
+  scheduledAt DateTime?
+  status      String    @default("SENT") // SCHEDULED, SENT, REVOKED
+  isRevoked   Boolean   @default(false)
+  revokedAt   DateTime?
+  expiresAt   DateTime?
+  createdById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  userMails FarmUserMail[]
+
+  @@index([type, sentAt])
+  @@index([status, isRevoked])
+}
+
+model FarmUserMail {
+  id        String    @id @default(uuid())
+  mailId    String
+  mail      FarmMail  @relation(fields: [mailId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation("UserFarmMails", fields: [userId], references: [id], onDelete: Cascade)
+  isRead    Boolean   @default(false)
+  isClaimed Boolean   @default(false)
+  claimedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([mailId, userId])
+  @@index([userId, isClaimed])
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model FarmSocialActivity {
+  id          String   @id @default(uuid())
+  farmOwnerId String
+  farmOwner   User     @relation("FarmOwnerActivities", fields: [farmOwnerId], references: [id], onDelete: Cascade)
+  actorUserId String
+  actorUser   User     @relation("ActorSocialActivities", fields: [actorUserId], references: [id], onDelete: Cascade)
+  action      String // VISIT, WATER, STEAL, HELP, GIFT
+  plotIndex   Int?
+  cropId      String?
+  cropCode    String?
+  cropName    String?
+  quantity    Int      @default(0)
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([farmOwnerId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+}
+
+model FarmExchangeSetting {
+  id                     String   @id @default("default")
+  coinPerPoint           Int      @default(5)
+  minCoins               Int      @default(100)
+  maxCoinsPerTransaction Int      @default(50000)
+  dailyLimitCoins        Int      @default(100000)
+  exchangeStep           Int      @default(1)
+  isEnabled              Boolean  @default(true)
+  updatedAt              DateTime @updatedAt
+  createdAt              DateTime @default(now())
+}
+
+// ==========================================
+// AVORA FARM - GLOBAL GARDEN LAYOUT SYSTEM
+// ==========================================
+
+enum FarmGardenLayoutStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FarmGardenObjectType {
+  PLOT
+  DECORATION
+  TREE
+  EFFECT
+}
+
+enum FarmGardenDisplayMode {
+  ALWAYS
+  DAY_ONLY
+  NIGHT_ONLY
+}
+
+enum FarmGardenDeviceMode {
+  ALL
+  DESKTOP_ONLY
+  MOBILE_ONLY
+}
+
+model FarmGardenLayout {
+  id          String                    @id @default(uuid())
+  code        String                    @unique
+  name        String
+  description String?                   @db.Text
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  versions    FarmGardenLayoutVersion[]
+}
+
+model FarmGardenLayoutVersion {
+  id                String                 @id @default(uuid())
+  layoutId          String
+  version           Int
+  status            FarmGardenLayoutStatus
+  revision          Int                    @default(0)
+  createdByUserId   String
+  publishedByUserId String?
+  publishedAt       DateTime?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  layout          FarmGardenLayout   @relation(fields: [layoutId], references: [id], onDelete: Cascade)
+  createdByUser   User               @relation("GardenLayoutCreatedBy", fields: [createdByUserId], references: [id])
+  publishedByUser User?              @relation("GardenLayoutPublishedBy", fields: [publishedByUserId], references: [id])
+  objects         FarmGardenObject[]
+
+  @@unique([layoutId, version])
+  @@index([layoutId, status])
+  @@index([publishedAt])
+}
+
+model FarmGardenAsset {
+  id               String             @id @default(uuid())
+  code             String             @unique
+  name             String
+  category         String
+  originalUrl      String?
+  avifUrl          String?
+  webpUrl          String?
+  fallbackUrl      String
+  originalFormat   String
+  mimeType         String
+  originalFileSize Int
+  width            Int
+  height           Int
+  hasAlpha         Boolean            @default(true)
+  defaultAnchorX   Float              @default(0.5)
+  defaultAnchorY   Float              @default(1.0)
+  defaultScale     Float              @default(1.0)
+  isActive         Boolean            @default(true)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  objects          FarmGardenObject[]
+}
+
+model FarmGardenObject {
+  id              String                @id @default(uuid())
+  objectKey       String
+  layoutVersionId String
+  objectType      FarmGardenObjectType
+  assetId         String?
+  parentId        String?
+  plotIndex       Int?
+  name            String?
+  positionX       Float
+  positionY       Float
+  width           Float
+  height          Float
+  scaleX          Float                 @default(1.0)
+  scaleY          Float                 @default(1.0)
+  rotation        Float                 @default(0.0)
+  opacity         Float                 @default(1.0)
+  zIndex          Int                   @default(0)
+  anchorX         Float                 @default(0.5)
+  anchorY         Float                 @default(1.0)
+  flipX           Boolean               @default(false)
+  flipY           Boolean               @default(false)
+  isVisible       Boolean               @default(true)
+  isLocked        Boolean               @default(false)
+  displayMode     FarmGardenDisplayMode @default(ALWAYS)
+  deviceMode      FarmGardenDeviceMode  @default(ALL)
+  animationConfig Json?
+  styleConfig     Json?
+  startAt         DateTime?
+  endAt           DateTime?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  layoutVersion FarmGardenLayoutVersion @relation(fields: [layoutVersionId], references: [id], onDelete: Cascade)
+  asset         FarmGardenAsset?        @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  parent        FarmGardenObject?       @relation("GardenObjectHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children      FarmGardenObject[]      @relation("GardenObjectHierarchy")
+
+  @@unique([layoutVersionId, objectKey])
+  @@unique([layoutVersionId, plotIndex])
+  @@index([layoutVersionId, objectType])
+  @@index([parentId])
+}
+
+model FarmLevelConfig {
+  id             String   @id @default(uuid())
+  level          Int      @unique
+  expRequired    Int      @default(100)
+  coinCost       Int      @default(0)
+  pointCost      Int      @default(0)
+  requiredCrops  Json? // Mảng nông sản yêu cầu: [{ cropCode: string, quantity: number }]
+  speedBoost     Float    @default(0)
+  energyBonus    Int      @default(5)
+  sellPriceBoost Float    @default(0)
+  unlockTitle    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([level])
+}
+
+// ==========================================
+// HỆ THỐNG ĐÁNH GIÁ & TRẢI NGHIỆM KHÁCH HÀNG (REVIEWS & RATINGS)
+// ==========================================
+
+enum ProductReviewStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+}
+
+enum OrderReviewStatus {
+  ACTIVE
+  HIDDEN
+  MODERATED
+}
+
+enum ReviewMediaType {
+  IMAGE
+  VIDEO
+}
+
+enum ReviewReactionType {
+  LIKE
+  DISLIKE
+}
+
+model ProductReview {
+  id                  String              @id @default(uuid())
+  userId              String
+  productId           String
+  rating              Int // 1 - 5 (Integer)
+  content             String              @db.Text
+  isVerifiedPurchase  Boolean             @default(false)
+  verifiedOrderId     String?
+  verifiedOrderItemId String?
+  purchasedAt         DateTime?
+  status              ProductReviewStatus @default(ACTIVE)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  user              User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product           Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  verifiedOrder     Order?           @relation("VerifiedOrderReviews", fields: [verifiedOrderId], references: [id], onDelete: SetNull)
+  verifiedOrderItem OrderItem?       @relation("VerifiedOrderItemReviews", fields: [verifiedOrderItemId], references: [id], onDelete: SetNull)
+  media             ReviewMedia[]
+  reactions         ReviewReaction[]
+  reply             ReviewReply?
+
+  @@unique([userId, productId])
+  @@index([productId, status])
+  @@index([userId])
+  @@index([rating])
+  @@index([createdAt])
+  @@index([verifiedOrderId])
+}
+
+model ReviewMedia {
+  id              String          @id @default(uuid())
+  productReviewId String?
+  orderReviewId   String?
+  followUpId      String?
+  mediaType       ReviewMediaType @default(IMAGE)
+  url             String          @db.Text
+  thumbnailUrl    String?         @db.Text
+  mimeType        String
+  sizeBytes       Int
+  width           Int?
+  height          Int?
+  durationSeconds Float?
+  displayOrder    Int             @default(0)
+  createdAt       DateTime        @default(now())
+
+  productReview ProductReview?       @relation(fields: [productReviewId], references: [id], onDelete: Cascade)
+  orderReview   OrderReview?         @relation(fields: [orderReviewId], references: [id], onDelete: Cascade)
+  followUp      OrderReviewFollowUp? @relation(fields: [followUpId], references: [id], onDelete: Cascade)
+
+  @@index([productReviewId])
+  @@index([orderReviewId])
+  @@index([followUpId])
+}
+
+model ReviewReaction {
+  id        String             @id @default(uuid())
+  reviewId  String
+  userId    String
+  type      ReviewReactionType
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  review ProductReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@index([reviewId, type])
+  @@index([userId])
+}
+
+model ReviewReply {
+  id              String   @id @default(uuid())
+  productReviewId String?  @unique
+  orderReviewId   String?  @unique
+  adminId         String
+  content         String   @db.Text
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  productReview ProductReview? @relation(fields: [productReviewId], references: [id], onDelete: Cascade)
+  orderReview   OrderReview?   @relation(fields: [orderReviewId], references: [id], onDelete: Cascade)
+  admin         User           @relation("AdminReviewReplies", fields: [adminId], references: [id])
+
+  @@index([adminId])
+}
+
+model OrderReview {
+  id                   String            @id @default(uuid())
+  orderId              String
+  userId               String
+  overallRating        Int // 1 - 5 (Integer)
+  foodRating           Int?
+  serviceRating        Int?
+  deliveryRating       Int?
+  content              String            @db.Text
+  rewardPointsSnapshot Int               @default(999)
+  rewardGranted        Boolean           @default(false)
+  rewardGrantedAt      DateTime?
+  pointTransactionId   String?           @unique
+  reviewExpiresAt      DateTime
+  status               OrderReviewStatus @default(ACTIVE)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  order            Order                 @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  pointTransaction PointTransaction?     @relation(fields: [pointTransactionId], references: [id], onDelete: SetNull)
+  media            ReviewMedia[]
+  followUps        OrderReviewFollowUp[]
+  reply            ReviewReply?
+
+  @@unique([orderId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([status])
+}
+
+model OrderReviewFollowUp {
+  id            String   @id @default(uuid())
+  orderReviewId String
+  userId        String
+  content       String   @db.Text
+  createdAt     DateTime @default(now())
+
+  orderReview OrderReview   @relation(fields: [orderReviewId], references: [id], onDelete: Cascade)
+  user        User          @relation(fields: [userId], references: [id], onDelete: Restrict)
+  media       ReviewMedia[]
+
+  @@index([orderReviewId, createdAt])
+  @@index([userId])
+}

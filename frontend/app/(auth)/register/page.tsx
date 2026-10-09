@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { ArrowRight, Lock, Mail, User, Eye, EyeOff, Phone } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
-import Loading from '../../loading';
+import LoadingOverlay from '@/components/LoadingOverlay';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -173,7 +173,7 @@ export default function RegisterPage() {
 
   return (
     <>
-      {(loading || !isVideoLoaded) && <Loading />}
+      {(loading || !isVideoLoaded) && <LoadingOverlay />}
       <div className="relative min-h-screen text-white flex">
         {/* Full-screen Background Video */}
         <video

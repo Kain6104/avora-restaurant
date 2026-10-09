@@ -39,7 +39,6 @@ export async function printOrderInvoice(
   const typeLabel = printType === 'RECEIPT' ? 'Hóa đơn POS' : 'Đơn hàng Online';
 
   onStart?.();
-  const toastId = toast.loading(`Đang nạp ${typeLabel} #${order.orderCode}...`);
 
   try {
     const res = await fetch(`/api/print-templates/render/order/${order.id}?type=${printType}`, {
@@ -71,17 +70,16 @@ export async function printOrderInvoice(
       try {
         iframe.contentWindow?.focus();
         iframe.contentWindow?.print();
-        toast.success(`Đã mở lệnh in ${typeLabel} #${order.orderCode}`, { id: toastId });
       } catch (printErr) {
         console.error('Lỗi khi gọi window.print():', printErr);
-        toast.error('Lỗi khi mở hộp thoại in trình duyệt', { id: toastId });
+        toast.error('Lỗi khi mở hộp thoại in trình duyệt');
       } finally {
         onEnd?.();
       }
     };
   } catch (err: any) {
     console.error('Lỗi in hóa đơn:', err);
-    toast.error(err.message || 'Không thể in hóa đơn', { id: toastId });
+    toast.error(err.message || 'Không thể in hóa đơn');
     onEnd?.();
   }
 }

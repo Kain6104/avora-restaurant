@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function LegacyEditRedirectPage() {
+function LegacyEditRedirectContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const id = searchParams.get('id');
@@ -22,3 +22,18 @@ export default function LegacyEditRedirectPage() {
     </div>
   );
 }
+
+export default function LegacyEditRedirectPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center text-xs text-slate-500">
+          Đang tải...
+        </div>
+      }
+    >
+      <LegacyEditRedirectContent />
+    </Suspense>
+  );
+}
+

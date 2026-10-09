@@ -3,14 +3,15 @@ import Footer from "../../components/Footer";
 import BottomNav from "../../components/BottomNav";
 
 export default async function MainLayout({ children }: { children: React.ReactNode }) {
+  const apiUrl = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
   const [categories, branches, settings] = await Promise.all([
-    fetch('http://localhost:3001/api/categories', { cache: 'no-store' })
+    fetch(`${apiUrl}/api/categories`, { cache: 'no-store' })
       .then(res => res.json())
       .catch(() => []),
-    fetch('http://localhost:3001/api/home/branches', { cache: 'no-store' })
+    fetch(`${apiUrl}/api/home/branches`, { cache: 'no-store' })
       .then(res => res.json())
       .catch(() => []),
-    fetch('http://localhost:3001/api/home/settings', { cache: 'no-store' })
+    fetch(`${apiUrl}/api/home/settings`, { cache: 'no-store' })
       .then(res => res.json())
       .catch(() => null),
   ]);

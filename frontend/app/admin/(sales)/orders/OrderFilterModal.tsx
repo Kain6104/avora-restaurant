@@ -78,14 +78,14 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-1.5 sm:p-4 animate-in fade-in duration-150 select-none">
       <div
-        className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh]"
+        className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[96vh] sm:max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-5 py-4 flex items-center justify-between border-b border-slate-100 shrink-0">
-          <h2 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+        <div className="px-3.5 py-2.5 sm:px-5 sm:py-4 flex items-center justify-between border-b border-slate-100 shrink-0">
+          <h2 className="text-sm sm:text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <span>Bộ lọc tìm kiếm</span>
           </h2>
           <button
@@ -99,7 +99,7 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
         </div>
 
         {/* Modal Form Body */}
-        <form onSubmit={handleApply} className="p-5 overflow-y-auto space-y-4 text-xs">
+        <form onSubmit={handleApply} className="p-3 sm:p-5 overflow-y-auto space-y-3 sm:space-y-4 text-xs">
           {/* 1. Thời gian */}
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">Thời gian</label>
@@ -256,22 +256,22 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
           </div>
 
           {/* Bottom Actions */}
-          <div className="pt-2 grid grid-cols-2 gap-3">
+          <div className="pt-2 grid grid-cols-2 gap-2 sm:gap-3">
             <button
               type="button"
               onClick={handleReset}
-              className="py-2.5 px-4 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-98"
+              className="min-h-[44px] py-2.5 px-3 sm:px-4 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs active:scale-98"
             >
-              <Cloud className="w-4 h-4 text-slate-500" />
-              <span>Xóa thiết lập</span>
+              <Cloud className="w-4 h-4 text-slate-500 shrink-0" />
+              <span className="truncate">Xóa thiết lập</span>
             </button>
 
             <button
               type="submit"
-              className="py-2.5 px-4 bg-[#5b3eb8] hover:bg-[#4d329f] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-purple-600/20 active:scale-98"
+              className="min-h-[44px] py-2.5 px-3 sm:px-4 bg-[#5b3eb8] hover:bg-[#4d329f] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-md shadow-purple-600/20 active:scale-98"
             >
-              <Check className="w-4 h-4" />
-              <span>Áp dụng bộ lọc</span>
+              <Check className="w-4 h-4 shrink-0" />
+              <span className="truncate">Áp dụng bộ lọc</span>
             </button>
           </div>
         </form>

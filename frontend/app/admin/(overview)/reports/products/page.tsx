@@ -319,7 +319,7 @@ export default function AdminProductReportsPage() {
   const categoryTree = data?.categoryTree || [];
 
   return (
-    <div className="space-y-6 max-w-[1600px] mx-auto pb-16">
+    <div className="space-y-3 sm:space-y-4 md:space-y-6 max-w-[1600px] mx-auto pb-8 sm:pb-16 admin-page-wrapper">
       {/* 1. Page Header */}
       <PageHeader
         title="Báo cáo Tổng hợp Danh mục & Mặt hàng"
@@ -330,33 +330,33 @@ export default function AdminProductReportsPage() {
           { label: 'Báo cáo mặt hàng' },
         ]}
         actions={
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             <button
               onClick={fetchReportData}
               disabled={loading}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-sm font-medium rounded-xl shadow-2xs transition-colors"
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-3 py-2 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-xs sm:text-sm font-medium rounded-xl shadow-2xs transition-colors min-h-[40px]"
             >
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
               <span>Làm mới</span>
             </button>
             <button
               onClick={handleExportExcel}
               disabled={exporting || loading}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-[#800020] hover:bg-[#6b001b] text-white text-sm font-semibold rounded-xl shadow-sm transition-colors"
+              className="inline-flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-2 bg-[#800020] hover:bg-[#6b001b] text-white text-xs sm:text-sm font-semibold rounded-xl shadow-sm transition-colors min-h-[40px]"
             >
-              <Download size={15} className={exporting ? 'animate-bounce' : ''} />
-              <span>{exporting ? 'Đang xuất Excel...' : 'Xuất báo cáo Excel'}</span>
+              <Download size={14} className={exporting ? 'animate-bounce' : ''} />
+              <span>{exporting ? 'Đang xuất Excel...' : 'Xuất Excel'}</span>
             </button>
           </div>
         }
       />
 
       {/* 2. Comprehensive Filter Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 sm:p-5 space-y-4">
+      <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs p-2.5 sm:p-4 lg:p-5 space-y-2.5 sm:space-y-4">
         {/* Row 1: Presets & Primary Filters */}
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          {/* Presets */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2.5">
+          {/* Presets - Horizontal Scrollable on Mobile */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600 overflow-x-auto scrollbar-none py-1 max-w-full shrink-0">
             {[
               { id: 'today', label: 'Hôm nay' },
               { id: 'yesterday', label: 'Hôm qua' },
@@ -368,7 +368,7 @@ export default function AdminProductReportsPage() {
               <button
                 key={p.id}
                 onClick={() => applyPreset(p.id)}
-                className={`px-2.5 py-1.5 rounded-lg transition-all ${
+                className={`px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg transition-all whitespace-nowrap text-[11px] sm:text-xs min-h-[36px] sm:min-h-[auto] flex items-center ${
                   datePreset === p.id
                     ? 'bg-white text-[#800020] shadow-xs'
                     : 'hover:text-slate-900'
@@ -380,8 +380,8 @@ export default function AdminProductReportsPage() {
           </div>
 
           {/* Custom Date Pickers */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-slate-50">
-            <Calendar size={14} className="text-slate-400" />
+          <div className="flex items-center gap-1 sm:gap-1.5 text-xs text-slate-600 border border-slate-200 rounded-xl px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-slate-50 min-h-[40px]">
+            <Calendar size={13} className="text-slate-400 shrink-0" />
             <input
               type="date"
               value={fromDate}
@@ -389,9 +389,9 @@ export default function AdminProductReportsPage() {
                 setDatePreset('custom');
                 setFromDate(e.target.value);
               }}
-              className="bg-transparent border-none outline-none font-medium text-slate-700"
+              className="bg-transparent border-none outline-none font-medium text-slate-700 text-xs w-[105px] sm:w-auto"
             />
-            <span className="text-slate-400">→</span>
+            <span className="text-slate-400 text-xs">→</span>
             <input
               type="date"
               value={toDate}
@@ -399,17 +399,17 @@ export default function AdminProductReportsPage() {
                 setDatePreset('custom');
                 setToDate(e.target.value);
               }}
-              className="bg-transparent border-none outline-none font-medium text-slate-700"
+              className="bg-transparent border-none outline-none font-medium text-slate-700 text-xs w-[105px] sm:w-auto"
             />
           </div>
 
           {/* Hours Filter */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600 border border-slate-200 rounded-xl px-2.5 py-1.5 bg-slate-50">
-            <Clock size={14} className="text-slate-400" />
+          <div className="flex items-center gap-1 text-xs text-slate-600 border border-slate-200 rounded-xl px-2 py-1.5 sm:px-2.5 sm:py-1.5 bg-slate-50 min-h-[40px]">
+            <Clock size={13} className="text-slate-400 shrink-0" />
             <select
               value={fromHour}
               onChange={(e) => setFromHour(e.target.value)}
-              className="bg-transparent border-none outline-none font-medium text-slate-700 cursor-pointer"
+              className="bg-transparent border-none outline-none font-medium text-slate-700 cursor-pointer text-xs"
             >
               {Array.from({ length: 24 }).map((_, i) => (
                 <option key={i} value={i}>
@@ -417,11 +417,11 @@ export default function AdminProductReportsPage() {
                 </option>
               ))}
             </select>
-            <span className="text-slate-400">→</span>
+            <span className="text-slate-400 text-xs">→</span>
             <select
               value={toHour}
               onChange={(e) => setToHour(e.target.value)}
-              className="bg-transparent border-none outline-none font-medium text-slate-700 cursor-pointer"
+              className="bg-transparent border-none outline-none font-medium text-slate-700 cursor-pointer text-xs"
             >
               {Array.from({ length: 24 }).map((_, i) => (
                 <option key={i} value={i}>
@@ -432,12 +432,12 @@ export default function AdminProductReportsPage() {
           </div>
 
           {/* Branch Filter */}
-          <div className="flex items-center gap-2">
-            <Store size={15} className="text-slate-400" />
+          <div className="flex items-center gap-1.5 min-h-[40px]">
+            <Store size={14} className="text-slate-400 shrink-0 hidden sm:inline-block" />
             <select
               value={branchFilter}
               onChange={(e) => setBranchFilter(e.target.value)}
-              className="text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 outline-none cursor-pointer hover:bg-slate-100/70"
+              className="text-xs font-medium text-slate-700 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 outline-none cursor-pointer hover:bg-slate-100/70 min-h-[40px]"
             >
               <option value="ALL">Tất cả chi nhánh</option>
               {metadata?.branches?.map((b: any) => (
@@ -449,30 +449,31 @@ export default function AdminProductReportsPage() {
           </div>
 
           {/* Search Box */}
-          <div className="relative flex-1 min-w-[200px]">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="relative flex-1 min-w-[130px] sm:min-w-[200px]">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Tìm theo tên món hoặc mã hàng..."
+              placeholder="Tìm món/mã hàng..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#800020]/20 focus:border-[#800020]"
+              className="w-full pl-8 pr-2.5 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-[#800020]/20 focus:border-[#800020] min-h-[40px]"
             />
           </div>
 
           {/* Advanced Filter Toggle */}
           <button
             onClick={() => setIsAdvancedFilterOpen(!isAdvancedFilterOpen)}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border transition-colors ${
+            className={`inline-flex items-center gap-1 px-2.5 py-2 text-xs font-semibold rounded-xl border transition-colors min-h-[40px] ${
               isAdvancedFilterOpen
                 ? 'bg-[#800020]/10 border-[#800020] text-[#800020]'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
             }`}
           >
             <Filter size={13} />
-            <span>Bộ lọc nâng cao</span>
+            <span className="hidden sm:inline">Bộ lọc nâng cao</span>
+            <span className="sm:hidden">Lọc</span>
             <ChevronDown
-              size={13}
+              size={12}
               className={`transition-transform duration-200 ${isAdvancedFilterOpen ? 'rotate-180' : ''}`}
             />
           </button>
@@ -480,16 +481,16 @@ export default function AdminProductReportsPage() {
           {/* Reset button */}
           <button
             onClick={resetFilters}
-            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors"
+            className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center border border-slate-200 sm:border-transparent"
             title="Đặt lại bộ lọc"
           >
-            <RotateCcw size={15} />
+            <RotateCcw size={14} />
           </button>
         </div>
 
         {/* Row 2: Advanced Collapsible Filter Drawer */}
         {isAdvancedFilterOpen && (
-          <div className="pt-3 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs">
+          <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3 text-xs">
             {/* Category */}
             <div>
               <label className="block text-[11px] font-semibold text-slate-500 mb-1">Danh mục</label>
@@ -643,25 +644,25 @@ export default function AdminProductReportsPage() {
       </div>
 
       {/* 3. 19 Metric KPI Dashboard Grid */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-[#800020]" />
-            Chỉ số Hiệu suất & Tài chính Mặt hàng
+      <div className="space-y-2.5 sm:space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1">
+          <h2 className="text-xs sm:text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+            <span className="w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full bg-[#800020] shrink-0" />
+            <span>Chỉ số Hiệu suất & Tài chính Mặt hàng</span>
           </h2>
-          <span className="text-xs text-slate-500">
-            Di chuột vào biểu tượng <Info size={12} className="inline text-slate-400" /> để xem công thức tính toán
+          <span className="text-[10px] sm:text-xs text-slate-500">
+            Chạm vào biểu tượng <Info size={11} className="inline text-slate-400" /> để xem công thức tính toán
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
           {/* KPI 1: SL Bán */}
           <KpiCard
             title="Số lượng bán"
             value={kpis?.totalSoldQuantity || 0}
             unit="món"
             formula="SUM(OrderItem.quantity) của các đơn hợp lệ trong kỳ"
-            icon={<ShoppingBag size={18} className="text-blue-600" />}
+            icon={<ShoppingBag size={16} className="text-blue-600" />}
             bgColor="bg-blue-50/60"
             borderColor="border-blue-100"
             textColor="text-blue-700"
@@ -674,7 +675,7 @@ export default function AdminProductReportsPage() {
             value={kpis?.totalOrderCount || 0}
             unit="đơn"
             formula="COUNT(DISTINCT Order.id) chứa các mặt hàng đã chọn"
-            icon={<Layers size={18} className="text-indigo-600" />}
+            icon={<Layers size={16} className="text-indigo-600" />}
             bgColor="bg-indigo-50/60"
             borderColor="border-indigo-100"
             textColor="text-indigo-700"
@@ -687,7 +688,7 @@ export default function AdminProductReportsPage() {
             value={kpis?.distinctCustomerCount || 0}
             unit="khách"
             formula="COUNT(DISTINCT CustomerPhone / CustomerId) đã mua"
-            icon={<Package size={18} className="text-cyan-600" />}
+            icon={<Package size={16} className="text-cyan-600" />}
             bgColor="bg-cyan-50/60"
             borderColor="border-cyan-100"
             textColor="text-cyan-700"
@@ -699,7 +700,7 @@ export default function AdminProductReportsPage() {
             title="Tiền hàng trước giảm"
             value={formatMoney(kpis?.grossProductSales || 0)}
             formula="SUM(quantity * priceAtSale). Đã bao gồm phụ thu Option."
-            icon={<DollarSign size={18} className="text-amber-600" />}
+            icon={<DollarSign size={16} className="text-amber-600" />}
             bgColor="bg-amber-50/60"
             borderColor="border-amber-100"
             textColor="text-amber-700"
@@ -711,7 +712,7 @@ export default function AdminProductReportsPage() {
             title="Doanh thu Option"
             value={formatMoney(kpis?.optionRevenue || 0)}
             formula="SUM(quantity * priceAdjustmentAtSale) của tất cả options đã chọn"
-            icon={<Sparkles size={18} className="text-emerald-600" />}
+            icon={<Sparkles size={16} className="text-emerald-600" />}
             bgColor="bg-emerald-50/60"
             borderColor="border-emerald-100"
             textColor="text-emerald-700"
@@ -723,7 +724,7 @@ export default function AdminProductReportsPage() {
             title="Giảm trực tiếp món"
             value={formatMoney(kpis?.directItemDiscount || 0)}
             formula="SUM(quantity * OrderItem.discountAmount) giảm giá trực tiếp từng dòng món"
-            icon={<Percent size={18} className="text-rose-600" />}
+            icon={<Percent size={16} className="text-rose-600" />}
             bgColor="bg-rose-50/60"
             borderColor="border-rose-100"
             textColor="text-rose-700"
@@ -735,7 +736,7 @@ export default function AdminProductReportsPage() {
             title="Giảm cấp đơn phân bổ"
             value={formatMoney(kpis?.allocatedOrderDiscount || 0)}
             formula="Order.discountAmount được phân bổ theo tỷ trọng giá trị các món hợp lệ (Thuật toán Largest Remainder)"
-            icon={<Percent size={18} className="text-orange-600" />}
+            icon={<Percent size={16} className="text-orange-600" />}
             bgColor="bg-orange-50/60"
             borderColor="border-orange-100"
             textColor="text-orange-700"
@@ -747,7 +748,7 @@ export default function AdminProductReportsPage() {
             title="Tổng giảm giá món"
             value={formatMoney(kpis?.totalProductDiscount || 0)}
             formula="Giảm trực tiếp món + Giảm giá cấp đơn phân bổ"
-            icon={<Percent size={18} className="text-red-600" />}
+            icon={<Percent size={16} className="text-red-600" />}
             bgColor="bg-red-50/60"
             borderColor="border-red-100"
             textColor="text-red-700"
@@ -759,7 +760,7 @@ export default function AdminProductReportsPage() {
             title="Doanh thu sau giảm"
             value={formatMoney(kpis?.netProductSalesAfterDiscount || 0)}
             formula="Tiền hàng trước giảm - Tổng giảm giá liên quan món"
-            icon={<TrendingUp size={18} className="text-teal-600" />}
+            icon={<TrendingUp size={16} className="text-teal-600" />}
             bgColor="bg-teal-50/60"
             borderColor="border-teal-100"
             textColor="text-teal-700"
@@ -771,7 +772,7 @@ export default function AdminProductReportsPage() {
             title="Doanh thu chưa VAT"
             value={formatMoney(kpis?.productRevenueBeforeTax || 0)}
             formula="Giá trị món ăn trước thuế VAT (Taxable Base)"
-            icon={<DollarSign size={18} className="text-slate-600" />}
+            icon={<DollarSign size={16} className="text-slate-600" />}
             bgColor="bg-slate-100/70"
             borderColor="border-slate-200"
             textColor="text-slate-800"
@@ -783,7 +784,7 @@ export default function AdminProductReportsPage() {
             title="Tổng thuế VAT món"
             value={formatMoney(kpis?.productTaxAmount || 0)}
             formula="SUM(taxAmount) của các mặt hàng. Tôn trọng snapshot lịch sử OrderItem."
-            icon={<Percent size={18} className="text-purple-600" />}
+            icon={<Percent size={16} className="text-purple-600" />}
             bgColor="bg-purple-50/60"
             borderColor="border-purple-100"
             textColor="text-purple-700"
@@ -795,7 +796,7 @@ export default function AdminProductReportsPage() {
             title="Doanh thu có VAT"
             value={formatMoney(kpis?.productRevenueWithTax || 0)}
             formula="Doanh thu chưa VAT + Tiền thuế VAT (Gross Product Sales With VAT)"
-            icon={<TrendingUp size={18} className="text-[#800020]" />}
+            icon={<TrendingUp size={16} className="text-[#800020]" />}
             bgColor="bg-[#800020]/5"
             borderColor="border-[#800020]/20"
             textColor="text-[#800020]"
@@ -805,18 +806,18 @@ export default function AdminProductReportsPage() {
         </div>
 
         {/* Order-Level Metrics Row (Strictly separated) */}
-        <div className="bg-slate-50/80 rounded-2xl border border-slate-200/80 p-3.5 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
-              <Truck size={14} className="text-slate-500" />
-              Chỉ số cấp Đơn hàng (Order-Level Metrics - Không tính lặp lại theo số món)
+        <div className="bg-slate-50/80 rounded-xl sm:rounded-2xl border border-slate-200/80 p-2.5 sm:p-3.5 space-y-2">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-xs">
+            <span className="font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5 text-[11px] sm:text-xs">
+              <Truck size={14} className="text-slate-500 shrink-0" />
+              <span>Chỉ số cấp Đơn hàng (Order-Level Metrics)</span>
             </span>
-            <span className="text-[11px] text-slate-400">
-              Phí ship, phụ phí dịch vụ và tiền hoàn trả thuộc cấp đơn duy nhất
+            <span className="text-[10px] sm:text-[11px] text-slate-400">
+              Phí ship, phụ phí dịch vụ và tiền hoàn trả thuộc cấp đơn
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5">
             <KpiCardSmall
               title="Phí ship gốc"
               value={formatMoney(kpis?.orderShippingFeeTotal || 0)}
@@ -844,7 +845,7 @@ export default function AdminProductReportsPage() {
               negative
             />
             <KpiCardSmall
-              title="DOANH THU RÒNG TOÀN HỆ THỐNG"
+              title="DOANH THU RÒNG"
               value={formatMoney(kpis?.netRevenueOverall || 0)}
               formula="Doanh thu hàng có VAT + Ship thực thu + Phụ phí dịch vụ - Tiền hoàn trả"
               highlight
@@ -854,18 +855,18 @@ export default function AdminProductReportsPage() {
       </div>
 
       {/* 4. Interactive Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
         {/* Chart 1: Category Distribution */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-3 sm:p-5 shadow-xs space-y-3 sm:space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <PieIcon size={16} className="text-[#800020]" />
-              Cơ cấu theo Danh mục
+            <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              <PieIcon size={15} className="text-[#800020]" />
+              <span>Cơ cấu theo Danh mục</span>
             </h3>
             <div className="flex items-center bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
               <button
                 onClick={() => setChartMetric('revenue')}
-                className={`px-2 py-1 rounded-md transition-all ${
+                className={`px-2 py-1 rounded-md transition-all text-[11px] sm:text-xs ${
                   chartMetric === 'revenue'
                     ? 'bg-white text-[#800020] shadow-xs'
                     : 'text-slate-500'
@@ -875,7 +876,7 @@ export default function AdminProductReportsPage() {
               </button>
               <button
                 onClick={() => setChartMetric('quantity')}
-                className={`px-2 py-1 rounded-md transition-all ${
+                className={`px-2 py-1 rounded-md transition-all text-[11px] sm:text-xs ${
                   chartMetric === 'quantity'
                     ? 'bg-white text-[#800020] shadow-xs'
                     : 'text-slate-500'
@@ -886,7 +887,7 @@ export default function AdminProductReportsPage() {
             </div>
           </div>
 
-          <div className="h-64">
+          <div className="h-56 sm:h-64">
             {charts?.categoryRevenueChart?.length ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -896,8 +897,8 @@ export default function AdminProductReportsPage() {
                     nameKey="categoryName"
                     cx="50%"
                     cy="50%"
-                    innerRadius={50}
-                    outerRadius={85}
+                    innerRadius={45}
+                    outerRadius={75}
                     paddingAngle={3}
                   >
                     {charts.categoryRevenueChart.map((_: any, idx: number) => (
@@ -909,7 +910,7 @@ export default function AdminProductReportsPage() {
                       chartMetric === 'revenue' ? formatMoney(Number(val)) : `${val} món`
                     }
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ fontSize: '11px' }} />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
@@ -919,40 +920,40 @@ export default function AdminProductReportsPage() {
         </div>
 
         {/* Chart 2: Top 10 Best Sellers */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <BarChart2 size={16} className="text-[#800020]" />
-            Top 10 Món bán chạy nhất ({chartMetric === 'revenue' ? 'Doanh thu' : 'Số lượng'})
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-3 sm:p-5 shadow-xs space-y-3 sm:space-y-4">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+            <BarChart2 size={15} className="text-[#800020]" />
+            <span>Top 10 Món bán chạy nhất ({chartMetric === 'revenue' ? 'Doanh thu' : 'Số lượng'})</span>
           </h3>
 
-          <div className="h-64">
+          <div className="h-56 sm:h-64">
             {chartMetric === 'revenue' ? (
               charts?.topProductsRevenue?.length ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart
                     data={charts.topProductsRevenue}
                     layout="vertical"
-                    margin={{ left: 20, right: 20 }}
+                    margin={{ left: -10, right: 10, top: 0, bottom: 0 }}
                   >
                     <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
                     <XAxis
                       type="number"
                       tickFormatter={(val) => `${(val / 1000).toFixed(0)}k`}
                       stroke="#94a3b8"
-                      fontSize={11}
+                      fontSize={10}
                     />
                     <YAxis
                       type="category"
                       dataKey="productName"
-                      width={100}
+                      width={85}
                       stroke="#64748b"
-                      fontSize={11}
+                      fontSize={10}
                       tickFormatter={(name) =>
-                        name.length > 13 ? name.slice(0, 13) + '...' : name
+                        name.length > 11 ? name.slice(0, 11) + '...' : name
                       }
                     />
                     <RechartsTooltip formatter={(val: any) => formatMoney(Number(val))} />
-                    <Bar dataKey="revenue" fill="#800020" radius={[0, 6, 6, 0]} />
+                    <Bar dataKey="revenue" fill="#800020" radius={[0, 4, 4, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               ) : (
@@ -963,22 +964,22 @@ export default function AdminProductReportsPage() {
                 <BarChart
                   data={charts.topProductsQuantity}
                   layout="vertical"
-                  margin={{ left: 20, right: 20 }}
+                  margin={{ left: -10, right: 10, top: 0, bottom: 0 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                  <XAxis type="number" stroke="#94a3b8" fontSize={11} />
+                  <XAxis type="number" stroke="#94a3b8" fontSize={10} />
                   <YAxis
                     type="category"
                     dataKey="productName"
-                    width={100}
+                    width={85}
                     stroke="#64748b"
-                    fontSize={11}
+                    fontSize={10}
                     tickFormatter={(name) =>
-                      name.length > 13 ? name.slice(0, 13) + '...' : name
+                      name.length > 11 ? name.slice(0, 11) + '...' : name
                     }
                   />
                   <RechartsTooltip formatter={(val: any) => `${val} món`} />
-                  <Bar dataKey="quantity" fill="#2563eb" radius={[0, 6, 6, 0]} />
+                  <Bar dataKey="quantity" fill="#2563eb" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -988,16 +989,16 @@ export default function AdminProductReportsPage() {
         </div>
 
         {/* Chart 3: Sales Trend Over Time */}
-        <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-            <TrendingUp size={16} className="text-[#800020]" />
-            Xu hướng Doanh thu theo Thời gian
+        <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 p-3 sm:p-5 shadow-xs space-y-3 sm:space-y-4">
+          <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+            <TrendingUp size={15} className="text-[#800020]" />
+            <span>Xu hướng Doanh thu theo Thời gian</span>
           </h3>
 
-          <div className="h-64">
+          <div className="h-56 sm:h-64">
             {charts?.salesTrend?.length ? (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={charts.salesTrend}>
+                <AreaChart data={charts.salesTrend} margin={{ left: -15, right: 10, top: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#800020" stopOpacity={0.8} />
@@ -1039,29 +1040,29 @@ export default function AdminProductReportsPage() {
       </div>
 
       {/* 5. Master Category + Product Tree Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
+      <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs overflow-hidden">
         {/* Table Header Controls */}
-        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between flex-wrap gap-3 bg-slate-50/50">
+        <div className="p-2.5 sm:p-4 lg:p-5 border-b border-slate-200 flex items-center justify-between flex-wrap gap-2 bg-slate-50/50">
           <div>
-            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
-              <Package size={17} className="text-[#800020]" />
-              Bảng Doanh thu Danh mục & Mặt hàng Chi tiết
+            <h3 className="text-xs sm:text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              <Package size={16} className="text-[#800020] shrink-0" />
+              <span>Bảng Doanh thu Danh mục & Mặt hàng Chi tiết</span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
               Click vào tên Danh mục để mở rộng/thu gọn. Click vào Tên sản phẩm để xem báo cáo chi tiết món.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               onClick={expandAll}
-              className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg shadow-2xs hover:bg-slate-50"
+              className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg shadow-2xs hover:bg-slate-50 min-h-[36px] flex items-center"
             >
               Mở rộng tất cả
             </button>
             <button
               onClick={collapseAll}
-              className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg shadow-2xs hover:bg-slate-50"
+              className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-lg shadow-2xs hover:bg-slate-50 min-h-[36px] flex items-center"
             >
               Thu gọn tất cả
             </button>
@@ -1069,8 +1070,8 @@ export default function AdminProductReportsPage() {
         </div>
 
         {/* Scrollable Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+        <div className="admin-scroll-table">
+          <table className="w-full text-left text-xs border-collapse min-w-[1250px]">
             <thead>
               <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px] select-none">
                 <th className="py-3 px-3 min-w-[220px]">Danh mục / Tên mặt hàng</th>
@@ -1268,39 +1269,42 @@ function KpiCard({
 
   return (
     <div
-      className={`relative p-3.5 rounded-2xl border transition-all ${bgColor} ${borderColor} ${
+      className={`relative p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border transition-all ${bgColor} ${borderColor} ${
         highlight ? 'ring-2 ring-[#800020]/30 shadow-sm' : 'shadow-2xs'
       }`}
     >
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-bold text-slate-600 truncate pr-1">{title}</span>
-        <div className="flex items-center gap-1">
-          {icon}
-          <div
-            className="relative cursor-pointer text-slate-400 hover:text-slate-600"
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[10px] sm:text-[11px] font-bold text-slate-600 truncate pr-1">{title}</span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="hidden sm:inline-block scale-90 sm:scale-100">{icon}</span>
+          <button
+            type="button"
+            className="relative cursor-pointer text-slate-400 hover:text-slate-600 p-0.5 rounded touch-manipulation"
+            onClick={() => setShowTooltip(!showTooltip)}
             onMouseEnter={() => setShowTooltip(true)}
             onMouseLeave={() => setShowTooltip(false)}
+            aria-label="Xem công thức"
           >
-            <Info size={13} />
+            <Info size={12} />
             {showTooltip && (
-              <div className="absolute z-50 bottom-full right-0 mb-2 w-56 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl pointer-events-none">
+              <div className="absolute z-50 bottom-full right-0 mb-2 w-52 sm:w-56 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl pointer-events-none">
                 <p className="font-bold mb-0.5 text-amber-300">Công thức:</p>
                 <p>{formula}</p>
               </div>
             )}
-          </div>
+          </button>
         </div>
       </div>
 
-      <div className="mt-1">
-        {loading ? (
-          <div className="h-6 w-24 bg-slate-200 animate-pulse rounded" />
+      <div className={`mt-0.5 transition-opacity duration-150 ${loading ? 'opacity-70' : ''}`}>
+        {loading && (value === undefined || value === null) ? (
+          <div className="h-5 sm:h-6 w-20 sm:w-24 bg-slate-200 animate-pulse rounded" />
         ) : (
           <div className="flex items-baseline gap-1">
-            <span className={`text-base sm:text-lg font-black tracking-tight ${textColor}`}>
+            <span className={`text-xs sm:text-base md:text-lg font-black tracking-tight truncate ${textColor}`}>
               {value}
             </span>
-            {unit && <span className="text-[10px] font-semibold text-slate-500">{unit}</span>}
+            {unit && <span className="text-[9px] sm:text-[10px] font-semibold text-slate-500 shrink-0">{unit}</span>}
           </div>
         )}
       </div>
@@ -1313,7 +1317,7 @@ function KpiCardSmall({ title, value, formula, negative = false, highlight = fal
 
   return (
     <div
-      className={`p-2.5 rounded-xl border text-xs relative ${
+      className={`p-2 sm:p-2.5 rounded-lg sm:rounded-xl border text-xs relative ${
         highlight
           ? 'bg-[#800020]/10 border-[#800020]/30 text-[#800020] font-bold'
           : negative
@@ -1321,23 +1325,26 @@ function KpiCardSmall({ title, value, formula, negative = false, highlight = fal
           : 'bg-white border-slate-200 text-slate-700'
       }`}
     >
-      <div className="flex items-center justify-between text-[11px] text-slate-500 mb-0.5">
+      <div className="flex items-center justify-between text-[10px] sm:text-[11px] text-slate-500 mb-0.5">
         <span className="truncate">{title}</span>
-        <div
-          className="cursor-pointer text-slate-400 hover:text-slate-600 ml-1 shrink-0"
+        <button
+          type="button"
+          className="cursor-pointer text-slate-400 hover:text-slate-600 ml-1 shrink-0 p-0.5 touch-manipulation"
+          onClick={() => setShowTooltip(!showTooltip)}
           onMouseEnter={() => setShowTooltip(true)}
           onMouseLeave={() => setShowTooltip(false)}
+          aria-label="Xem quy tắc"
         >
-          <Info size={11} />
+          <Info size={10} />
           {showTooltip && (
             <div className="absolute z-50 bottom-full right-0 mb-1.5 w-48 p-2 bg-slate-900 text-white text-[10px] rounded-lg shadow-xl pointer-events-none">
               <p className="font-bold text-amber-300 mb-0.5">Quy tắc:</p>
               <p>{formula}</p>
             </div>
           )}
-        </div>
+        </button>
       </div>
-      <div className="font-extrabold text-sm truncate">{value}</div>
+      <div className="font-extrabold text-xs sm:text-sm truncate">{value}</div>
     </div>
   );
 }

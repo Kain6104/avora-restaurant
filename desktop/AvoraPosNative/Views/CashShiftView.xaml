@@ -1,0 +1,252 @@
+<UserControl x:Class="AvoraPosNative.Views.CashShiftView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d" 
+             d:DesignHeight="700" d:DesignWidth="1000"
+             Background="#F8FAFC">
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <!-- Top Bar -->
+            <RowDefinition Height="64"/>
+            <!-- Content -->
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Bar -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="💵 QUẢN LÝ CA LÀM VIỆC &amp; KÉT TIỀN" FontWeight="Bold" FontSize="16" Foreground="#0F172A"/>
+                    
+                    <Border CornerRadius="8" Padding="10,4" Margin="12,0,0,0">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="#FEF2F2"/>
+                                <Setter Property="BorderBrush" Value="#FECACA"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasOpenShift}" Value="True">
+                                        <Setter Property="Background" Value="#ECFDF5"/>
+                                        <Setter Property="BorderBrush" Value="#A7F3D0"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding ShiftStatusDisplay}" FontSize="11" FontWeight="Bold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasOpenShift}" Value="True">
+                                            <Setter Property="Foreground" Value="#059669"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                </StackPanel>
+
+                <!-- Actions -->
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Command="{Binding OpenDrawerCommand}" Margin="0,0,8,0"
+                            Background="#FEF2F2" Foreground="#DC2626" BorderBrush="#FECACA" BorderThickness="1"
+                            Padding="14,8" FontWeight="Bold" FontSize="13" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <TextBlock Text="🔓 Bật két tiền (RAW Kick)"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <Button Command="{Binding RefreshCommand}"
+                            Background="#F8FAFC" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
+                            Padding="14,8" FontWeight="SemiBold" FontSize="13" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                    <TextBlock Text="🔄 Làm mới"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24">
+            <Grid MaxWidth="800" HorizontalAlignment="Center">
+                
+                <!-- 1. ACTIVE SHIFT VIEW -->
+                <StackPanel>
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasOpenShift}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+
+                    <!-- Cards row -->
+                    <Grid Margin="0,0,0,20">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Đầu ca -->
+                        <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="Tiền đầu ca" FontSize="12" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding OpeningBalanceText}" FontSize="20" FontWeight="Black" Foreground="#0F172A" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Doanh thu tiền mặt -->
+                        <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="Thu tiền mặt" FontSize="12" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding TotalCashText}" FontSize="20" FontWeight="Black" Foreground="#16A34A" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Chuyển khoản QR -->
+                        <Border Grid.Column="4" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
+                            </Border.Effect>
+                            <StackPanel>
+                                <TextBlock Text="Thu QR / Thẻ / CK" FontSize="12" Foreground="#64748B"/>
+                                <TextBlock Text="{Binding TotalCardTransferText}" FontSize="20" FontWeight="Black" Foreground="#2563EB" Margin="0,6,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- Summary & Close Shift action -->
+                    <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="24">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
+                        </Border.Effect>
+                        <StackPanel>
+                            <TextBlock Text="BẢNG TỔNG HỢP KIỂM KÊ KÉT TIỀN" FontWeight="Bold" FontSize="15" Foreground="#0F172A" Margin="0,0,0,16"/>
+
+                            <Grid Margin="0,6">
+                                <TextBlock Text="Tiền mặt trong két dự kiến:" Foreground="#64748B" FontSize="14"/>
+                                <TextBlock Text="{Binding ExpectedBalanceText}" FontWeight="Black" Foreground="#0F172A" FontSize="16" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <TextBlock Text="Số đơn đã hoàn tất:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding OrderCountText}" FontWeight="Bold" Foreground="#0F172A" FontSize="14" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <TextBlock Text="Thu ngân trực ca:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding CashierDisplay}" FontWeight="SemiBold" Foreground="#0F172A" FontSize="13" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <TextBlock Text="Chi nhánh:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding BranchDisplay}" FontWeight="SemiBold" Foreground="#0F172A" FontSize="13" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Grid Margin="0,6">
+                                <TextBlock Text="Thời gian mở ca:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding OpenedAtDisplay}" Foreground="#64748B" FontSize="13" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Border BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Margin="0,20,0,0" Padding="0,20,0,0">
+                                <Button Content="🔒 KẾT THÚC CA (ĐÓNG CA &amp; IN BÁO CÁO Z)" Command="{Binding CloseShiftCommand}"
+                                        Background="#DC2626" Foreground="#FFFFFF" BorderThickness="0"
+                                        Padding="0,12" FontWeight="Bold" FontSize="14" Cursor="Hand">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- 2. NO SHIFT OPEN (OPEN SHIFT FORM) -->
+                <StackPanel>
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasOpenShift}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+
+                    <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="28">
+                        <Border.Effect>
+                            <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.05" Color="#000000"/>
+                        </Border.Effect>
+                        <StackPanel>
+                            <TextBlock Text="🚀 BẮT ĐẦU CA LÀM VIỆC MỚI" FontWeight="Black" FontSize="18" Foreground="#0F172A"/>
+                            <TextBlock Text="Khai báo số tiền mặt ban đầu có trong két để bắt đầu bán hàng và nhận đơn."
+                                       FontSize="13" Foreground="#64748B" Margin="0,6,0,24"/>
+
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="Thu ngân:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding CashierDisplay}" FontWeight="Bold" Foreground="#0F172A" FontSize="14" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,20">
+                                <TextBlock Text="Chi nhánh:" Foreground="#64748B" FontSize="13"/>
+                                <TextBlock Text="{Binding BranchDisplay}" FontWeight="SemiBold" Foreground="#0F172A" FontSize="13" HorizontalAlignment="Right"/>
+                            </Grid>
+
+                            <TextBlock Text="Số tiền mặt ban đầu trong két (VNĐ):" FontWeight="Bold" FontSize="13" Foreground="#334155" Margin="0,0,0,8"/>
+                            <TextBox Text="{Binding OpeningCashInput, UpdateSourceTrigger=PropertyChanged, StringFormat='{}{0:N0}'}"
+                                     FontSize="20" FontWeight="Black" Foreground="#0F172A" Padding="14,10"
+                                     Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Margin="0,0,0,12"/>
+
+                            <TextBlock Text="Ghi chú đầu ca (tùy chọn):" FontSize="13" Foreground="#64748B" Margin="0,0,0,6"/>
+                            <TextBox Text="{Binding OpenNoteInput, UpdateSourceTrigger=PropertyChanged}"
+                                     FontSize="13" Padding="12,8" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Margin="0,0,0,24"/>
+
+                            <Button Content="🚀 BẮT ĐẦU MỞ CA" Command="{Binding OpenShiftCommand}"
+                                    Background="#16A34A" Foreground="#FFFFFF" BorderThickness="0"
+                                    Padding="0,14" FontWeight="Bold" FontSize="15" Cursor="Hand">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

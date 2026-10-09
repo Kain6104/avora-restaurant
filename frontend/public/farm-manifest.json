@@ -1,0 +1,27 @@
+{
+  "name": "AVORA Farm — Vườn Thiền Hoàng Gia",
+  "short_name": "AVORA Farm",
+  "description": "Trải nghiệm nông trại 2.5D Isometric độc quyền trong hệ sinh thái nhà hàng AVORA",
+  "start_url": "/farm",
+  "scope": "/farm",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone", "minimal-ui"],
+  "orientation": "landscape",
+  "background_color": "#111b15",
+  "theme_color": "#111b15",
+  "categories": ["games", "entertainment"],
+  "icons": [
+    {
+      "src": "/favora_logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favora_logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -11,6 +11,8 @@ import { Server, Socket } from 'socket.io';
 import { Logger, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ChatbotService } from './chatbot.service';
+import { ALL_CHATBOT_TOOL_DECLARATIONS } from './chatbot-tool-declarations';
+import { PrismaService } from '../prisma/prisma.service';
 import WebSocket from 'ws';
 
 @WebSocketGateway({ namespace: '/voice-chat', cors: { origin: true, credentials: true } })
@@ -26,16 +28,17 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
   constructor(
     private readonly jwtService: JwtService,
     private readonly chatbotService: ChatbotService,
-  ) { }
+    private readonly prisma: PrismaService,
+  ) {}
 
   async handleConnection(client: Socket) {
     try {
       let token = client.handshake.auth?.token || client.handshake.query?.token;
-      
-      // Attempt to extract token from cookies if not provided directly
+
+      // Trích xuất token từ cookies nếu client gửi qua cookie
       if (!token && client.handshake.headers.cookie) {
         const cookies = client.handshake.headers.cookie.split(';');
-        const tokenCookie = cookies.find(c => c.trim().startsWith('token='));
+        const tokenCookie = cookies.find((c) => c.trim().startsWith('token='));
         if (tokenCookie) {
           const cookieVal = tokenCookie.substring(tokenCookie.indexOf('=') + 1).trim();
           token = decodeURIComponent(cookieVal);
@@ -45,18 +48,15 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
       let userId: string | undefined = undefined;
       let userContext = '';
 
-      this.logger.log(`[VoiceAuth] client.handshake.headers.cookie: ${client.handshake.headers.cookie}`);
-      this.logger.log(`[VoiceAuth] Extracted token: ${token}`);
-
       if (token && token !== 'guest' && token !== 'null') {
         try {
-          const payload = this.jwtService.verify(token, { secret: 'AVORA_SECRET_2026' });
-          userId = payload.sub;
+          const jwtSecret = process.env.JWT_SECRET || 'AVORA_SECRET_2026';
+          const payload = this.jwtService.verify(token, { secret: jwtSecret });
+          userId = payload.sub || payload.id;
           userContext = `THÔNG TIN KHÁCH HÀNG: UserID: ${userId}`;
           this.logger.log(`Authenticated voice session: userId=${userId}`);
-        } catch (e) {
+        } catch (e: any) {
           this.logger.warn(`Invalid/expired JWT for connection ${client.id}: ${e.message}`);
-          require('fs').writeFileSync('jwt-error.log', `Error: ${e.message}\nStack: ${e.stack}\nToken: ${token}\nCookie: ${client.handshake.headers.cookie}\n`);
           client.emit('error', 'auth_failed');
           client.disconnect(true);
           return;
@@ -68,20 +68,32 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
       const cartSummaryStr = client.handshake.query?.cartSummary as string;
       const cartSummary = cartSummaryStr ? decodeURIComponent(cartSummaryStr) : '';
       const cartTotalStr = client.handshake.query?.cartTotal as string;
-      const cartTotal = cartTotalStr ? parseFloat(cartTotalStr) : (cartSummary && !cartSummary.includes('trống') ? 1 : 0);
+      const cartTotal = cartTotalStr ? parseFloat(cartTotalStr) : cartSummary && !cartSummary.includes('trống') ? 1 : 0;
       if (cartSummary || cartTotal > 0) {
-         userContext += ` [THÔNG TIN GIỎ HÀNG: ${cartSummary || 'Có món trong giỏ'}, Tổng tiền: ${cartTotal.toLocaleString('vi-VN')}đ, cartTotal = ${cartTotal}]`;
+        userContext += ` [THÔNG TIN GIỎ HÀNG: ${cartSummary || 'Có món trong giỏ'}, Tổng tiền: ${cartTotal.toLocaleString('vi-VN')}đ, cartTotal = ${cartTotal}]`;
       } else {
-         userContext += ` [THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0]`;
+        userContext += ` [THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0]`;
       }
 
-      this.userContexts.set(client.id, { userId, userContext, cartTotal, cartSummary });
+      const branchId = (client.handshake.query?.branchId as string) || '';
+      if (branchId) {
+        try {
+          const branch = await this.prisma.branch.findUnique({ where: { id: branchId } });
+          if (branch) {
+            const branchAddr = [branch.street, branch.ward, branch.district, branch.province].filter(Boolean).join(', ');
+            userContext += ` [CHI NHÁNH HIỆN TẠI]: Khách hàng đã chọn chi nhánh "${branch.name}" (Địa chỉ: ${branchAddr || 'Avora'}). Hãy sử dụng luôn chi nhánh này làm mặc định, chỉ nhắc lại nhẹ nhàng để xác nhận, TUYỆT ĐỐI KHÔNG bắt chọn lại!`;
+          }
+        } catch {}
+      }
 
-      client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number }) => {
+      this.userContexts.set(client.id, { userId, userContext, cartTotal, cartSummary, branchId });
+
+      client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number; branchId?: string }) => {
         const ctx = this.userContexts.get(client.id);
         if (ctx) {
           if (data.cartTotal !== undefined) ctx.cartTotal = data.cartTotal;
           if (data.cartSummary !== undefined) ctx.cartSummary = data.cartSummary;
+          if (data.branchId !== undefined) ctx.branchId = data.branchId;
         }
       });
 
@@ -98,59 +110,57 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       ws.on('open', () => {
         this.logger.log(`Connected to Gemini Live API for client ${client.id}`);
-        // Send setup message
         const setupMessage = {
           setup: {
             model: 'models/gemini-3.1-flash-live-preview',
             systemInstruction: {
-              parts: [{
-                text: `Bạn là nhân viên tư vấn của nhà hàng Avora qua điện thoại. Trả lời ngắn gọn, thân thiện. TUYỆT ĐỐI KHÔNG BỊA MÓN ĂN. Gợi ý đúng món có trong menu. ${userContext}
-Nếu khách hỏi món, gọi hàm searchMenu. Nếu hỏi khuyến mãi, gọi checkVoucher.
-Nếu khách yêu cầu thêm món vào giỏ, nếu chưa biết ID thì hãy truyền productName để gọi addToCart. KHÔNG BAO GIỜ từ chối.
-QUAN TRỌNG VỀ ĐIỀU HƯỚNG: Chỉ sử dụng hàm navigate nếu khách hàng yêu cầu mở xem Lịch sử Đơn Hàng (ORDER_DETAILS) hoặc mở Giỏ Hàng (CART).
-Nếu khách hỏi về hạng thành viên, gọi checkRankUpgrade.
-Nếu khách hỏi tìm chi nhánh gần nhất, hoặc các chi nhánh lân cận, TUYỆT ĐỐI KHÔNG TỰ BỊA CHI NHÁNH. Đầu tiên BẮT BUỘC GỌI HÀM requestLocation (công cụ/tool) để xin vị trí, VÀ PHẢI KÈM THEO CÂU NÓI: "Anh/chị vui lòng bấm vào nút chia sẻ vị trí trong đoạn chat để em có thể tìm chi nhánh gần nhất nhé!". Khi đã có vị trí (vĩ độ, kinh độ), BẮT BUỘC gọi hàm findNearestBranch để kiểm tra và tư vấn chi tiết các chi nhánh gần đó.
-QUY TRÌNH CHỐT ĐƠN HÀNG (KHI KHÁCH NÓI "CHỐT ĐƠN", "THANH TOÁN", "MUA HÀNG"):
-ĐẦU TIÊN BẮT BUỘC kiểm tra trạng thái giỏ hàng (trong thông tin context). Nếu giỏ hàng trống (cartTotal = 0), TUYỆT ĐỐI KHÔNG thực hiện các bước tiếp theo, hãy thông báo khách giỏ hàng trống và tư vấn món ăn.
-1. BẮT BUỘC gọi getUserAddress. Nếu có địa chỉ, đọc lại và hỏi khách có muốn dùng không. Chỉ khi khách đồng ý dùng địa chỉ đó thì mới tiếp tục bước 3. Nếu không, chuyển sang bước 2.
-2. Nếu không có địa chỉ (hoặc khách muốn dùng địa chỉ mới), BẮT BUỘC GỌI HÀM requestLocation (công cụ/tool). Nhận được GPS, gọi getAddressFromLocation. Hỏi khách cung cấp (nếu thiếu): Tên, SĐT, số nhà/chi tiết. Đọc lại và gọi saveAddress.
-3. Khi đã có addressId, BẮT BUỘC gọi autoSuggestVoucher để hệ thống tự tìm mã giảm giá. (TUYỆT ĐỐI KHÔNG GỌI triggerOrderPreview NẾU CHƯA GỌI autoSuggestVoucher VÀ CHƯA HỎI Ý KIẾN KHÁCH VỀ VOUCHER). Đợi khách xác nhận dùng voucher đó, nhập mã khác, hoặc không dùng.
-4. BẮT BUỘC gọi triggerOrderPreview (truyền voucherCode nếu khách chốt dùng).
-5. Sau đó, màn hình sẽ hiện CHI TIẾT ĐƠN HÀNG, bạn đợi khách xác nhận. Nếu khách "Xác nhận đặt", BẮT BUỘC gọi triggerPlaceOrder.
-Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, BẮT BUỘC gọi hàm stopVoice.`
-              }]
+              parts: [
+                {
+                  text: `Bạn là Trợ lý Giọng nói AI (Voice AI Assistant) chuyên nghiệp, ấm áp, tận tâm của hệ thống nhà hàng Avora Restaurant.
+Bạn giao tiếp qua điện thoại/giọng nói trực tiếp với khách hàng.
+Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang trò chuyện với khách, lịch sự, hiếu khách, dễ nghe. ${userContext}
+
+[QUY TẮC CHECKOUT & ĐẶT MÓN TỐI ƯU]:
+1. CHI NHÁNH HIỆN TẠI:
+- Sử dụng luôn chi nhánh hiện tại của khách đã có trong ngữ cảnh. Chỉ nhắc lại để xác nhận, TUYỆT ĐỐI KHÔNG bắt chọn lại!
+
+2. ĐỊA CHỈ GIAO HÀNG & PHÍ SHIP:
+- Nếu khách giao hàng mà chưa có địa chỉ: Hướng dẫn khách bấm nút "📍 Chia sẻ vị trí hiện tại" trên màn hình.
+- Khi nhận được tin nhắn vị trí từ hệ thống (Vị trí của khách hàng là vĩ độ X, kinh độ Y), BẮT BUỘC gọi ngay \`validateDeliveryAddress\` để máy chủ tự động quy đổi địa chỉ và tính phí giao hàng chính xác!
+
+3. KHUNG GIỜ GIAO HÀNG (SLOTS):
+- BẮT BUỘC gọi \`getAvailableOrderSlots\`. Nếu khách nói giờ cụ thể (VD: "11h45", "12h trưa", "7h tối"), truyền \`requestedTime\` vào tool để hệ thống tự chọn slot gần nhất.
+
+4. TINH GỌN THÔNG TIN:
+- Tận dụng họ tên và SĐT có sẵn trong hồ sơ, không hỏi lại.
+- Khi đã đủ thông tin, BẮT BUỘC gọi \`previewOrder\` để đọc tổng thanh toán chuẩn từ máy chủ.
+- CHỈ KHI KHÁCH XÁC NHẬN ĐỒNG Ý ĐẶT thì mới gọi \`placeOrder\` để tạo đơn hàng.
+
+5. ĐẶT BÀN NHÀ HÀNG (TABLE RESERVATION):
+- BẮT BUỘC gọi \`getReservationSlots\` với chi nhánh, ngày và số khách để kiểm tra slot khả dụng.
+- Khi đủ thông tin: BẮT BUỘC gọi \`previewReservation\` để hệ thống tóm tắt thông tin đặt bàn.
+- CHỈ KHI KHÁCH NÓI ĐỒNG Ý / XÁC NHẬN thì mới gọi \`createReservation\` để tạo đơn đặt bàn chính thức.
+
+[QUY TẮC BẤT DI BẤT DỊCH]:
+- TUYỆT ĐỐI KHÔNG tự bịa giá tiền, mã voucher, món ăn hay số bàn.
+- Trả lời ngắn gọn, súc tích (1-2 câu ngắn), thích hợp cho đàm thoại giọng nói.
+- Nếu khách chào tạm biệt hoặc xin dừng cuộc gọi, gọi hàm \`stopVoice\`.
+- Nếu khách giận dữ hoặc yêu cầu gặp người thật, gọi hàm \`handoffToHuman\`.`,
+                },
+              ],
             },
-            tools: [{
-              functionDeclarations: [
-                this.chatbotService.searchMenuDeclaration,
-                this.chatbotService.addToCartDeclaration,
-                this.chatbotService.addAllToCartDeclaration,
-                this.chatbotService.checkOrderDeclaration,
-                this.chatbotService.checkVoucherDeclaration,
-                this.chatbotService.checkRankUpgradeDeclaration,
-                this.chatbotService.navigateDeclaration,
-                this.chatbotService.requestLocationDeclaration,
-                this.chatbotService.findNearestBranchDeclaration,
-                this.chatbotService.getUserAddressDeclaration,
-                this.chatbotService.getAddressFromLocationDeclaration,
-                this.chatbotService.saveAddressDeclaration,
-                this.chatbotService.autoSuggestVoucherDeclaration,
-                this.chatbotService.triggerOrderPreviewDeclaration,
-                this.chatbotService.triggerPlaceOrderDeclaration,
-                this.chatbotService.stopVoiceDeclaration
-              ]
-            }],
+            tools: [{ functionDeclarations: ALL_CHATBOT_TOOL_DECLARATIONS }],
             generationConfig: {
-              responseModalities: ["AUDIO"],
+              responseModalities: ['AUDIO'],
               speechConfig: {
                 voiceConfig: {
                   prebuiltVoiceConfig: {
-                    voiceName: "Aoede" // Use a friendly voice
-                  }
-                }
-              }
-            }
-          }
+                    voiceName: 'Aoede',
+                  },
+                },
+              },
+            },
+          },
         };
         ws.send(JSON.stringify(setupMessage));
         client.emit('system', { type: 'ready' });
@@ -159,24 +169,23 @@ Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, B
       ws.on('message', async (data: any) => {
         try {
           const msg = JSON.parse(data.toString());
-          // Debugging log for any errors or messages returned by Gemini
+
           if (msg.error) {
             this.logger.error(`Gemini Error: ${JSON.stringify(msg)}`);
-          } else if (!msg.serverContent) {
-            this.logger.log(`Received non-serverContent from Gemini: ${JSON.stringify(msg)}`);
-          } else {
-            this.logger.log(`Received serverContent from Gemini: has parts = ${!!msg.serverContent.modelTurn?.parts}`);
           }
-          
+
+          // Xử lý ngắt lời (Barge-in): Khi Gemini Live phát hiện người dùng nói đè
+          if (msg.serverContent?.interrupted) {
+            this.logger.log(`[Gemini] User interrupted/barge-in for client ${client.id}`);
+            client.emit('barge_in');
+          }
+
           if (msg.serverContent) {
             const modelTurn = msg.serverContent.modelTurn;
             if (modelTurn && modelTurn.parts) {
               for (const part of modelTurn.parts) {
-                // Send Audio to Client
                 if (part.inlineData && part.inlineData.mimeType.startsWith('audio/')) {
                   const audioData = part.inlineData.data;
-                  this.logger.log(`[Gemini] Received audio chunk: ${audioData.length} bytes`);
-                  this.logger.log(`[VoiceWS] Sending audio_output: ${audioData.length} bytes`);
                   client.emit('audio_output', audioData);
                 }
               }
@@ -192,45 +201,52 @@ Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, B
             }
           }
 
-          // Handle top-level toolCall (Gemini Live API format)
+          // Xử lý Tool Calling thời gian thực từ Gemini Live
           if (msg.toolCall && msg.toolCall.functionCalls) {
             const context = this.userContexts.get(client.id);
             if (context) context.isExecutingTool = true;
             const functionResponses: any[] = [];
 
             for (const functionCall of msg.toolCall.functionCalls) {
-              this.logger.log(`Received function call: ${functionCall.name}`);
-              client.emit('tool_call', { name: functionCall.name }); // Let UI know we are thinking
+              this.logger.log(`[Voice] Received function call: ${functionCall.name}`);
+              client.emit('tool_call', { name: functionCall.name });
 
-              const result = await this.chatbotService.executeToolCall(functionCall, context?.userId, undefined, context?.cartTotal);
+              // Gọi qua ChatbotService (được uỷ quyền trực tiếp tới ChatbotToolEngineService)
+              const result = await this.chatbotService.executeToolCall(
+                functionCall,
+                context?.userId,
+                context?.branchId,
+                context?.cartTotal,
+                client.id,
+              );
 
-              // Send rich UI action to client
+              // Gửi rich action về UI để cập nhật màn hình
               if (result.lastActionType || result.content) {
                 client.emit('rich_action', {
                   content: result.content || null,
                   actionType: result.lastActionType || null,
                   actionPayload: result.lastActionPayload || null,
-                  suggestedReplies: result.suggestedReplies || null
+                  suggestedReplies: result.suggestedReplies || null,
                 });
               }
 
               functionResponses.push({
                 id: functionCall.id,
                 name: functionCall.name,
-                response: { result: result.functionResult }
+                response: { result: result.functionResult },
               });
             }
 
-            // Send response back to Gemini
+            // Gửi kết quả tool về lại Gemini Live
             const toolResponseMsg = {
               toolResponse: {
-                functionResponses: functionResponses
-              }
+                functionResponses: functionResponses,
+              },
             };
             ws.send(JSON.stringify(toolResponseMsg));
-            // Wait 1 second before clearing the flag to ensure any lingering turnComplete from the request is dropped
+
             setTimeout(() => {
-               if (context) context.isExecutingTool = false;
+              if (context) context.isExecutingTool = false;
             }, 1000);
           }
         } catch (err) {
@@ -249,10 +265,9 @@ Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, B
       });
 
       this.geminiConnections.set(client.id, ws);
-      this.logger.log(`Client connected: ${client.id}`);
-    } catch (err) {
-      this.logger.error('Gateway Connection Error:', err);
-      client.emit('error', 'Gateway Connection Error');
+    } catch (err: any) {
+      this.logger.error('Error handling connection', err);
+      client.emit('error', 'Connection failed');
       client.disconnect();
     }
   }
@@ -271,35 +286,26 @@ Nếu khách cảm ơn, chào tạm biệt hoặc yêu cầu tắt chat voice, B
 
   @SubscribeMessage('audio_input')
   handleAudioInput(@ConnectedSocket() client: Socket, @MessageBody() base64Audio: string) {
-    if (!this.userContexts.get(`audio_log_${client.id}`)) {
-      this.userContexts.set(`audio_log_${client.id}`, true);
-    }
-    
-    // As requested:
-    this.logger.log(`[VoiceWS] Received audio_input: ${base64Audio.length} bytes`);
-
     const ws = this.geminiConnections.get(client.id);
     if (ws && ws.readyState === WebSocket.OPEN) {
       const msg = {
         realtimeInput: {
           audio: {
             mimeType: 'audio/pcm;rate=16000',
-            data: base64Audio
-          }
-        }
+            data: base64Audio,
+          },
+        },
       };
-      
-      this.logger.log(`[Gemini] Sending audio chunk: ${base64Audio.length} bytes`);
       ws.send(JSON.stringify(msg));
     }
   }
 
-  @SubscribeMessage('client_content')
-  handleClientContent(@ConnectedSocket() client: Socket, @MessageBody() content: any) {
-    this.logger.log(`Client ${client.id} sent client_content: ${JSON.stringify(content)}`);
+  @SubscribeMessage('stop_audio')
+  handleStopAudio(@ConnectedSocket() client: Socket) {
     const ws = this.geminiConnections.get(client.id);
     if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ clientContent: content }));
+      // Báo hiệu dừng audio cho Gemini Live
+      this.logger.log(`Stop audio requested by client ${client.id}`);
     }
   }
 }

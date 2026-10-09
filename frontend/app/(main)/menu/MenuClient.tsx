@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import {
   Star,
   ChevronRight,
@@ -158,7 +159,7 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
             return price <= 100000;
           });
         } else if (selectedTag === 'TOP_RATED') {
-          prods = prods.filter((item: any) => (item.rating || 4.9) >= 4.8);
+          prods = prods.filter((item: any) => (item.avgRating || 0) >= 4.5);
         }
 
         // 3. Sorting within category
@@ -774,9 +775,8 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                                   </h3>
                                 </Link>
 
-                                <div className="flex items-center gap-1 text-[10px] text-slate-500 pt-0.5">
-                                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
-                                  <span className="text-slate-700 font-bold">4.9</span>
+                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 pt-0.5 flex-wrap">
+                                  <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                                   <span className="text-slate-300">•</span>
                                   <span className="text-slate-400">
                                     Đã bán {(item.name.length * 17) % 500 + 100}
@@ -853,9 +853,7 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                     {cat.name}
                                   </span>
-                                  <span className="text-amber-500 text-[10px] font-bold flex items-center gap-0.5">
-                                    <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> 4.9
-                                  </span>
+                                  <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                                 </div>
 
                                 <Link

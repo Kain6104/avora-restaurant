@@ -14,3 +14,4 @@ export { default as DataTable } from './DataTable';
 export { default as MobileDataCard } from './MobileDataCard';
 export { default as FormField } from './FormField';
 export { default as Select } from './Select';
+export { default as TopProgressBar, startTopProgress, completeTopProgress } from './TopProgressBar';

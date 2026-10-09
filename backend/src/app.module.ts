@@ -31,6 +31,8 @@ import { BannerModule } from './banner/banner.module';
 import { FlashSaleCoreModule } from './flash-sale/flash-sale.module';
 import { BuffetModule } from './buffet/buffet.module';
 import { QrOrderModule } from './qr-order/qr-order.module';
+import { FarmModule } from './farm/farm.module';
+import { ReviewModule } from './review/review.module';
 
 @Module({
   imports: [
@@ -42,6 +44,7 @@ import { QrOrderModule } from './qr-order/qr-order.module';
     BannerModule,
     HomeModule,
     CategoryModule,
+    ReviewModule,
     ProductModule,
     AuthModule,
     AddressModule,
@@ -63,6 +66,7 @@ import { QrOrderModule } from './qr-order/qr-order.module';
     FlashSaleCoreModule,
     BuffetModule,
     QrOrderModule,
+    FarmModule,
   ],
   controllers: [AppController],
   providers: [AppService],

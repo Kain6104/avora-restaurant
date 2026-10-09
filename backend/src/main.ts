@@ -17,7 +17,7 @@ async function bootstrap() {
     credentials: true,
     allowedHeaders: 'Content-Type, Accept, Authorization, ngrok-skip-browser-warning, x-idempotency-key'
   });
-  await app.listen(process.env.PORT ?? 3001);
+  await app.listen(process.env.PORT ?? 4001);
 }
 // NestJS server bootstrap entry point
 bootstrap();

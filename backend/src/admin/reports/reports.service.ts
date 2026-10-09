@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  parseVietnamDateRange,
+  getVietnamNow,
+  getVietnamDateString,
+  getVietnamHour,
+} from '../../common/utils/vietnam-time.util';
 
 @Injectable()
 export class ReportsService {
@@ -13,11 +19,9 @@ export class ReportsService {
       userWhere.branchId = branchIdScope;
     }
     if (from && to) {
-      const startDate = new Date(from);
-      const endDate = new Date(to);
-      endDate.setHours(23, 59, 59, 999);
-      where.createdAt = { gte: startDate, lte: endDate };
-      userWhere.createdAt = { gte: startDate, lte: endDate };
+      const parsed = parseVietnamDateRange(from, to);
+      where.createdAt = { gte: parsed.startUtc, lte: parsed.endUtc };
+      userWhere.createdAt = { gte: parsed.startUtc, lte: parsed.endUtc };
     }
 
     const [totalOrders, completedOrders, revenueData, usersData] = await Promise.all([
@@ -45,10 +49,9 @@ export class ReportsService {
       where.branchId = branchIdScope;
     }
 
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days + 1);
-    startDate.setHours(0, 0, 0, 0);
-    where.createdAt = { gte: startDate };
+    const vnNow = getVietnamNow();
+    const startDayjs = vnNow.subtract(days - 1, 'day').startOf('day');
+    where.createdAt = { gte: startDayjs.toDate() };
 
     const orders = await this.prisma.order.findMany({
       where,
@@ -57,14 +60,12 @@ export class ReportsService {
 
     const grouped: Record<string, number> = {};
     for (let i = 0; i < days; i++) {
-      const d = new Date(startDate);
-      d.setDate(d.getDate() + i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = startDayjs.add(i, 'day').format('YYYY-MM-DD');
       grouped[dateStr] = 0;
     }
 
     orders.forEach(o => {
-      const dateStr = o.createdAt.toISOString().split('T')[0];
+      const dateStr = getVietnamDateString(o.createdAt);
       if (grouped[dateStr] !== undefined) {
         grouped[dateStr] += o.totalAmount;
       }
@@ -82,10 +83,8 @@ export class ReportsService {
       where.order.branchId = branchIdScope;
     }
     if (from && to) {
-      const startDate = new Date(from);
-      const endDate = new Date(to);
-      endDate.setHours(23, 59, 59, 999);
-      where.order.createdAt = { gte: startDate, lte: endDate };
+      const parsed = parseVietnamDateRange(from, to);
+      where.order.createdAt = { gte: parsed.startUtc, lte: parsed.endUtc };
     }
 
     const items = await this.prisma.orderItem.groupBy({
@@ -119,10 +118,8 @@ export class ReportsService {
       where.order.branchId = branchIdScope;
     }
     if (from && to) {
-      const startDate = new Date(from);
-      const endDate = new Date(to);
-      endDate.setHours(23, 59, 59, 999);
-      where.order.createdAt = { gte: startDate, lte: endDate };
+      const parsed = parseVietnamDateRange(from, to);
+      where.order.createdAt = { gte: parsed.startUtc, lte: parsed.endUtc };
     }
 
     const items = await this.prisma.orderItem.groupBy({
@@ -277,7 +274,7 @@ export class ReportsService {
     }));
 
     orders.forEach(o => {
-      const h = o.createdAt.getHours();
+      const h = getVietnamHour(o.createdAt);
       hourlyStats[h].orderCount += 1;
       hourlyStats[h].revenue += o.totalAmount;
     });
@@ -293,10 +290,8 @@ export class ReportsService {
       where.order.branchId = branchIdScope;
     }
     if (from && to) {
-      const startDate = new Date(from);
-      const endDate = new Date(to);
-      endDate.setHours(23, 59, 59, 999);
-      where.order.createdAt = { gte: startDate, lte: endDate };
+      const parsed = parseVietnamDateRange(from, to);
+      where.order.createdAt = { gte: parsed.startUtc, lte: parsed.endUtc };
     }
 
     const items = await this.prisma.orderItem.findMany({

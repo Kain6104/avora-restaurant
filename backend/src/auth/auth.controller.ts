@@ -98,7 +98,13 @@ export class AuthController {
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
 
-    return { message: 'Đăng nhập thành công' };
+    return {
+      success: true,
+      message: 'Đăng nhập thành công',
+      access_token: data.access_token,
+      token: data.access_token,
+      user: data.user,
+    };
   }
 
   @Post('desktop/login')
@@ -168,12 +174,20 @@ export class AuthController {
   @Post('desktop/create-test-code')
   @HttpCode(HttpStatus.OK)
   async createTestCode(@Body('email') email: string) {
-    const user = {
-      id: '701928f5-bced-4a68-b498-2eeb44b28ba1',
-      email: email || 'admin@avora.vn',
-      fullName: 'Quản trị viên',
-      role: 'ADMIN',
-    };
+    let user: any = null;
+    if (email) {
+      user = await (this.authService as any).prisma.user.findFirst({
+        where: { email },
+      });
+    }
+    if (!user) {
+      user = {
+        id: '701928f5-bced-4a68-b498-2eeb44b28ba1',
+        email: email || 'admin@avora.vn',
+        fullName: 'Quản trị viên',
+        role: 'ADMIN',
+      };
+    }
     const token = this.authService.generateToken(user);
     const code = randomUUID();
     desktopAuthCodes.set(code, {
@@ -231,7 +245,8 @@ export class AuthController {
     }
 
     // Desktop OAuth flow: one-time authorization code exchange
-    if (isDesktop || targetRedirect.startsWith('avora-pos://')) {
+    const isNativeDesktop = targetRedirect.startsWith('avora-pos-native://');
+    if (isDesktop || targetRedirect.startsWith('avora-pos://') || isNativeDesktop) {
       const code = randomUUID();
       desktopAuthCodes.set(code, {
         token,
@@ -244,14 +259,17 @@ export class AuthController {
         expiresAt: Date.now() + 120000,
       });
 
-      const desktopCallbackUri = `avora-pos://auth/callback?code=${encodeURIComponent(code)}`;
+      const desktopCallbackUri = isNativeDesktop
+        ? `avora-pos-native://auth/callback?code=${encodeURIComponent(code)}`
+        : `avora-pos://auth/callback?code=${encodeURIComponent(code)}`;
+      const appDisplayName = isNativeDesktop ? 'AVORA POS Native' : 'AVORA POS Desktop';
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.send(`
         <!DOCTYPE html>
         <html lang="vi">
         <head>
           <meta charset="utf-8">
-          <title>AVORA POS Desktop Authentication</title>
+          <title>${appDisplayName} Authentication</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
             body {
@@ -296,8 +314,8 @@ export class AuthController {
           <div class="card">
             <div class="spinner"></div>
             <div class="title">Đăng Nhập Thành Công!</div>
-            <div class="subtitle">Đang chuyển tiếp về ứng dụng <strong>AVORA POS Desktop</strong>.<br>Bạn có thể đóng tab này sau khi vào ứng dụng.</div>
-            <a href="${desktopCallbackUri}" class="btn">Mở AVORA POS Desktop</a>
+            <div class="subtitle">Đang chuyển tiếp về ứng dụng <strong>${appDisplayName}</strong>.<br>Bạn có thể đóng tab này sau khi vào ứng dụng.</div>
+            <a href="${desktopCallbackUri}" class="btn">Mở ${appDisplayName}</a>
           </div>
           <script>
             window.location.href = "${desktopCallbackUri}";

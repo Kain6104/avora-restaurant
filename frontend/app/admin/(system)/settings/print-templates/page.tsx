@@ -62,6 +62,7 @@ const TEMPLATE_TYPE_LABELS: Record<string, string> = {
 
 const PAPER_SIZES = [
   { value: '80mm', label: '80mm (Khổ in nhiệt tiêu chuẩn)' },
+  { value: 'XP-350B', label: 'Xprinter XP-350B (76mm - Tiết kiệm, không dư giấy)' },
   { value: '58mm', label: '58mm (Khổ in nhiệt mini / cầm tay)' },
   { value: '50x30mm', label: '50x30mm (Tem nhãn dán ly / dĩa tiêu chuẩn)' },
   { value: '30x50mm', label: '30x50mm (Tem dán ly / dĩa)' },

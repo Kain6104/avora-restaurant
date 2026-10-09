@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useWishlist, WishlistItem } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
 import AddToCartButton from '@/components/AddToCartButton';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import { toast } from 'react-hot-toast';
 import {
   Heart,
@@ -1596,9 +1597,7 @@ export default function FavoritesClient() {
                                     {product.category.name}
                                   </span>
                                 )}
-                                <span className="text-amber-500 text-[10px] font-bold flex items-center gap-0.5">
-                                  <Star className="w-3 h-3 fill-amber-400 text-amber-400" /> 4.9
-                                </span>
+                                <ProductRatingBadge avgRating={product.avgRating} ratingCount={product.ratingCount} size="sm" />
                               </div>
 
                               <Link href={linkUrl} className="block group/title">

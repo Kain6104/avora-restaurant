@@ -28,31 +28,31 @@ export default function PageHeader({
 }: PageHeaderProps) {
   return (
     <div
-      className={`flex flex-col md:flex-row md:items-center justify-between gap-3 sm:gap-4 pb-1 sm:pb-2 ${className}`}
+      className={`flex flex-col md:flex-row md:items-center justify-between gap-2 sm:gap-4 pb-1 sm:pb-2 ${className}`}
     >
-      <div className="space-y-1 min-w-0">
+      <div className="space-y-0.5 sm:space-y-1 min-w-0">
         {/* Breadcrumbs */}
         {breadcrumbs.length > 0 && (
-          <nav className="flex items-center gap-1.5 text-xs text-slate-400 font-medium mb-1.5 overflow-x-auto whitespace-nowrap">
+          <nav className="flex items-center gap-1 sm:gap-1.5 text-[11px] sm:text-xs text-slate-400 font-medium mb-1 overflow-x-auto whitespace-nowrap">
             <Link
               href="/admin/dashboard"
               className="hover:text-red-600 transition-colors flex items-center gap-1"
             >
-              <Home size={13} />
+              <Home size={12} />
               <span>Admin</span>
             </Link>
             {breadcrumbs.map((crumb, idx) => (
               <React.Fragment key={idx}>
-                <ChevronRight size={12} className="text-slate-300 shrink-0" />
+                <ChevronRight size={11} className="text-slate-300 shrink-0" />
                 {crumb.href ? (
                   <Link
                     href={crumb.href}
-                    className="hover:text-red-600 transition-colors truncate max-w-[150px]"
+                    className="hover:text-red-600 transition-colors truncate max-w-[120px] sm:max-w-[150px]"
                   >
                     {crumb.label}
                   </Link>
                 ) : (
-                  <span className="text-slate-600 font-semibold truncate max-w-[200px]">
+                  <span className="text-slate-600 font-semibold truncate max-w-[150px] sm:max-w-[200px]">
                     {crumb.label}
                   </span>
                 )}
@@ -62,15 +62,15 @@ export default function PageHeader({
         )}
 
         {/* Title + Badge */}
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h1 className="text-lg sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">
             {title}
           </h1>
           {badge && <div>{badge}</div>}
         </div>
 
         {subtitle && (
-          <p className="text-xs sm:text-sm text-slate-500 font-normal leading-relaxed">
+          <p className="text-[11px] sm:text-sm text-slate-500 font-normal leading-relaxed">
             {subtitle}
           </p>
         )}
@@ -78,7 +78,7 @@ export default function PageHeader({
 
       {/* Action Buttons */}
       {actions && (
-        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap shrink-0">{actions}</div>
+        <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap shrink-0">{actions}</div>
       )}
     </div>
   );

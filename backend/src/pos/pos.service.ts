@@ -56,6 +56,7 @@ import { EscPosEncoder } from '../print-routing/esc-pos.encoder';
 import { PrintTemplateService } from '../print-template/print-template.service';
 import { OrderPricingService } from '../pricing/order-pricing.service';
 import { NotificationEngineService } from '../notification/notification-engine.service';
+import { AuthorizationService } from '../common/services/authorization.service';
 
 @Injectable()
 export class PosService {
@@ -69,6 +70,7 @@ export class PosService {
     private readonly printTemplateService: PrintTemplateService,
     private readonly orderPricingService: OrderPricingService,
     private readonly notificationEngine: NotificationEngineService,
+    private readonly authorizationService: AuthorizationService,
   ) {}
 
   /**
@@ -187,7 +189,7 @@ export class PosService {
   // ==========================================
 
   async getInitData(branchId?: string, user?: any) {
-    const branches = await this.prisma.branch.findMany({
+    const allBranches = await this.prisma.branch.findMany({
       where: { onlineOrderingEnabled: true },
       select: {
         id: true,
@@ -214,20 +216,42 @@ export class PosService {
     });
 
     const isSystemAdmin = user?.role === RoleType.ADMIN || user?.role === 'ADMIN';
+
+    // Xác định danh sách chi nhánh người dùng có quyền truy cập
+    let branches = allBranches;
+    if (!isSystemAdmin && user?.id) {
+      const allowed = await this.authorizationService.getAllowedBranches(user.id, 'pos.access');
+      if (!allowed.isAll) {
+        const allowedIds = new Set(allowed.branchIds);
+        if (user.branchId) {
+          allowedIds.add(user.branchId);
+        }
+        branches = allBranches.filter((b) => allowedIds.has(b.id));
+      }
+    }
+
     let currentBranch: any = null;
 
-    if (!isSystemAdmin && user?.branchId) {
-      // Non-admin with assigned branch MUST always use their assigned branch
-      currentBranch = branches.find((b) => b.id === user.branchId);
+    if (!isSystemAdmin) {
+      // Với user không phải admin: kiểm tra branchId có nằm trong danh sách chi nhánh được cấp phép hay không
+      if (branchId && branches.some((b) => b.id === branchId)) {
+        currentBranch = branches.find((b) => b.id === branchId);
+      } else if (user?.branchId && branches.some((b) => b.id === user.branchId)) {
+        currentBranch = branches.find((b) => b.id === user.branchId);
+      } else if (branches.length > 0) {
+        currentBranch = branches[0];
+      } else if (allBranches.length > 0) {
+        currentBranch = allBranches[0];
+      }
     } else {
       if (branchId) {
-        currentBranch = branches.find((b) => b.id === branchId);
+        currentBranch = allBranches.find((b) => b.id === branchId);
       }
       if (!currentBranch && user?.branchId) {
-        currentBranch = branches.find((b) => b.id === user.branchId);
+        currentBranch = allBranches.find((b) => b.id === user.branchId);
       }
-      if (!currentBranch && branches.length > 0) {
-        currentBranch = branches[0];
+      if (!currentBranch && allBranches.length > 0) {
+        currentBranch = allBranches[0];
       }
     }
 
@@ -260,7 +284,7 @@ export class PosService {
     return {
       branches,
       currentBranch,
-      canSwitchBranch: user?.role === RoleType.ADMIN || !user?.branchId,
+      canSwitchBranch: isSystemAdmin || branches.length > 1,
       activeShift,
       stations,
       paymentMethods,
@@ -1415,8 +1439,9 @@ export class PosService {
         buffetPackageNameSnapshot: item.buffetPackageNameSnapshot || null,
         buffetReferencePriceSnapshot: isBuffet ? prod.price : null,
         source: (item.source as OrderItemSource) || OrderItemSource.POS,
-        orderedById: user?.id || null,
-        orderedByName: actorName,
+        orderedById: item.orderedById || user?.id || null,
+        orderedByName: item.orderedByName || actorName,
+        createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
         selectedOptions: {
           create: selectedOptionsData,
         },
@@ -1836,8 +1861,9 @@ export class PosService {
           buffetPackageNameSnapshot: item.buffetPackageNameSnapshot || null,
           buffetReferencePriceSnapshot: isBuffet ? prod.price : null,
           source: (item.source as OrderItemSource) || OrderItemSource.POS,
-          orderedById: user?.id || null,
-          orderedByName: actorName,
+          orderedById: item.orderedById || user?.id || null,
+          orderedByName: item.orderedByName || actorName,
+          createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
           selectedOptions: {
             create: selectedOptionsData,
           },
@@ -1881,8 +1907,9 @@ export class PosService {
             it.printedQuantity = ex.printedQuantity || 0;
             it.printVersion = ex.printVersion || 0;
             it.stationId = ex.stationId || it.stationId;
-            it.orderedById = ex.orderedById || user?.id || null;
-            it.orderedByName = ex.orderedByName || actorName;
+            it.orderedById = ex.orderedById || it.orderedById || user?.id || null;
+            it.orderedByName = ex.orderedByName || it.orderedByName || actorName;
+            it.createdAt = ex.createdAt || (it.createdAt ? new Date(it.createdAt) : new Date());
             it.kitchenStatus =
               it.sentQuantity > 0 && it.quantity > it.sentQuantity
                 ? KitchenStatus.PENDING
@@ -1899,6 +1926,7 @@ export class PosService {
               it.discountReason = ex.discountReason;
               it.orderedById = ex.orderedById;
               it.orderedByName = ex.orderedByName;
+              it.createdAt = ex.createdAt || new Date();
               // Cho phép cập nhật ghi chú phục vụ
               if (it.note && !it.note.includes('[ĐỔI ĐIỂM')) {
                 it.note = ex.note ? `${it.note} (${ex.note})` : it.note;
@@ -1907,8 +1935,9 @@ export class PosService {
               }
             }
           } else {
-            it.orderedById = user?.id || null;
-            it.orderedByName = actorName;
+            it.orderedById = it.orderedById || user?.id || null;
+            it.orderedByName = it.orderedByName || actorName;
+            it.createdAt = it.createdAt ? new Date(it.createdAt) : new Date();
           }
           delete it._clientItemId;
           delete it._selectedOptionIds;
@@ -1936,6 +1965,7 @@ export class PosService {
               source: exRed.source,
               orderedById: exRed.orderedById,
               orderedByName: exRed.orderedByName,
+              createdAt: exRed.createdAt || new Date(),
               sentQuantity: exRed.sentQuantity || 0,
               printedQuantity: exRed.printedQuantity || 0,
               printVersion: exRed.printVersion || 0,
@@ -4010,6 +4040,8 @@ export class PosService {
           orderCode: officialOrderCode,
           temporaryOrderCode: tempCode,
           status: OrderStatus.COMPLETED,
+          deliveredAt: order.deliveredAt || new Date(),
+          completedAt: order.completedAt || new Date(),
           paymentStatus: 'PAID',
           totalAmount: finalAmount,
           subTotal: pricing.subTotal,
@@ -4311,6 +4343,38 @@ export class PosService {
       excludeActor: true,
       legacyType: 'ORDER',
     }).catch((err) => this.logger.error('Error publishing PAYMENT_SUCCESS:', err));
+
+    // Gửi thông báo xin đánh giá nếu đơn POS có liên kết tài khoản thành viên
+    if (order.userId) {
+      (async () => {
+        try {
+          const setting = await this.prisma.systemSetting.findUnique({
+            where: { key: 'ORDER_REVIEW_REWARD_POINTS' },
+          });
+          const rewardPoints = setting?.value ? parseInt(setting.value, 10) : 999;
+          await this.prisma.notification.create({
+            data: {
+              userId: order.userId!,
+              title: 'Bạn thấy trải nghiệm tại AVORA thế nào?',
+              content: `Hãy chia sẻ trải nghiệm đơn hàng #${displayCode} và nhận ${rewardPoints} điểm AVORA.`,
+              type: 'ORDER',
+              referenceId: displayCode,
+              url: `/orders/${displayCode}?review=1`,
+              eventId: `ORDER_REVIEW_REQUEST:${order.id}:${order.userId}`,
+              category: 'REVIEW',
+              priority: 1,
+              metadata: {
+                orderId: order.id,
+                orderCode: displayCode,
+                rewardPoints,
+              },
+            },
+          });
+        } catch (err: any) {
+          // Bỏ qua nếu đã gửi (idempotent eventId) hoặc lỗi mạng
+        }
+      })();
+    }
 
     return { ...result.updatedOrder, ...result };
   }

@@ -2,6 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import { ChevronRight, Heart, Star, SlidersHorizontal, Check, Leaf, Ban, ChefHat, LayoutGrid, List, X } from 'lucide-react';
 import AddToCartButton from '../../../components/AddToCartButton';
 import { useCart } from '../../../context/CartContext';
@@ -62,7 +63,7 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
     } else if (sortOption === 'price_desc') {
       result.sort((a: any, b: any) => (b.discountedPrice || b.price) - (a.discountedPrice || a.price));
     } else if (sortOption === 'rating') {
-      result.sort((a: any, b: any) => (b.avgRating || 4.9) - (a.avgRating || 4.9)); // Mocking 4.9 as default rating
+      result.sort((a: any, b: any) => (b.avgRating || 0) - (a.avgRating || 0));
     }
 
     return result;
@@ -233,10 +234,8 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
                       <h3 className="font-bold text-[#3E2723] text-[13px] md:text-[14px] leading-tight mb-1 line-clamp-2 group-hover:text-[#E55B32] transition-colors">{item.name}</h3>
                     </Link>
 
-                    <div className="flex items-center gap-1 mb-3 text-[10px] md:text-[11px] text-slate-500">
-                      <Star className="w-3 h-3 fill-[#FFD12A] text-[#FFD12A]" />
-                      <span className="font-bold text-[#3E2723]">{item.avgRating > 0 ? item.avgRating.toFixed(1) : "4.9"}</span>
-                      <span>({item.soldQuantity > 0 ? item.soldQuantity : 60} đánh giá)</span>
+                    <div className="mb-3">
+                      <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                     </div>
 
                     <div className="mt-auto flex items-center justify-between">

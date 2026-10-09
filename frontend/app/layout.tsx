@@ -5,7 +5,7 @@ import { WishlistProvider } from "@/context/WishlistContext";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 import { NotificationProvider } from "@/contexts/NotificationContext";
 import GlobalToaster from "@/components/notifications/GlobalToaster";
-import { FloatingChatbot } from '@/components/FloatingChatbot';
+import FloatingChatbotWrapper from '@/components/FloatingChatbotWrapper';
 import { Be_Vietnam_Pro } from "next/font/google";
 
 const beVietnamPro = Be_Vietnam_Pro({
@@ -41,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <WishlistProvider>
                 <GlobalToaster />
                 {children}
-                <FloatingChatbot />
+                <FloatingChatbotWrapper />
               </WishlistProvider>
             </CartProvider>
           </NotificationProvider>

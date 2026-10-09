@@ -112,35 +112,35 @@ export default function ReservationAnalyticsPage() {
   }, [analytics]);
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Link
               href="/admin/reservations"
-              className="text-xs font-semibold text-slate-500 hover:text-red-600 flex items-center gap-1"
+              className="text-xs font-semibold text-slate-500 hover:text-red-600 flex items-center gap-1 min-h-[32px]"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Quay lại Quản lý đặt bàn</span>
+              <span>Quay lại Đặt bàn</span>
             </Link>
           </div>
-          <h1 className="text-xl sm:text-2xl font-black text-slate-900 flex items-center gap-2">
-            <BarChart3 className="w-6 h-6 text-red-600" />
+          <h1 className="text-lg sm:text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 shrink-0" />
             <span>Báo Cáo & Phân Tích Đặt Bàn</span>
           </h1>
-          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-            Số liệu thống kê thực tế từ hệ thống đặt bàn AVORA Restaurant (Không dùng dữ liệu ảo)
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">
+            Số liệu thống kê thực tế từ hệ thống đặt bàn AVORA Restaurant
           </p>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto">
           {user?.role === 'ADMIN' && (
             <select
               value={selectedBranchId}
               onChange={(e) => setSelectedBranchId(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none"
+              className="flex-1 sm:flex-none bg-white border border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none h-9 sm:h-10"
             >
               <option value="ALL">Tất cả chi nhánh</option>
               {branches.map((b: { id: string; name: string }) => (
@@ -154,7 +154,7 @@ export default function ReservationAnalyticsPage() {
           <select
             value={days}
             onChange={(e) => setDays(parseInt(e.target.value, 10))}
-            className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none"
+            className="flex-1 sm:flex-none bg-white border border-slate-200 rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-semibold text-slate-700 shadow-xs focus:outline-none h-9 sm:h-10"
           >
             <option value="7">7 ngày qua</option>
             <option value="14">14 ngày qua</option>
@@ -176,60 +176,60 @@ export default function ReservationAnalyticsPage() {
       ) : (
         <>
           {/* Main KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-slate-400 font-semibold block">Tổng Lượt Đặt</span>
-              <span className="text-2xl font-black text-slate-900 mt-1 block">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5 md:gap-3">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-slate-400 font-semibold block truncate">Tổng Lượt Đặt</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 mt-0.5 sm:mt-1 block">
                 {analytics.totalBookings}
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">{days} ngày qua</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block">{days} ngày qua</span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-slate-400 font-semibold block">Tổng Số Khách</span>
-              <span className="text-2xl font-black text-slate-900 mt-1 block">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-slate-400 font-semibold block truncate">Tổng Số Khách</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-slate-900 mt-0.5 sm:mt-1 block">
                 {analytics.totalGuests}
               </span>
-              <span className="text-[10px] text-emerald-600 font-bold mt-0.5 block">
+              <span className="text-[9px] sm:text-[10px] text-emerald-600 font-bold mt-0.5 block">
                 TB {analytics.avgPartySize} khách/bàn
               </span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-emerald-700 font-semibold block">Tỷ Lệ Thành Công</span>
-              <span className="text-2xl font-black text-emerald-600 mt-1 block">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-emerald-700 font-semibold block truncate">Thành Công</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-emerald-600 mt-0.5 sm:mt-1 block">
                 {analytics.conversionRate}%
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">{analytics.completed} lượt hoàn tất</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block">{analytics.completed} hoàn tất</span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-rose-700 font-semibold block">Tỷ Lệ Hủy Bàn</span>
-              <span className="text-2xl font-black text-rose-600 mt-1 block">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-rose-700 font-semibold block truncate">Tỷ Lệ Hủy</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-rose-600 mt-0.5 sm:mt-1 block">
                 {analytics.cancellationRate}%
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">{analytics.cancelled} lượt hủy</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block">{analytics.cancelled} hủy</span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-red-700 font-semibold block">Tỷ Lệ Vắng Mặt</span>
-              <span className="text-2xl font-black text-red-700 mt-1 block">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-red-700 font-semibold block truncate">Vắng Mặt</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-red-700 mt-0.5 sm:mt-1 block">
                 {analytics.noShowRate}%
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">{analytics.noShow} lượt no-show</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block">{analytics.noShow} no-show</span>
             </div>
 
-            <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-xs">
-              <span className="text-[11px] text-purple-700 font-semibold block">Đang Phục Vụ</span>
-              <span className="text-2xl font-black text-purple-700 mt-1 block">
+            <div className="bg-white p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl border border-slate-100 shadow-xs">
+              <span className="text-[10px] sm:text-[11px] text-purple-700 font-semibold block truncate">Đang Phục Vụ</span>
+              <span className="text-base sm:text-lg lg:text-xl font-black text-purple-700 mt-0.5 sm:mt-1 block">
                 {analytics.seatedOrCheckedIn}
               </span>
-              <span className="text-[10px] text-slate-400 mt-0.5 block">Đã check-in / dùng bữa</span>
+              <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block">Đã check-in</span>
             </div>
           </div>
 
           {/* Charts Row */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 lg:gap-6">
             {/* Peak Hours Hourly Chart */}
             <div className="lg:col-span-2 bg-white p-5 rounded-2xl border border-slate-100 shadow-xs">
               <div className="flex items-center justify-between mb-4">

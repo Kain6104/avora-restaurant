@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { SepayService } from './sepay.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { NotificationEngineService } from '../notification/notification-engine.service';
 import { UnauthorizedException, NotFoundException } from '@nestjs/common';
 import { OrderStatus } from '@prisma/client';
 
@@ -26,12 +27,17 @@ describe('SepayService', () => {
     createNotification: jest.fn(),
   };
 
+  const mockNotificationEngineService = {
+    send: jest.fn().mockResolvedValue(true),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SepayService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: NotificationService, useValue: mockNotificationService },
+        { provide: NotificationEngineService, useValue: mockNotificationEngineService },
       ],
     }).compile();
 

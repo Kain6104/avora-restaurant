@@ -1,0 +1,99 @@
+<Window x:Class="AvoraPosNative.Dialogs.ExitDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Thoát AVORA POS Native"
+        Height="360" Width="480"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True">
+
+    <Window.Resources>
+        <Style x:Key="DialogButtonStyle" TargetType="Button">
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" Background="{TemplateBinding Background}" 
+                                BorderBrush="{TemplateBinding BorderBrush}" 
+                                BorderThickness="{TemplateBinding BorderThickness}" 
+                                CornerRadius="10">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.9" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Opacity" Value="0.75" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1.5" CornerRadius="16" Padding="32,28">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="32" Direction="270" ShadowDepth="8" Opacity="0.18" Color="#000000" />
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Vector Warning Icon -->
+            <Border Grid.Row="0" Width="56" Height="56" CornerRadius="28" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" HorizontalAlignment="Center" Margin="0,0,0,16">
+                <Path Data="M12 2L1 21h22L12 2zm0 3.99L19.53 19H4.47L12 5.99zM11 10h2v4h-2zm0 6h2v2h-2z" 
+                      Fill="#D97706" Width="26" Height="26" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+
+            <!-- Title -->
+            <TextBlock Grid.Row="1" Text="Thoát AVORA POS Native?" FontSize="22" FontWeight="Black" Foreground="#0F172A" HorizontalAlignment="Center" Margin="0,0,0,8" />
+
+            <!-- Subtitle message -->
+            <TextBlock Grid.Row="2" Text="Bạn có chắc chắn muốn đóng ứng dụng AVORA POS Native không?" FontSize="14" Foreground="#64748B" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" LineHeight="20" Margin="0,0,0,16" />
+
+            <!-- Optional Warning Banner for active tasks / print jobs -->
+            <Border Grid.Row="3" x:Name="pnlUnsafeWarning" Background="#FEF2F2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,20" Visibility="Collapsed">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="0" Data="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" 
+                          Fill="#DC2626" Width="18" Height="18" Stretch="Uniform" VerticalAlignment="Center" Margin="0,0,10,0" />
+                    <TextBlock Grid.Column="1" Text="Hàng đợi in đang xử lý lệnh in hóa đơn. Đóng ứng dụng ngay có thể làm gián đoạn." 
+                               Foreground="#991B1B" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" LineHeight="17" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
+
+            <!-- Action Buttons -->
+            <Grid Grid.Row="4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="14" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Button Grid.Column="0" x:Name="btnCancel" Style="{StaticResource DialogButtonStyle}" 
+                        Background="#F1F5F9" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1" Height="48" FontSize="14" 
+                        Content="Tiếp tục sử dụng" Click="BtnCancel_Click" />
+
+                <Button Grid.Column="2" x:Name="btnConfirm" Style="{StaticResource DialogButtonStyle}" 
+                        Background="#DC2626" Foreground="#FFFFFF" Height="48" FontSize="14" FontWeight="Bold"
+                        Content="Đóng ứng dụng" Click="BtnConfirm_Click" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

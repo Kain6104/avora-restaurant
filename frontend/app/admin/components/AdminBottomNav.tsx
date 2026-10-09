@@ -62,29 +62,31 @@ export default function AdminBottomNav() {
   ];
 
   return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.04)] px-2 py-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] flex items-center justify-around">
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-lg border-t border-slate-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.04)] px-2 py-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] flex items-center justify-around select-none">
       {navTabs.map((tab, idx) => {
         const Icon = tab.icon;
         return (
           <Link
             key={idx}
             href={tab.href}
-            className={`flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl relative transition-all duration-150 ${
-              tab.active ? 'text-red-600 font-bold' : 'text-slate-500 hover:text-slate-800'
+            prefetch={true}
+            className={`flex flex-col items-center justify-center flex-1 py-0.5 px-1 relative transition-all duration-150 ${
+              tab.active ? 'text-blue-600 font-bold' : 'text-slate-500 hover:text-slate-800'
             }`}
           >
-            <div className="relative">
-              <Icon size={20} strokeWidth={tab.active ? 2.5 : 2} />
+            <div
+              className={`relative px-4 py-1 rounded-full transition-all duration-150 flex items-center justify-center ${
+                tab.active ? 'bg-blue-50 text-blue-600 shadow-2xs' : 'text-slate-500'
+              }`}
+            >
+              <Icon size={20} strokeWidth={tab.active ? 2.4 : 1.9} />
               {tab.badge && (
-                <span className="absolute -top-1 -right-2.5 min-w-4 h-4 px-1 bg-red-600 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white">
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 bg-red-600 text-white text-[9px] font-black flex items-center justify-center rounded-full border border-white">
                   {tab.badge}
                 </span>
               )}
             </div>
-            <span className="text-[10px] tracking-tight mt-0.5">{tab.label}</span>
-            {tab.active && (
-              <span className="absolute bottom-0.5 w-6 h-0.5 bg-red-600 rounded-full" />
-            )}
+            <span className="text-[11px] tracking-tight mt-0.5 font-semibold">{tab.label}</span>
           </Link>
         );
       })}
@@ -93,10 +95,12 @@ export default function AdminBottomNav() {
       <button
         type="button"
         onClick={toggleMobileSidebar}
-        className="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl text-slate-500 hover:text-slate-800 transition-colors"
+        className="flex flex-col items-center justify-center flex-1 py-0.5 px-1 text-slate-500 hover:text-slate-800 transition-colors"
       >
-        <Layers size={20} strokeWidth={2} />
-        <span className="text-[10px] tracking-tight mt-0.5">Tính năng</span>
+        <div className="px-4 py-1 rounded-full flex items-center justify-center text-slate-500">
+          <Layers size={20} strokeWidth={1.9} />
+        </div>
+        <span className="text-[11px] tracking-tight mt-0.5 font-semibold">Tính năng</span>
       </button>
     </div>
   );

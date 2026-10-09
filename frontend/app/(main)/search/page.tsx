@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import {
   ChevronRight,
   Filter,
@@ -32,6 +33,8 @@ import {
 import { useCart } from '@/context/CartContext';
 import AddToCartButton from '@/components/AddToCartButton';
 import toast from 'react-hot-toast';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
 
 // Article type definitions & aesthetics
 const ARTICLE_TYPES = [
@@ -125,7 +128,7 @@ function SearchPageContent() {
     else setLoadingMoreProducts(true);
 
     try {
-      let url = `http://localhost:3001/api/products/search?q=${encodeURIComponent(query)}&page=${currentPage}&limit=20`;
+      let url = `${API_URL}/api/products/search?q=${encodeURIComponent(query)}&page=${currentPage}&limit=20`;
       if (categoryParam) url += `&category=${categoryParam}`;
       if (sortParam && tabParam === 'products') url += `&sort=${sortParam}`;
       if (minPriceParam) url += `&minPrice=${minPriceParam}`;
@@ -157,7 +160,7 @@ function SearchPageContent() {
     else setLoadingMoreArticles(true);
 
     try {
-      let url = `http://localhost:3001/api/articles?search=${encodeURIComponent(query)}&page=${currentPage}&limit=12`;
+      let url = `${API_URL}/api/articles?search=${encodeURIComponent(query)}&page=${currentPage}&limit=12`;
       if (articleTypeParam) url += `&type=${articleTypeParam}`;
       if (promotionStatusParam) url += `&promotionStatus=${promotionStatusParam}`;
       if (sortParam && tabParam === 'articles') url += `&sort=${sortParam}`;
@@ -254,7 +257,7 @@ function SearchPageContent() {
     setSavedArticles((prev) => ({ ...prev, [articleId]: !isCurrentlySaved }));
 
     try {
-      const res = await fetch(`http://localhost:3001/api/articles/${articleId}/favorite`, {
+      const res = await fetch(`${API_URL}/api/articles/${articleId}/favorite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -734,11 +737,8 @@ function SearchPageContent() {
                                 </h3>
                               </Link>
 
-                              <div className="flex items-center gap-1 mb-2 text-[10px] text-slate-500">
-                                <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                                <span className="text-slate-700 font-semibold">
-                                  {product.avgRating || 4.9}
-                                </span>
+                              <div className="flex items-center gap-1.5 mb-2 text-[10px] text-slate-500 flex-wrap">
+                                <ProductRatingBadge avgRating={product.avgRating} ratingCount={product.ratingCount} size="sm" />
                                 <span className="text-slate-300">•</span>
                                 <span>Đã bán {product.soldQuantity || 48}</span>
                               </div>

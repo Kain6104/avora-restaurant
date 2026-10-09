@@ -259,7 +259,7 @@ export default function PaymentMethodsPage() {
   );
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Header */}
       <PageHeader
         title={t('paymentMethods.title', 'Phương thức thanh toán')}
@@ -272,7 +272,7 @@ export default function PaymentMethodsPage() {
           <button
             type="button"
             onClick={handleOpenCreate}
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 sm:px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer min-h-[40px]"
           >
             <Plus size={16} />
             <span>{t('paymentMethods.add', 'Thêm phương thức')}</span>
@@ -281,7 +281,7 @@ export default function PaymentMethodsPage() {
       />
 
       {/* Search & Filter bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs">
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3 bg-white p-2.5 sm:p-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-2xs">
         <div className="relative w-full sm:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
@@ -289,28 +289,28 @@ export default function PaymentMethodsPage() {
             placeholder={t('paymentMethods.searchPlaceholder', 'Tìm kiếm theo tên, mã hoặc loại cổng...')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full h-9 pl-9 pr-4 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:bg-white transition-all font-medium"
+            className="w-full h-9 pl-9 pr-4 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-blue-500 focus:bg-white transition-all font-medium min-h-[40px]"
           />
         </div>
-        <div className="text-xs text-slate-500 font-semibold">
+        <div className="text-xs text-slate-500 font-semibold self-start sm:self-auto">
           {t('common.total', 'Tổng số')}: <strong className="text-slate-900">{filteredMethods.length}</strong> {t('paymentMethods.title', 'phương thức')}
         </div>
       </div>
 
       {/* Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs sm:text-sm">
+      <div className="bg-white rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
+        <div className="admin-scroll-table">
+          <table className="w-full text-left text-xs sm:text-sm min-w-[850px]">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                <th className="py-3.5 px-4">{t('paymentMethods.code', 'MÃ')}</th>
-                <th className="py-3.5 px-4">{t('paymentMethods.methodName', 'TÊN PHƯƠNG THỨC')}</th>
-                <th className="py-3.5 px-4">{t('paymentMethods.gateway', 'LOẠI CỔNG')}</th>
-                <th className="py-3.5 px-4">{t('paymentMethods.branches', 'CHI NHÁNH ÁP DỤNG')}</th>
-                <th className="py-3.5 px-4">{t('paymentMethods.minOrder', 'ĐƠN TỐI THIỂU')}</th>
-                <th className="py-3.5 px-4 text-center">{t('paymentMethods.webApp', 'WEB / APP')}</th>
-                <th className="py-3.5 px-4 text-center">{t('paymentMethods.pos', 'POS')}</th>
-                <th className="py-3.5 px-4 text-right">{t('common.actions', 'Thao tác')}</th>
+              <tr className="bg-slate-50/80 border-b border-slate-200/80 text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.code', 'MÃ')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.methodName', 'TÊN PHƯƠNG THỨC')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.gateway', 'LOẠI CỔNG')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.branches', 'CHI NHÁNH ÁP DỤNG')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.minOrder', 'ĐƠN TỐI THIỂU')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">{t('paymentMethods.webApp', 'WEB / APP')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">{t('paymentMethods.pos', 'POS')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">{t('common.actions', 'Thao tác')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -330,14 +330,14 @@ export default function PaymentMethodsPage() {
               ) : (
                 filteredMethods.map((m) => (
                   <tr key={m.id} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="py-3.5 px-4">
-                      <span className="font-mono text-xs font-bold text-slate-900 px-2 py-1 bg-slate-100 rounded-md">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4">
+                      <span className="font-mono text-xs font-bold text-slate-900 px-2 py-0.5 bg-slate-100 rounded-md">
                         {m.methodCode}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 font-black text-xs">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4">
+                      <div className="flex items-center gap-2 sm:gap-2.5">
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0 font-black text-xs">
                           {m.gatewayType === 'SEPAY' || m.gatewayType === 'TRANSFER' ? (
                             <QrCode size={16} />
                           ) : m.gatewayType === 'COD' || m.gatewayType === 'CASH' ? (
@@ -356,8 +356,8 @@ export default function PaymentMethodsPage() {
                         </div>
                       </div>
                     </td>
-                    <td className="py-3.5 px-4">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] sm:text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
                         {m.gatewayType === 'SEPAY'
                           ? t('paymentMethods.sepayAuto', 'SePay (Chuyển khoản tự động)')
                           : m.gatewayType === 'CASH'
@@ -369,9 +369,9 @@ export default function PaymentMethodsPage() {
                           : m.gatewayType}
                       </span>
                     </td>
-                    <td className="py-3.5 px-4 text-xs">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-xs">
                       {m.isAllBranches !== false || !m.branches || m.branches.length === 0 ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                        <span className="inline-flex items-center gap-1 text-[10px] sm:text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
                           <Store size={12} />
                           {t('paymentMethods.allBranches', 'Tất cả chi nhánh')}
                         </span>
@@ -388,18 +388,18 @@ export default function PaymentMethodsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="py-3.5 px-4 font-bold text-slate-800">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 font-bold text-slate-800 text-xs sm:text-sm">
                       {new Intl.NumberFormat(locale === 'en' ? 'en-US' : 'vi-VN', {
                         style: 'currency',
                         currency: 'VND',
                       }).format(m.minOrderValue || 0)}
                     </td>
                     {/* Toggle Web/App */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">
                       <button
                         type="button"
                         onClick={() => handleToggle(m.id, 'isActive')}
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-colors cursor-pointer min-h-[30px] ${
                           m.isActive
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-slate-200 text-slate-500'
@@ -409,11 +409,11 @@ export default function PaymentMethodsPage() {
                       </button>
                     </td>
                     {/* Toggle POS */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">
                       <button
                         type="button"
                         onClick={() => handleToggle(m.id, 'isActiveForPos')}
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-colors cursor-pointer min-h-[30px] ${
                           m.isActiveForPos
                             ? 'bg-emerald-600 text-white shadow-xs'
                             : 'bg-slate-200 text-slate-500'
@@ -422,23 +422,23 @@ export default function PaymentMethodsPage() {
                         <span>{m.isActiveForPos ? t('paymentMethods.on', 'BẬT') : t('paymentMethods.off', 'TẮT')}</span>
                       </button>
                     </td>
-                    <td className="py-3.5 px-4 text-right">
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           type="button"
                           onClick={() => handleOpenEdit(m)}
-                          className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer min-h-[34px] min-w-[34px] inline-flex items-center justify-center"
                           title={t('common.edit', 'Chỉnh sửa')}
                         >
-                          <Edit2 size={15} />
+                          <Edit2 size={14} />
                         </button>
                         <button
                           type="button"
                           onClick={() => handleDelete(m.id, m.name)}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer min-h-[34px] min-w-[34px] inline-flex items-center justify-center"
                           title={t('common.delete', 'Xóa')}
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={14} />
                         </button>
                       </div>
                     </td>
@@ -452,18 +452,18 @@ export default function PaymentMethodsPage() {
 
       {/* MODAL: CẬP NHẬT CẤU HÌNH CỔNG (EXACT MATCH USER UI SCREENSHOT) */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-1.5 sm:p-6 overflow-y-auto">
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
             onClick={() => setIsModalOpen(false)}
           />
 
-          <div className="relative w-full max-w-3xl bg-white rounded-3xl shadow-2xl border border-slate-100 overflow-hidden z-10 animate-in zoom-in-95 duration-200 flex flex-col max-h-[92vh]">
+          <div className="relative w-full max-w-3xl bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 overflow-hidden z-10 animate-in zoom-in-95 duration-200 flex flex-col max-h-[96vh] sm:max-h-[92vh]">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white shrink-0">
-              <div className="flex items-center gap-2.5">
-                <Sliders className="text-blue-600" size={20} />
-                <h3 className="text-base sm:text-lg font-bold text-slate-900">
+            <div className="flex items-center justify-between px-3.5 py-3 sm:px-6 sm:py-4 border-b border-slate-100 bg-white shrink-0">
+              <div className="flex items-center gap-2 sm:gap-2.5">
+                <Sliders className="text-blue-600" size={18} />
+                <h3 className="text-sm sm:text-base font-bold text-slate-900 truncate">
                   {editingMethod
                     ? t('paymentMethods.modalEditTitle', 'Cập Nhật Cấu Hình Cổng')
                     : t('paymentMethods.modalCreateTitle', 'Thêm Phương Thức Thanh Toán')}

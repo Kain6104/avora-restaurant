@@ -47,7 +47,7 @@ export class PosController {
   constructor(private readonly posService: PosService) {}
 
   @Get('init')
-  @RequirePermission('pos.access', { branchParam: 'branchId' })
+  @RequirePermission('pos.access', { anyBranch: true })
   async getInitData(@Query('branchId') branchId?: string, @Req() req?: any) {
     const data = await this.posService.getInitData(branchId, req?.user);
     return { success: true, data };

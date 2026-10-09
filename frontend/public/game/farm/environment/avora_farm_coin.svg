@@ -1,0 +1,122 @@
+<svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Premium AVORA Farm gold -->
+    <linearGradient id="goldOuter" x1="56" y1="34" x2="204" y2="222" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF2A6"/>
+      <stop offset="0.23" stop-color="#FFD34D"/>
+      <stop offset="0.52" stop-color="#F59E0B"/>
+      <stop offset="0.78" stop-color="#D97706"/>
+      <stop offset="1" stop-color="#8A4300"/>
+    </linearGradient>
+
+    <linearGradient id="goldInner" x1="76" y1="63" x2="184" y2="198" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFF8C9"/>
+      <stop offset="0.28" stop-color="#FFE06B"/>
+      <stop offset="0.65" stop-color="#F4A10A"/>
+      <stop offset="1" stop-color="#C76604"/>
+    </linearGradient>
+
+    <!-- AVORA green -->
+    <linearGradient id="farmGreen" x1="91" y1="85" x2="164" y2="178" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#59C96B"/>
+      <stop offset="0.48" stop-color="#239653"/>
+      <stop offset="1" stop-color="#0D5F3C"/>
+    </linearGradient>
+
+    <linearGradient id="leafLight" x1="105" y1="86" x2="147" y2="140" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#E8FFD0"/>
+      <stop offset="0.45" stop-color="#A9ED75"/>
+      <stop offset="1" stop-color="#42B95F"/>
+    </linearGradient>
+
+    <radialGradient id="centerGlow" cx="0" cy="0" r="1" gradientTransform="translate(109 88) rotate(53.3) scale(123 124)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFDE5"/>
+      <stop offset="0.33" stop-color="#FFE992"/>
+      <stop offset="1" stop-color="#F2A20A" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="shadow" x="24" y="26" width="208" height="216" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#6E3900" flood-opacity="0.34"/>
+    </filter>
+
+    <filter id="softGlow" x="64" y="67" width="130" height="128" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="3"/>
+    </filter>
+
+    <clipPath id="coinClip">
+      <circle cx="128" cy="124" r="94"/>
+    </clipPath>
+  </defs>
+
+  <!-- Shadowed token body -->
+  <g filter="url(#shadow)">
+    <circle cx="128" cy="124" r="94" fill="url(#goldOuter)"/>
+    <circle cx="128" cy="124" r="86" fill="#8B4905"/>
+    <circle cx="128" cy="124" r="80" fill="url(#goldInner)"/>
+  </g>
+
+  <!-- Engraved ring -->
+  <circle cx="128" cy="124" r="70" stroke="#B65A04" stroke-width="3" opacity="0.65"/>
+  <circle cx="128" cy="124" r="65" stroke="#FFF0A3" stroke-width="2" opacity="0.76"/>
+
+  <!-- Subtle radial highlight -->
+  <circle cx="128" cy="124" r="78" fill="url(#centerGlow)" opacity="0.72"/>
+
+  <!-- AVORA field emblem -->
+  <g>
+    <!-- Base medallion for contrast at small sizes -->
+    <path d="M128 78C153.957 78 175 99.043 175 125C175 150.957 153.957 172 128 172C102.043 172 81 150.957 81 125C81 99.043 102.043 78 128 78Z"
+          fill="#174D32" opacity="0.96"/>
+    <path d="M128 82C151.748 82 171 101.252 171 125C171 148.748 151.748 168 128 168C104.252 168 85 148.748 85 125C85 101.252 104.252 82 128 82Z"
+          fill="url(#farmGreen)"/>
+
+    <!-- Crop rows / farm furrows -->
+    <path d="M98 150C107 140 116 136 128 136C140 136 149 140 158 150"
+          stroke="#D9F6A7" stroke-width="5" stroke-linecap="round" opacity="0.95"/>
+    <path d="M105 158C112 151 119 148 128 148C137 148 144 151 151 158"
+          stroke="#BEEA83" stroke-width="4" stroke-linecap="round" opacity="0.9"/>
+    <path d="M114 164C119 160 123 159 128 159C133 159 137 160 142 164"
+          stroke="#8FD665" stroke-width="3.5" stroke-linecap="round" opacity="0.9"/>
+
+    <!-- Stem -->
+    <path d="M128 138V108"
+          stroke="#E8FFD0" stroke-width="6" stroke-linecap="round"/>
+
+    <!-- Left leaf -->
+    <path d="M126.5 116C111 115 101 107 99 94C113 94 124 101 128 113C128.7 115.2 128.3 116 126.5 116Z"
+          fill="url(#leafLight)"/>
+    <path d="M126 115C117 108 110 103 102 99"
+          stroke="#F2FFE4" stroke-width="2.3" stroke-linecap="round" opacity="0.8"/>
+
+    <!-- Right leaf -->
+    <path d="M130 111C132 96 141 87 155 85C156 100 148 111 133 115C130.7 115.6 129.7 113.5 130 111Z"
+          fill="url(#leafLight)"/>
+    <path d="M132 111C139 101 145 95 152 89"
+          stroke="#F2FFE4" stroke-width="2.3" stroke-linecap="round" opacity="0.82"/>
+
+    <!-- Seed/core -->
+    <circle cx="128" cy="122" r="5.5" fill="#FFF2A6"/>
+    <circle cx="128" cy="122" r="2.6" fill="#F59E0B"/>
+  </g>
+
+  <!-- Decorative agriculture ticks -->
+  <g fill="#9C5107" opacity="0.72">
+    <rect x="126" y="40" width="4" height="12" rx="2"/>
+    <rect x="126" y="196" width="4" height="12" rx="2"/>
+    <rect x="46" y="122" width="12" height="4" rx="2"/>
+    <rect x="198" y="122" width="12" height="4" rx="2"/>
+  </g>
+
+  <!-- Tiny premium glints -->
+  <g fill="#FFF7C5">
+    <path d="M82 67L84.4 73.6L91 76L84.4 78.4L82 85L79.6 78.4L73 76L79.6 73.6L82 67Z" opacity="0.95"/>
+    <path d="M179 77L180.5 81.2L185 83L180.5 84.8L179 89L177.5 84.8L173 83L177.5 81.2L179 77Z" opacity="0.86"/>
+  </g>
+
+  <!-- Top-left gloss -->
+  <path d="M70 82C84 57 109 44 135 44"
+        stroke="#FFF9D5" stroke-width="7" stroke-linecap="round" opacity="0.62"/>
+
+  <!-- Fine outer outline -->
+  <circle cx="128" cy="124" r="94" stroke="#FBEA8E" stroke-width="2" opacity="0.85"/>
+</svg>

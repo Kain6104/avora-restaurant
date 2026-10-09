@@ -54,7 +54,7 @@ export default function Modal({
   }[maxWidth];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1.5 sm:p-4 overflow-y-auto">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
@@ -64,21 +64,21 @@ export default function Modal({
 
       {/* Dialog container */}
       <div
-        className={`relative w-full ${maxWidthClasses} bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[92vh] z-10 animate-in zoom-in-95 duration-200 ${className}`}
+        className={`relative w-full ${maxWidthClasses} bg-white rounded-xl sm:rounded-3xl shadow-2xl border border-slate-100 overflow-hidden flex flex-col max-h-[96vh] sm:max-h-[92vh] z-10 animate-in zoom-in-95 duration-200 ${className}`}
         role="dialog"
         aria-modal="true"
       >
         {/* Header */}
         {(title || subtitle) && (
-          <div className="flex items-center justify-between px-4 py-3.5 sm:px-6 sm:py-4 border-b border-slate-100 shrink-0">
-            <div className="min-w-0 pr-4">
+          <div className="flex items-center justify-between px-3 py-2.5 sm:px-6 sm:py-4 border-b border-slate-100 shrink-0">
+            <div className="min-w-0 pr-2">
               {title && (
-                <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight truncate">
+                <h3 className="text-sm sm:text-lg font-bold text-slate-900 tracking-tight truncate">
                   {title}
                 </h3>
               )}
               {subtitle && (
-                <p className="text-xs sm:text-sm text-slate-500 font-normal mt-0.5 truncate">
+                <p className="text-[11px] sm:text-sm text-slate-500 font-normal mt-0.5 truncate">
                   {subtitle}
                 </p>
               )}
@@ -87,7 +87,7 @@ export default function Modal({
               type="button"
               onClick={onClose}
               aria-label="Đóng cửa sổ"
-              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0"
+              className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors shrink-0 min-h-[40px] min-w-[40px] flex items-center justify-center"
             >
               <X size={18} strokeWidth={2} />
             </button>
@@ -95,11 +95,11 @@ export default function Modal({
         )}
 
         {/* Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">{children}</div>
+        <div className="p-2.5 sm:p-6 overflow-y-auto flex-1 custom-scrollbar">{children}</div>
 
         {/* Footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
+          <div className="flex items-center justify-end gap-2 px-3 py-2.5 sm:px-6 sm:py-4 border-t border-slate-100 bg-slate-50/50 shrink-0">
             {footer}
           </div>
         )}

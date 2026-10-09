@@ -344,6 +344,7 @@ export function getPlatformBridge(): IPlatformBridge {
   const isDesktop =
     typeof window !== 'undefined' &&
     (window.IS_AVORA_DESKTOP === true ||
+      Boolean((window as any).__AVORA_DESKTOP__) ||
       Boolean(window.chrome?.webview?.hostObjects?.nativePrintService));
 
   if (isDesktop) {

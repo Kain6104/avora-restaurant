@@ -170,11 +170,50 @@ describe('OrderService - Dual Voucher System & Concurrency Testing', () => {
           totalAmount,
         };
       }),
+      calculatePricing: jest.fn().mockImplementation((params) => {
+        const subTotal = params.items.reduce((s: number, it: any) => s + it.priceAtSale * it.quantity, 0);
+        const discountAmount = params.orderDiscountAmount || 0;
+        const shippingFee = params.shippingFee || 0;
+        const shippingDiscount = params.shippingDiscount || 0;
+        const payableShipping = Math.max(0, shippingFee - shippingDiscount);
+        const pointsDiscount = params.pointsDiscount || 0;
+        const totalAmount = Math.max(0, subTotal - discountAmount) + payableShipping - pointsDiscount;
+        return {
+          subTotal,
+          discountAmount,
+          serviceChargeTotal: 0,
+          taxAmount: 0,
+          vatPriceMode: 'VAT_INCLUDED',
+          taxBreakdown: [],
+          itemTaxDetails: params.items.map((it: any) => ({
+            taxPercentage: it.taxPercentage || 0,
+            netTaxableAmount: it.priceAtSale * it.quantity,
+            taxAmount: 0,
+          })),
+          shippingFee,
+          shippingFeeOriginal: shippingFee,
+          shippingDiscount,
+          payableShipping,
+          shippingFeeFinal: payableShipping,
+          shippingDiscountSource: shippingDiscount > 0 ? 'VOUCHER' : 'NONE',
+          freeShippingQualified: false,
+          freeShippingThreshold: 500000,
+          freeShippingEligibleAmount: subTotal,
+          freeShippingRemainingAmount: 500000 - subTotal,
+          pointsDiscount,
+          totalAmount,
+        };
+      }),
+    };
+
+    const mockNotificationEngine: any = {
+      send: jest.fn().mockResolvedValue(true),
     };
 
     service = new OrderService(
       mockPrisma,
       mockNotificationService,
+      mockNotificationEngine,
       mockPromotionService,
       mockMembershipService,
       mockOperatingSlotService,

@@ -206,6 +206,14 @@ export class AuthService {
        throw new UnauthorizedException({ message: 'Tài khoản chưa được xác thực. Chúng tôi đã gửi lại mã OTP vào email của bạn.', requiresVerification: true, email: user.email });
     }
 
+    // Xóa cờ forceRelogin khi đăng nhập thành công
+    if (user.forceRelogin) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { forceRelogin: false },
+      });
+    }
+
     // Tạo Payload cho JWT
     const payload = { sub: user.id, email: user.email, role: user.role };
 

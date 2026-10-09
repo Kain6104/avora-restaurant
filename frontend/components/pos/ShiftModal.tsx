@@ -11,6 +11,7 @@ interface ShiftModalProps {
   onOpenShift: (openingBalance: number, note?: string) => Promise<void>;
   onCloseShift: (closingBalance: number, note?: string) => Promise<void>;
   isProcessing?: boolean;
+  onOpenEndOfDayReport?: () => void;
 }
 
 export const ShiftModal: React.FC<ShiftModalProps> = ({
@@ -20,6 +21,7 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
   onOpenShift,
   onCloseShift,
   isProcessing = false,
+  onOpenEndOfDayReport,
 }) => {
   const isShiftOpen = !!activeShift && activeShift.status === 'OPEN';
 
@@ -233,10 +235,24 @@ export const ShiftModal: React.FC<ShiftModalProps> = ({
               />
             </div>
 
+            {onOpenEndOfDayReport && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenEndOfDayReport();
+                }}
+                className="w-full bg-red-50 hover:bg-red-100 text-[#da251d] border border-red-200 py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              >
+                <Calculator className="w-3.5 h-3.5 text-[#da251d]" />
+                <span>Xem chi tiết doanh thu & in phiếu kết ca</span>
+              </button>
+            )}
+
             <button
               type="submit"
               disabled={isProcessing || !closingBalanceStr}
-              className="w-full bg-gray-900 hover:bg-black disabled:bg-gray-300 text-white py-3 rounded-xl font-bold text-xs shadow-md transition-all active:scale-98"
+              className="w-full bg-gray-900 hover:bg-black disabled:bg-gray-300 text-white py-3 rounded-xl font-bold text-xs shadow-md transition-all active:scale-98 cursor-pointer"
             >
               {isProcessing ? 'Đang kết ca...' : 'XÁC NHẬN KẾT CA & IN BÁO CÁO'}
             </button>

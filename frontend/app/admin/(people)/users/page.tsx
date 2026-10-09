@@ -185,7 +185,7 @@ export default function AdminUsersPage() {
   ];
 
   return (
-    <div className="space-y-4 sm:space-y-6">
+    <div className="admin-page-wrapper space-y-3 sm:space-y-4 md:space-y-6 pb-8 sm:pb-12">
       {/* Page Header */}
       <PageHeader
         title={t('users.title', 'Quản lý Người dùng')}
@@ -200,21 +200,21 @@ export default function AdminUsersPage() {
           </span>
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             <button
               type="button"
               onClick={() => fetchUsers()}
               aria-label={t('common.refresh', 'Làm mới')}
-              className="flex items-center gap-1 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors"
+              className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 sm:py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl border border-slate-200/80 text-xs font-bold shadow-2xs transition-colors min-h-[38px]"
             >
               <RotateCw size={14} className={loading ? 'animate-spin' : ''} />
-              <span>{t('common.refresh', 'Làm mới')}</span>
+              <span className="hidden xs:inline">{t('common.refresh', 'Làm mới')}</span>
             </button>
             {role === 'ADMIN' && (
               <button
                 type="button"
                 onClick={() => router.push('/admin/users/create')}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors"
+                className="flex items-center gap-1.5 px-3 sm:px-3.5 py-1.5 sm:py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-sm transition-colors min-h-[38px]"
               >
                 <Plus size={15} />
                 <span>{t('common.add', 'Thêm tài khoản')}</span>
@@ -226,7 +226,7 @@ export default function AdminUsersPage() {
 
       {/* Role KPI Filter Tabs */}
       {role === 'ADMIN' && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 sm:gap-2.5 md:gap-3">
           {ROLES.map((r) => {
             const isActive = roleFilter === r;
             return (
@@ -237,24 +237,24 @@ export default function AdminUsersPage() {
                   setRoleFilter(isActive ? '' : r);
                   setPage(1);
                 }}
-                className={`p-3 rounded-2xl border text-left transition-all relative overflow-hidden flex items-center gap-3 ${
+                className={`p-2.5 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all relative overflow-hidden flex items-center gap-2 sm:gap-3 min-h-[44px] ${
                   isActive
                     ? 'bg-red-50/90 border-red-300 text-red-700 shadow-xs'
                     : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-2xs'
                 }`}
               >
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  className={`w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0 ${
                     isActive ? 'bg-red-600 text-white' : 'bg-slate-100 text-slate-600'
                   }`}
                 >
                   {getRoleIcon(r)}
                 </div>
                 <div className="min-w-0">
-                  <span className="text-[11px] font-bold block truncate">
+                  <span className="text-[11px] sm:text-xs font-bold block truncate">
                     {t(`role.${r}`, r)}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-mono">
+                  <span className="text-[9px] sm:text-[10px] text-slate-400 font-mono">
                     {r === 'ADMIN' ? 'Full Access' : r === 'MANAGER' ? 'Branch' : 'General'}
                   </span>
                 </div>
