@@ -1,15 +1,38 @@
-import { Controller, Post, Body, Get, Param, Delete, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpException,
+  HttpStatus,
+  Param,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { ChatbotService } from './chatbot.service';
 
 class ChatDto {
-  userId?: string;
   sessionId?: string;
+  guestSessionToken?: string;
   message: string;
   branchId?: string;
-  history?: any[];
+  history?: unknown[];
   personality?: string;
   cartTotal?: number;
   cartSummary?: string;
+}
+
+class ConfirmChatTransactionDto {
+  sessionId: string;
+  operation: 'ORDER' | 'RESERVATION';
+  previewToken: string;
+}
+
+interface AuthenticatedRequest {
+  user?: { id: string };
 }
 
 @Controller('chatbot')
@@ -17,24 +40,66 @@ export class ChatbotController {
   constructor(private readonly chatbotService: ChatbotService) {}
 
   @Post('chat')
-  async chat(@Body() body: ChatDto) {
+  @UseGuards(OptionalJwtAuthGuard)
+  async chat(@Body() body: ChatDto, @Req() request?: AuthenticatedRequest) {
     try {
-      const { userId, sessionId, message, branchId, history, personality, cartTotal, cartSummary } = body;
-      console.log('Incoming chat request:', { userId, sessionId, message, branchId, personality, cartTotal, cartSummary });
-      return await this.chatbotService.chat(userId, sessionId, message, branchId, history, personality, cartTotal, cartSummary);
-    } catch (e) {
-      console.error('CHAT ERROR:', e);
-      throw new HttpException(e.message || 'Lỗi server nội bộ', HttpStatus.INTERNAL_SERVER_ERROR);
+      const {
+        sessionId,
+        guestSessionToken,
+        message,
+        branchId,
+        history,
+        personality,
+        cartTotal,
+        cartSummary,
+      } = body;
+      return await this.chatbotService.chat(
+        request?.user?.id,
+        sessionId,
+        message,
+        branchId,
+        history,
+        personality,
+        cartTotal,
+        cartSummary,
+        guestSessionToken,
+      );
+    } catch (error: unknown) {
+      if (error instanceof HttpException) throw error;
+      const message = error instanceof Error ? error.message : 'Lỗi server nội bộ';
+      throw new HttpException(message, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
+  @Post('confirmation')
+  @UseGuards(JwtAuthGuard)
+  async confirmTransaction(
+    @Body() body: ConfirmChatTransactionDto,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.chatbotService.confirmTransaction(
+      request.user!.id,
+      body.sessionId,
+      body.operation,
+      body.previewToken,
+    );
+  }
+
   @Get('session/:sessionId')
-  async getSession(@Param('sessionId') sessionId: string) {
-    return this.chatbotService.getSession(sessionId);
+  @UseGuards(JwtAuthGuard)
+  async getSession(
+    @Param('sessionId') sessionId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.chatbotService.getSession(sessionId, request.user!.id);
   }
 
   @Delete('session/:sessionId')
-  async deleteSession(@Param('sessionId') sessionId: string) {
-    return this.chatbotService.deleteSession(sessionId);
+  @UseGuards(JwtAuthGuard)
+  async deleteSession(
+    @Param('sessionId') sessionId: string,
+    @Req() request: AuthenticatedRequest,
+  ) {
+    return this.chatbotService.deleteSession(sessionId, request.user!.id);
   }
 }

@@ -7,13 +7,14 @@ import { NotificationRecipientService } from './notification-recipient.service';
 import { NotificationEngineService } from './notification-engine.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PosModule } from '../pos/pos.module';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Module({
   imports: [
     PrismaModule,
     forwardRef(() => PosModule),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+      secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
     }),
   ],

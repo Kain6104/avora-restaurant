@@ -351,7 +351,11 @@ export class OrdersService {
     const order = await this.findOne(id, branchIdScope);
 
     if (status === 'CANCELLED') {
-      return this.coreOrderService.cancelOrder(order.userId, order.orderCode || order.temporaryOrderCode || '', 'Hủy bởi Admin', true);
+      return this.coreOrderService.cancelOrder(
+        order.orderCode || order.temporaryOrderCode || '',
+        'Hủy bởi Admin',
+        { kind: 'ADMIN' },
+      );
     }
 
     return this.coreOrderService.updateOrderStatus(order.id, status, 'ADMIN');

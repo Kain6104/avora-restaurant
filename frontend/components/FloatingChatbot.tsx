@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, KeyboardEvent } from 'react';
 import { Sparkles, MessageCircle, X, Send, Camera, Mic, Loader2, Menu, Trash2, User, VolumeX, HelpCircle, PhoneCall, Maximize2, MicOff, Activity, Bot, UserCircle, Flame, Gift, Salad, ShoppingCart, Coffee, RefreshCw, CreditCard, BookOpen, Package, Plus, Ticket, Tag, Clock, Lock, AlertTriangle, ChevronDown, MapPin, HeartHandshake, Smile, Zap, Paperclip, FileText, Info } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { useCart, CartItem } from '../context/CartContext';
+import { useCart, CartItem, ServerCartSnapshot } from '../context/CartContext';
 import { toast } from 'react-hot-toast';
 import { useRouter, usePathname } from 'next/navigation';
 
@@ -30,7 +30,10 @@ const renderFormattedText = (text: string) => {
 };
 
 type ChatSenderType = "USER" | "AI" | "TOOL" | "SYSTEM";
-type ChatActionType = "ADD_TO_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "SELECT_ORDER_SLOT" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN" | "ORDER_PREVIEW" | "PLACE_ORDER";
+type ChatActionType = "ADD_TO_CART" | "ADD_ALL_TO_CART" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "CLEAR_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "SELECT_ORDER_SLOT" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "HANDOFF_TO_HUMAN" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN" | "ORDER_PREVIEW" | "PLACE_ORDER";
+
+const GUEST_HISTORY_STORAGE_KEY = 'avora_chat_guest_history';
+const GUEST_HISTORY_TTL_MS = 30 * 60 * 1000;
 
 interface ChatMessage {
   id: string;
@@ -48,7 +51,9 @@ export function FloatingChatbot() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [guestSessionToken, setGuestSessionToken] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isChatHistoryHydrated, setIsChatHistoryHydrated] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
@@ -99,6 +104,7 @@ export function FloatingChatbot() {
   const nextPlayTimeRef = useRef(0);
   const speakChunksRef = useRef(0);
   const playbackSourceRef = useRef<AudioBufferSourceNode | null>(null);
+  const voiceGenerationRef = useRef(0);
 
   // Silence detection
   const silenceStartRef = useRef<number | null>(null);
@@ -112,7 +118,7 @@ export function FloatingChatbot() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { addToCart, currentBranchId, cartItems, getCartItemTotal, clearCart, removeFromCart, updateQuantity } = useCart();
+  const { addToCart, currentBranchId, cartItems, getCartItemTotal, clearCart, replaceFromServerCart } = useCart();
   const cartTotal = cartItems.reduce((sum: number, item: any) => sum + getCartItemTotal(item), 0);
   const cartSummary = cartItems.length > 0
     ? "Giỏ hàng hiện tại: " + cartItems.map((item: any) => `${item.quantity}x ${item.name}`).join(', ')
@@ -134,6 +140,26 @@ export function FloatingChatbot() {
 
   // Load session from API auth
   useEffect(() => {
+    const restoreGuestHistory = () => {
+      setSessionId(localStorage.getItem('avora_chat_guest_session_id'));
+      setGuestSessionToken(localStorage.getItem('avora_chat_guest_session_token'));
+      localStorage.removeItem(GUEST_HISTORY_STORAGE_KEY);
+      const guestHistory = sessionStorage.getItem(GUEST_HISTORY_STORAGE_KEY);
+      if (!guestHistory) return;
+      try {
+        const parsed = JSON.parse(guestHistory) as { expiresAt?: number; messages?: ChatMessage[] } | ChatMessage[];
+        if (!Array.isArray(parsed) && parsed.expiresAt && parsed.expiresAt <= Date.now()) {
+          sessionStorage.removeItem(GUEST_HISTORY_STORAGE_KEY);
+          return;
+        }
+        const restoredMessages = Array.isArray(parsed) ? parsed : parsed.messages;
+        if (Array.isArray(restoredMessages)) setMessages(restoredMessages.slice(-50));
+      } catch (error) {
+        console.error('Failed to parse guest history', error);
+        sessionStorage.removeItem(GUEST_HISTORY_STORAGE_KEY);
+      }
+    };
+
     const fetchGlobalTopProducts = () => {
       fetch(`${API_URL}/api/home`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
         .then(r => r.json())
@@ -187,7 +213,7 @@ export function FloatingChatbot() {
         if (isLogged) {
           if (savedSessionId) {
             setSessionId(savedSessionId);
-            fetch(`${API_URL}/api/chatbot/session/${savedSessionId}`)
+            fetch(`${API_URL}/api/chatbot/session/${savedSessionId}`, { credentials: 'include' })
               .then(res => {
                 if (!res.ok) throw new Error('Not found');
                 return res.json();
@@ -204,17 +230,15 @@ export function FloatingChatbot() {
               });
           }
         } else {
-          const guestHistory = localStorage.getItem('avora_chat_guest_history');
-          if (guestHistory) {
-            try {
-              setMessages(JSON.parse(guestHistory));
-            } catch (e) {
-              console.error("Failed to parse guest history", e);
-            }
-          }
+          restoreGuestHistory();
         }
       })
-      .catch(() => { });
+      .catch(() => {
+        restoreGuestHistory();
+      })
+      .finally(() => {
+        setIsChatHistoryHydrated(true);
+      });
   }, [API_URL, pathname]);
 
   useEffect(() => {
@@ -288,14 +312,17 @@ export function FloatingChatbot() {
 
   // Save guest history
   useEffect(() => {
-    if (!user) {
+    if (isChatHistoryHydrated && !user) {
       if (messages.length > 0) {
-        localStorage.setItem('avora_chat_guest_history', JSON.stringify(messages));
+        sessionStorage.setItem(
+          GUEST_HISTORY_STORAGE_KEY,
+          JSON.stringify({ expiresAt: Date.now() + GUEST_HISTORY_TTL_MS, messages: messages.slice(-50) }),
+        );
       } else {
-        localStorage.removeItem('avora_chat_guest_history');
+        sessionStorage.removeItem(GUEST_HISTORY_STORAGE_KEY);
       }
     }
-  }, [messages, user]);
+  }, [isChatHistoryHydrated, messages, user]);
 
   // Voice Mode Cleanup
   useEffect(() => {
@@ -303,6 +330,14 @@ export function FloatingChatbot() {
       stopVoiceMode();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isOpen && isVoiceMode) stopVoiceMode();
+  }, [isOpen, isVoiceMode]);
+
+  useEffect(() => {
+    if (isVoiceMode && pathname) stopVoiceMode();
+  }, [pathname]);
 
   // Auto scroll to bottom
   useEffect(() => {
@@ -346,6 +381,7 @@ export function FloatingChatbot() {
     setAudioLevel(0);
 
     if (socketRef.current) {
+      socketRef.current.removeAllListeners();
       socketRef.current.disconnect();
       socketRef.current = null;
     }
@@ -354,6 +390,7 @@ export function FloatingChatbot() {
       mediaStreamRef.current = null;
     }
     if (processorRef.current) {
+      processorRef.current.onaudioprocess = null;
       processorRef.current.disconnect();
       processorRef.current = null;
     }
@@ -361,18 +398,22 @@ export function FloatingChatbot() {
       analyserRef.current.disconnect();
       analyserRef.current = null;
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
     if (playbackSourceRef.current) {
-      playbackSourceRef.current.stop();
+      try { playbackSourceRef.current.stop(); } catch {}
       playbackSourceRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => undefined);
+      audioContextRef.current = null;
     }
 
     audioQueueRef.current = [];
     isPlayingRef.current = false;
     silenceStartRef.current = null;
+    nextPlayTimeRef.current = 0;
+    speakChunksRef.current = 0;
+    hasSpokenInTurnRef.current = false;
+    voiceGenerationRef.current += 1;
   };
 
   const playNextAudioChunk = () => {
@@ -479,7 +520,8 @@ export function FloatingChatbot() {
             audioQueueRef.current = [];
             isPlayingRef.current = false;
             console.log("[Barge-in] Interrupting AI playback");
-            socketRef.current?.emit('client_content', { turnComplete: false }); // Interrupt
+            socketRef.current?.emit('stop_audio');
+            voiceGenerationRef.current += 1;
             setVoiceState('LISTENING');
           }
         } else {
@@ -524,6 +566,8 @@ export function FloatingChatbot() {
       const socket = io(`${socketUrl}/voice-chat`, {
         withCredentials: true,
         query: { 
+          sessionId: sessionId || undefined,
+          guestSessionToken: guestSessionToken || undefined,
           cartSummary: encodeURIComponent(cartSummary),
           cartTotal: cartTotal.toString(),
           branchId: activeBranch,
@@ -533,6 +577,16 @@ export function FloatingChatbot() {
 
       socket.on('connect', () => {
         console.log('Voice Socket connected');
+      });
+
+      socket.on('system', (data: { type?: string; sessionId?: string; guestSessionToken?: string }) => {
+        if (data.type !== 'voice_session' || !data.sessionId) return;
+        setSessionId(data.sessionId);
+        localStorage.setItem('avora_chat_session_id', data.sessionId);
+        if (data.guestSessionToken) {
+          setGuestSessionToken(data.guestSessionToken);
+          localStorage.setItem('avora_chat_guest_session_token', data.guestSessionToken);
+        }
       });
 
       socket.on('connect_error', (err) => {
@@ -551,13 +605,21 @@ export function FloatingChatbot() {
         stopVoiceMode();
       });
 
+      socket.on('voice_error', (err: { code?: string; message?: string; retryable?: boolean }) => {
+        toast.error(err.message || 'Voice server đã đóng kết nối.');
+        stopVoiceMode();
+      });
+
       socket.on('disconnect', (reason) => {
         console.log('Voice Socket disconnected:', reason);
         // Only stop, do not toast here since we have explicit error handling now
         stopVoiceMode();
       });
 
-      socket.on('audio_output', (base64Data: string) => {
+      socket.on('audio_output', (payload: string | { data: string; generation: number }) => {
+        const base64Data = typeof payload === 'string' ? payload : payload.data;
+        const generation = typeof payload === 'string' ? voiceGenerationRef.current : payload.generation;
+        if (generation !== voiceGenerationRef.current) return;
         console.log(`[VoiceWS] Received audio_output: ${base64Data.length} bytes base64`);
         const binaryString = atob(base64Data);
         const len = binaryString.length;
@@ -587,7 +649,7 @@ export function FloatingChatbot() {
         }
       });
 
-      socket.on('barge_in', () => {
+      socket.on('barge_in', (payload?: { generation?: number }) => {
         console.log('[VoiceWS] Barge-in detected, clearing audio playback');
         if (playbackSourceRef.current) {
           try { playbackSourceRef.current.stop(); } catch {}
@@ -595,6 +657,8 @@ export function FloatingChatbot() {
         }
         audioQueueRef.current = [];
         isPlayingRef.current = false;
+        voiceGenerationRef.current = payload?.generation ?? voiceGenerationRef.current + 1;
+        nextPlayTimeRef.current = 0;
         setVoiceState('LISTENING');
       });
 
@@ -623,6 +687,8 @@ export function FloatingChatbot() {
           handleAddToCart(data.actionPayload, tempMsg.id);
         } else if (data.actionType === 'UPDATE_CART' && data.actionPayload) {
           handleUpdateCart(data.actionPayload, tempMsg.id);
+        } else if (data.actionType === 'CLEAR_CART' && data.actionPayload) {
+          handleClearCart(data.actionPayload);
         } else if (data.actionType === 'ADD_ALL_TO_CART' && data.actionPayload) {
           handleAddAllToCart(data.actionPayload, tempMsg.id);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
@@ -663,17 +729,50 @@ export function FloatingChatbot() {
     setIsActionMenuOpen(false);
     if (sessionId && user) {
       try {
-        await fetch(`${API_URL}/api/chatbot/session/${sessionId}`, { method: 'DELETE' });
+        await fetch(`${API_URL}/api/chatbot/session/${sessionId}`, {
+          method: 'DELETE',
+          credentials: 'include',
+        });
       } catch (e) {
         console.error(e);
       }
     }
     localStorage.removeItem('avora_chat_session_id');
+    localStorage.removeItem('avora_chat_guest_session_id');
+    localStorage.removeItem('avora_chat_guest_session_token');
     localStorage.removeItem('avora_chat_guest_history');
     setSessionId(null);
+    setGuestSessionToken(null);
     setMessages([]);
     toast.success("Đã xóa lịch sử trò chuyện");
   };
+  async function confirmChatTransaction(
+    operation: 'ORDER' | 'RESERVATION',
+    previewToken: string | undefined,
+    confirmationMessage: string,
+  ) {
+    if (!user || !sessionId || !previewToken) {
+      toast.error('Vui lòng đăng nhập và tạo lại bản xem trước để xác nhận.');
+      return;
+    }
+
+    const response = await fetch(`${API_URL}/api/chatbot/confirmation`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId, operation, previewToken }),
+    });
+    if (!response.ok) {
+      if (response.status === 409) {
+        toast.error('Giỏ hàng hoặc bản xem trước vừa thay đổi. Vui lòng xem trước lại.');
+        return;
+      }
+      toast.error('Bản xem trước đã hết hạn hoặc không còn hợp lệ.');
+      return;
+    }
+    await handleSendMessage(confirmationMessage);
+  }
+
   const handleSuggestVoucher = async () => {
     try {
       const res = await fetch(`${API_URL}/api/promotions/vouchers`, {
@@ -961,11 +1060,13 @@ export function FloatingChatbot() {
 
       const res = await fetch(`${API_URL}/api/chatbot/chat`, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           sessionId,
+          guestSessionToken: currentUserId ? undefined : guestSessionToken,
           userId: currentUserId,
           message: tempMessage.content,
           branchId: currentBranchId || (typeof window !== 'undefined' ? (localStorage.getItem('currentBranchId') || localStorage.getItem('selectedBranchId')) : '') || undefined,
@@ -997,7 +1098,15 @@ export function FloatingChatbot() {
 
       if (data.sessionId && data.sessionId !== sessionId) {
         setSessionId(data.sessionId);
-        localStorage.setItem('avora_chat_session_id', data.sessionId);
+        localStorage.setItem(
+          currentUserId ? 'avora_chat_session_id' : 'avora_chat_guest_session_id',
+          data.sessionId,
+        );
+      }
+
+      if (!currentUserId && data.guestSessionToken) {
+        setGuestSessionToken(data.guestSessionToken);
+        localStorage.setItem('avora_chat_guest_session_token', data.guestSessionToken);
       }
 
       if (data.sessionMessages) {
@@ -1005,6 +1114,20 @@ export function FloatingChatbot() {
         const lastMsg = data.sessionMessages[data.sessionMessages.length - 1];
         if (lastMsg && lastMsg.actionType === 'ADD_TO_CART' && lastMsg.actionPayload) {
           handleAddToCart(lastMsg.actionPayload, lastMsg.id);
+        } else if (lastMsg && (lastMsg.actionType === 'UPDATE_CART' || lastMsg.actionType === 'CLEAR_CART') && lastMsg.actionPayload) {
+          handleUpdateCart(lastMsg.actionPayload, lastMsg.id);
+        } else if (lastMsg && lastMsg.actionType === 'NAVIGATE' && lastMsg.actionPayload) {
+          handleNavigate(lastMsg.actionPayload);
+        }
+      } else if (Array.isArray(data.messages)) {
+        setMessages(prev => [...prev, ...data.messages]);
+        const lastMsg = data.messages[data.messages.length - 1];
+        if (lastMsg && lastMsg.actionType === 'ADD_TO_CART' && lastMsg.actionPayload) {
+          handleAddToCart(lastMsg.actionPayload, lastMsg.id);
+        } else if (lastMsg && lastMsg.actionType === 'UPDATE_CART' && lastMsg.actionPayload) {
+          handleUpdateCart(lastMsg.actionPayload, lastMsg.id);
+        } else if (lastMsg && lastMsg.actionType === 'CLEAR_CART' && lastMsg.actionPayload) {
+          handleClearCart(lastMsg.actionPayload);
         } else if (lastMsg && lastMsg.actionType === 'NAVIGATE' && lastMsg.actionPayload) {
           handleNavigate(lastMsg.actionPayload);
         }
@@ -1014,6 +1137,8 @@ export function FloatingChatbot() {
           handleAddToCart(data.actionPayload, data.id);
         } else if (data.actionType === 'UPDATE_CART' && data.actionPayload) {
           handleUpdateCart(data.actionPayload, data.id);
+        } else if (data.actionType === 'CLEAR_CART' && data.actionPayload) {
+          handleClearCart(data.actionPayload);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
           handleNavigate(data.actionPayload);
         }
@@ -1067,12 +1192,20 @@ export function FloatingChatbot() {
   const handleAddToCart = async (payloadStr: string, msgId: string) => {
     try {
       const payload = JSON.parse(payloadStr);
-      let { productId, quantity } = payload;
+      if (Array.isArray(payload.items) && Number.isSafeInteger(payload.cartVersion)) {
+        const applied = replaceFromServerCart(payload as ServerCartSnapshot);
+        if (applied) toast.success('Đã đồng bộ giỏ hàng từ Avora');
+        return;
+      }
+
+      const { productId, quantity } = payload;
+      if (!currentBranchId) {
+        toast.error('Vui lòng chọn chi nhánh trước khi thêm món');
+        return;
+      }
 
       let url = `${API_URL}/api/products/by-id/${productId}`;
-      if (currentBranchId) {
-        url += `?branchId=${currentBranchId}`;
-      }
+      url += `?branchId=${currentBranchId}`;
       const res = await fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
 
       if (res.ok) {
@@ -1086,7 +1219,7 @@ export function FloatingChatbot() {
           quantity: quantity || 1,
           imageUrl: product.imageUrl || product.images?.[0]?.url || undefined,
           rawProduct: product
-        }, currentBranchId || product.branchId || "BR-001");
+        }, currentBranchId);
       } else {
         toast.error('Không tìm thấy thông tin món ăn');
       }
@@ -1098,26 +1231,19 @@ export function FloatingChatbot() {
 
   const handleUpdateCart = (payloadStr: string, msgId: string) => {
     try {
-      const { productName, quantity } = JSON.parse(payloadStr);
-      if (!productName) return;
-      const itemsToUpdate = cartItems.filter((item: any) => item.name.toLowerCase().includes(productName.toLowerCase()));
-
-      if (itemsToUpdate.length > 0) {
-        // Chỉ cập nhật món đầu tiên tìm thấy trong giỏ hàng
-        const targetItem = itemsToUpdate[0];
-        if (quantity === 0) {
-          removeFromCart(targetItem.id);
-          toast.success(`Đã xóa ${targetItem.name} khỏi giỏ hàng`);
-        } else {
-          updateQuantity(targetItem.id, quantity);
-          toast.success(`Đã cập nhật số lượng ${targetItem.name} thành ${quantity}`);
-        }
-      } else {
-        toast.error(`Không tìm thấy món "${productName}" trong giỏ hàng`);
+      const payload = JSON.parse(payloadStr) as ServerCartSnapshot;
+      if (!Array.isArray(payload.items) || !Number.isSafeInteger(payload.cartVersion)) {
+        throw new Error('Invalid canonical cart snapshot');
       }
+      if (replaceFromServerCart(payload)) toast.success('Đã cập nhật giỏ hàng');
     } catch (e) {
       console.error(e);
+      toast.error('Không thể đồng bộ giỏ hàng mới nhất');
     }
+  };
+
+  const handleClearCart = (payloadStr: string) => {
+    handleUpdateCart(payloadStr, 'clear-cart');
   };
 
   async function handleAddAllToCart(payloadStr: string, messageId: string) {
@@ -1364,7 +1490,8 @@ export function FloatingChatbot() {
                   if (playbackSourceRef.current) playbackSourceRef.current.stop();
                   audioQueueRef.current = [];
                   isPlayingRef.current = false;
-                  socketRef.current?.emit('client_content', { turnComplete: false });
+                  socketRef.current?.emit('stop_audio');
+                  voiceGenerationRef.current += 1;
                   setVoiceState('LISTENING');
                 }}
                 className="relative z-10 px-2 py-1.5 sm:px-3 sm:py-1.5 mr-0.5 sm:mr-1 bg-red-500/20 text-red-400 hover:text-red-300 hover:bg-red-500/30 rounded-lg text-[10px] sm:text-xs font-bold transition-all border border-red-500/30 flex items-center gap-1 shrink-0 whitespace-nowrap"
@@ -1940,7 +2067,11 @@ export function FloatingChatbot() {
                           )}
                         </div>
                         <button
-                          onClick={() => handleSendMessage("Tôi xác nhận đặt bàn thông tin trên, hãy tạo đặt bàn giúp tôi.")}
+                          onClick={() => confirmChatTransaction(
+                            'RESERVATION',
+                            resData.previewToken,
+                            'Tôi xác nhận đặt bàn thông tin trên, hãy tạo đặt bàn giúp tôi.',
+                          )}
                           disabled={isLoading}
                           className="mt-1 w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                         >
@@ -2016,7 +2147,11 @@ export function FloatingChatbot() {
                           <div><span className="font-semibold text-slate-700">Thanh toán:</span> {previewData.paymentMethod || 'COD'}</div>
                         </div>
                         <button
-                          onClick={() => handleSendMessage("Tôi xác nhận đơn hàng trên, hãy tạo đơn giúp tôi.")}
+                          onClick={() => confirmChatTransaction(
+                            'ORDER',
+                            previewData.previewToken,
+                            'Tôi xác nhận đơn hàng trên, hãy tạo đơn giúp tôi.',
+                          )}
                           disabled={isLoading}
                           className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                         >

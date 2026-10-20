@@ -33,6 +33,34 @@ export interface CartItem {
   note?: string;
 }
 
+export interface ServerCartItem {
+  lineId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  basePrice: number;
+  priceAtSale: number;
+  selectedOptions: Array<{
+    optionGroupId: string;
+    optionGroupName: string;
+    optionItemId: string;
+    optionItemName: string;
+    priceAdjustment: number;
+  }>;
+  note?: string;
+  isFlashSale?: boolean;
+  flashSaleId?: string;
+  imageUrl?: string;
+}
+
+export interface ServerCartSnapshot {
+  cartVersion: number;
+  currentBranchId: string | null;
+  items: ServerCartItem[];
+  subTotal: number;
+  totalItems: number;
+}
+
 export interface CartToastState {
   type: 'cart-add' | 'warning' | 'success' | 'info';
   itemName?: string;
@@ -42,6 +70,7 @@ export interface CartToastState {
 
 interface CartContextType {
   cartItems: CartItem[];
+  cartVersion: number;
   currentBranchId: string;
   isLoaded: boolean;
   appliedVoucher: any | null;
@@ -56,6 +85,7 @@ interface CartContextType {
   updateQuantity: (id: string, quantity: number) => void;
   updateCartItem: (id: string, updatedItem: CartItem) => void;
   clearCart: () => void;
+  replaceFromServerCart: (snapshot: ServerCartSnapshot) => boolean;
   changeBranch: (newBranchId: string) => void;
   setVouchers: (discountVoucher: any | null, shippingVoucher: any | null) => void;
   setDiscountVoucher: (voucher: any | null) => void;
@@ -80,6 +110,8 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartVersion, setCartVersion] = useState(0);
+  const cartVersionRef = useRef(0);
   const [currentBranchId, setCurrentBranchId] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   const [appliedDiscountVoucher, setAppliedDiscountVoucher] = useState<any | null>(null);
@@ -489,6 +521,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
       const savedBranchId = localStorage.getItem("currentBranchId") || localStorage.getItem("selectedBranchId");
       if (savedBranchId) setCurrentBranchId(savedBranchId);
+      const savedCartVersion = Number(localStorage.getItem("chatbotCartVersion") || 0);
+      if (Number.isSafeInteger(savedCartVersion) && savedCartVersion >= 0) {
+        cartVersionRef.current = savedCartVersion;
+        setCartVersion(savedCartVersion);
+      }
       
       refreshQuotasAndSyncCart(loadedCart);
     } catch (e) {
@@ -502,8 +539,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem("cartItems", JSON.stringify(cartItems));
+      localStorage.setItem("chatbotCartVersion", String(cartVersion));
     }
-  }, [cartItems, isLoaded]);
+  }, [cartItems, cartVersion, isLoaded]);
 
   useEffect(() => {
     if (isLoaded && currentBranchId) {
@@ -511,6 +549,37 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       localStorage.setItem("selectedBranchId", currentBranchId);
     }
   }, [currentBranchId, isLoaded]);
+
+  const replaceFromServerCart = (snapshot: ServerCartSnapshot): boolean => {
+    if (!Number.isSafeInteger(snapshot.cartVersion) || snapshot.cartVersion < cartVersionRef.current) {
+      return false;
+    }
+
+    const nextItems: CartItem[] = snapshot.items.map((item) => ({
+      id: item.lineId,
+      productId: item.productId,
+      name: item.productName,
+      originalPriceAtSale: item.basePrice,
+      priceAtSale: item.priceAtSale,
+      quantity: item.quantity,
+      imageUrl: item.imageUrl,
+      optionsTextSnapshot: item.selectedOptions.map((option) => option.optionItemName).join(', '),
+      selectedOptions: item.selectedOptions.map((option) => ({
+        optionItemId: option.optionItemId,
+        nameAtSale: option.optionItemName,
+        priceAdjustmentAtSale: option.priceAdjustment,
+      })),
+      isFlashSaleItem: item.isFlashSale,
+      flashSaleId: item.flashSaleId,
+      note: item.note,
+    }));
+
+    cartVersionRef.current = snapshot.cartVersion;
+    setCartVersion(snapshot.cartVersion);
+    setCartItems(nextItems);
+    setCurrentBranchId(snapshot.currentBranchId || '');
+    return true;
+  };
 
   const addToCart = (item: CartItem, branchId: string, silent?: boolean): boolean => {
     if (item.rawProduct?.optionGroups && item.rawProduct.optionGroups.length > 0 && !item.selectedOptions) {
@@ -915,10 +984,11 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <CartContext.Provider value={{ 
-      cartItems, currentBranchId, isLoaded, 
+      cartItems, cartVersion, currentBranchId, isLoaded,
       appliedVoucher, appliedDiscountVoucher, appliedShippingVoucher,
       discountAmount, shippingDiscountAmount, isRevalidatingVouchers,
-      addToCart, addComboToCart, removeFromCart, updateQuantity, updateCartItem, clearCart, changeBranch,
+      addToCart, addComboToCart, removeFromCart, updateQuantity, updateCartItem, clearCart,
+      replaceFromServerCart, changeBranch,
       setVouchers, setDiscountVoucher, setShippingVoucher, removeDiscountVoucher, removeShippingVoucher,
       setVoucher, removeVoucher, getCartItemTotal, flashSaleQuotas, refreshQuotas,
       isBranchModalOpen, setIsBranchModalOpen, branchModalProduct, setBranchModalProduct,

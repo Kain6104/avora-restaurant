@@ -14,6 +14,7 @@ import { QrOrderModule } from '../qr-order/qr-order.module';
 
 import { PosPinController } from './pos-pin.controller';
 import { PosPinService } from './pos-pin.service';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Module({
   imports: [
@@ -24,7 +25,7 @@ import { PosPinService } from './pos-pin.service';
     forwardRef(() => QrOrderModule),
     forwardRef(() => NotificationModule),
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+      secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
     }),
   ],

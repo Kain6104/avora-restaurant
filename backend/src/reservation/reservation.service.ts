@@ -609,6 +609,7 @@ export class ReservationService {
             source: dto.source || ReservationSource.WEB,
             status: ReservationStatus.CONFIRMED, // Standard web bookings auto-confirm if slot available
             checkInToken,
+            idempotencyKey: dto.idempotencyKey || null,
           },
         });
 

@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationService } from '../reservation/reservation.service';
 import { OrderService } from '../order/order.service';
@@ -6,17 +6,27 @@ import { OrderPricingService } from '../pricing/order-pricing.service';
 import { ShippingFeeService } from '../shipping/shipping-fee.service';
 import { OperatingSlotService } from '../operating-slot/operating-slot.service';
 import { PaymentMethodService } from '../payment-method/payment-method.service';
-import { ReservationSource, OrderSource } from '@prisma/client';
+import { ReservationSource } from '@prisma/client';
 import {
   ChatSessionContext,
   ChatbotToolResult,
   ChatSessionCartItem,
+  ChatCartSnapshot,
 } from './dto/chatbot-tool.dto';
+import {
+  ChatbotToolArgsMap,
+  ChatbotToolArgumentValidationError,
+  ChatbotToolName,
+  ValidatedChatbotToolCommand,
+  isChatbotToolName,
+  validateChatbotToolCommand,
+} from './dto/chatbot-tool-args.dto';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class ChatbotToolEngineService {
   private readonly logger = new Logger(ChatbotToolEngineService.name);
+  private static readonly CONFIRMATION_TTL_MS = 10 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -30,38 +40,179 @@ export class ChatbotToolEngineService {
     private readonly paymentMethodService: PaymentMethodService,
   ) {}
 
+  private createConfirmation(payload: unknown) {
+    const previewToken = crypto.randomBytes(32).toString('base64url');
+    return {
+      previewToken,
+      state: {
+        previewTokenHash: crypto.createHash('sha256').update(previewToken).digest('hex'),
+        payloadHash: crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex'),
+        expiresAt: new Date(Date.now() + ChatbotToolEngineService.CONFIRMATION_TTL_MS).toISOString(),
+        status: 'PREVIEWED' as const,
+      },
+    };
+  }
+
+  private requireConfirmation(
+    state: ChatSessionContext['orderConfirmation'],
+    payload: unknown,
+  ): ChatbotToolResult | null {
+    if (!state || state.status !== 'CONFIRMED') {
+      return {
+        success: false,
+        code: 'CONFIRMATION_REQUIRED',
+        message: 'Vui lòng xem trước và xác nhận giao dịch trước khi thực hiện.',
+      };
+    }
+    if (new Date(state.expiresAt).getTime() <= Date.now()) {
+      return {
+        success: false,
+        code: 'CONFIRMATION_EXPIRED',
+        message: 'Xác nhận đã hết hạn. Vui lòng xem trước giao dịch lại.',
+      };
+    }
+    const payloadHash = crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex');
+    if (state.payloadHash !== payloadHash) {
+      return {
+        success: false,
+        code: 'PREVIEW_STALE',
+        message: 'Thông tin giao dịch đã thay đổi. Vui lòng xem trước lại.',
+      };
+    }
+    return null;
+  }
+
+  private orderConfirmationPayload(ctx: ChatSessionContext) {
+    return {
+      branchId: ctx.currentBranchId,
+      fulfillmentType: ctx.fulfillmentType,
+      addressId: ctx.deliveryAddressId,
+      operatingSlotId: ctx.operatingSlotId,
+      deliveryDate: ctx.deliveryDate,
+      paymentMethod: ctx.paymentMethod || 'COD',
+      discountVoucherCode: ctx.discountVoucherCode,
+      shippingVoucherCode: ctx.shippingVoucherCode,
+      pointsToUse: ctx.pointsToUse || 0,
+      expectedTotalAmount: ctx.expectedTotalAmount,
+      cart: ctx.cart,
+    };
+  }
+
+  private reservationConfirmationPayload(ctx: ChatSessionContext) {
+    return ctx.reservationDraft || {};
+  }
+
+  private enforceToolPolicy(
+    command: ValidatedChatbotToolCommand,
+    userId?: string,
+  ): ChatbotToolResult | null {
+    const authenticatedOnly = new Set<ChatbotToolName>([
+      'getUserAddresses',
+      'saveAddress',
+      'getMembershipStatus',
+      'previewPointUsage',
+    ]);
+
+    if (authenticatedOnly.has(command.name) && !userId) {
+      return {
+        success: false,
+        code: 'LOGIN_REQUIRED',
+        message: 'Vui lòng đăng nhập để sử dụng tính năng này.',
+        recoverable: true,
+      };
+    }
+
+    if (command.name === 'checkOrder' && !userId && (!command.args.orderCode || !command.args.phone)) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng cung cấp mã đơn hàng và số điện thoại đã dùng để đặt đơn.',
+        recoverable: true,
+      };
+    }
+
+    if (command.name === 'cancelOrder' && !userId && !command.args.phone) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng cung cấp số điện thoại đã dùng để đặt đơn trước khi hủy.',
+        recoverable: true,
+      };
+    }
+
+    if (command.name === 'getMyReservations' && !userId && !command.args.phone) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng đăng nhập hoặc cung cấp số điện thoại để xem đặt bàn.',
+        recoverable: true,
+      };
+    }
+
+    if (command.name === 'cancelReservation' && !userId && !command.args.phone) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng đăng nhập hoặc cung cấp số điện thoại để hủy đặt bàn.',
+        recoverable: true,
+      };
+    }
+
+    return null;
+  }
+
   // ==========================================
   // CONTEXT PERSISTENCE HELPERS
   // ==========================================
 
-  async loadSessionContext(sessionId?: string): Promise<ChatSessionContext> {
+  private async loadSessionState(
+    sessionId?: string,
+  ): Promise<{ context: ChatSessionContext; version: number }> {
     if (!sessionId) {
-      return { cart: [], fulfillmentType: 'DELIVERY' };
+      return { context: { cart: [], fulfillmentType: 'DELIVERY', cartVersion: 0 }, version: 0 };
     }
     try {
       const session = await this.prisma.chatSession.findUnique({
         where: { id: sessionId },
-        select: { contextData: true },
+        select: { contextData: true, version: true },
       });
       if (session?.contextData) {
-        return JSON.parse(session.contextData);
+        const context = JSON.parse(session.contextData) as ChatSessionContext;
+        return {
+          context: { ...context, cart: context.cart || [], cartVersion: context.cartVersion || 0 },
+          version: session.version,
+        };
+      }
+      if (session) {
+        return {
+          context: { cart: [], fulfillmentType: 'DELIVERY', cartVersion: 0 },
+          version: session.version,
+        };
       }
     } catch (err: any) {
       this.logger.warn(`Failed to parse context for session ${sessionId}: ${err.message}`);
     }
-    return { cart: [], fulfillmentType: 'DELIVERY' };
+    return { context: { cart: [], fulfillmentType: 'DELIVERY', cartVersion: 0 }, version: 0 };
   }
 
-  async saveSessionContext(sessionId: string | undefined, ctx: ChatSessionContext): Promise<void> {
-    if (!sessionId) return;
-    try {
-      await this.prisma.chatSession.update({
-        where: { id: sessionId },
-        data: { contextData: JSON.stringify(ctx) },
-      });
-    } catch (err: any) {
-      this.logger.warn(`Failed to save context for session ${sessionId}: ${err.message}`);
-    }
+  async loadSessionContext(sessionId?: string): Promise<ChatSessionContext> {
+    return (await this.loadSessionState(sessionId)).context;
+  }
+
+  async saveSessionContext(
+    sessionId: string | undefined,
+    ctx: ChatSessionContext,
+    expectedVersion: number,
+  ): Promise<boolean> {
+    if (!sessionId) return true;
+    const updateResult = await this.prisma.chatSession.updateMany({
+      where: { id: sessionId, version: expectedVersion },
+      data: {
+        contextData: JSON.stringify(ctx),
+        version: { increment: 1 },
+      },
+    });
+    return updateResult.count === 1;
   }
 
   // ==========================================
@@ -70,18 +221,43 @@ export class ChatbotToolEngineService {
 
   async executeTool(
     toolName: string,
-    args: any,
+    rawArgs: unknown,
     userIdOrContext?: string | ChatSessionContext,
     sessionId?: string,
     branchId?: string,
     providedCtx?: ChatSessionContext,
   ): Promise<ChatbotToolResult> {
+    if (!isChatbotToolName(toolName)) {
+      return {
+        success: false,
+        code: 'UNKNOWN_TOOL',
+        message: `Công cụ [${toolName}] không tồn tại trong hệ thống.`,
+      };
+    }
+
+    let command: ValidatedChatbotToolCommand;
+    try {
+      command = await validateChatbotToolCommand(toolName, rawArgs);
+    } catch (error: unknown) {
+      if (error instanceof ChatbotToolArgumentValidationError) {
+        return {
+          success: false,
+          code: 'TOOL_ARGUMENTS_INVALID',
+          message: 'Tham số công cụ không hợp lệ.',
+          data: { fields: error.details },
+          recoverable: true,
+        };
+      }
+      throw error;
+    }
+
     let ctx: ChatSessionContext;
     let userId: string | undefined;
     let actualSessionId = sessionId;
+    let expectedContextVersion: number | null = null;
 
     if (userIdOrContext && typeof userIdOrContext === 'object') {
-      ctx = userIdOrContext as ChatSessionContext;
+      ctx = userIdOrContext;
       userId = typeof sessionId === 'string' ? sessionId : undefined;
       actualSessionId = typeof branchId === 'string' ? branchId : undefined;
     } else {
@@ -89,11 +265,16 @@ export class ChatbotToolEngineService {
       if (providedCtx) {
         ctx = providedCtx;
       } else {
-        ctx = await this.loadSessionContext(actualSessionId);
+        const sessionState = await this.loadSessionState(actualSessionId);
+        ctx = sessionState.context;
+        expectedContextVersion = sessionState.version;
       }
     }
 
     if (!ctx.cart) ctx.cart = [];
+
+    const policyError = this.enforceToolPolicy(command, userId);
+    if (policyError) return policyError;
 
     this.logger.log(`Executing tool [${toolName}] for user=${userId || 'guest'}, session=${actualSessionId}`);
 
@@ -101,27 +282,31 @@ export class ChatbotToolEngineService {
       ctx.currentBranchId = branchId;
     }
 
-    let result: ChatbotToolResult;
+    let result: ChatbotToolResult = {
+      success: false,
+      code: 'TOOL_NOT_DISPATCHED',
+      message: 'Công cụ chưa được đăng ký trong dispatcher.',
+    };
 
     try {
-      switch (toolName) {
+      switch (command.name) {
         // 1. Branches & Info
         case 'listBranches':
-          result = await this.toolListBranches(args);
+          result = await this.toolListBranches(command.args);
           break;
         case 'getBranchDetail':
-          result = await this.toolGetBranchDetail(args);
+          result = await this.toolGetBranchDetail(command.args);
           break;
         case 'findNearestBranch':
-          result = await this.toolFindNearestBranch(args);
+          result = await this.toolFindNearestBranch(command.args);
           break;
 
         // 2. Menu & Products
         case 'searchMenu':
-          result = await this.toolSearchMenu(args, ctx);
+          result = await this.toolSearchMenu(command.args, ctx);
           break;
         case 'getProductDetail':
-          result = await this.toolGetProductDetail(args);
+          result = await this.toolGetProductDetail(command.args);
           break;
         case 'listCategories':
           result = await this.toolListCategories();
@@ -129,10 +314,10 @@ export class ChatbotToolEngineService {
 
         // 3. Cart Management
         case 'addToCart':
-          result = await this.toolAddToCart(args, ctx, userId);
+          result = await this.toolAddToCart(command.args, ctx, userId);
           break;
         case 'updateCartItem':
-          result = await this.toolUpdateCartItem(args, ctx);
+          result = await this.toolUpdateCartItem(command.args, ctx);
           break;
         case 'getCart':
           result = await this.toolGetCart(ctx);
@@ -146,65 +331,64 @@ export class ChatbotToolEngineService {
           result = await this.toolGetUserAddresses(userId);
           break;
         case 'validateDeliveryAddress':
-          result = await this.toolValidateDeliveryAddress(args, ctx, userId);
+          result = await this.toolValidateDeliveryAddress(command.args, ctx, userId);
           break;
         case 'saveAddress':
-          result = await this.toolSaveAddress(args, userId);
+          result = await this.toolSaveAddress(command.args, userId);
           break;
         case 'getAvailableOrderSlots':
-          result = await this.toolGetAvailableOrderSlots(args, ctx);
+          result = await this.toolGetAvailableOrderSlots(command.args, ctx);
           break;
 
         // 5. Vouchers & Points
         case 'findApplicableVouchers':
-          result = await this.toolFindApplicableVouchers(args, ctx, userId);
+          result = await this.toolFindApplicableVouchers(command.args, ctx, userId);
           break;
         case 'applyVoucher':
-          result = await this.toolApplyVoucher(args, ctx);
+          result = await this.toolApplyVoucherCanonical(command.args, ctx, userId);
           break;
         case 'removeVoucher':
-          result = await this.toolRemoveVoucher(args, ctx);
+          result = await this.toolRemoveVoucher(command.args, ctx);
           break;
         case 'getMembershipStatus':
           result = await this.toolGetMembershipStatus(userId, ctx.currentBranchId);
           break;
         case 'previewPointUsage':
-          result = await this.toolPreviewPointUsage(args, ctx, userId);
+          result = await this.toolPreviewPointUsage(command.args, ctx, userId);
           break;
 
         // 6. Payment & Order Checkout
         case 'getPaymentMethods':
-          result = await this.toolGetPaymentMethods(args, ctx);
+          result = await this.toolGetPaymentMethods(command.args, ctx);
           break;
         case 'previewOrder':
-          result = await this.toolPreviewOrder(args, ctx, userId);
+          result = await this.toolPreviewOrder(command.args, ctx, userId);
           break;
         case 'placeOrder':
-          result = await this.toolPlaceOrder(args, ctx, userId);
+          result = await this.toolPlaceOrder(command.args, ctx, userId);
           break;
         case 'checkOrder':
-          result = await this.toolCheckOrder(args, userId);
+          result = await this.toolCheckOrder(command.args, userId);
           break;
         case 'cancelOrder':
-          result = await this.toolCancelOrder(args, userId);
+          result = await this.toolCancelOrder(command.args, userId);
           break;
 
         // 7. Table Reservation
         case 'getReservationSlots':
-          result = await this.toolGetReservationSlots(args);
+          result = await this.toolGetReservationSlots(command.args);
           break;
         case 'previewReservation':
-          result = await this.toolPreviewReservation(args, ctx, userId);
+          result = await this.toolPreviewReservation(command.args, ctx, userId);
           break;
         case 'createReservation':
-        case 'placeReservation':
-          result = await this.toolCreateReservation(args, ctx, userId);
+          result = await this.toolCreateReservation(command.args, ctx, userId);
           break;
         case 'getMyReservations':
-          result = await this.toolGetMyReservations(args, userId);
+          result = await this.toolGetMyReservations(command.args, userId);
           break;
         case 'cancelReservation':
-          result = await this.toolCancelReservation(args, userId);
+          result = await this.toolCancelReservation(command.args, userId);
           break;
 
         // 8. Utility & UI actions
@@ -222,17 +406,11 @@ export class ChatbotToolEngineService {
             code: 'HANDOFF_TO_HUMAN',
             message: 'Đang kết nối tới nhân viên tư vấn trực tiếp của nhà hàng.',
             actionType: 'HANDOFF_TO_HUMAN',
-            actionPayload: JSON.stringify({ reason: args.reason || 'Khách yêu cầu hỗ trợ' }),
+            actionPayload: JSON.stringify({ reason: command.args.reason }),
             content: 'Dạ, em đã chuyển thông tin tới bộ phận chăm sóc khách hàng. Chuyên viên của Avora sẽ liên hệ hỗ trợ anh/chị ngay nhé ạ!',
           };
           break;
 
-        default:
-          result = {
-            success: false,
-            code: 'UNKNOWN_TOOL',
-            message: `Công cụ [${toolName}] không tồn tại trong hệ thống.`,
-          };
       }
     } catch (error: any) {
       this.logger.error(`Error executing tool [${toolName}]: ${error.message}`, error.stack);
@@ -245,8 +423,20 @@ export class ChatbotToolEngineService {
     }
 
     // Persist updated context
-    if (actualSessionId) {
-      await this.saveSessionContext(actualSessionId, ctx);
+    if (actualSessionId && result.success) {
+      const saved = await this.saveSessionContext(
+        actualSessionId,
+        ctx,
+        expectedContextVersion ?? 0,
+      );
+      if (!saved) {
+        return {
+          success: false,
+          code: 'CART_VERSION_CONFLICT',
+          message: 'Giỏ hàng vừa được cập nhật ở một yêu cầu khác. Vui lòng tải lại giỏ hàng.',
+          recoverable: true,
+        };
+      }
     }
     return result;
   }
@@ -255,7 +445,7 @@ export class ChatbotToolEngineService {
   // 1. CHI NHÁNH & VỊ TRÍ
   // =========================================================================
 
-  private async toolListBranches(args: any): Promise<ChatbotToolResult> {
+  private async toolListBranches(args: ChatbotToolArgsMap['listBranches']): Promise<ChatbotToolResult> {
     const where: any = {};
     if (args.reservationOnly) where.reservationEnabled = true;
     if (args.deliveryOnly) where.onlineOrderingEnabled = true;
@@ -288,7 +478,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolGetBranchDetail(args: any): Promise<ChatbotToolResult> {
+  private async toolGetBranchDetail(args: ChatbotToolArgsMap['getBranchDetail']): Promise<ChatbotToolResult> {
     let branch: any = null;
     if (args.branchId) {
       branch = await this.prisma.branch.findUnique({ where: { id: args.branchId } });
@@ -315,7 +505,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolFindNearestBranch(args: any): Promise<ChatbotToolResult> {
+  private async toolFindNearestBranch(args: ChatbotToolArgsMap['findNearestBranch']): Promise<ChatbotToolResult> {
     const { latitude, longitude } = args;
     if (!latitude || !longitude) {
       return { success: false, code: 'INVALID_COORDINATES', message: 'Thiếu tọa độ GPS.' };
@@ -376,7 +566,7 @@ export class ChatbotToolEngineService {
   // 2. THỰC ĐƠN & SẢN PHẨM (PRODUCT & OPTIONS)
   // =========================================================================
 
-  private async toolSearchMenu(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolSearchMenu(args: ChatbotToolArgsMap['searchMenu'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     const where: any = { available: true };
     const effectiveBranchId = args.branchId || ctx.currentBranchId;
     if (effectiveBranchId) {
@@ -459,7 +649,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolGetProductDetail(args: any): Promise<ChatbotToolResult> {
+  private async toolGetProductDetail(args: ChatbotToolArgsMap['getProductDetail']): Promise<ChatbotToolResult> {
     let product: any = null;
     if (args.productId) {
       product = await this.prisma.product.findUnique({
@@ -473,6 +663,7 @@ export class ChatbotToolEngineService {
             where: { flashSale: { status: 'ACTIVE' } },
             include: { flashSale: true },
           },
+          branches: { select: { id: true } },
         },
       });
     } else if (args.productName) {
@@ -487,6 +678,7 @@ export class ChatbotToolEngineService {
             where: { flashSale: { status: 'ACTIVE' } },
             include: { flashSale: true },
           },
+          branches: { select: { id: true } },
         },
       });
     }
@@ -551,7 +743,27 @@ export class ChatbotToolEngineService {
   // 3. SERVER-SIDE CART (GIỎ HÀNG TRÊN SERVER)
   // =========================================================================
 
-  private async toolAddToCart(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private createCartSnapshot(ctx: ChatSessionContext): ChatCartSnapshot {
+    const items = (ctx.cart || []).map((item) => ({
+      ...item,
+      selectedOptions: item.selectedOptions.map((option) => ({ ...option })),
+    }));
+
+    return {
+      cartVersion: ctx.cartVersion || 0,
+      currentBranchId: ctx.currentBranchId || null,
+      items,
+      subTotal: items.reduce((sum, item) => sum + item.priceAtSale * item.quantity, 0),
+      totalItems: items.reduce((sum, item) => sum + item.quantity, 0),
+    };
+  }
+
+  private cartResultData(ctx: ChatSessionContext): ChatCartSnapshot & { cart: ChatSessionCartItem[] } {
+    const snapshot = this.createCartSnapshot(ctx);
+    return { ...snapshot, cart: snapshot.items };
+  }
+
+  private async toolAddToCart(args: ChatbotToolArgsMap['addToCart'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     let product: any = null;
     if (args.productId) {
       product = await this.prisma.product.findUnique({
@@ -564,6 +776,7 @@ export class ChatbotToolEngineService {
             where: { flashSale: { status: 'ACTIVE' } },
             include: { flashSale: true },
           },
+          branches: { select: { id: true } },
         },
       });
     } else if (args.productName) {
@@ -577,6 +790,7 @@ export class ChatbotToolEngineService {
             where: { flashSale: { status: 'ACTIVE' } },
             include: { flashSale: true },
           },
+          branches: { select: { id: true } },
         },
       });
     }
@@ -586,20 +800,62 @@ export class ChatbotToolEngineService {
     }
 
     // 1. Kiểm tra Required Options
-    const rawOptions = args.optionItemIds || args.options || [];
-    const providedOptionIds: string[] = Array.isArray(rawOptions)
-      ? rawOptions.map((o: any) => (typeof o === 'string' ? o : o.optionItemId || o.id))
-      : [];
+    const productBranchIds = (product.branches || []).map((branch: { id: string }) => branch.id);
+    if (ctx.currentBranchId && productBranchIds.length > 0 && !productBranchIds.includes(ctx.currentBranchId)) {
+      return {
+        success: false,
+        code: 'CART_BRANCH_CONFLICT',
+        message: 'Món ăn không khả dụng tại chi nhánh của giỏ hàng hiện tại.',
+        recoverable: true,
+      };
+    }
+    if (!ctx.currentBranchId) {
+      if (productBranchIds.length !== 1) {
+        return {
+          success: false,
+          code: 'BRANCH_REQUIRED',
+          message: 'Vui lòng chọn chi nhánh trước khi thêm món vào giỏ hàng.',
+          recoverable: true,
+        };
+      }
+      ctx.currentBranchId = productBranchIds[0];
+    }
+
+    const providedOptionIds = args.optionItemIds || [];
     const missingRequiredGroups: string[] = [];
+    const validOptionIds = new Set<string>();
 
     for (const group of product.optionGroups || []) {
-      if (group.isRequired) {
-        const hasChoice = group.optionItems.some((oi: any) => providedOptionIds.includes(oi.id));
-        if (!hasChoice) {
-          const choices = group.optionItems.map((i: any) => `${i.name} (+${i.priceAdjustment.toLocaleString('vi-VN')}đ)`).join(', ');
-          missingRequiredGroups.push(`${group.name} (Tùy chọn: ${choices})`);
-        }
+      const selectedCount = group.optionItems.filter((item: any) => {
+        validOptionIds.add(item.id);
+        return providedOptionIds.includes(item.id);
+      }).length;
+      const minimum = Math.max(group.isRequired ? 1 : 0, group.minSelect || 0);
+      const maximum = group.multipleChoice ? Math.max(1, group.maxSelect || 1) : 1;
+
+      if (selectedCount < minimum) {
+        const choices = group.optionItems.map((item: any) => `${item.name} (+${item.priceAdjustment.toLocaleString('vi-VN')}đ)`).join(', ');
+        missingRequiredGroups.push(`${group.name} (Tùy chọn: ${choices})`);
       }
+      if (selectedCount > maximum) {
+        return {
+          success: false,
+          code: 'OPTION_SELECTION_LIMIT_EXCEEDED',
+          message: `Nhóm tùy chọn [${group.name}] chỉ cho phép chọn tối đa ${maximum} mục.`,
+          recoverable: true,
+        };
+      }
+    }
+
+    const unknownOptionIds = providedOptionIds.filter((optionId) => !validOptionIds.has(optionId));
+    if (unknownOptionIds.length > 0) {
+      return {
+        success: false,
+        code: 'INVALID_PRODUCT_OPTIONS',
+        message: 'Một hoặc nhiều tùy chọn không thuộc món ăn đã chọn.',
+        data: { optionItemIds: unknownOptionIds },
+        recoverable: true,
+      };
     }
 
     if (missingRequiredGroups.length > 0) {
@@ -652,7 +908,7 @@ export class ChatbotToolEngineService {
     if (existingIndex >= 0) {
       ctx.cart[existingIndex].quantity += quantity;
     } else {
-      const lineId = `line-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const lineId = crypto.randomUUID();
       const newLine: ChatSessionCartItem = {
         id: lineId,
         lineId,
@@ -670,43 +926,27 @@ export class ChatbotToolEngineService {
       ctx.cart.push(newLine);
     }
 
-    const subTotal = ctx.cart.reduce((sum, item) => sum + item.priceAtSale * item.quantity, 0);
+    ctx.cartVersion = (ctx.cartVersion || 0) + 1;
+    const snapshot = this.createCartSnapshot(ctx);
 
     return {
       success: true,
       code: 'CART_UPDATED',
       message: `Đã thêm ${quantity}x [${product.name}] vào giỏ hàng.`,
-      data: {
-        cart: ctx.cart,
-        subTotal,
-        totalItems: ctx.cart.reduce((s, i) => s + i.quantity, 0),
-      },
+      data: this.cartResultData(ctx),
       actionType: 'ADD_TO_CART',
-      actionPayload: JSON.stringify({
-        productId: product.id,
-        productName: product.name,
-        quantity,
-        priceAtSale,
-        cartTotal: subTotal,
-      }),
-      content: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng. Hiện giỏ hàng của bạn có tổng tạm tính là ${subTotal.toLocaleString('vi-VN')}đ.`,
+      actionPayload: JSON.stringify(snapshot),
+      content: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng. Hiện giỏ hàng của bạn có tổng tạm tính là ${snapshot.subTotal.toLocaleString('vi-VN')}đ.`,
     };
   }
 
-  private async toolUpdateCartItem(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolUpdateCartItem(args: ChatbotToolArgsMap['updateCartItem'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     if (!ctx.cart || ctx.cart.length === 0) {
       return { success: false, code: 'CART_EMPTY', message: 'Giỏ hàng đang trống.' };
     }
 
     let targetIndex = -1;
-    const searchId = args.lineId || args.cartItemId || args.id;
-    if (searchId) {
-      targetIndex = ctx.cart.findIndex((i) => i.lineId === searchId || i.id === searchId);
-    } else if (args.productId) {
-      targetIndex = ctx.cart.findIndex((i) => i.productId === args.productId);
-    } else if (args.productName) {
-      targetIndex = ctx.cart.findIndex((i) => i.productName.toLowerCase().includes(args.productName.trim().toLowerCase()));
-    }
+    targetIndex = ctx.cart.findIndex((item) => item.lineId === args.lineId || item.id === args.lineId);
 
     if (targetIndex === -1) {
       return { success: false, code: 'ITEM_NOT_IN_CART', message: 'Không tìm thấy món này trong giỏ hàng.' };
@@ -719,31 +959,34 @@ export class ChatbotToolEngineService {
       ctx.cart.splice(targetIndex, 1);
     } else {
       target.quantity = newQty;
-      if (args.note) target.note = args.note.trim();
+      if (args.note !== undefined) target.note = args.note.trim() || undefined;
     }
 
-    const subTotal = ctx.cart.reduce((sum, item) => sum + item.priceAtSale * item.quantity, 0);
+    ctx.cartVersion = (ctx.cartVersion || 0) + 1;
+    const snapshot = this.createCartSnapshot(ctx);
 
     return {
       success: true,
       code: 'CART_UPDATED',
       message: newQty <= 0 ? `Đã xóa [${target.productName}] khỏi giỏ hàng.` : `Đã đổi số lượng [${target.productName}] thành ${newQty}.`,
-      data: { cart: ctx.cart, subTotal },
+      data: this.cartResultData(ctx),
       actionType: 'UPDATE_CART',
-      actionPayload: JSON.stringify({ cart: ctx.cart, subTotal }),
+      actionPayload: JSON.stringify(snapshot),
     };
   }
 
   private async toolGetCart(ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     const cart = ctx.cart || [];
-    const subTotal = cart.reduce((sum, item) => sum + item.priceAtSale * item.quantity, 0);
+    const snapshot = this.createCartSnapshot(ctx);
 
     if (cart.length === 0) {
       return {
         success: true,
         code: 'CART_EMPTY',
         message: 'Giỏ hàng của bạn đang trống.',
-        data: { cart: [], items: [], subTotal: 0 },
+        data: this.cartResultData(ctx),
+        actionType: 'UPDATE_CART',
+        actionPayload: JSON.stringify(snapshot),
         content: 'Giỏ hàng của bạn hiện đang trống. Bạn muốn tham khảo các món ngon đặc biệt của nhà hàng hôm nay không ạ?',
       };
     }
@@ -758,9 +1001,11 @@ export class ChatbotToolEngineService {
     return {
       success: true,
       code: 'CART_VIEW_READY',
-      message: `Giỏ hàng có ${cart.length} món, tổng tạm tính: ${subTotal.toLocaleString('vi-VN')}đ`,
-      data: { cart, items: cart, subTotal },
-      content: `Giỏ hàng của bạn hiện gồm:\n${itemsSummary}\nTổng tiền tạm tính: ${subTotal.toLocaleString('vi-VN')}đ.`,
+      message: `Giỏ hàng có ${cart.length} món, tổng tạm tính: ${snapshot.subTotal.toLocaleString('vi-VN')}đ`,
+      data: this.cartResultData(ctx),
+      actionType: 'UPDATE_CART',
+      actionPayload: JSON.stringify(snapshot),
+      content: `Giỏ hàng của bạn hiện gồm:\n${itemsSummary}\nTổng tiền tạm tính: ${snapshot.subTotal.toLocaleString('vi-VN')}đ.`,
     };
   }
 
@@ -769,13 +1014,16 @@ export class ChatbotToolEngineService {
     ctx.discountVoucherCode = undefined;
     ctx.shippingVoucherCode = undefined;
     ctx.pointsToUse = 0;
+    ctx.cartVersion = (ctx.cartVersion || 0) + 1;
+    const snapshot = this.createCartSnapshot(ctx);
 
     return {
       success: true,
       code: 'CART_CLEARED',
       message: 'Đã làm mới và xóa toàn bộ giỏ hàng.',
-      data: { cart: [], subTotal: 0 },
+      data: this.cartResultData(ctx),
       actionType: 'CLEAR_CART',
+      actionPayload: JSON.stringify(snapshot),
       content: 'Đã làm trống giỏ hàng. Bạn hãy thoải mái chọn món mới nhé!',
     };
   }
@@ -863,7 +1111,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolValidateDeliveryAddress(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolValidateDeliveryAddress(args: ChatbotToolArgsMap['validateDeliveryAddress'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     let address: any = null;
     if (args.addressId) {
       address = await this.prisma.address.findFirst({
@@ -1018,7 +1266,7 @@ export class ChatbotToolEngineService {
     return bestSlot;
   }
 
-  private async toolSaveAddress(args: any, userId?: string): Promise<ChatbotToolResult> {
+  private async toolSaveAddress(args: ChatbotToolArgsMap['saveAddress'], userId?: string): Promise<ChatbotToolResult> {
     if (!userId) {
       return { success: false, code: 'LOGIN_REQUIRED', message: 'Vui lòng đăng nhập để lưu địa chỉ giao hàng.' };
     }
@@ -1046,7 +1294,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolGetAvailableOrderSlots(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolGetAvailableOrderSlots(args: ChatbotToolArgsMap['getAvailableOrderSlots'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     const effectiveBranchId = args.branchId || ctx.currentBranchId;
     if (!effectiveBranchId) {
       return { success: false, code: 'BRANCH_REQUIRED', message: 'Vui lòng chọn chi nhánh trước khi lấy khung giờ.' };
@@ -1129,9 +1377,18 @@ export class ChatbotToolEngineService {
   // 5. VOUCHER & ĐIỂM THÀNH VIÊN
   // =========================================================================
 
-  private async toolFindApplicableVouchers(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolFindApplicableVouchers(args: ChatbotToolArgsMap['findApplicableVouchers'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     const now = new Date();
-    const cartTotal = (ctx.cart || []).reduce((s, i) => s + i.priceAtSale * i.quantity, 0);
+    const pricingItems = (ctx.cart || []).map((item) => ({
+      productId: item.productId,
+      name: item.productName,
+      priceAtSale: item.priceAtSale,
+      originalPriceAtSale: item.basePrice,
+      quantity: item.quantity,
+    }));
+    const basePricing = await this.orderPricingService.calculatePricing({ items: pricingItems });
+    const cartTotal = basePricing.subTotal;
+    const branchId = args.branchId || ctx.currentBranchId;
 
     let user: any = null;
     if (userId) {
@@ -1157,6 +1414,14 @@ export class ChatbotToolEngineService {
       const isUsageOk = v.usageLimit === null || v.usedCount < v.usageLimit;
       const isMinOk = v.minOrderValue <= cartTotal;
       const isTierOk = !v.membershipTiers || v.membershipTiers.length === 0 || (user && v.membershipTiers.some((t: any) => t.id === user.membershipTierId));
+      const eligibility = await this.orderService.validateVoucherForChatbot({
+        code: v.code,
+        subTotal: cartTotal,
+        shippingFee: 0,
+        branchId,
+        userId,
+        isShippingVoucher: v.discountType === 'FREE_SHIP',
+      });
 
       const vInfo = {
         code: v.code,
@@ -1164,7 +1429,7 @@ export class ChatbotToolEngineService {
         discountType: v.discountType,
         discountValue: v.discountValue,
         minOrderValue: v.minOrderValue,
-        isEligible: isUsageOk && isMinOk && isTierOk,
+        isEligible: eligibility.isValid && isUsageOk && isMinOk && isTierOk,
         reason: !isMinOk ? `Cần thêm ${(v.minOrderValue - cartTotal).toLocaleString('vi-VN')}đ` : !isTierOk ? 'Chưa đủ hạng thẻ' : null,
       };
 
@@ -1185,7 +1450,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolApplyVoucher(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolApplyVoucher(args: ChatbotToolArgsMap['applyVoucher'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     const applied: string[] = [];
     const now = new Date();
     const cartTotal = (ctx.cart || []).reduce((s, i) => s + i.priceAtSale * i.quantity, 0);
@@ -1229,7 +1494,86 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolRemoveVoucher(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolApplyVoucherCanonical(
+    args: ChatbotToolArgsMap['applyVoucher'],
+    ctx: ChatSessionContext,
+    userId?: string,
+  ): Promise<ChatbotToolResult> {
+    const discountCode = args.discountVoucherCode?.trim().toUpperCase();
+    const shippingCode = args.shippingVoucherCode?.trim().toUpperCase();
+    const pricingItems = (ctx.cart || []).map((item) => ({
+      productId: item.productId,
+      name: item.productName,
+      priceAtSale: item.priceAtSale,
+      originalPriceAtSale: item.basePrice,
+      quantity: item.quantity,
+    }));
+    const basePricing = await this.orderPricingService.calculatePricing({ items: pricingItems });
+
+    if (discountCode && shippingCode && discountCode === shippingCode) {
+      return {
+        success: false,
+        code: 'VOUCHER_CODES_MUST_DIFFER',
+        message: 'Mã giảm giá món và mã freeship không được trùng nhau.',
+      };
+    }
+
+    const discountValidation = discountCode
+      ? await this.orderService.validateVoucherForChatbot({
+          code: discountCode,
+          subTotal: basePricing.subTotal,
+          shippingFee: 0,
+          branchId: ctx.currentBranchId,
+          userId,
+          isShippingVoucher: false,
+        })
+      : null;
+    if (discountValidation && !discountValidation.isValid) {
+      return {
+        success: false,
+        code: 'VOUCHER_INVALID',
+        message: discountValidation.reason || `Mã [${discountCode}] không hợp lệ.`,
+      };
+    }
+
+    const shippingValidation = shippingCode
+      ? await this.orderService.validateVoucherForChatbot({
+          code: shippingCode,
+          subTotal: basePricing.subTotal,
+          shippingFee: 0,
+          branchId: ctx.currentBranchId,
+          userId,
+          isShippingVoucher: true,
+        })
+      : null;
+    if (shippingValidation && !shippingValidation.isValid) {
+      return {
+        success: false,
+        code: 'SHIPPING_VOUCHER_INVALID',
+        message: shippingValidation.reason || `Mã freeship [${shippingCode}] không hợp lệ.`,
+      };
+    }
+
+    ctx.discountVoucherCode = discountCode;
+    ctx.shippingVoucherCode = shippingCode;
+    const applied = [
+      discountCode ? `Mã món: ${discountCode}` : null,
+      shippingCode ? `Mã ship: ${shippingCode}` : null,
+    ].filter((value): value is string => Boolean(value));
+
+    return {
+      success: true,
+      code: 'VOUCHER_APPLIED',
+      message: applied.length > 0 ? `Đã áp dụng thành công: ${applied.join(' & ')}` : 'Đã cập nhật mã ưu đãi.',
+      data: {
+        discountVoucherCode: ctx.discountVoucherCode,
+        shippingVoucherCode: ctx.shippingVoucherCode,
+      },
+      content: `${applied.length > 0 ? `Đã áp dụng thành công: ${applied.join(' và ')}` : 'Đã cập nhật mã ưu đãi.'} Hãy xem bảng tính tiền mới nhé!`,
+    };
+  }
+
+  private async toolRemoveVoucher(args: ChatbotToolArgsMap['removeVoucher'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     if (args.removeDiscountVoucher) ctx.discountVoucherCode = undefined;
     if (args.removeShippingVoucher) ctx.shippingVoucherCode = undefined;
     if (!args.removeDiscountVoucher && !args.removeShippingVoucher) {
@@ -1275,7 +1619,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolPreviewPointUsage(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolPreviewPointUsage(args: ChatbotToolArgsMap['previewPointUsage'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     if (!userId) return { success: false, code: 'LOGIN_REQUIRED', message: 'Vui lòng đăng nhập để tiêu điểm.' };
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
@@ -1309,7 +1653,7 @@ export class ChatbotToolEngineService {
   // 6. THANH TOÁN & ORDER PREVIEW & CHECKOUT
   // =========================================================================
 
-  private async toolGetPaymentMethods(args: any, ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+  private async toolGetPaymentMethods(args: ChatbotToolArgsMap['getPaymentMethods'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     const effectiveBranchId = args.branchId || ctx.currentBranchId;
     const subTotal = (ctx.cart || []).reduce((s, i) => s + i.priceAtSale * i.quantity, 0);
 
@@ -1324,7 +1668,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolPreviewOrder(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolPreviewOrder(args: ChatbotToolArgsMap['previewOrder'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     if (!ctx.cart || ctx.cart.length === 0) {
       return { success: false, code: 'CART_EMPTY', message: 'Giỏ hàng đang trống. Vui lòng chọn món trước khi xem trước đơn hàng.' };
     }
@@ -1453,8 +1797,63 @@ export class ChatbotToolEngineService {
       quantity: item.quantity,
     }));
 
+    ctx.discountVoucherCode = ctx.discountVoucherCode?.trim().toUpperCase();
+    ctx.shippingVoucherCode = ctx.shippingVoucherCode?.trim().toUpperCase();
+    if (
+      ctx.discountVoucherCode &&
+      ctx.shippingVoucherCode &&
+      ctx.discountVoucherCode === ctx.shippingVoucherCode
+    ) {
+      return {
+        success: false,
+        code: 'VOUCHER_CODES_MUST_DIFFER',
+        message: 'Mã giảm giá món và mã freeship không được trùng nhau.',
+      };
+    }
+
+    const basePricing = await this.orderPricingService.calculatePricing({ items: pricingItems });
+    let orderDiscountAmount = 0;
+    if (ctx.discountVoucherCode) {
+      const validation = await this.orderService.validateVoucherForChatbot({
+        code: ctx.discountVoucherCode,
+        subTotal: basePricing.subTotal,
+        shippingFee,
+        branchId: branch.id,
+        userId,
+        isShippingVoucher: false,
+      });
+      if (!validation.isValid) {
+        return {
+          success: false,
+          code: 'VOUCHER_INVALID',
+          message: validation.reason || `Mã [${ctx.discountVoucherCode}] không hợp lệ.`,
+        };
+      }
+      orderDiscountAmount = validation.discount;
+    }
+
+    if (ctx.shippingVoucherCode) {
+      const validation = await this.orderService.validateVoucherForChatbot({
+        code: ctx.shippingVoucherCode,
+        subTotal: basePricing.subTotal,
+        shippingFee,
+        branchId: branch.id,
+        userId,
+        isShippingVoucher: true,
+      });
+      if (!validation.isValid) {
+        return {
+          success: false,
+          code: 'SHIPPING_VOUCHER_INVALID',
+          message: validation.reason || `Mã freeship [${ctx.shippingVoucherCode}] không hợp lệ.`,
+        };
+      }
+      shippingDiscount = Math.max(shippingDiscount, validation.discount);
+    }
+
     const pricing = await this.orderPricingService.calculatePricing({
       items: pricingItems,
+      orderDiscountAmount,
       shippingFee,
       shippingDiscount,
       pointsDiscount: (ctx.pointsToUse || 0) * (branch.pointRedeemRate || 1000),
@@ -1476,6 +1875,10 @@ export class ChatbotToolEngineService {
       discountVoucherCode: ctx.discountVoucherCode,
       shippingVoucherCode: ctx.shippingVoucherCode,
     };
+    ctx.expectedTotalAmount = pricing.totalAmount;
+    const confirmation = this.createConfirmation(this.orderConfirmationPayload(ctx));
+    ctx.orderConfirmation = confirmation.state;
+    ctx.lastIdempotencyKey = crypto.randomUUID();
 
     return {
       success: true,
@@ -1483,14 +1886,20 @@ export class ChatbotToolEngineService {
       message: `Bản xem trước đơn hàng: Tổng thanh toán ${pricing.totalAmount.toLocaleString('vi-VN')}đ`,
       data: previewData,
       actionType: 'ORDER_PREVIEW',
-      actionPayload: JSON.stringify(previewData),
+      actionPayload: JSON.stringify({ ...previewData, previewToken: confirmation.previewToken }),
       content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT và phí ship). Bạn có muốn xác nhận đặt đơn hàng này với phương thức thanh toán [${ctx.paymentMethod || 'COD'}] không ạ?`,
       suggestedReplies: ['Xác nhận đặt đơn', 'Đổi phương thức thanh toán', 'Thêm món khác'],
       requiresConfirmation: true,
     };
   }
 
-  private async toolPlaceOrder(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolPlaceOrder(args: ChatbotToolArgsMap['placeOrder'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+    const confirmationError = this.requireConfirmation(
+      ctx.orderConfirmation,
+      this.orderConfirmationPayload(ctx),
+    );
+    if (confirmationError) return confirmationError;
+
     if (!ctx.cart || ctx.cart.length === 0) {
       return { success: false, code: 'CART_EMPTY', message: 'Giỏ hàng đang trống, không thể tạo đơn.' };
     }
@@ -1502,9 +1911,8 @@ export class ChatbotToolEngineService {
     const branchId = ctx.currentBranchId || (await this.prisma.branch.findFirst({ where: { onlineOrderingEnabled: true } }))?.id;
     if (!branchId) return { success: false, code: 'BRANCH_REQUIRED', message: 'Thiếu thông tin chi nhánh.' };
 
-    const paymentMethod = args.paymentMethod || ctx.paymentMethod || 'COD';
-    const idempotencyKey = args.idempotencyKey || ctx.lastIdempotencyKey || crypto.randomUUID();
-    ctx.lastIdempotencyKey = idempotencyKey;
+    const paymentMethod = ctx.paymentMethod || 'COD';
+    const idempotencyKey = ctx.lastIdempotencyKey!;
 
     // Chuẩn bị payload chuẩn cho OrderService.createOrder
     const payload = {
@@ -1526,6 +1934,8 @@ export class ChatbotToolEngineService {
       operatingSlotId: ctx.operatingSlotId,
       deliveryDate: ctx.deliveryDate,
       orderType: ctx.fulfillmentType || 'DELIVERY',
+      idempotencyKey,
+      expectedTotalAmount: ctx.expectedTotalAmount,
     };
 
     // Gọi atomic createOrder từ OrderService
@@ -1533,13 +1943,6 @@ export class ChatbotToolEngineService {
     const createdOrder = await this.prisma.order.findUnique({
       where: { id: orderResult.orderId },
     });
-    if (idempotencyKey && createdOrder) {
-      await this.prisma.order.update({
-        where: { id: createdOrder.id },
-        data: { idempotencyKey },
-      }).catch(() => {});
-    }
-
     const orderTotal = createdOrder?.totalAmount || 0;
     const orderStatus = createdOrder?.status || 'PENDING';
     const finalOrderCode = createdOrder?.orderCode || orderResult.orderCode;
@@ -1549,6 +1952,7 @@ export class ChatbotToolEngineService {
     ctx.discountVoucherCode = undefined;
     ctx.shippingVoucherCode = undefined;
     ctx.pointsToUse = 0;
+    ctx.orderConfirmation!.status = 'COMMITTED';
 
     return {
       success: true,
@@ -1569,18 +1973,47 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolCheckOrder(args: any, userId?: string): Promise<ChatbotToolResult> {
+  private async toolCheckOrder(args: ChatbotToolArgsMap['checkOrder'], userId?: string): Promise<ChatbotToolResult> {
     let order: any = null;
+    if (!userId && (!args.orderCode || !args.phone)) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng cung cấp mã đơn hàng và số điện thoại đã dùng để đặt đơn.',
+        recoverable: true,
+      };
+    }
+
     if (args.orderCode) {
       order = await this.prisma.order.findFirst({
-        where: { orderCode: args.orderCode.trim() },
-        include: { orderItems: { include: { product: true } } },
+        where: {
+          orderCode: args.orderCode.trim(),
+          ...(userId ? { userId } : {}),
+        },
+        select: {
+          orderCode: true,
+          customerPhone: true,
+          status: true,
+          paymentStatus: true,
+          totalAmount: true,
+          createdAt: true,
+        },
       });
+      if (!userId) {
+        const normalizedOrderPhone = (order?.customerPhone || '').replace(/[.\s-]/g, '');
+        if (normalizedOrderPhone !== args.phone) order = null;
+      }
     } else if (userId) {
       order = await this.prisma.order.findFirst({
         where: { userId },
         orderBy: { createdAt: 'desc' },
-        include: { orderItems: { include: { product: true } } },
+        select: {
+          orderCode: true,
+          status: true,
+          paymentStatus: true,
+          totalAmount: true,
+          createdAt: true,
+        },
       });
     }
 
@@ -1592,15 +2025,38 @@ export class ChatbotToolEngineService {
       success: true,
       code: 'ORDER_FOUND',
       message: `Đơn [${order.orderCode}] trạng thái: ${order.status}`,
-      data: { order },
+      data: {
+        order: {
+          orderCode: order.orderCode,
+          status: order.status,
+          paymentStatus: order.paymentStatus,
+          totalAmount: order.totalAmount,
+          createdAt: order.createdAt,
+        },
+      },
       content: `Đơn hàng ${order.orderCode} của bạn hiện có trạng thái: ${order.status}. Tổng thanh toán: ${order.totalAmount.toLocaleString('vi-VN')}đ.`,
     };
   }
 
-  private async toolCancelOrder(args: any, userId?: string): Promise<ChatbotToolResult> {
+  private async toolCancelOrder(args: ChatbotToolArgsMap['cancelOrder'], userId?: string): Promise<ChatbotToolResult> {
     if (!args.orderCode) return { success: false, code: 'ORDER_CODE_REQUIRED', message: 'Vui lòng cung cấp mã đơn hàng.' };
 
-    const canceled = await this.orderService.cancelOrder(userId || '', args.orderCode, args.reason);
+    if (!userId && !args.phone) {
+      return {
+        success: false,
+        code: 'GUEST_VERIFICATION_REQUIRED',
+        message: 'Vui lòng cung cấp số điện thoại đã dùng để đặt đơn trước khi hủy.',
+        recoverable: true,
+      };
+    }
+
+    const canceled = await this.orderService.cancelOrder(
+      args.orderCode,
+      args.reason,
+      userId
+        ? { kind: 'USER', userId }
+        : { kind: 'GUEST', phone: args.phone! },
+    );
 
     return {
       success: true,
@@ -1615,7 +2071,7 @@ export class ChatbotToolEngineService {
   // 7. ĐẶT BÀN (TABLE RESERVATION)
   // =========================================================================
 
-  private async toolGetReservationSlots(args: any): Promise<ChatbotToolResult> {
+  private async toolGetReservationSlots(args: ChatbotToolArgsMap['getReservationSlots']): Promise<ChatbotToolResult> {
     const { branchId, date, partySize = 2 } = args;
     if (!branchId || !date) {
       return { success: false, code: 'PARAMS_MISSING', message: 'Vui lòng cung cấp branchId và ngày cần đặt (YYYY-MM-DD).' };
@@ -1645,7 +2101,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolPreviewReservation(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+  private async toolPreviewReservation(args: ChatbotToolArgsMap['previewReservation'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     const effectiveBranchId = args.branchId || ctx.reservationDraft?.branchId || ctx.currentBranchId;
     const effectiveDate = args.reservationDate || ctx.reservationDraft?.reservationDate;
     const effectiveTime = args.reservationTime || ctx.reservationDraft?.reservationTime;
@@ -1698,22 +2154,31 @@ export class ChatbotToolEngineService {
       specialRequests: args.specialRequests || 'Không có',
     };
 
+    const confirmation = this.createConfirmation(this.reservationConfirmationPayload(ctx));
+    ctx.reservationConfirmation = confirmation.state;
+    ctx.lastIdempotencyKey = crypto.randomUUID();
+
     return {
       success: true,
       code: 'RESERVATION_PREVIEW_READY',
       message: 'Bảng xác nhận đặt bàn đã sẵn sàng.',
       data: summary,
       actionType: 'CONFIRM_RESERVATION',
-      actionPayload: JSON.stringify(summary),
+      actionPayload: JSON.stringify({ ...summary, previewToken: confirmation.previewToken }),
       content: `THÔNG TIN ĐẶT BÀN:\n- Chi nhánh: ${branch.name}\n- Thời gian: ${effectiveTime} ngày ${effectiveDate}\n- Số lượng: ${effectiveParty} khách\n- Người đặt: ${effectiveName} (${effectivePhone})\n${args.seatingPreference ? `- Vị trí ưu tiên: ${args.seatingPreference}\n` : ''}Quý khách có xác nhận thông tin đặt bàn này không ạ?`,
       suggestedReplies: ['Xác nhận đặt bàn', 'Đổi lại giờ khác', 'Hủy yêu cầu'],
       requiresConfirmation: true,
     };
   }
 
-  private async toolCreateReservation(args: any, ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
-    const idempotencyKey = args.idempotencyKey || ctx.lastIdempotencyKey || crypto.randomUUID();
-    ctx.lastIdempotencyKey = idempotencyKey;
+  private async toolCreateReservation(args: ChatbotToolArgsMap['createReservation'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
+    const confirmationError = this.requireConfirmation(
+      ctx.reservationConfirmation,
+      this.reservationConfirmationPayload(ctx),
+    );
+    if (confirmationError) return confirmationError;
+
+    const idempotencyKey = ctx.lastIdempotencyKey!;
 
     if (idempotencyKey) {
       const existing = await this.prisma.reservation.findUnique({
@@ -1738,12 +2203,12 @@ export class ChatbotToolEngineService {
     }
 
     const draft = ctx.reservationDraft || {};
-    const branchId = args.branchId || draft.branchId;
-    const reservationDate = args.reservationDate || draft.reservationDate;
-    const reservationTime = args.reservationTime || draft.reservationTime;
-    const partySize = Number(args.partySize || draft.partySize);
-    const customerName = args.customerName || draft.customerName;
-    const customerPhone = args.customerPhone || draft.customerPhone;
+    const branchId = draft.branchId;
+    const reservationDate = draft.reservationDate;
+    const reservationTime = draft.reservationTime;
+    const partySize = Number(draft.partySize);
+    const customerName = draft.customerName;
+    const customerPhone = draft.customerPhone;
 
     if (!branchId || !reservationDate || !reservationTime || !partySize || !customerName || !customerPhone) {
       return { success: false, code: 'MISSING_RESERVATION_INFO', message: 'Thiếu thông tin bắt buộc để tạo đặt bàn.' };
@@ -1757,9 +2222,9 @@ export class ChatbotToolEngineService {
         partySize,
         customerName,
         customerPhone,
-        customerEmail: args.customerEmail || draft.customerEmail,
-        seatingPreference: args.seatingPreference || draft.seatingPreference,
-        specialRequests: args.specialRequests || draft.specialRequests,
+        customerEmail: draft.customerEmail,
+        seatingPreference: draft.seatingPreference,
+        specialRequests: draft.specialRequests,
         source: ReservationSource.CHATBOT,
         idempotencyKey,
       },
@@ -1767,15 +2232,9 @@ export class ChatbotToolEngineService {
       'USER',
     );
 
-    if (idempotencyKey && created) {
-      await this.prisma.reservation.update({
-        where: { id: created.id },
-        data: { idempotencyKey },
-      }).catch(() => {});
-    }
-
     // Xóa draft sau khi đã tạo thành công
     ctx.reservationDraft = undefined;
+    ctx.reservationConfirmation!.status = 'COMMITTED';
 
     return {
       success: true,
@@ -1793,7 +2252,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolGetMyReservations(args: any, userId?: string): Promise<ChatbotToolResult> {
+  private async toolGetMyReservations(args: ChatbotToolArgsMap['getMyReservations'], userId?: string): Promise<ChatbotToolResult> {
     let reservations: any[] = [];
     if (userId) {
       const resData = await this.reservationService.getCustomerReservations(userId, 1, 5);
@@ -1819,7 +2278,7 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolCancelReservation(args: any, userId?: string): Promise<ChatbotToolResult> {
+  private async toolCancelReservation(args: ChatbotToolArgsMap['cancelReservation'], userId?: string): Promise<ChatbotToolResult> {
     const { reservationCode, phone, reason } = args;
     if (!reservationCode || !phone) {
       return { success: false, code: 'CODE_PHONE_REQUIRED', message: 'Vui lòng cung cấp mã đặt bàn và số điện thoại.' };

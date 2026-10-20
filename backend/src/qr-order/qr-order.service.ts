@@ -29,6 +29,7 @@ import {
 } from '@prisma/client';
 import { randomBytes, createHash, createHmac, randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Injectable()
 export class QrOrderService {
@@ -46,7 +47,7 @@ export class QrOrderService {
    * Sinh rawToken bảo mật dựa trên sessionId bằng HMAC-SHA256
    */
   private deriveRawToken(sessionId: string): string {
-    const secret = process.env.JWT_SECRET || 'avora-restaurant-qr-secure-salt-key-2026';
+    const secret = getRequiredEnv('QR_ORDER_TOKEN_SECRET');
     return createHmac('sha256', secret).update(sessionId).digest('hex');
   }
 

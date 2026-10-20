@@ -13,6 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationService } from '../common/services/authorization.service';
 import { randomUUID } from 'crypto';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 export interface PosEventEnvelope<T = any> {
   eventId: string;
@@ -63,7 +64,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (token && token !== 'guest' && token !== 'null') {
       try {
         const payload = this.jwtService.verify(token, {
-          secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+          secret: getRequiredEnv('JWT_SECRET'),
         });
         userId = payload.sub || payload.id || payload.userId;
       } catch (e) {

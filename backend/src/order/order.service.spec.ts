@@ -748,7 +748,10 @@ describe('OrderService - Dual Voucher System & Concurrency Testing', () => {
     mockPrisma.order.findUnique.mockResolvedValue(mockExistingOrder);
     mockPrisma.order.update.mockResolvedValue({ ...mockExistingOrder, status: 'CANCELLED' });
 
-    await service.cancelOrder('user-1', 'ORD-12345', 'Đổi ý không mua nữa');
+    await service.cancelOrder('ORD-12345', 'Đổi ý không mua nữa', {
+      kind: 'USER',
+      userId: 'user-1',
+    });
 
     // Kiểm tra đã gọi decrement usedCount cho cả 2 voucher
     expect(mockPrisma.voucher.updateMany).toHaveBeenCalledWith({
@@ -764,6 +767,26 @@ describe('OrderService - Dual Voucher System & Concurrency Testing', () => {
       where: { id: 'order-1' },
       data: { isVoucherRefunded: true },
     });
+  });
+
+  it('18b. rejects guest cancellation when the phone does not own the order', async () => {
+    mockPrisma.order.findFirst.mockResolvedValue({
+      id: 'order-guest',
+      orderCode: 'ORD-GUEST',
+      userId: null,
+      customerPhone: '0901234567',
+      status: 'PENDING',
+      orderItems: [],
+    });
+
+    await expect(
+      service.cancelOrder('ORD-GUEST', 'Changed my mind', {
+        kind: 'GUEST',
+        phone: '0987654321',
+      }),
+    ).rejects.toThrow(BadRequestException);
+
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
   });
 
   // 19. Tính chất Idempotency của hoàn lượt voucher (không hoàn 2 lần)

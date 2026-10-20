@@ -15,7 +15,28 @@ import { ALL_CHATBOT_TOOL_DECLARATIONS } from './chatbot-tool-declarations';
 import { PrismaService } from '../prisma/prisma.service';
 import WebSocket from 'ws';
 
-@WebSocketGateway({ namespace: '/voice-chat', cors: { origin: true, credentials: true } })
+const allowedVoiceOrigins = (
+  process.env.CHATBOT_WS_ALLOWED_ORIGINS || process.env.FRONTEND_URL || 'http://localhost:4000'
+).split(',').map((origin) => origin.trim()).filter(Boolean);
+
+interface VoiceClientContent {
+  turns?: Array<{ role: 'user'; parts: Array<{ text: string }> }>;
+  turnComplete?: boolean;
+}
+
+interface VoiceContext {
+  userId?: string;
+  sessionId: string;
+  guestSessionToken?: string;
+  userContext: string;
+  cartTotal: number;
+  cartSummary: string;
+  branchId: string;
+  isExecutingTool?: boolean;
+  audioGeneration: number;
+}
+
+@WebSocketGateway({ namespace: '/voice-chat', cors: { origin: allowedVoiceOrigins, credentials: true } })
 @Injectable()
 export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -23,7 +44,7 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
   private readonly logger = new Logger(ChatbotGateway.name);
   private geminiConnections: Map<string, WebSocket> = new Map();
-  private userContexts: Map<string, any> = new Map();
+  private userContexts: Map<string, VoiceContext> = new Map();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -50,8 +71,7 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       if (token && token !== 'guest' && token !== 'null') {
         try {
-          const jwtSecret = process.env.JWT_SECRET || 'AVORA_SECRET_2026';
-          const payload = this.jwtService.verify(token, { secret: jwtSecret });
+          const payload = this.jwtService.verify(token);
           userId = payload.sub || payload.id;
           userContext = `THÔNG TIN KHÁCH HÀNG: UserID: ${userId}`;
           this.logger.log(`Authenticated voice session: userId=${userId}`);
@@ -65,6 +85,22 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         this.logger.log(`Guest voice session for connection ${client.id}`);
       }
 
+      const sessionIdQuery = client.handshake.query?.sessionId as string | undefined;
+      const guestSessionToken = client.handshake.query?.guestSessionToken as string | undefined;
+      const voiceSession = await this.chatbotService.resolveVoiceSession(
+        userId,
+        sessionIdQuery,
+        guestSessionToken,
+      );
+      let persistedContext: { currentBranchId?: string; cart?: Array<{ priceAtSale: number; quantity: number }> } = {};
+      if (voiceSession.contextData) {
+        try {
+          persistedContext = JSON.parse(voiceSession.contextData);
+        } catch {
+          this.logger.warn(`Invalid voice context for session ${voiceSession.sessionId}`);
+        }
+      }
+
       const cartSummaryStr = client.handshake.query?.cartSummary as string;
       const cartSummary = cartSummaryStr ? decodeURIComponent(cartSummaryStr) : '';
       const cartTotalStr = client.handshake.query?.cartTotal as string;
@@ -75,7 +111,7 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         userContext += ` [THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0]`;
       }
 
-      const branchId = (client.handshake.query?.branchId as string) || '';
+      const branchId = persistedContext.currentBranchId || (client.handshake.query?.branchId as string) || '';
       if (branchId) {
         try {
           const branch = await this.prisma.branch.findUnique({ where: { id: branchId } });
@@ -86,14 +122,28 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         } catch {}
       }
 
-      this.userContexts.set(client.id, { userId, userContext, cartTotal, cartSummary, branchId });
+      this.userContexts.set(client.id, {
+        userId,
+        sessionId: voiceSession.sessionId,
+        guestSessionToken: voiceSession.guestSessionToken,
+        userContext,
+        cartTotal,
+        cartSummary,
+        branchId,
+        audioGeneration: 0,
+      });
+      client.emit('system', {
+        type: 'voice_session',
+        sessionId: voiceSession.sessionId,
+        guestSessionToken: voiceSession.guestSessionToken,
+      });
 
       client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number; branchId?: string }) => {
         const ctx = this.userContexts.get(client.id);
         if (ctx) {
-          if (data.cartTotal !== undefined) ctx.cartTotal = data.cartTotal;
-          if (data.cartSummary !== undefined) ctx.cartSummary = data.cartSummary;
-          if (data.branchId !== undefined) ctx.branchId = data.branchId;
+          if (typeof data.cartTotal === 'number' && Number.isFinite(data.cartTotal)) ctx.cartTotal = data.cartTotal;
+          if (typeof data.cartSummary === 'string' && data.cartSummary.length <= 1000) ctx.cartSummary = data.cartSummary;
+          if (typeof data.branchId === 'string' && data.branchId.length <= 100) ctx.branchId = data.branchId;
         }
       });
 
@@ -177,7 +227,9 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
           // Xử lý ngắt lời (Barge-in): Khi Gemini Live phát hiện người dùng nói đè
           if (msg.serverContent?.interrupted) {
             this.logger.log(`[Gemini] User interrupted/barge-in for client ${client.id}`);
-            client.emit('barge_in');
+            const context = this.userContexts.get(client.id);
+            if (context) context.audioGeneration += 1;
+            client.emit('barge_in', { generation: context?.audioGeneration || 0 });
           }
 
           if (msg.serverContent) {
@@ -186,7 +238,11 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
               for (const part of modelTurn.parts) {
                 if (part.inlineData && part.inlineData.mimeType.startsWith('audio/')) {
                   const audioData = part.inlineData.data;
-                  client.emit('audio_output', audioData);
+                  const context = this.userContexts.get(client.id);
+                  client.emit('audio_output', {
+                    data: audioData,
+                    generation: context?.audioGeneration || 0,
+                  });
                 }
               }
             }
@@ -217,7 +273,7 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
                 context?.userId,
                 context?.branchId,
                 context?.cartTotal,
-                client.id,
+                context?.sessionId,
               );
 
               // Gửi rich action về UI để cập nhật màn hình
@@ -243,7 +299,7 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
                 functionResponses: functionResponses,
               },
             };
-            ws.send(JSON.stringify(toolResponseMsg));
+            if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(toolResponseMsg));
 
             setTimeout(() => {
               if (context) context.isExecutingTool = false;
@@ -256,8 +312,12 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
 
       ws.on('close', (code, reason) => {
         this.logger.log(`Gemini Live disconnected for client ${client.id} - Code: ${code}, Reason: ${reason.toString()}`);
-        client.emit('error', `Gemini closed: ${reason.toString()} (Code: ${code})`);
-        client.disconnect();
+        client.emit('voice_error', {
+          code: 'UPSTREAM_CLOSED',
+          message: `Gemini closed (Code: ${code})`,
+          retryable: code !== 1000,
+        });
+        if (client.connected) client.disconnect(true);
       });
 
       ws.on('error', (err) => {
@@ -276,18 +336,81 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
     this.logger.log(`Client disconnected: ${client.id}`);
     const ws = this.geminiConnections.get(client.id);
     if (ws) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.close();
-      }
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) ws.close();
       this.geminiConnections.delete(client.id);
     }
     this.userContexts.delete(client.id);
   }
 
+  private getOpenUpstream(client: Socket): WebSocket | null {
+    const upstream = this.geminiConnections.get(client.id);
+    return upstream?.readyState === WebSocket.OPEN ? upstream : null;
+  }
+
+  private validateClientContent(body: unknown): VoiceClientContent {
+    if (!body || typeof body !== 'object') throw new Error('Invalid client content payload');
+    const input = body as Record<string, unknown>;
+    const turnComplete = input.turnComplete;
+    if (turnComplete !== undefined && typeof turnComplete !== 'boolean') {
+      throw new Error('turnComplete must be boolean');
+    }
+
+    const rawTurns = input.turns;
+    if (rawTurns === undefined) return { turnComplete: turnComplete as boolean | undefined };
+    if (!Array.isArray(rawTurns) || rawTurns.length > 1) throw new Error('Invalid turns payload');
+
+    const turns = rawTurns.map((rawTurn) => {
+      if (!rawTurn || typeof rawTurn !== 'object') throw new Error('Invalid turn');
+      const turn = rawTurn as Record<string, unknown>;
+      if (turn.role !== 'user' || !Array.isArray(turn.parts) || turn.parts.length === 0) {
+        throw new Error('Only user text turns are allowed');
+      }
+      const parts = turn.parts.map((rawPart) => {
+        if (!rawPart || typeof rawPart !== 'object') throw new Error('Invalid turn part');
+        const text = (rawPart as Record<string, unknown>).text;
+        if (typeof text !== 'string' || text.length === 0 || text.length > 2000) {
+          throw new Error('Voice text is invalid or too long');
+        }
+        return { text };
+      });
+      return { role: 'user' as const, parts };
+    });
+
+    return { turns, turnComplete: turnComplete as boolean | undefined };
+  }
+
+  @SubscribeMessage('client_content')
+  async handleClientContent(@ConnectedSocket() client: Socket, @MessageBody() body: unknown) {
+    const context = this.userContexts.get(client.id);
+    const upstream = this.getOpenUpstream(client);
+    if (!context || !upstream) {
+      client.emit('client_content_ack', { accepted: false, code: 'VOICE_NOT_READY', retryable: true });
+      return;
+    }
+
+    try {
+      const content = this.validateClientContent(body);
+      const text = content.turns?.flatMap((turn) => turn.parts.map((part) => part.text)).join(' ');
+      if (text) {
+        const persistedContent = /vÄ© Ä‘á»™|kinh Ä‘á»™|latitude|longitude/i.test(text)
+          ? '[Voice location shared]'
+          : text;
+        await this.prisma.chatMessage.create({
+          data: { sessionId: context.sessionId, senderType: 'USER', content: persistedContent },
+        });
+      }
+      upstream.send(JSON.stringify({ clientContent: content }));
+      client.emit('client_content_ack', { accepted: true, sessionId: context.sessionId });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Invalid client content';
+      client.emit('client_content_ack', { accepted: false, code: 'INVALID_CLIENT_CONTENT', message, retryable: false });
+    }
+  }
+
   @SubscribeMessage('audio_input')
-  handleAudioInput(@ConnectedSocket() client: Socket, @MessageBody() base64Audio: string) {
-    const ws = this.geminiConnections.get(client.id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
+  handleAudioInput(@ConnectedSocket() client: Socket, @MessageBody() base64Audio: unknown) {
+    const ws = this.getOpenUpstream(client);
+    if (typeof base64Audio === 'string' && base64Audio.length <= 64_000 && ws) {
       const msg = {
         realtimeInput: {
           audio: {
@@ -302,10 +425,12 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
 
   @SubscribeMessage('stop_audio')
   handleStopAudio(@ConnectedSocket() client: Socket) {
-    const ws = this.geminiConnections.get(client.id);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      // Báo hiệu dừng audio cho Gemini Live
-      this.logger.log(`Stop audio requested by client ${client.id}`);
-    }
+    const ws = this.getOpenUpstream(client);
+    const context = this.userContexts.get(client.id);
+    if (!ws || !context) return;
+
+    context.audioGeneration += 1;
+    ws.send(JSON.stringify({ clientContent: { turns: [], turnComplete: true } }));
+    client.emit('barge_in', { generation: context.audioGeneration });
   }
 }

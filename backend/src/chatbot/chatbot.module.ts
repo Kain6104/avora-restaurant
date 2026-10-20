@@ -13,8 +13,12 @@ import { PaymentMethodModule } from '../payment-method/payment-method.module';
 @Module({
   imports: [
     PrismaModule,
-    JwtModule.register({
-      secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+    JwtModule.registerAsync({
+      useFactory: () => {
+        const secret = process.env.JWT_SECRET;
+        if (!secret) throw new Error('JWT_SECRET is required for chatbot authentication');
+        return { secret };
+      },
     }),
     forwardRef(() => ReservationModule),
     forwardRef(() => OrderModule),

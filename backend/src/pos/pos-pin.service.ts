@@ -10,6 +10,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import * as nodemailer from 'nodemailer';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 interface FailedAttemptInfo {
   count: number;
@@ -31,10 +32,7 @@ export class PosPinService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {
-    this.pinSecret =
-      process.env.POS_PIN_LOOKUP_SECRET ||
-      process.env.JWT_SECRET ||
-      'avora-restaurant-pos-pin-secure-secret-2026';
+    this.pinSecret = getRequiredEnv('POS_PIN_LOOKUP_SECRET');
   }
 
   /**

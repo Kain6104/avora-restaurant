@@ -37,12 +37,13 @@ import {
   AdminFarmLevelConfigController,
   FarmLevelController,
 } from './farm-level-config.controller';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Module({
   imports: [
     PrismaModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+      secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
     }),
   ],

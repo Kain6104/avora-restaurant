@@ -11,6 +11,18 @@ import { OrderPricingService } from '../pricing/order-pricing.service';
 import { FarmIntegrationService } from '../farm/farm-integration.service';
 import * as nodemailer from 'nodemailer';
 
+export type OrderCancellationPrincipal =
+  | { kind: 'ADMIN' }
+  | { kind: 'USER'; userId: string }
+  | { kind: 'GUEST'; phone: string };
+
+export interface ChatbotVoucherValidationResult {
+  isValid: boolean;
+  code: string;
+  discount: number;
+  reason?: string;
+}
+
 @Injectable()
 export class OrderService {
   private readonly logger = new Logger(OrderService.name);
@@ -183,6 +195,46 @@ export class OrderService {
     }
 
     return { isValid: true, discount, voucher };
+  }
+
+  async validateVoucherForChatbot(params: {
+    code: string;
+    subTotal: number;
+    shippingFee: number;
+    branchId?: string;
+    userId?: string;
+    isShippingVoucher: boolean;
+  }): Promise<ChatbotVoucherValidationResult> {
+    const code = params.code.trim().toUpperCase();
+    const [voucher, user] = await Promise.all([
+      this.prisma.voucher.findUnique({
+        where: { code },
+        include: { membershipTiers: true, branches: true },
+      }),
+      params.userId
+        ? this.prisma.user.findUnique({
+            where: { id: params.userId },
+            include: { membershipTier: true },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    const result = await this.validateVoucherInternal({
+      voucher,
+      subTotal: params.subTotal,
+      shippingFee: params.shippingFee,
+      user,
+      branchId: params.branchId,
+      now: new Date(),
+      isShippingVoucher: params.isShippingVoucher,
+    });
+
+    return {
+      isValid: result.isValid,
+      code,
+      discount: result.discount,
+      reason: result.reason,
+    };
   }
 
   /**
@@ -515,7 +567,25 @@ export class OrderService {
       deliveryDate,
       deliverySlotSnapshot,
       orderType,
+      idempotencyKey,
     } = payload;
+
+    if (idempotencyKey) {
+      const existingOrder = await this.prisma.order.findUnique({
+        where: { idempotencyKey },
+        select: { id: true, userId: true, orderCode: true, temporaryOrderCode: true },
+      });
+      if (existingOrder) {
+        if (existingOrder.userId !== userId) {
+          throw new BadRequestException('Idempotency key is already in use');
+        }
+        return {
+          success: true,
+          orderId: existingOrder.id,
+          orderCode: existingOrder.orderCode || existingOrder.temporaryOrderCode || '',
+        };
+      }
+    }
 
     const maintenanceSetting = await this.prisma.systemSetting.findUnique({ where: { key: 'maintenance_mode' } });
     if (maintenanceSetting?.value === 'true') {
@@ -563,7 +633,9 @@ export class OrderService {
     const deliveryAddress = `${address.streetDetail}, ${address.ward}, ${address.province}`;
 
     // 2. Wrap order logic in Transaction with Atomic Updates
-    const txResult = await this.prisma.$transaction(async (tx) => {
+    let txResult: any;
+    try {
+      txResult = await this.prisma.$transaction(async (tx) => {
       const productIds = cartItems.map((item: any) => item.productId).filter(Boolean);
       const products = await tx.product.findMany({
         where: { id: { in: productIds } },
@@ -1027,6 +1099,7 @@ export class OrderService {
         data: {
           orderCode,
           temporaryOrderCode: null,
+          idempotencyKey: idempotencyKey || null,
           userId,
           branchId: orderBranchId,
           customerName,
@@ -1102,8 +1175,27 @@ export class OrderService {
         });
       }
 
-      return newOrder;
-    });
+        return newOrder;
+      });
+    } catch (error: any) {
+      if (idempotencyKey && error?.code === 'P2002') {
+        const existingOrder = await this.prisma.order.findUnique({
+          where: { idempotencyKey },
+          select: { id: true, userId: true, orderCode: true, temporaryOrderCode: true },
+        });
+        if (existingOrder) {
+          if (existingOrder.userId !== userId) {
+            throw new BadRequestException('Idempotency key is already in use');
+          }
+          return {
+            success: true,
+            orderId: existingOrder.id,
+            orderCode: existingOrder.orderCode || existingOrder.temporaryOrderCode || '',
+          };
+        }
+      }
+      throw error;
+    }
 
     // Tạo thông báo đơn hàng cho khách
     const displayCode = txResult.orderCode || txResult.temporaryOrderCode || '';
@@ -1290,26 +1382,31 @@ export class OrderService {
     };
   }
 
-  async cancelOrder(userId: string | null, orderCode: string, reason: string, isAdmin: boolean = false) {
+  async cancelOrder(orderCode: string, reason: string, principal: OrderCancellationPrincipal) {
     if (!reason || reason.trim() === '') {
       throw new BadRequestException('Cancel reason is required');
     }
 
-    const whereCondition: any = { orderCode };
-    if (!isAdmin && userId) {
-      whereCondition.userId = userId;
-    }
-
     const order = await this.prisma.order.findFirst({
-      where: whereCondition,
+      where: { orderCode },
       include: { orderItems: true },
     });
 
-    if (!order) {
+    const normalizeCustomerPhone = (value?: string | null) =>
+      (value || '').replace(/[.\s-]/g, '');
+    const isOwner =
+      order &&
+      (principal.kind === 'ADMIN' ||
+        (principal.kind === 'USER' && order.userId === principal.userId) ||
+        (principal.kind === 'GUEST' &&
+          normalizeCustomerPhone(order.customerPhone) ===
+            normalizeCustomerPhone(principal.phone)));
+
+    if (!order || !isOwner) {
       throw new BadRequestException('Đơn hàng không tìm thấy.');
     }
 
-    if (!isAdmin && order.status !== 'PENDING') {
+    if (principal.kind !== 'ADMIN' && order.status !== 'PENDING') {
       throw new BadRequestException('Đơn hàng này không ở trạng thái có thể hủy. Vui lòng liên hệ hotline để được hỗ trợ!');
     }
 
@@ -1320,7 +1417,7 @@ export class OrderService {
         data: {
           status: 'CANCELLED',
           cancelReason: reason,
-          canceledBy: userId,
+          canceledBy: principal.kind === 'USER' ? principal.userId : principal.kind,
           canceledAt: new Date(),
         },
       });

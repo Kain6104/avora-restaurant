@@ -45,7 +45,10 @@ export class OrderController {
     @Param('orderCode') orderCode: string,
     @Body('reason') reason: string
   ) {
-    return this.orderService.cancelOrder(req.user.id, orderCode, reason);
+    return this.orderService.cancelOrder(orderCode, reason, {
+      kind: 'USER',
+      userId: req.user.id,
+    });
   }
 
   // API dành cho Admin hoặc dùng để Test

@@ -73,6 +73,14 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
       }
     }
   },
+  {
+    name: 'listCategories',
+    description: 'Liệt kê các danh mục món ăn đang có trong thực đơn Avora.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {}
+    }
+  },
 
   // ==========================================
   // 3. GIỎ HÀNG TRÊN SERVER (SERVER CART)
@@ -97,15 +105,15 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'updateCartItem',
-    description: 'Cập nhật số lượng của một món trong giỏ hàng (truyền quantity = 0 để xóa món khỏi giỏ).',
+    description: 'Cập nhật chính xác một dòng giỏ hàng theo lineId (truyền quantity = 0 để xóa dòng).',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        lineId: { type: SchemaType.STRING, description: 'Mã dòng món trong giỏ (nếu biết)' },
-        productName: { type: SchemaType.STRING, description: 'Tên món cần chỉnh sửa' },
+        lineId: { type: SchemaType.STRING, description: 'Mã dòng món trong giỏ do server trả về' },
         quantity: { type: SchemaType.NUMBER, description: 'Số lượng mới (0 để xóa)' },
         note: { type: SchemaType.STRING, description: 'Ghi chú mới nếu muốn sửa' }
-      }
+      },
+      required: ['lineId', 'quantity']
     }
   },
   {
@@ -180,6 +188,8 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         orderType: {
           type: SchemaType.STRING,
           description: 'Hình thức: DELIVERY (Giao hàng) hoặc TAKE_AWAY (Mang về)',
+          format: 'enum',
+          enum: ['DELIVERY', 'TAKE_AWAY', 'TAKEAWAY'],
         },
         requestedTime: {
           type: SchemaType.STRING,
@@ -263,14 +273,24 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        fulfillmentType: { type: SchemaType.STRING, description: 'Hình thức: DELIVERY, TAKE_AWAY, DINE_IN' },
+        fulfillmentType: {
+          type: SchemaType.STRING,
+          description: 'Hình thức phục vụ',
+          format: 'enum',
+          enum: ['DELIVERY', 'TAKE_AWAY', 'TAKEAWAY', 'DINE_IN']
+        },
         addressId: { type: SchemaType.STRING, description: 'ID địa chỉ nhận hàng (nếu DELIVERY)' },
         operatingSlotId: { type: SchemaType.STRING, description: 'ID khung giờ nhận đơn' },
         deliveryDate: { type: SchemaType.STRING, description: 'Ngày giao hàng YYYY-MM-DD' },
         discountVoucherCode: { type: SchemaType.STRING, description: 'Mã voucher món (nếu có)' },
         shippingVoucherCode: { type: SchemaType.STRING, description: 'Mã voucher ship (nếu có)' },
         pointsToUse: { type: SchemaType.NUMBER, description: 'Số điểm muốn tiêu (nếu có)' },
-        paymentMethod: { type: SchemaType.STRING, description: 'Phương thức thanh toán: COD, TRANSFER, PAYOS, MOMO, VNPAY' }
+        paymentMethod: {
+          type: SchemaType.STRING,
+          description: 'Phương thức thanh toán',
+          format: 'enum',
+          enum: ['COD', 'TRANSFER', 'PAYOS', 'MOMO', 'VNPAY']
+        }
       }
     }
   },
@@ -280,9 +300,7 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        paymentMethod: { type: SchemaType.STRING, description: 'Phương thức thanh toán đã chọn (COD, TRANSFER, PAYOS, MOMO, VNPAY)' },
-        note: { type: SchemaType.STRING, description: 'Ghi chú chung cho toàn bộ đơn hàng' },
-        idempotencyKey: { type: SchemaType.STRING, description: 'Khóa chống tạo đơn lặp ngẫu nhiên' }
+        note: { type: SchemaType.STRING, description: 'Ghi chú chung cho toàn bộ đơn hàng' }
       }
     }
   },
@@ -292,7 +310,8 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        orderCode: { type: SchemaType.STRING, description: 'Mã đơn hàng (VD: AVO-260913-0001)' }
+        orderCode: { type: SchemaType.STRING, description: 'Mã đơn hàng (VD: AVO-260913-0001)' },
+        phone: { type: SchemaType.STRING, description: 'Số điện thoại đặt hàng, bắt buộc khi khách chưa đăng nhập' }
       }
     }
   },
@@ -303,6 +322,7 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
       type: SchemaType.OBJECT,
       properties: {
         orderCode: { type: SchemaType.STRING, description: 'Mã đơn hàng cần hủy' },
+        phone: { type: SchemaType.STRING, description: 'Số điện thoại đặt hàng, bắt buộc khi khách chưa đăng nhập' },
         reason: { type: SchemaType.STRING, description: 'Lý do hủy đơn hàng' }
       },
       required: ['orderCode', 'reason']
@@ -346,22 +366,10 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'createReservation',
-    description: 'TẠO ĐẶT BÀN CHÍNH THỨC trong hệ thống sau khi khách hàng đã xem previewReservation và xác nhận đồng ý.',
+    description: 'TẠO ĐẶT BÀN CHÍNH THỨC từ reservation draft đã được server preview và người dùng xác nhận.',
     parameters: {
       type: SchemaType.OBJECT,
-      properties: {
-        branchId: { type: SchemaType.STRING, description: 'ID chi nhánh' },
-        reservationDate: { type: SchemaType.STRING, description: 'Ngày đặt (YYYY-MM-DD)' },
-        reservationTime: { type: SchemaType.STRING, description: 'Giờ đặt (HH:mm)' },
-        partySize: { type: SchemaType.NUMBER, description: 'Số lượng khách' },
-        customerName: { type: SchemaType.STRING, description: 'Tên người đặt' },
-        customerPhone: { type: SchemaType.STRING, description: 'Số điện thoại' },
-        customerEmail: { type: SchemaType.STRING, description: 'Email' },
-        seatingPreference: { type: SchemaType.STRING, description: 'Sở thích vị trí' },
-        specialRequests: { type: SchemaType.STRING, description: 'Yêu cầu đặc biệt' },
-        idempotencyKey: { type: SchemaType.STRING, description: 'Khóa chống tạo đặt bàn trùng lặp' }
-      },
-      required: ['branchId', 'reservationDate', 'reservationTime', 'partySize', 'customerName', 'customerPhone']
+      properties: {}
     }
   },
   {

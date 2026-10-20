@@ -887,6 +887,7 @@ model ChatSession {
   userId      String?
   title       String?
   contextData String?       @db.Text
+  version     Int           @default(0)
   channel     String?       @default("TEXT")
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
@@ -1094,15 +1095,29 @@ enum ChatSenderType {
 enum ChatActionType {
   ADD_TO_CART
   ADD_ALL_TO_CART
+  ADD_ALL_SUMMARY
+  CART_SUMMARY
+  CLEAR_CART
   SHOW_PRODUCT
   SHOW_ORDER
+  SHOW_ORDER_SUCCESS
+  SHOW_BEAUTIFUL_ORDER
   CONFIRM_CANCEL
   CONFIRM_RESERVATION
   SHOW_VOUCHERS
   NAVIGATE
   REQUEST_LOCATION
+  SELECT_ORDER_SLOT
   ORDER_PREVIEW
   PLACE_ORDER
+  UPDATE_CART
+  STOP_VOICE
+  HANDOFF_TO_HUMAN
+  SHOW_MAP_LINK
+  SUGGEST_VOUCHER
+  PROMPT_VOUCHER_INPUT
+  PROMPT_PERSONALITY
+  PROMPT_LOGIN
 }
 
 model Combo {

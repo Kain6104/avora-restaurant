@@ -1,11 +1,12 @@
-import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReservationService } from '../reservation/reservation.service';
-import { GoogleGenerativeAI, FunctionDeclaration, Part } from '@google/generative-ai';
-import { ChatActionType } from '@prisma/client';
+import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { ChatbotToolEngineService } from './chatbot-tool-engine.service';
 import { ALL_CHATBOT_TOOL_DECLARATIONS } from './chatbot-tool-declarations';
 import * as crypto from 'crypto';
+import { ChatSessionContext } from './dto/chatbot-tool.dto';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Injectable()
 export class ChatbotService {
@@ -13,34 +14,11 @@ export class ChatbotService {
   private genAI: GoogleGenerativeAI;
   private apiKeys: string[] = [];
   private currentKeyIndex = 0;
-
-  // Giữ lại các thuộc tính declaration cũ để tương thích ngược nếu có module khác đọc
-  public searchMenuDeclaration: FunctionDeclaration;
-  public addToCartDeclaration: FunctionDeclaration;
-  public addAllToCartDeclaration: FunctionDeclaration;
-  public updateCartItemDeclaration: FunctionDeclaration;
-  public checkOrderDeclaration: FunctionDeclaration;
-  public checkVoucherDeclaration: FunctionDeclaration;
-  public checkRankUpgradeDeclaration: FunctionDeclaration;
-  public navigateDeclaration: FunctionDeclaration;
-  public requestLocationDeclaration: FunctionDeclaration;
-  public findNearestBranchDeclaration: FunctionDeclaration;
-  public getUserAddressDeclaration: FunctionDeclaration;
-  public getAddressFromLocationDeclaration: FunctionDeclaration;
-  public saveAddressDeclaration: FunctionDeclaration;
-  public triggerOrderPreviewDeclaration: FunctionDeclaration;
-  public triggerPlaceOrderDeclaration: FunctionDeclaration;
-  public stopVoiceDeclaration: FunctionDeclaration;
-  public autoSuggestVoucherDeclaration: FunctionDeclaration;
-  public pinProductToLiveDeclaration: FunctionDeclaration;
-  public triggerVoucherOverlayDeclaration: FunctionDeclaration;
-  public handoffToHumanDeclaration: FunctionDeclaration;
-  public sendMapLinkDeclaration: FunctionDeclaration;
-  public listReservationBranchesDeclaration: FunctionDeclaration;
-  public getReservationSlotsDeclaration: FunctionDeclaration;
-  public requestReservationConfirmationDeclaration: FunctionDeclaration;
-  public createReservationDeclaration: FunctionDeclaration;
-  public cancelReservationDeclaration: FunctionDeclaration;
+  private readonly disabledKeyIndexes = new Set<number>();
+  private readonly keyCooldownUntil = new Map<number, number>();
+  private readonly maxTransientRetries = 2;
+  private readonly retryBaseDelayMs = 250;
+  private readonly guestSessionSecret = getRequiredEnv('CHATBOT_GUEST_SESSION_SECRET');
 
   constructor(
     private readonly prisma: PrismaService,
@@ -50,43 +28,132 @@ export class ChatbotService {
   ) {
     const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
     this.apiKeys = envKeys.split(',').map((k) => k.trim()).filter((k) => k);
-    this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex] || '');
-
-    // Gán các tool declaration từ bảng chuẩn hóa
-    const findDecl = (name: string) => ALL_CHATBOT_TOOL_DECLARATIONS.find((d) => d.name === name) || ({} as any);
-    this.searchMenuDeclaration = findDecl('searchMenu');
-    this.addToCartDeclaration = findDecl('addToCart');
-    this.updateCartItemDeclaration = findDecl('updateCartItem');
-    this.checkOrderDeclaration = findDecl('checkOrder');
-    this.checkVoucherDeclaration = findDecl('findApplicableVouchers');
-    this.checkRankUpgradeDeclaration = findDecl('getMembershipStatus');
-    this.findNearestBranchDeclaration = findDecl('findNearestBranch');
-    this.getUserAddressDeclaration = findDecl('getUserAddresses');
-    this.saveAddressDeclaration = findDecl('saveAddress');
-    this.triggerOrderPreviewDeclaration = findDecl('previewOrder');
-    this.triggerPlaceOrderDeclaration = findDecl('placeOrder');
-    this.stopVoiceDeclaration = findDecl('stopVoice');
-    this.handoffToHumanDeclaration = findDecl('handoffToHuman');
-    this.listReservationBranchesDeclaration = findDecl('listBranches');
-    this.getReservationSlotsDeclaration = findDecl('getReservationSlots');
-    this.requestReservationConfirmationDeclaration = findDecl('previewReservation');
-    this.createReservationDeclaration = findDecl('createReservation');
-    this.cancelReservationDeclaration = findDecl('cancelReservation');
-    this.addAllToCartDeclaration = findDecl('addToCart');
-    this.navigateDeclaration = findDecl('checkOrder');
-    this.requestLocationDeclaration = findDecl('findNearestBranch');
-    this.getAddressFromLocationDeclaration = findDecl('validateDeliveryAddress');
-    this.autoSuggestVoucherDeclaration = findDecl('findApplicableVouchers');
-    this.triggerVoucherOverlayDeclaration = findDecl('findApplicableVouchers');
-    this.sendMapLinkDeclaration = findDecl('findNearestBranch');
-    this.pinProductToLiveDeclaration = findDecl('getProductDetail');
+    if (this.apiKeys.length === 0) {
+      throw new Error('GEMINI_API_KEY or GEMINI_API_KEYS is required for chatbot');
+    }
+    this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex]);
   }
 
-  private rotateKey() {
-    if (this.apiKeys.length <= 1) return;
-    this.currentKeyIndex = (this.currentKeyIndex + 1) % this.apiKeys.length;
-    this.logger.warn(`Đã chuyển sang API Key dự phòng ở vị trí ${this.currentKeyIndex}`);
-    this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex]);
+  private rotateKey(): boolean {
+    const now = Date.now();
+    for (let offset = 1; offset <= this.apiKeys.length; offset += 1) {
+      const candidate = (this.currentKeyIndex + offset) % this.apiKeys.length;
+      if (this.disabledKeyIndexes.has(candidate)) continue;
+      if ((this.keyCooldownUntil.get(candidate) || 0) > now) continue;
+
+      this.currentKeyIndex = candidate;
+      this.logger.warn(`Đã chuyển sang API key dự phòng ở vị trí ${this.currentKeyIndex}`);
+      this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex]);
+      return true;
+    }
+
+    if (!this.disabledKeyIndexes.has(this.currentKeyIndex)) {
+      this.keyCooldownUntil.delete(this.currentKeyIndex);
+      this.genAI = new GoogleGenerativeAI(this.apiKeys[this.currentKeyIndex]);
+      return true;
+    }
+    return false;
+  }
+
+  private classifyGeminiError(error: unknown): {
+    status?: number;
+    retryable: boolean;
+    invalidKey: boolean;
+  } {
+    const candidate = error as { status?: number; statusCode?: number; code?: number | string; message?: string };
+    const status = Number(candidate?.status ?? candidate?.statusCode ?? candidate?.code);
+    const message = String(candidate?.message || error || '');
+    const invalidKey =
+      /API_KEY_INVALID|api key not valid|invalid api key/i.test(message) ||
+      status === 401 ||
+      status === 403;
+    const retryable =
+      !invalidKey &&
+      ([429, 500, 502, 503, 504].includes(status) || /RESOURCE_EXHAUSTED|UNAVAILABLE|temporarily unavailable|high demand/i.test(message));
+
+    return { status: Number.isFinite(status) ? status : undefined, retryable, invalidKey };
+  }
+
+  private async waitBeforeRetry(delayMs: number): Promise<void> {
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  private signGuestSession(sessionId: string): string {
+    return crypto.createHmac('sha256', this.guestSessionSecret).update(sessionId).digest('base64url');
+  }
+
+  private isValidGuestSessionToken(sessionId: string, token?: string): boolean {
+    if (!token) return false;
+    const expected = Buffer.from(this.signGuestSession(sessionId));
+    const provided = Buffer.from(token);
+    return expected.length === provided.length && crypto.timingSafeEqual(expected, provided);
+  }
+
+  private async resolveGuestSession(
+    sessionId: string | undefined,
+    token: string | undefined,
+    message: string,
+    channel: 'TEXT' | 'VOICE' = 'TEXT',
+  ) {
+    if (sessionId && this.isValidGuestSessionToken(sessionId, token)) {
+      const existingSession = await this.prisma.chatSession.findFirst({
+        where: { id: sessionId, userId: null },
+        include: { messages: { orderBy: { createdAt: 'asc' } } },
+      });
+      if (existingSession) {
+        return { session: existingSession, guestSessionToken: token! };
+      }
+    }
+
+    const newSession = await this.prisma.chatSession.create({
+      data: {
+        userId: null,
+        title: message.substring(0, 50),
+        channel,
+      },
+    });
+    return {
+      session: { ...newSession, messages: [] },
+      guestSessionToken: this.signGuestSession(newSession.id),
+    };
+  }
+
+  async resolveVoiceSession(
+    userId: string | undefined,
+    sessionId?: string,
+    guestSessionToken?: string,
+  ) {
+    if (userId) {
+      const existingSession = sessionId
+        ? await this.prisma.chatSession.findFirst({
+            where: { id: sessionId, userId },
+            select: { id: true, contextData: true },
+          })
+        : null;
+
+      const session = existingSession || await this.prisma.chatSession.create({
+        data: { userId, channel: 'VOICE', title: 'Voice chat Avora' },
+        select: { id: true, contextData: true },
+      });
+
+      return {
+        sessionId: session.id,
+        guestSessionToken: undefined,
+        contextData: session.contextData,
+      };
+    }
+
+    const guestSession = await this.resolveGuestSession(
+      sessionId,
+      guestSessionToken,
+      'Voice chat Avora',
+      'VOICE',
+    );
+    return {
+      sessionId: guestSession.session.id,
+      guestSessionToken: guestSession.guestSessionToken,
+      contextData: guestSession.session.contextData,
+    };
   }
 
   private getModel(personality?: string, userContext?: string) {
@@ -133,27 +200,86 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
 
   private async sendMessageWithRetry(chat: any, payload: any[], history: any[], personality?: string, userContext?: string) {
     let result;
-    let retries = this.apiKeys.length;
     let currentChat = chat;
+    let transientRetries = 0;
 
-    while (retries > 0) {
+    while (true) {
       try {
         result = await currentChat.sendMessage(payload);
         return { result, newChat: currentChat };
-      } catch (e: any) {
-        retries--;
-        this.logger.error(`Lỗi gọi Gemini: ${e.message}. Còn ${retries} lần thử lại.`);
+      } catch (error: unknown) {
+        const classification = this.classifyGeminiError(error);
+        const keyIndex = this.currentKeyIndex;
 
-        if (retries === 0) {
-          throw new Error('Hệ thống AI đang bảo trì hoặc quá tải. Vui lòng thử lại sau ít phút nhé!');
+        if (classification.invalidKey) {
+          this.disabledKeyIndexes.add(keyIndex);
+          this.keyCooldownUntil.delete(keyIndex);
+          this.logger.warn(`Bỏ qua API key ở vị trí ${keyIndex} do provider từ chối key`);
+        } else if (classification.status === 429) {
+          this.keyCooldownUntil.set(keyIndex, Date.now() + 60_000);
+        } else if (classification.retryable) {
+          this.keyCooldownUntil.set(keyIndex, Date.now() + 5_000);
         }
 
-        this.rotateKey();
+        if (!classification.retryable && !classification.invalidKey) {
+          this.logger.warn(`Gemini trả lỗi không retry, status=${classification.status ?? 'unknown'}`);
+          break;
+        }
+        if (!classification.invalidKey && transientRetries >= this.maxTransientRetries) {
+          this.logger.warn(`Gemini vẫn lỗi sau ${transientRetries} lần retry, status=${classification.status ?? 'unknown'}`);
+          break;
+        }
+
+        if (!this.rotateKey()) {
+          this.logger.warn('Không còn API key Gemini khả dụng');
+          break;
+        }
+        transientRetries += classification.invalidKey ? 0 : 1;
+        const delayMs = classification.invalidKey ? 0 : this.retryBaseDelayMs * 2 ** (transientRetries - 1);
+        if (delayMs > 0) await this.waitBeforeRetry(delayMs);
         const currentModel = this.getModel(personality, userContext);
         currentChat = currentModel.startChat({ history });
       }
     }
     throw new Error('Hệ thống AI đang bảo trì hoặc quá tải. Vui lòng thử lại sau ít phút nhé!');
+  }
+
+  private buildModelHistory(messages: Array<{ senderType: string; content?: string | null; functionName?: string | null; actionPayload?: string | null }>): Array<{ role: string; parts: Part[] }> {
+    const rawHistory = messages.filter((message) => ['USER', 'AI', 'TOOL'].includes(message.senderType));
+    const recentMessages = rawHistory.slice(-8);
+    while (recentMessages.length > 0 && recentMessages[0].senderType !== 'USER') recentMessages.shift();
+
+    const maxHistoryChars = 12_000;
+    let historyChars = recentMessages.reduce(
+      (total, message) => total + (message.content?.length || 0) + (message.actionPayload?.length || 0),
+      0,
+    );
+    while (historyChars > maxHistoryChars && recentMessages.length > 1) {
+      const removed = recentMessages.shift();
+      historyChars -= (removed?.content?.length || 0) + (removed?.actionPayload?.length || 0);
+      while (recentMessages.length > 0 && recentMessages[0].senderType !== 'USER') recentMessages.shift();
+    }
+
+    return recentMessages.flatMap((message) => {
+      try {
+        let role = 'user';
+        if (message.senderType === 'AI') role = 'model';
+        if (message.senderType === 'TOOL') role = 'function';
+        let parts: Part[] = [];
+        if (message.senderType === 'USER') {
+          parts = [{ text: (message.content || '').slice(0, 4_000) }];
+        } else if (message.senderType === 'AI') {
+          parts = message.functionName && message.actionPayload
+            ? [{ functionCall: { name: message.functionName, args: JSON.parse(message.actionPayload) } }]
+            : [{ text: (message.content || '').slice(0, 4_000) }];
+        } else {
+          parts = [{ functionResponse: { name: message.functionName as string, response: message.actionPayload ? JSON.parse(message.actionPayload) : {} } }];
+        }
+        return [{ role, parts }];
+      } catch {
+        return [];
+      }
+    });
   }
 
   async chat(
@@ -165,6 +291,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
     personality?: string,
     cartTotal?: number,
     cartSummary?: string,
+    guestSessionToken?: string,
   ) {
     // 1. Garbage Collection (Delete messages older than 3 days)
     const threeDaysAgo = new Date();
@@ -183,10 +310,10 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       try {
         const user = await this.prisma.user.findUnique({
           where: { id: userId },
-          include: { membershipTier: true, _count: { select: { orders: true, reservations: true } } },
+          include: { membershipTier: true },
         });
         if (user) {
-          userContext = `THÔNG TIN KHÁCH HÀNG: Tên: ${user.fullName || 'Khách'}, SĐT: ${user.phone || 'Chưa có'}, Hạng thẻ: ${user.membershipTier?.name || 'Thành viên'}, Điểm: ${user.currentPoints}. Đơn hàng đã đặt: ${user._count.orders}. Đặt bàn đã đặt: ${user._count.reservations}. Xưng hô thân mật bằng tên của khách. `;
+          userContext = `THÔNG TIN KHÁCH HÀNG: Tên: ${user.fullName || 'Khách'}, Hạng thẻ: ${user.membershipTier?.name || 'Thành viên'}. Xưng hô thân mật bằng tên của khách. `;
         }
       } catch (e) {
         console.error('Error fetching user context:', e);
@@ -210,8 +337,8 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
 
     if (userId) {
       if (sessionId) {
-        session = await this.prisma.chatSession.findUnique({
-          where: { id: sessionId },
+        session = await this.prisma.chatSession.findFirst({
+          where: { id: sessionId, userId },
           include: { messages: { orderBy: { createdAt: 'asc' } } },
         });
       }
@@ -235,63 +362,26 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
         }
       }
     } else {
-      session = { id: sessionId || 'guest-session', messages: clientHistory || [] };
+      const guestSession = await this.resolveGuestSession(sessionId, guestSessionToken, message);
+      session = guestSession.session;
+      guestSessionToken = guestSession.guestSessionToken;
     }
 
     // 4. Convert history for Gemini with Sliding Window
-    const rawHistory = session.messages.filter((m: any) => ['USER', 'AI', 'TOOL'].includes(m.senderType));
-    let startIndex = Math.max(0, rawHistory.length - 8);
-    while (startIndex < rawHistory.length && rawHistory[startIndex].senderType !== 'USER') {
-      startIndex++;
-    }
-    const recentMessages = rawHistory.slice(startIndex);
-
-    const history = recentMessages.map((m: any) => {
-      let role = 'user';
-      if (m.senderType === 'AI') role = 'model';
-      if (m.senderType === 'TOOL') role = 'function';
-
-      let parts: Part[] = [];
-      if (m.senderType === 'USER') {
-        parts = [{ text: m.content }];
-      } else if (m.senderType === 'AI') {
-        if (m.functionName && m.actionPayload) {
-          parts = [{ functionCall: { name: m.functionName, args: JSON.parse(m.actionPayload) } }];
-        } else {
-          parts = [{ text: m.content || '' }];
-        }
-      } else if (m.senderType === 'TOOL') {
-        parts = [
-          {
-            functionResponse: {
-              name: m.functionName as string,
-              response: m.actionPayload ? JSON.parse(m.actionPayload) : {},
-            },
-          },
-        ];
-      }
-
-      return { role, parts };
-    });
+    const history = this.buildModelHistory(session.messages);
 
     // 5. Save User Message
+    const savedUserMessage = await this.prisma.chatMessage.create({
+      data: {
+        sessionId: session.id,
+        senderType: 'USER',
+        content: message,
+      },
+    });
     const userMessage = {
-      id: crypto.randomUUID(),
-      sessionId: session.id,
-      senderType: 'USER',
-      content: message,
-      createdAt: new Date().toISOString(),
+      ...savedUserMessage,
+      createdAt: savedUserMessage.createdAt.toISOString(),
     };
-
-    if (userId && session.id !== 'guest-session') {
-      await this.prisma.chatMessage.create({
-        data: {
-          sessionId: session.id,
-          senderType: 'USER',
-          content: message,
-        },
-      });
-    }
     session.messages.push(userMessage);
 
     // 6. Start Gemini Chat & Process Function Calls
@@ -304,9 +394,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       result = retryRes.result;
       chat = retryRes.newChat;
     } catch (error: any) {
-      if (userId && session.id !== 'guest-session') {
-        await this.prisma.chatMessage.delete({ where: { id: userMessage.id } }).catch(() => {});
-      }
+      await this.prisma.chatMessage.delete({ where: { id: userMessage.id } }).catch(() => {});
       throw error;
     }
 
@@ -333,17 +421,15 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
         createdAt: new Date().toISOString(),
       };
 
-      if (userId && session.id !== 'guest-session') {
-        await this.prisma.chatMessage.create({
-          data: {
-            sessionId: session.id,
-            senderType: 'AI',
-            content: '',
-            functionName: call.name,
-            actionPayload: JSON.stringify(call.args),
-          },
-        });
-      }
+      await this.prisma.chatMessage.create({
+        data: {
+          sessionId: session.id,
+          senderType: 'AI',
+          content: '',
+          functionName: call.name,
+          actionPayload: JSON.stringify(call.args),
+        },
+      });
       session.messages.push(toolCallMessage);
 
       // Execute through Central Shared Tool Engine
@@ -365,17 +451,15 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
         createdAt: new Date().toISOString(),
       };
 
-      if (userId && session.id !== 'guest-session') {
-        await this.prisma.chatMessage.create({
-          data: {
-            sessionId: session.id,
-            senderType: 'TOOL',
-            content: '',
-            functionName: call.name,
-            actionPayload: JSON.stringify(functionResult),
-          },
-        });
-      }
+      await this.prisma.chatMessage.create({
+        data: {
+          sessionId: session.id,
+          senderType: 'TOOL',
+          content: '',
+          functionName: call.name,
+          actionPayload: JSON.stringify(functionResult),
+        },
+      });
       session.messages.push(toolResponseMessage);
 
       // Send result back to Gemini
@@ -414,6 +498,19 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       textResponse = lastContent || (lastActionType ? 'Dạ em đã chuẩn bị thông tin bên dưới cho bạn nhé:' : 'Xin lỗi, tôi chưa hiểu rõ yêu cầu của bạn. Bạn có thể nói rõ hơn được không?');
     }
 
+    let persistedActionPayload = lastActionPayload;
+    if (persistedActionPayload) {
+      try {
+        const parsedPayload = JSON.parse(persistedActionPayload);
+        if (parsedPayload && typeof parsedPayload === 'object' && 'previewToken' in parsedPayload) {
+          delete parsedPayload.previewToken;
+          persistedActionPayload = JSON.stringify(parsedPayload);
+        }
+      } catch {
+        persistedActionPayload = null;
+      }
+    }
+
     const finalMessage: any = {
       id: crypto.randomUUID(),
       sessionId: session.id,
@@ -425,22 +522,21 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       createdAt: new Date().toISOString(),
     };
 
-    if (userId && session.id !== 'guest-session') {
-      const savedMessage = await this.prisma.chatMessage.create({
-        data: {
-          sessionId: session.id,
-          senderType: 'AI',
-          content: textResponse,
-          actionType: lastActionType,
-          actionPayload: lastActionPayload,
-        },
-      });
-      finalMessage.id = savedMessage.id;
-      finalMessage.createdAt = savedMessage.createdAt;
-    }
+    const savedMessage = await this.prisma.chatMessage.create({
+      data: {
+        sessionId: session.id,
+        senderType: 'AI',
+        content: textResponse,
+        actionType: lastActionType,
+        actionPayload: persistedActionPayload,
+      },
+    });
+    finalMessage.id = savedMessage.id;
+    finalMessage.createdAt = savedMessage.createdAt;
 
     return {
       sessionId: session.id,
+      guestSessionToken: userId ? undefined : guestSessionToken,
       messages: [finalMessage],
       actionType: lastActionType,
       actionPayload: lastActionPayload,
@@ -466,9 +562,59 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
     };
   }
 
-  async getSession(sessionId: string) {
-    const session = await this.prisma.chatSession.findUnique({
-      where: { id: sessionId },
+  async confirmTransaction(
+    userId: string,
+    sessionId: string,
+    operation: 'ORDER' | 'RESERVATION',
+    previewToken: string,
+  ) {
+    if (!sessionId || !previewToken || !['ORDER', 'RESERVATION'].includes(operation)) {
+      throw new BadRequestException('Invalid confirmation request');
+    }
+
+    const session = await this.prisma.chatSession.findFirst({
+      where: { id: sessionId, userId },
+      select: { id: true, contextData: true, version: true },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const context: ChatSessionContext = session.contextData
+      ? JSON.parse(session.contextData)
+      : { cart: [] };
+    const state = operation === 'ORDER'
+      ? context.orderConfirmation
+      : context.reservationConfirmation;
+    const suppliedHash = crypto.createHash('sha256').update(previewToken).digest('hex');
+
+    if (!state || state.status !== 'PREVIEWED' || state.previewTokenHash !== suppliedHash) {
+      throw new BadRequestException('Confirmation is invalid or already used');
+    }
+    if (new Date(state.expiresAt).getTime() <= Date.now()) {
+      throw new BadRequestException('Confirmation has expired');
+    }
+
+    state.status = 'CONFIRMED';
+    const updateResult = await this.prisma.chatSession.updateMany({
+      where: { id: session.id, version: session.version },
+      data: {
+        contextData: JSON.stringify(context),
+        version: { increment: 1 },
+      },
+    });
+
+    if (updateResult.count !== 1) {
+      throw new ConflictException({
+        error: 'CHAT_SESSION_CONFLICT',
+        message: 'Phiên chatbot vừa thay đổi. Vui lòng tải lại bản xem trước trước khi xác nhận.',
+      });
+    }
+
+    return { success: true };
+  }
+
+  async getSession(sessionId: string, userId: string) {
+    const session = await this.prisma.chatSession.findFirst({
+      where: { id: sessionId, userId },
       include: { messages: { orderBy: { createdAt: 'asc' } } },
     });
     if (!session) {
@@ -477,14 +623,14 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
     return session;
   }
 
-  async deleteSession(sessionId: string) {
-    try {
-      await this.prisma.chatMessage.deleteMany({ where: { sessionId } });
-      await this.prisma.chatSession.delete({ where: { id: sessionId } });
-      return { success: true };
-    } catch (e) {
-      console.error('Delete session error', e);
-      return { success: false };
-    }
+  async deleteSession(sessionId: string, userId: string) {
+    const session = await this.prisma.chatSession.findFirst({
+      where: { id: sessionId, userId },
+      select: { id: true },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    await this.prisma.chatSession.delete({ where: { id: session.id } });
+    return { success: true };
   }
 }

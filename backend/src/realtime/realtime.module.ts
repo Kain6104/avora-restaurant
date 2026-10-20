@@ -4,6 +4,7 @@ import { CheckoutGateway } from '../order/checkout.gateway';
 import { RealtimeBroadcastService } from '../order/realtime-broadcast.service';
 import { PosModule } from '../pos/pos.module';
 import { PrismaModule } from '../prisma/prisma.module';
+import { getRequiredEnv } from '../common/utils/env.util';
 
 @Global()
 @Module({
@@ -11,7 +12,7 @@ import { PrismaModule } from '../prisma/prisma.module';
     PrismaModule,
     PosModule,
     JwtModule.register({
-      secret: process.env.JWT_SECRET || 'AVORA_SECRET_2026',
+      secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
     }),
   ],

@@ -38,8 +38,18 @@ export interface ChatReservationDraft {
   summaryConfirmed?: boolean;
 }
 
+export type ChatConfirmationStatus = 'PREVIEWED' | 'CONFIRMED' | 'COMMITTED';
+
+export interface ChatConfirmationState {
+  previewTokenHash: string;
+  payloadHash: string;
+  expiresAt: string;
+  status: ChatConfirmationStatus;
+}
+
 export interface ChatSessionContext {
   channel?: 'TEXT' | 'VOICE';
+  cartVersion?: number;
   currentBranchId?: string;
   fulfillmentType?: 'DELIVERY' | 'TAKE_AWAY' | 'TAKEAWAY' | 'DINE_IN';
   cart: ChatSessionCartItem[];
@@ -54,13 +64,24 @@ export interface ChatSessionContext {
   discountVoucherCode?: string;
   shippingVoucherCode?: string;
   pointsToUse?: number;
+  expectedTotalAmount?: number;
   paymentMethod?: string;
   tableNumberOrCode?: string;
   reservationDraft?: ChatReservationDraft;
+  orderConfirmation?: ChatConfirmationState;
+  reservationConfirmation?: ChatConfirmationState;
   lastIdempotencyKey?: string;
 }
 
-export interface ChatbotToolResult<T = any> {
+export interface ChatCartSnapshot {
+  cartVersion: number;
+  currentBranchId: string | null;
+  items: ChatSessionCartItem[];
+  subTotal: number;
+  totalItems: number;
+}
+
+export interface ChatbotToolResult<T = unknown> {
   success: boolean;
   code: string;
   message: string;

@@ -43,9 +43,22 @@ Thumbs.db
 # Local files
 *.local
 
+# Local agent configuration and audit artifacts
+.agents/
+docs/
+
 # Scratch & Local Debug
 scratch/
 **/scratch/
+
+# Local chatbot regression tests
+backend/src/chatbot/chatbot-cart-sync.spec.ts
+backend/src/chatbot/chatbot-critical-regression.spec.ts
+backend/src/chatbot/chatbot-policy-regression.spec.ts
+backend/src/chatbot/chatbot-retry.spec.ts
+backend/src/chatbot/chatbot-tool-contract.spec.ts
+backend/src/chatbot/chatbot-voice-gateway.spec.ts
+backend/src/chatbot/chatbot-voucher-pricing.spec.ts
 
 # .NET / C# / Visual Studio
 **/bin/

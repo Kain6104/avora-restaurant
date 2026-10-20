@@ -2,8 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
 import { ChatbotToolEngineService } from '../src/chatbot/chatbot-tool-engine.service';
-import { ChatSessionContext } from '../src/chatbot/dto/chatbot-tool.dto';
+import { ChatSessionContext, ChatbotToolResult } from '../src/chatbot/dto/chatbot-tool.dto';
 import { PrismaService } from '../src/prisma/prisma.service';
+
+function resultData<T>(result: ChatbotToolResult): T {
+  return result.data as T;
+}
 
 describe('ChatbotToolEngineService (Integration Tests)', () => {
   jest.setTimeout(120000);
@@ -42,16 +46,18 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
   describe('Branch & Menu Discovery Tools', () => {
     it('listBranches should return active branches', async () => {
       const res = await toolEngine.executeTool('listBranches', {});
+      const data = resultData<{ branches: unknown[] }>(res);
       expect(res.success).toBe(true);
       expect(res.code).toBe('BRANCH_LIST_LOADED');
-      expect(Array.isArray(res.data?.branches)).toBe(true);
+      expect(Array.isArray(data.branches)).toBe(true);
     });
 
     it('searchMenu should return product items', async () => {
       const res = await toolEngine.executeTool('searchMenu', { query: 'cá' });
+      const data = resultData<{ products: unknown[] }>(res);
       expect(res.success).toBe(true);
       expect(res.code).toBe('MENU_SEARCH_COMPLETED');
-      expect(res.data?.products).toBeDefined();
+      expect(data.products).toBeDefined();
     });
 
     it('listCategories should return categories', async () => {
@@ -69,13 +75,14 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         date: tomorrow,
         partySize: 4,
       });
+      const data = resultData<{ slots: unknown[] }>(res);
 
       expect(res.success).toBe(true);
       expect(res.code).toBe('RESERVATION_SLOTS_LOADED');
-      expect(Array.isArray(res.data?.slots)).toBe(true);
+      expect(Array.isArray(data.slots)).toBe(true);
     });
 
-    it('previewReservation should require missing fields if incomplete', async () => {
+    it('previewReservation should reject incomplete arguments before business logic', async () => {
       const ctx: ChatSessionContext = {
         channel: 'TEXT',
         reservationDraft: {
@@ -85,11 +92,10 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
 
       const res = await toolEngine.executeTool('previewReservation', {}, ctx);
       expect(res.success).toBe(false);
-      expect(res.code).toBe('MISSING_RESERVATION_FIELDS');
-      expect(res.data?.missingFields).toContain('branch');
+      expect(res.code).toBe('TOOL_ARGUMENTS_INVALID');
     });
 
-    it('placeReservation should create a reservation atomically', async () => {
+    it('createReservation should consume a confirmed server draft', async () => {
       const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
       const testPhone = '0901234567';
       const ctx: ChatSessionContext = {
@@ -105,28 +111,37 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         },
       };
 
-      const idempotencyKey = `idemp-test-${Date.now()}`;
-      const res = await toolEngine.executeTool('placeReservation', { idempotencyKey }, ctx, testUserId);
-      if (!res.success) {
-        console.error('placeReservation failed with:', res);
-      }
+      const preview = await toolEngine.executeTool('previewReservation', {
+        branchId: testBranchId,
+        reservationDate: tomorrow,
+        reservationTime: '18:00',
+        partySize: 2,
+        customerName: 'Test AI Guest',
+        customerPhone: testPhone,
+      }, ctx, testUserId);
+      expect(preview.success).toBe(true);
+      expect(ctx.reservationConfirmation).toBeDefined();
+      ctx.reservationConfirmation!.status = 'CONFIRMED';
+
+      const res = await toolEngine.executeTool('createReservation', {}, ctx, testUserId);
 
       expect(res.success).toBe(true);
       expect(res.code).toBe('RESERVATION_PLACED_SUCCESS');
-      expect(res.data?.reservationId).toBeDefined();
+      const reservationData = res.data as { reservationId: string; reservationCode: string };
+      expect(reservationData.reservationId).toBeDefined();
       expect(res.actionType).toBe('CONFIRM_RESERVATION');
 
-      const reservationId = res.data?.reservationId;
+      const reservationId = reservationData.reservationId;
 
-      // Test idempotency: calling placeReservation again with same idempotency key
-      const duplicateRes = await toolEngine.executeTool('placeReservation', { idempotencyKey }, ctx, testUserId);
-      expect(duplicateRes.success).toBe(true);
-      expect(duplicateRes.data?.reservationId).toBe(reservationId);
+      const replayRes = await toolEngine.executeTool('createReservation', {}, ctx, testUserId);
+      expect(replayRes.success).toBe(false);
+      expect(replayRes.code).toBe('CONFIRMATION_REQUIRED');
 
       // Clean up test reservation
       if (reservationId) {
         await toolEngine.executeTool('cancelReservation', {
-          reservationId,
+          reservationCode: reservationData.reservationCode,
+          phone: testPhone,
           reason: 'Automated test cleanup',
         }, ctx, testUserId);
       }
@@ -150,7 +165,7 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         const res = await toolEngine.executeTool('addToCart', {
           productId: productWithRequiredOpt.id,
           quantity: 1,
-          options: [], // intentionally empty
+          optionItemIds: [], // intentionally empty
         }, ctx);
 
         expect(res.success).toBe(false);
@@ -168,15 +183,14 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         const ctx: ChatSessionContext = { channel: 'TEXT', cart: [] };
 
         // Select options if required
-        const selectedOptions = product.optionGroups.map((g) => ({
-          optionGroupId: g.id,
-          optionItemId: g.optionItems[0]?.id || '',
-        })).filter((o) => o.optionItemId);
+        const selectedOptionIds = product.optionGroups
+          .map((group) => group.optionItems[0]?.id || '')
+          .filter(Boolean);
 
         const addRes = await toolEngine.executeTool('addToCart', {
           productId: product.id,
           quantity: 2,
-          options: selectedOptions,
+          optionItemIds: selectedOptionIds,
         }, ctx);
 
         expect(addRes.success).toBe(true);
@@ -186,7 +200,7 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
 
         // Update quantity
         const updateRes = await toolEngine.executeTool('updateCartItem', {
-          cartItemId: ctx.cart[0].id,
+          lineId: ctx.cart[0].lineId,
           quantity: 3,
         }, ctx);
 
@@ -195,9 +209,10 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
 
         // Get cart
         const cartRes = await toolEngine.executeTool('getCart', {}, ctx);
+        const cartData = resultData<{ items: unknown[] }>(cartRes);
         expect(cartRes.success).toBe(true);
         expect(cartRes.code).toBe('CART_VIEW_READY');
-        expect(cartRes.data?.items.length).toBe(1);
+        expect(cartData.items.length).toBe(1);
       }
     });
 
@@ -208,6 +223,7 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         date: todayStr,
         orderType: 'DELIVERY',
       }, { channel: 'TEXT' });
+      const data = resultData<{ selectedSlot: unknown }>(res);
 
       expect(res.success).toBe(true);
       expect(res.code).toBe('ORDER_SLOTS_RETRIEVED');
@@ -225,7 +241,7 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
       expect(res.success).toBe(true);
       expect(res.actionType).toBe('SELECT_ORDER_SLOT');
       expect(res.code).toBe('ORDER_SLOT_SELECTED');
-      expect(res.data?.selectedSlot).toBeDefined();
+      expect(data.selectedSlot).toBeDefined();
     });
 
     it('validateDeliveryAddress should reverse geocode GPS coordinates and compute shipping quote', async () => {
@@ -241,11 +257,12 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         longitude: 106.7009,
         branchId: testBranchId,
       }, ctx, testUserId);
+      const data = resultData<{ quote: { distanceKm: number } }>(res);
 
       expect(res.success).toBe(true);
       expect(res.code).toBe('DELIVERY_ADDRESS_VALID');
-      expect(res.data?.quote).toBeDefined();
-      expect(res.data?.quote?.distanceKm).toBeGreaterThan(0);
+      expect(data.quote).toBeDefined();
+      expect(data.quote.distanceKm).toBeGreaterThan(0);
       expect(ctx.deliveryAddressSummary).toBeDefined();
     });
 
@@ -260,6 +277,7 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
         cart: [
           {
             id: 'item-1',
+            lineId: 'item-1',
             productId: product.id,
             productName: product.name,
             basePrice: product.price,
@@ -275,10 +293,11 @@ describe('ChatbotToolEngineService (Integration Tests)', () => {
       if (!res.success) {
         console.error('previewOrder failed with:', res);
       }
+      const data = resultData<{ subTotal: number; totalAmount?: number; finalTotal?: number }>(res);
       expect(res.success).toBe(true);
       expect(res.code).toBe('ORDER_PREVIEW_READY');
-      expect(res.data?.subTotal).toBe(product.price * 2);
-      expect(res.data?.totalAmount || res.data?.finalTotal).toBeGreaterThan(0);
+      expect(data.subTotal).toBe(product.price * 2);
+      expect(data.totalAmount || data.finalTotal).toBeGreaterThan(0);
       expect(res.actionType).toBe('ORDER_PREVIEW');
     });
   });
