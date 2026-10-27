@@ -24,6 +24,7 @@ class ChatDto {
   personality?: string;
   cartTotal?: number;
   cartSummary?: string;
+  cartItems?: any[];
 }
 
 class ConfirmChatTransactionDto {
@@ -54,6 +55,7 @@ export class ChatbotController {
         personality,
         cartTotal,
         cartSummary,
+        cartItems,
       } = body;
       return await this.chatbotService.chat(
         request?.user?.id,
@@ -65,6 +67,7 @@ export class ChatbotController {
         cartTotal,
         cartSummary,
         guestSessionToken,
+        cartItems,
       );
     } catch (error: unknown) {
       if (error instanceof HttpException) throw error;

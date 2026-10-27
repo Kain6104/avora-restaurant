@@ -227,6 +227,7 @@ export class ChatbotToolEngineService {
     sessionId?: string,
     branchId?: string,
     providedCtx?: ChatSessionContext,
+    clientCartItems?: any[],
   ): Promise<ChatbotToolResult> {
     if (!isChatbotToolName(toolName)) {
       return {
@@ -273,6 +274,26 @@ export class ChatbotToolEngineService {
     }
 
     if (!ctx.cart) ctx.cart = [];
+    if (clientCartItems && Array.isArray(clientCartItems) && clientCartItems.length > 0 && ctx.cart.length === 0) {
+      ctx.cart = clientCartItems.map((item: any) => ({
+        lineId: item.lineId || item.id || crypto.randomUUID(),
+        productId: item.productId || item.id,
+        productName: item.productName || item.name || 'Món ăn',
+        quantity: item.quantity || 1,
+        basePrice: item.originalPrice || item.price || item.priceAtSale || 0,
+        priceAtSale: item.price || item.priceAtSale || 0,
+        selectedOptions: (item.selectedOptions || []).map((o: any) => ({
+          optionGroupId: o.groupId || o.optionGroupId || '',
+          optionGroupName: o.groupName || o.optionGroupName || '',
+          optionItemId: o.optionItemId || o.id || '',
+          optionItemName: o.optionItemName || o.name || '',
+          extraPrice: o.extraPrice || o.price || 0,
+        })),
+        note: item.note || item.notes || '',
+        isFlashSale: Boolean(item.isFlashSale || item.flashSale),
+        flashSaleId: item.flashSaleId,
+      }));
+    }
 
     const policyError = this.enforceToolPolicy(command, userId);
     if (policyError) return policyError;
@@ -336,6 +357,9 @@ export class ChatbotToolEngineService {
           break;
         case 'saveAddress':
           result = await this.toolSaveAddress(command.args, userId);
+          break;
+        case 'requestDeliveryLocation':
+          result = await this.toolRequestDeliveryLocation(command.args, ctx);
           break;
         case 'getAvailableOrderSlots':
           result = await this.toolGetAvailableOrderSlots(command.args, ctx);
@@ -1485,14 +1509,45 @@ export class ChatbotToolEngineService {
     };
   }
 
+  private async toolRequestDeliveryLocation(
+    args: ChatbotToolArgsMap['requestDeliveryLocation'],
+    ctx: ChatSessionContext,
+  ): Promise<ChatbotToolResult> {
+    return {
+      success: true,
+      code: 'REQUEST_LOCATION',
+      actionType: 'REQUEST_LOCATION',
+      actionPayload: JSON.stringify({ reason: args?.reason || 'CHANGE_ADDRESS' }),
+      suggestedReplies: ['📍 Chia sẻ vị trí của tôi', 'Nhập địa chỉ giao hàng'],
+      message: 'Vui lòng cung cấp vị trí giao hàng để tiếp tục.',
+      content: 'Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới hoặc nhập số nhà, tên đường để Avora xác định chi nhánh và tính phí giao hàng chính xác cho bạn nhé!',
+    };
+  }
+
   private async toolGetAvailableOrderSlots(args: ChatbotToolArgsMap['getAvailableOrderSlots'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
-    const effectiveBranchId = args.branchId || ctx.currentBranchId;
+    let effectiveBranchId = args.branchId || ctx.currentBranchId;
+    if (!effectiveBranchId || effectiveBranchId === 'undefined') {
+      const defaultBranch = (await this.prisma.branch.findFirst({
+        where: { onlineOrderingEnabled: true },
+        orderBy: { createdAt: 'asc' },
+      })) || (await this.prisma.branch.findFirst());
+      effectiveBranchId = defaultBranch?.id;
+      if (effectiveBranchId) {
+        ctx.currentBranchId = effectiveBranchId;
+      }
+    }
     if (!effectiveBranchId) {
       return { success: false, code: 'BRANCH_REQUIRED', message: 'Vui lòng chọn chi nhánh trước khi lấy khung giờ.' };
     }
 
     const branch = await this.prisma.branch.findUnique({ where: { id: effectiveBranchId } });
-    const dateStr = args.date || new Date().toISOString().split('T')[0];
+    const vnFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const dateStr = args.date || vnFormatter.format(new Date());
     const orderType = args.orderType === 'TAKE_AWAY' || args.orderType === 'TAKEAWAY' ? 'TAKEAWAY' : 'DELIVERY';
 
     const slots = await this.operatingSlotService.getSlotsForDate({
@@ -1503,32 +1558,47 @@ export class ChatbotToolEngineService {
 
     const openSlots = slots.filter((s) => s.isAvailable);
 
-    // Dynamic ASAP Express Slot Fallback: nếu các slot trong ngày đã qua giờ thì tự động kích hoạt ASAP
-    let displaySlots = [...openSlots];
+    let displaySlots: any[] = [...openSlots];
     if (displaySlots.length === 0) {
-      const now = new Date();
-      const currentH = now.getHours().toString().padStart(2, '0');
-      const currentM = now.getMinutes().toString().padStart(2, '0');
-      const endTotalM = now.getMinutes() + 45;
-      const endH = ((now.getHours() + Math.floor(endTotalM / 60)) % 24).toString().padStart(2, '0');
-      const endM = (endTotalM % 60).toString().padStart(2, '0');
+      // BẮT BUỘC lấy từ bảng OperatingSlot trong database, KHÔNG ĐƯỢC TỰ BỊA GIỜ
+      const realDbSlots = await this.prisma.operatingSlot.findMany({
+        where: {
+          branchId: effectiveBranchId,
+          orderType: orderType as any,
+          isActive: true,
+        },
+        orderBy: { startTime: 'asc' },
+      });
 
-      const fallbackDbSlot = slots[0] || (await this.prisma.operatingSlot.findFirst({
-        where: { branchId: effectiveBranchId, isActive: true },
-      }));
-
-      const asapSlot = {
-        id: fallbackDbSlot ? fallbackDbSlot.id : 'ASAP_DELIVERY_SLOT',
-        startTime: `${currentH}:${currentM}`,
-        endTime: `${endH}:${endM}`,
-        isAvailable: true,
-        name: 'Giao ngay (ASAP 30-45 phút)',
-        leadTimeMinutes: 0,
-        orderType,
-        isAsap: true,
-      };
-
-      displaySlots = [asapSlot as any, ...slots.map((s) => ({ ...s, isAvailable: true }))];
+      if (realDbSlots.length > 0) {
+        displaySlots = realDbSlots.map((s) => ({
+          id: s.id,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          isAvailable: true,
+          name: s.startTime === '00:00' && s.endTime === '23:59' ? 'Giao trong ngày (00:00 - 23:59)' : `${s.startTime} - ${s.endTime}`,
+          leadTimeMinutes: s.leadTimeMinutes,
+          orderType: s.orderType,
+          isAsap: s.startTime === '00:00' && s.endTime === '23:59',
+        }));
+      } else {
+        const anySlots = await this.prisma.operatingSlot.findMany({
+          where: { branchId: effectiveBranchId, isActive: true },
+          orderBy: { startTime: 'asc' },
+        });
+        if (anySlots.length > 0) {
+          displaySlots = anySlots.map((s) => ({
+            id: s.id,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            isAvailable: true,
+            name: `${s.startTime} - ${s.endTime}`,
+            leadTimeMinutes: s.leadTimeMinutes,
+            orderType: s.orderType,
+            isAsap: false,
+          }));
+        }
+      }
     }
 
     // Tự động khớp và chọn slot nếu khách nói giờ cụ thể hoặc yêu cầu giao sớm/giao ngay
@@ -1545,6 +1615,7 @@ export class ChatbotToolEngineService {
       ctx.scheduledTime = `${selectedSlot.startTime} - ${selectedSlot.endTime}`;
       ctx.deliverySlotTime = selectedSlot.name || `${selectedSlot.startTime} - ${selectedSlot.endTime}`;
 
+      const branchDisplay = branch?.name || 'Avora Restaurant';
       return {
         success: true,
         code: 'ORDER_SLOT_SELECTED',
@@ -1554,7 +1625,7 @@ export class ChatbotToolEngineService {
           slots: displaySlots,
           date: dateStr,
           orderType,
-          branchName: branch?.name,
+          branchName: branchDisplay,
         },
         actionType: 'SELECT_ORDER_SLOT',
         actionPayload: JSON.stringify({
@@ -1563,14 +1634,14 @@ export class ChatbotToolEngineService {
           date: dateStr,
           orderType,
           branchId: effectiveBranchId,
-          branchName: branch?.name,
+          branchName: branchDisplay,
         }),
         suggestedReplies: [
           `Xác nhận: ${selectedSlot.startTime} - ${selectedSlot.endTime}`,
           '⚡ Giao ngay (ASAP)',
           'Chọn khung giờ khác',
         ],
-        content: `Hệ thống đã chọn khung giờ **${selectedSlot.startTime} - ${selectedSlot.endTime}** (từ chi nhánh ${branch?.name}) cho đơn của bạn. Bạn có muốn đổi khung giờ nào khác không ạ?`,
+        content: `Hệ thống đã chọn khung giờ **${selectedSlot.startTime} - ${selectedSlot.endTime}** (từ chi nhánh ${branchDisplay}) cho đơn của bạn. Bạn có muốn đổi khung giờ nào khác không ạ?`,
       };
     }
 
@@ -2102,24 +2173,46 @@ export class ChatbotToolEngineService {
       shippingDiscount = Math.max(shippingDiscount, validation.discount);
     }
 
+    const pointRate = branch.pointRedeemRate || 1;
+    const maxPercent = (branch as any).maxPointDiscountPercent !== undefined ? (branch as any).maxPointDiscountPercent : 20;
+
+    if (args.usePoints !== undefined) {
+      (ctx as any).usePoints = args.usePoints;
+    }
+    if (args.pointsToUse !== undefined) {
+      const maxDiscountAllowed = (basePricing.subTotal * maxPercent) / 100;
+      const maxPointsAllowed = Math.floor(maxDiscountAllowed / pointRate);
+      ctx.pointsToUse = Math.max(0, Math.min(args.pointsToUse, maxPointsAllowed));
+    } else if ((ctx as any).usePoints && userId && branch.allowDirectDiscount) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { currentPoints: true },
+      });
+      const userPoints = user?.currentPoints || 0;
+      const maxDiscountAllowed = (basePricing.subTotal * maxPercent) / 100;
+      const maxPointsAllowed = Math.floor(maxDiscountAllowed / pointRate);
+      ctx.pointsToUse = Math.max(0, Math.min(userPoints, maxPointsAllowed));
+    }
+
     const pricing = await this.orderPricingService.calculatePricing({
       items: pricingItems,
       orderDiscountAmount,
       shippingFee,
       shippingDiscount,
-      pointsDiscount: (ctx.pointsToUse || 0) * (branch.pointRedeemRate || 1000),
+      pointsDiscount: (ctx.pointsToUse || 0) * pointRate,
     });
 
-    // Lấy phương thức thanh toán động từ Database
+    // Lấy phương thức thanh toán động từ Database (giống bên /checkout)
     const activePaymentMethodsRaw = await this.paymentMethodService.getActiveMethods(pricing.totalAmount, branch.id);
     const availablePaymentMethods = activePaymentMethodsRaw
-      .filter((m) => m.isEligible && (fulfillmentType === 'DINE_IN' ? true : (m.type !== 'CASH' && m.type !== 'CARD')))
+      .filter((m) => m.isEligible)
       .map((m) => ({
         code: m.code,
         name: m.name,
         type: m.type,
         description: m.description,
         instructionNote: (m as any).instructionNote || m.description,
+        minOrderValue: (m as any).minOrderValue || 0,
       }));
 
     if (availablePaymentMethods.length > 0 && (!ctx.paymentMethod || !availablePaymentMethods.some((m) => m.code === ctx.paymentMethod))) {
@@ -2132,6 +2225,8 @@ export class ChatbotToolEngineService {
       discountAmount: pricing.discountAmount,
       shippingFee: pricing.shippingFeeFinal,
       pointsDiscount: pricing.pointsDiscount,
+      pointsUsed: ctx.pointsToUse || 0,
+      maxPointDiscountPercent: maxPercent,
       taxAmount: pricing.taxAmount,
       totalAmount: pricing.totalAmount,
       branchName: branch.name,
@@ -2245,6 +2340,11 @@ export class ChatbotToolEngineService {
     ctx.pointsToUse = 0;
     ctx.orderConfirmation!.status = 'COMMITTED';
 
+    const isSepayMethod = paymentMethod === 'SEPAY' || paymentMethod === 'TRANSFER' || paymentMethod === 'SEPAY_QR' || paymentMethod.includes('SEPAY');
+    const redirectUrl = isSepayMethod
+      ? `https://avorafnb.com/payment/sepay?orderCode=${finalOrderCode}`
+      : undefined;
+
     return {
       success: true,
       code: 'ORDER_PLACED_SUCCESS',
@@ -2254,13 +2354,20 @@ export class ChatbotToolEngineService {
         totalAmount: orderTotal,
         status: orderStatus,
         paymentMethod,
+        isSepay: isSepayMethod,
+        redirectUrl,
       },
       actionType: 'SHOW_ORDER_SUCCESS',
       actionPayload: JSON.stringify({
         orderCode: finalOrderCode,
         totalAmount: orderTotal,
+        paymentMethod,
+        isSepay: isSepayMethod,
+        redirectUrl,
       }),
-      content: `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ đã được tạo thành công. Nhà hàng sẽ chuẩn bị và giao món đúng khung giờ cho bạn nhé!`,
+      content: isSepayMethod
+        ? `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] đã được tạo thành công với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ. Hệ thống đang tự động chuyển hướng bạn đến cổng thanh toán SePay. Quý khách vui lòng quét mã QR để hoàn tất thanh toán nhé!`
+        : `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ đã được tạo thành công. Nhà hàng sẽ chuẩn bị và giao món đúng khung giờ cho bạn nhé!`,
     };
   }
 

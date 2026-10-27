@@ -330,8 +330,19 @@ export class PreviewOrderArgsDto {
   pointsToUse?: number;
 
   @IsOptional()
+  @IsBoolean()
+  usePoints?: boolean;
+
+  @IsOptional()
   @IsIn(PAYMENT_METHODS)
   paymentMethod?: (typeof PAYMENT_METHODS)[number];
+}
+
+export class RequestDeliveryLocationArgsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  reason?: string;
 }
 
 export class PlaceOrderArgsDto {
@@ -474,6 +485,7 @@ export const CHATBOT_TOOL_DTO_BY_NAME = {
   getCart: EmptyToolArgsDto,
   clearCart: EmptyToolArgsDto,
   getUserAddresses: EmptyToolArgsDto,
+  requestDeliveryLocation: RequestDeliveryLocationArgsDto,
   validateDeliveryAddress: ValidateDeliveryAddressArgsDto,
   saveAddress: SaveAddressArgsDto,
   getAvailableOrderSlots: GetAvailableOrderSlotsArgsDto,

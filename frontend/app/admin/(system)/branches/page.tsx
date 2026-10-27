@@ -90,6 +90,7 @@ export default function BranchesPage() {
     loyaltyEarnRatePos: 40,
     allowDirectDiscount: true,
     pointRedeemRate: 1,
+    maxPointDiscountPercent: 20,
     allowRedeemVoucherOnline: true,
     allowRedeemItemPos: true,
   });
@@ -164,6 +165,7 @@ export default function BranchesPage() {
       loyaltyEarnRatePos: 40,
       allowDirectDiscount: true,
       pointRedeemRate: 1,
+      maxPointDiscountPercent: 20,
       allowRedeemVoucherOnline: true,
       allowRedeemItemPos: true,
     });
@@ -204,6 +206,7 @@ export default function BranchesPage() {
       loyaltyEarnRatePos: branch.loyaltyEarnRatePos ?? 40,
       allowDirectDiscount: branch.allowDirectDiscount ?? true,
       pointRedeemRate: branch.pointRedeemRate ?? 1,
+      maxPointDiscountPercent: branch.maxPointDiscountPercent ?? 20,
       allowRedeemVoucherOnline: branch.allowRedeemVoucherOnline ?? true,
       allowRedeemItemPos: branch.allowRedeemItemPos ?? true,
     });
@@ -1071,22 +1074,41 @@ export default function BranchesPage() {
                 </div>
 
                 {formData.allowDirectDiscount && (
-                  <div className="pt-2 border-t border-amber-200/60 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <FormField label="Giá trị quy đổi (1 điểm = X đồng)">
-                      <div className="relative">
-                        <input
-                          type="number"
-                          step="0.1"
-                          min="0.1"
-                          value={formData.pointRedeemRate}
-                          onChange={(e) => setFormData({ ...formData, pointRedeemRate: Math.max(0.1, parseFloat(e.target.value) || 1) })}
-                          className="w-full h-9 px-3 pr-16 text-xs bg-white border border-amber-200 rounded-xl outline-none font-bold text-amber-900"
-                        />
-                        <span className="absolute right-3 top-2 text-[11px] text-amber-600 font-bold">đ / điểm</span>
-                      </div>
-                    </FormField>
-                    <div className="flex items-center text-[11px] text-amber-800 bg-white p-2.5 rounded-xl border border-amber-100">
-                      Ví dụ: 1 điểm = <strong>{formData.pointRedeemRate}đ</strong>. Khách dùng <strong>1.000 điểm</strong> giảm trực tiếp <strong>{(1000 * (formData.pointRedeemRate || 1)).toLocaleString('vi-VN')}đ</strong>.
+                  <div className="pt-2 border-t border-amber-200/60 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <FormField label="Giá trị quy đổi (1 điểm = X đồng)">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="0.1"
+                            min="0.1"
+                            value={formData.pointRedeemRate}
+                            onChange={(e) => setFormData({ ...formData, pointRedeemRate: Math.max(0.1, parseFloat(e.target.value) || 1) })}
+                            className="w-full h-9 px-3 pr-16 text-xs bg-white border border-amber-200 rounded-xl outline-none font-bold text-amber-900"
+                          />
+                          <span className="absolute right-3 top-2 text-[11px] text-amber-600 font-bold">đ / điểm</span>
+                        </div>
+                      </FormField>
+
+                      <FormField label="Tỷ lệ điểm được dùng tối đa theo đơn hàng (%)">
+                        <div className="relative">
+                          <input
+                            type="number"
+                            step="1"
+                            min="1"
+                            max="100"
+                            value={formData.maxPointDiscountPercent ?? 20}
+                            onChange={(e) => setFormData({ ...formData, maxPointDiscountPercent: Math.min(100, Math.max(1, parseInt(e.target.value) || 20)) })}
+                            className="w-full h-9 px-3 pr-10 text-xs bg-white border border-amber-200 rounded-xl outline-none font-bold text-amber-900"
+                          />
+                          <span className="absolute right-3 top-2 text-[11px] text-amber-600 font-bold">%</span>
+                        </div>
+                      </FormField>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-[11px] text-amber-800 bg-white p-2.5 rounded-xl border border-amber-100">
+                      <span>Ví dụ: 1 điểm = <strong>{formData.pointRedeemRate}đ</strong>. Khách dùng <strong>1.000 điểm</strong> giảm trực tiếp <strong>{(1000 * (formData.pointRedeemRate || 1)).toLocaleString('vi-VN')}đ</strong>.</span>
+                      <span className="font-semibold text-amber-900 bg-amber-100/70 px-2 py-0.5 rounded-md shrink-0">Giảm tối đa {formData.maxPointDiscountPercent ?? 20}% giá trị đơn hàng</span>
                     </div>
                   </div>
                 )}

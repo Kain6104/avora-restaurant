@@ -157,12 +157,13 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         guestSessionToken: voiceSession.guestSessionToken,
       });
 
-      client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number; branchId?: string }) => {
+      client.on('update_cart_context', (data: { cartSummary?: string; cartTotal?: number; branchId?: string; cartItems?: any[] }) => {
         const ctx = this.userContexts.get(client.id);
         if (ctx) {
           if (typeof data.cartTotal === 'number' && Number.isFinite(data.cartTotal)) ctx.cartTotal = data.cartTotal;
           if (typeof data.cartSummary === 'string' && data.cartSummary.length <= 1000) ctx.cartSummary = data.cartSummary;
           if (typeof data.branchId === 'string' && data.branchId.length <= 100) ctx.branchId = data.branchId;
+          if (Array.isArray(data.cartItems)) (ctx as any).cartItems = data.cartItems;
         }
       });
 
@@ -301,6 +302,7 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
                 context?.branchId,
                 context?.cartTotal,
                 context?.sessionId,
+                (context as any)?.cartItems,
               );
 
               // Gửi rich action về UI để cập nhật màn hình

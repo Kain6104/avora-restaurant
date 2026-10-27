@@ -204,6 +204,7 @@ model Branch {
   loyaltyEarnRatePos       Float   @default(40) // Tỷ lệ tích điểm POS: 40đ = 1 điểm
   allowDirectDiscount      Boolean @default(true) // Bật/tắt quy đổi điểm thành giảm giá trực tiếp
   pointRedeemRate          Float   @default(1) // 1 điểm = X đ (mặc định 1đ)
+  maxPointDiscountPercent  Float   @default(20) // Tỷ lệ giảm giá bằng điểm tối đa theo giá trị đơn hàng (%)
   allowRedeemVoucherOnline Boolean @default(true) // Bật/tắt quy đổi điểm thành voucher (đặt Online)
   allowRedeemItemPos       Boolean @default(true) // Bật/tắt quy đổi điểm sang món (tại cửa hàng POS)
 

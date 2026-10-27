@@ -265,7 +265,7 @@ export class OrdersService {
   }
 
   async getFilterOptions(branchIdScope?: string) {
-    const branchWhere: any = { isActive: true };
+    const branchWhere: any = {};
     if (branchIdScope) branchWhere.id = branchIdScope;
 
     const [branches, cashiersRaw, paymentMethods] = await Promise.all([

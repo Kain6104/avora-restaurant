@@ -50,6 +50,7 @@ export class BranchesService {
     if (sanitized.loyaltyEarnRatePos !== undefined) sanitized.loyaltyEarnRatePos = Math.max(1, parseFloat(sanitized.loyaltyEarnRatePos) || 40);
     if (sanitized.allowDirectDiscount !== undefined) sanitized.allowDirectDiscount = Boolean(sanitized.allowDirectDiscount);
     if (sanitized.pointRedeemRate !== undefined) sanitized.pointRedeemRate = Math.max(0.1, parseFloat(sanitized.pointRedeemRate) || 1);
+    if (sanitized.maxPointDiscountPercent !== undefined) sanitized.maxPointDiscountPercent = Math.min(100, Math.max(1, parseFloat(sanitized.maxPointDiscountPercent) || 20));
     if (sanitized.allowRedeemVoucherOnline !== undefined) sanitized.allowRedeemVoucherOnline = Boolean(sanitized.allowRedeemVoucherOnline);
     if (sanitized.allowRedeemItemPos !== undefined) sanitized.allowRedeemItemPos = Boolean(sanitized.allowRedeemItemPos);
     return sanitized;

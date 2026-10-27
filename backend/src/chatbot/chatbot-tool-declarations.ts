@@ -182,6 +182,16 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     }
   },
   {
+    name: 'requestDeliveryLocation',
+    description: 'Yêu cầu người dùng cung cấp hoặc chia sẻ vị trí giao hàng (qua GPS hoặc nhập địa chỉ mới) khi khách muốn đổi địa chỉ khác, giao đến nơi khác hoặc thêm địa chỉ mới.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        reason: { type: SchemaType.STRING, description: 'Lý do yêu cầu vị trí (VD: CHANGE_ADDRESS, NEW_ADDRESS)' }
+      }
+    }
+  },
+  {
     name: 'getAvailableOrderSlots',
     description: 'Lấy danh sách các khung giờ giao hàng (hoặc nhận món mang về) khả dụng của chi nhánh cho ngày được chọn (VD: 11:30 - 12:30, 18:00 - 19:00). BẮT BUỘC GỌI TRƯỚC KHI TẠO ĐƠN.',
     parameters: {
@@ -288,12 +298,13 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         deliveryDate: { type: SchemaType.STRING, description: 'Ngày giao hàng YYYY-MM-DD' },
         discountVoucherCode: { type: SchemaType.STRING, description: 'Mã voucher món (nếu có)' },
         shippingVoucherCode: { type: SchemaType.STRING, description: 'Mã voucher ship (nếu có)' },
-        pointsToUse: { type: SchemaType.NUMBER, description: 'Số điểm muốn tiêu (nếu có)' },
+        usePoints: { type: SchemaType.BOOLEAN, description: 'Khách hàng có muốn dùng điểm tích lũy thành viên để giảm tiền mặt hay không' },
+        pointsToUse: { type: SchemaType.NUMBER, description: 'Số điểm muốn tiêu cụ thể (nếu có)' },
         paymentMethod: {
           type: SchemaType.STRING,
           description: 'Phương thức thanh toán',
           format: 'enum',
-          enum: ['COD', 'TRANSFER', 'PAYOS', 'MOMO', 'VNPAY']
+          enum: ['COD', 'CASH', 'SEPAY_QR', 'TRANSFER', 'CARD', 'PAYOS', 'MOMO', 'VNPAY']
         }
       }
     }

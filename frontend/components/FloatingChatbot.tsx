@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, KeyboardEvent } from 'react';
-import { Sparkles, MessageCircle, X, Send, Camera, Mic, Loader2, Menu, Trash2, User, VolumeX, HelpCircle, PhoneCall, Maximize2, MicOff, Activity, Bot, UserCircle, Flame, Gift, Salad, ShoppingCart, Coffee, RefreshCw, CreditCard, BookOpen, Package, Plus, Ticket, Tag, Clock, Lock, AlertTriangle, ChevronDown, MapPin, HeartHandshake, Smile, Zap, Paperclip, FileText, Info } from 'lucide-react';
+import { Sparkles, MessageCircle, X, Send, Camera, Mic, Loader2, Menu, Trash2, User, VolumeX, HelpCircle, PhoneCall, Maximize2, MicOff, Activity, Bot, UserCircle, Flame, Gift, Salad, ShoppingCart, Coffee, RefreshCw, CreditCard, BookOpen, Package, Plus, Ticket, Tag, Clock, Lock, AlertTriangle, ChevronDown, MapPin, HeartHandshake, Smile, Zap, Paperclip, FileText, Info, QrCode, DollarSign, Store } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { useCart, CartItem, ServerCartSnapshot } from '../context/CartContext';
 import { toast } from 'react-hot-toast';
@@ -143,6 +143,7 @@ export function FloatingChatbot() {
         cartSummary,
         cartTotal,
         branchId: activeBranch,
+        cartItems,
       });
     }
   }, [cartItems, cartSummary, cartTotal, currentBranchId]);
@@ -731,6 +732,8 @@ export function FloatingChatbot() {
           handleAddAllToCart(data.actionPayload, tempMsg.id);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
           handleNavigate(data.actionPayload);
+        } else if (data.actionType === 'SHOW_ORDER_SUCCESS' && data.actionPayload) {
+          handleOrderSuccess(data.actionPayload);
         }
       });
 
@@ -948,6 +951,61 @@ export function FloatingChatbot() {
     }
   };
 
+  const handleOrderSuccess = (payloadStr: string) => {
+    try {
+      const payload = typeof payloadStr === 'string' ? JSON.parse(payloadStr) : payloadStr;
+      const orderCode = payload.orderCode;
+      const pm = (payload.paymentMethod || '').toUpperCase();
+      const isSepay = payload.isSepay || pm === 'SEPAY' || pm === 'TRANSFER' || pm === 'SEPAY_QR' || pm.includes('SEPAY') || pm.includes('VIETQR');
+
+      clearCart();
+
+      if (isSepay && orderCode) {
+        // Voice AvoBOT nhắc khách quét mã thanh toán
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          const utterance = new SpeechSynthesisUtterance("Đơn hàng của quý khách đã được tạo thành công! Quý khách vui lòng quét mã QR chuyển khoản để hoàn tất thanh toán nhé.");
+          utterance.lang = 'vi-VN';
+          utterance.rate = 1.0;
+          window.speechSynthesis.speak(utterance);
+        }
+
+        toast.success(`Đang chuyển hướng đến trang thanh toán SePay cho đơn [${orderCode}]...`);
+        setTimeout(() => {
+          window.location.href = `/payment/sepay?orderCode=${orderCode}`;
+        }, 1500);
+
+        // Polling kiểm tra trạng thái thanh toán tự động hoàn tất
+        const pollInterval = setInterval(async () => {
+          try {
+            const checkRes = await fetch(`/api/payment/sepay/config?orderCode=${orderCode}`);
+            if (checkRes.ok) {
+              const checkData = await checkRes.json();
+              if (checkData.isPaid) {
+                clearInterval(pollInterval);
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                  const doneUtterance = new SpeechSynthesisUtterance("Thanh toán cho đơn hàng đã hoàn tất thành công! Avora đang tiến hành chuẩn bị món cho bạn.");
+                  doneUtterance.lang = 'vi-VN';
+                  window.speechSynthesis.speak(doneUtterance);
+                }
+                setMessages(prev => [...prev, {
+                  id: `sys-paid-${Date.now()}`,
+                  sessionId: sessionId || "temp-session",
+                  senderType: "AI",
+                  content: `🎉 Chúc mừng quý khách! Đơn hàng [${orderCode}] đã thanh toán hoàn tất thành công qua cổng SePay. Nhà hàng Avora đang chuẩn bị món ăn thật chu đáo cho bạn.`,
+                  actionType: null,
+                  actionPayload: null,
+                  createdAt: new Date().toISOString()
+                }]);
+              }
+            }
+          } catch {}
+        }, 3000);
+      }
+    } catch (e) {
+      console.error('Error handling order success', e);
+    }
+  };
+
   const handleOrderPreview = async (addressId: string, voucherCode: string | null) => {
     if (!cartItemsRef.current || cartItemsRef.current.length === 0) {
       toast.error('Giỏ hàng của bạn đang trống! Vui lòng thêm món trước khi chốt đơn.');
@@ -1046,7 +1104,7 @@ export function FloatingChatbot() {
         createdAt: new Date().toISOString()
       }]);
 
-      clearCart();
+      handleOrderSuccess(JSON.stringify({ orderCode: data.orderCode, paymentMethod: 'COD' }));
     } catch (e: any) {
       console.error('Lỗi đặt hàng:', e);
       toast.error(e?.message || 'Có lỗi khi đặt hàng');
@@ -1173,6 +1231,7 @@ export function FloatingChatbot() {
           personality,
           cartTotal,
           cartSummary,
+          cartItems,
         })
       });
 
@@ -1217,6 +1276,8 @@ export function FloatingChatbot() {
           handleUpdateCart(lastMsg.actionPayload, lastMsg.id);
         } else if (lastMsg && lastMsg.actionType === 'NAVIGATE' && lastMsg.actionPayload) {
           handleNavigate(lastMsg.actionPayload);
+        } else if (lastMsg && lastMsg.actionType === 'SHOW_ORDER_SUCCESS' && lastMsg.actionPayload) {
+          handleOrderSuccess(lastMsg.actionPayload);
         }
       } else if (Array.isArray(data.messages)) {
         setMessages(prev => [...prev, ...data.messages]);
@@ -1229,6 +1290,8 @@ export function FloatingChatbot() {
           handleClearCart(lastMsg.actionPayload);
         } else if (lastMsg && lastMsg.actionType === 'NAVIGATE' && lastMsg.actionPayload) {
           handleNavigate(lastMsg.actionPayload);
+        } else if (lastMsg && lastMsg.actionType === 'SHOW_ORDER_SUCCESS' && lastMsg.actionPayload) {
+          handleOrderSuccess(lastMsg.actionPayload);
         }
       } else {
         setMessages(prev => [...prev.filter(m => m.id !== tempMessage.id), tempMessage, data]);
@@ -1240,6 +1303,8 @@ export function FloatingChatbot() {
           handleClearCart(data.actionPayload);
         } else if (data.actionType === 'NAVIGATE' && data.actionPayload) {
           handleNavigate(data.actionPayload);
+        } else if (data.actionType === 'SHOW_ORDER_SUCCESS' && data.actionPayload) {
+          handleOrderSuccess(data.actionPayload);
         }
       }
     } catch (error: any) {
@@ -2271,101 +2336,173 @@ export function FloatingChatbot() {
                     const previewData = JSON.parse(msg.actionPayload);
                     const formatter = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
                     return (
-                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-red-200 shadow-md flex flex-col gap-3">
-                        <div className="flex items-center gap-2 text-red-600 font-bold border-b border-slate-100 pb-2.5">
-                          <ShoppingCart className="w-5 h-5" />
-                          <span>CHI TIẾT XÁC NHẬN ĐƠN HÀNG</span>
+                      <div className="w-full mt-2.5 p-3.5 bg-white rounded-2xl border border-red-200 shadow-md flex flex-col gap-2.5 text-xs animate-in fade-in duration-300">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                          <div className="flex items-center gap-1.5 text-red-600 font-black tracking-wide uppercase text-[11px] sm:text-xs">
+                            <ShoppingCart className="w-4 h-4" />
+                            <span>Xác nhận đơn hàng</span>
+                          </div>
+                          {previewData.branchName && (
+                            <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded-full font-bold truncate max-w-[150px]">
+                              {previewData.branchName}
+                            </span>
+                          )}
                         </div>
-                        <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+
+                        {/* Danh sách món ăn - Siêu nhỏ gọn */}
+                        <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto pr-0.5">
                           {(previewData.items || []).map((it: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center text-sm py-1 border-b border-slate-50">
-                              <div>
-                                <div className="font-semibold text-slate-800">{it.productName || it.name} x{it.quantity}</div>
+                            <div key={idx} className="flex justify-between items-start py-1 border-b border-slate-50 last:border-b-0">
+                              <div className="min-w-0 pr-2">
+                                <div className="font-bold text-slate-800 text-[11px] sm:text-xs flex items-center gap-1">
+                                  <span className="truncate">{it.productName || it.name}</span>
+                                  <span className="text-red-600 font-extrabold shrink-0">x{it.quantity}</span>
+                                </div>
                                 {it.selectedOptions?.length > 0 && (
-                                  <div className="text-[11px] text-slate-500">
+                                  <div className="text-[10px] text-slate-400 truncate mt-0.5">
                                     {it.selectedOptions.map((o: any) => o.optionItemName || o.name).join(', ')}
                                   </div>
                                 )}
                               </div>
-                              <div className="font-bold text-slate-800">
+                              <div className="font-extrabold text-slate-800 shrink-0 text-[11px] sm:text-xs">
                                 {formatter.format((it.priceAtSale || it.unitPrice || 0) * (it.quantity || 1))}
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="space-y-1.5 text-sm border-t border-slate-100 pt-2 text-slate-600">
+
+                        {/* Bảng phân rã chi phí - Siêu nhỏ gọn */}
+                        <div className="space-y-1 bg-slate-50/70 p-2 rounded-xl border border-slate-100 text-[11px] text-slate-600">
                           <div className="flex justify-between">
-                            <span>Tạm tính:</span>
-                            <span>{formatter.format(previewData.subTotal || 0)}</span>
+                            <span>Tạm tính món:</span>
+                            <span className="font-semibold text-slate-800">{formatter.format(previewData.subTotal || 0)}</span>
                           </div>
                           {previewData.discountAmount > 0 && (
-                            <div className="flex justify-between text-green-600 font-medium">
-                              <span>Giảm giá:</span>
+                            <div className="flex justify-between text-green-600 font-semibold">
+                              <span>Mã giảm giá:</span>
                               <span>-{formatter.format(previewData.discountAmount)}</span>
                             </div>
                           )}
-                          {previewData.shippingFee > 0 && (
-                            <div className="flex justify-between">
-                              <span>Phí giao hàng:</span>
-                              <span>{formatter.format(previewData.shippingFee)}</span>
+                          {previewData.pointsDiscount > 0 && (
+                            <div className="flex justify-between text-amber-600 font-semibold">
+                              <span>Điểm tích lũy ({previewData.pointsUsed} điểm):</span>
+                              <span>-{formatter.format(previewData.pointsDiscount)}</span>
                             </div>
                           )}
+                          <div className="flex justify-between">
+                            <span>Phí giao hàng:</span>
+                            <span className="font-semibold text-slate-800">
+                              {previewData.shippingFee > 0 ? formatter.format(previewData.shippingFee) : 'Miễn phí'}
+                            </span>
+                          </div>
                           {previewData.taxAmount > 0 && (
-                            <div className="flex justify-between text-xs text-slate-500">
+                            <div className="flex justify-between text-slate-500">
                               <span>Thuế VAT:</span>
                               <span>{formatter.format(previewData.taxAmount)}</span>
                             </div>
                           )}
-                          <div className="flex justify-between text-base font-black text-red-600 pt-2 border-t border-slate-200">
-                            <span>Tổng thanh toán:</span>
+                          <div className="flex justify-between text-xs sm:text-sm font-black text-red-600 pt-1.5 border-t border-slate-200/80">
+                            <span>TỔNG THANH TOÁN:</span>
                             <span>{formatter.format(previewData.finalTotal || previewData.totalAmount || 0)}</span>
                           </div>
                         </div>
-                        <div className="bg-slate-50 p-3 rounded-2xl text-xs space-y-2 text-slate-600">
-                          <div><span className="font-semibold text-slate-700">Hình thức:</span> {previewData.fulfillmentType || 'Giao hàng'}</div>
-                          {previewData.deliveryAddress && <div><span className="font-semibold text-slate-700">Địa chỉ:</span> {previewData.deliveryAddress}</div>}
-                          {previewData.scheduledTime && <div><span className="font-semibold text-slate-700">Khung giờ:</span> {previewData.scheduledTime}</div>}
 
-                          {/* Chọn Phương thức thanh toán động từ Database */}
-                          <div className="pt-2 border-t border-slate-200/70">
-                            <span className="font-bold text-slate-800 block mb-1.5 flex items-center gap-1.5">
-                              <CreditCard size={13} className="text-red-500" /> Chọn phương thức thanh toán:
-                            </span>
-                            {previewData.availablePaymentMethods && previewData.availablePaymentMethods.length > 0 ? (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                {previewData.availablePaymentMethods.map((pm: any) => {
-                                  const currentSelected = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
-                                  const isSelected = currentSelected === pm.code;
-                                  return (
-                                    <button
-                                      key={pm.code}
-                                      type="button"
-                                      disabled={isLoading}
-                                      onClick={() => setSelectedPaymentMethods(prev => ({ ...prev, [msg.id]: pm.code }))}
-                                      className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
-                                        isSelected
-                                          ? 'bg-red-50/90 border-red-500 text-red-900 shadow-2xs ring-1 ring-red-500'
-                                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
-                                      }`}
-                                    >
-                                      <div className="flex items-center justify-between font-bold text-xs">
-                                        <span>{pm.name}</span>
-                                        {isSelected && <span className="w-2 h-2 rounded-full bg-red-600"></span>}
-                                      </div>
-                                      {pm.description && (
-                                        <span className="text-[10px] text-slate-500 line-clamp-1">{pm.description}</span>
-                                      )}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="font-semibold text-slate-700 bg-white p-2 rounded-xl border border-slate-200">
-                                {previewData.paymentMethod || 'COD'}
-                              </div>
-                            )}
+                        {/* Nút dùng điểm tích lũy */}
+                        {user && (
+                          <div className="flex items-center justify-between p-2 bg-amber-50/80 border border-amber-200/90 rounded-xl text-[11px]">
+                            <div className="flex items-center gap-1.5 text-amber-900 font-medium">
+                              <Sparkles size={13} className="text-amber-600 shrink-0" />
+                              <span>Dùng điểm thành viên (Tối đa {previewData.maxPointDiscountPercent || 20}% đơn)</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSendMessage(previewData.pointsUsed > 0 ? "Tôi không dùng điểm tích lũy" : "Tôi muốn dùng điểm tích lũy thành viên")}
+                              className={`px-2.5 py-1 rounded-lg font-bold text-[10px] transition-all shrink-0 ${
+                                previewData.pointsUsed > 0
+                                  ? 'bg-amber-600 text-white shadow-xs'
+                                  : 'bg-white border border-amber-300 text-amber-800 hover:bg-amber-100/50'
+                              }`}
+                            >
+                              {previewData.pointsUsed > 0 ? `Đã trừ ${previewData.pointsUsed}đ` : 'Áp dụng điểm'}
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Thông tin nhận hàng */}
+                        <div className="bg-slate-50 p-2 rounded-xl text-[11px] space-y-1 text-slate-600 border border-slate-100">
+                          <div className="flex items-center gap-1.5">
+                            <MapPin size={12} className="text-red-500 shrink-0" />
+                            <span className="truncate"><b>{previewData.fulfillmentType === 'TAKEAWAY' ? 'Mang về tại:' : 'Giao hàng:'}</b> {previewData.deliveryAddress || previewData.branchName}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Clock size={12} className="text-blue-500 shrink-0" />
+                            <span><b>Khung giờ:</b> {previewData.deliverySlotTime || previewData.scheduledTime || 'Giao sớm nhất'}</span>
                           </div>
                         </div>
+
+                        {/* Chọn Phương thức thanh toán - Chuẩn /checkout, Siêu nhỏ gọn 1 cột */}
+                        <div className="space-y-1.5 pt-1">
+                          <span className="font-bold text-slate-800 text-[11px] flex items-center gap-1.5">
+                            <CreditCard size={13} className="text-red-500" /> Chọn phương thức thanh toán:
+                          </span>
+                          {previewData.availablePaymentMethods && previewData.availablePaymentMethods.length > 0 ? (
+                            <div className="flex flex-col gap-1.5">
+                              {previewData.availablePaymentMethods.map((pm: any) => {
+                                const currentSelected = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
+                                const isSelected = currentSelected === pm.code;
+                                const isSepay = pm.code === 'SEPAY_QR' || pm.code === 'TRANSFER' || pm.type === 'TRANSFER' || pm.code.includes('SEPAY');
+                                const isCash = pm.code === 'COD' || pm.type === 'COD';
+                                const isPos = pm.type === 'CASH' || pm.code === 'CASH';
+                                const isCard = pm.type === 'CARD' || pm.code === 'CARD';
+
+                                return (
+                                  <button
+                                    key={pm.code}
+                                    type="button"
+                                    disabled={isLoading}
+                                    onClick={() => setSelectedPaymentMethods(prev => ({ ...prev, [msg.id]: pm.code }))}
+                                    className={`w-full p-2 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                                      isSelected
+                                        ? 'bg-red-50/90 border-red-500 text-red-950 ring-1 ring-red-500 shadow-xs'
+                                        : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700 hover:bg-slate-50/70'
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+                                        isSepay ? 'bg-rose-100 text-rose-600' :
+                                        isCash ? 'bg-emerald-100 text-emerald-600' :
+                                        isPos ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                                      }`}>
+                                        {isSepay ? <QrCode size={13} /> : isCash ? <DollarSign size={13} /> : isPos ? <Store size={13} /> : <CreditCard size={13} />}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-[11px] truncate">{pm.name}</span>
+                                          {isSepay && (
+                                            <span className="bg-red-100 text-red-700 text-[9px] font-bold px-1.5 py-0.2 rounded-md shrink-0">Tự động SePay</span>
+                                          )}
+                                        </div>
+                                        <span className="text-[10px] text-slate-500 truncate block">
+                                          {pm.description || (isCash ? 'Thanh toán tiền mặt khi nhận hàng' : isSepay ? 'Quét mã VietQR xác nhận tức thì' : 'Thanh toán tại quầy')}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                                      isSelected ? 'border-red-600 bg-red-600' : 'border-slate-300 bg-white'
+                                    }`}>
+                                      {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="font-semibold text-slate-700 bg-white p-2 rounded-xl border border-slate-200">
+                              {previewData.paymentMethod || 'COD'}
+                            </div>
+                          )}
+                        </div>
+
                         <button
                           onClick={() => {
                             const chosenMethod = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
@@ -2377,9 +2514,9 @@ export function FloatingChatbot() {
                             );
                           }}
                           disabled={isLoading}
-                          className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                          className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] text-xs"
                         >
-                          <CreditCard size={16} /> Xác nhận đặt đơn ngay
+                          <CreditCard size={14} /> Xác nhận đặt đơn ngay
                         </button>
                       </div>
                     );
@@ -2536,7 +2673,14 @@ export function FloatingChatbot() {
                       <button
                         key={`addr-${i}`}
                         disabled={isLoading}
-                        onClick={() => handleSendMessage(reply)}
+                        onClick={() => {
+                          if (reply === "Không, đổi địa chỉ khác") {
+                            handleShareLocation();
+                            handleSendMessage("Tôi muốn đổi địa chỉ giao hàng khác");
+                          } else {
+                            handleSendMessage(reply);
+                          }
+                        }}
                         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-red-50 text-slate-700 hover:text-red-600 text-xs sm:text-[13px] font-semibold rounded-full border border-slate-200 hover:border-red-300 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         <Sparkles size={13} className="text-red-500 shrink-0" />

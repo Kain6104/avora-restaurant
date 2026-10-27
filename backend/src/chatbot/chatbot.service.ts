@@ -195,8 +195,10 @@ Quy tắc cho SUGGESTIONS:
 
 2. ĐỊA CHỈ & VỊ TRÍ GIAO HÀNG (DELIVERY):
 - Nếu khách chọn Giao hàng (DELIVERY) mà chưa có địa chỉ: BẮT BUỘC gọi \`getUserAddresses\` (hệ thống sẽ tự gửi nút "📍 Chia sẻ vị trí của tôi" vào khung chat nếu khách chưa lưu địa chỉ).
+- Khi khách hàng nói "Không, đổi địa chỉ khác", "dùng địa chỉ khác", "thêm địa chỉ mới", "giao nơi khác", "đổi địa chỉ": BẮT BUỘC gọi ngay tool \`requestDeliveryLocation\` để hệ thống hiển thị nút "📍 Chia sẻ vị trí của tôi" cho khách chọn GPS hoặc nhập địa chỉ mới!
 - Khi nhận được tin nhắn tọa độ GPS từ hệ thống dạng: "[HỆ THỐNG: Vị trí của khách hàng là vĩ độ X, kinh độ Y]", nếu khách đang đặt giao hàng, BẮT BUỘC gọi ngay \`validateDeliveryAddress\` với latitude và longitude đó để máy chủ tự động quy đổi thành địa chỉ thực tế và tính phí giao hàng chính xác!
 - Không bắt khách gõ tay lại địa chỉ nếu đã có tọa độ GPS.
+- Khi khách hàng hỏi hoặc yêu cầu dùng điểm tích lũy ("dùng điểm", "trừ điểm", "tiêu điểm"): BẮT BUỘC truyền tham số \`usePoints: true\` vào tool \`previewOrder\` để hệ thống tự động trừ điểm tối đa theo % quy định của chi nhánh!
 
 3. KHUNG GIỜ GIAO HÀNG (OPERATING SLOTS):
 - BẮT BUỘC gọi \`getAvailableOrderSlots\`.
@@ -317,6 +319,7 @@ Quy tắc cho SUGGESTIONS:
     cartTotal?: number,
     cartSummary?: string,
     guestSessionToken?: string,
+    cartItems?: any[],
   ) {
     // 1. Garbage Collection (Delete messages older than 3 days)
     const threeDaysAgo = new Date();
@@ -361,6 +364,13 @@ Quy tắc cho SUGGESTIONS:
       } catch (e) {
         console.error('Error fetching branch context:', e);
       }
+    }
+
+    if (cartItems && cartItems.length > 0) {
+      const itemsList = cartItems.map((item: any) => `${item.quantity}x ${item.name || item.productName} (${Number(item.price || item.priceAtSale || 0).toLocaleString('vi-VN')}đ)`).join(', ');
+      userContext += ` [GIỎ HÀNG HIỆN TẠI CỦA KHÁCH]: Đang có ${cartItems.length} món: ${itemsList}. Tổng tiền: ${(cartTotal || 0).toLocaleString('vi-VN')}đ. Khách hàng ĐÃ CÓ MÓN TRONG GIỎ HÀNG, TUYỆT ĐỐI KHÔNG ĐƯỢC BẢO GIỎ HÀNG TRỐNG! `;
+    } else if (cartSummary && !cartSummary.includes('trống')) {
+      userContext += ` [GIỎ HÀNG HIỆN TẠI CỦA KHÁCH]: ${cartSummary}. Tổng tiền: ${(cartTotal || 0).toLocaleString('vi-VN')}đ. Khách hàng ĐÃ CÓ MÓN TRONG GIỎ HÀNG! `;
     }
 
     // 3. Load Session
@@ -465,7 +475,7 @@ Quy tắc cho SUGGESTIONS:
 
       // Execute through Central Shared Tool Engine
       const { functionResult, lastActionType: type, lastActionPayload: payload, content: extraContent, suggestedReplies: sr } =
-        await this.executeToolCall(call, userId, branchId, cartTotal, session.id);
+        await this.executeToolCall(call, userId, branchId, cartTotal, session.id, cartItems);
 
       if (type) lastActionType = type;
       if (payload) lastActionPayload = payload;
@@ -638,8 +648,9 @@ Quy tắc cho SUGGESTIONS:
     branchId?: string,
     cartTotal?: number,
     sessionId?: string,
+    cartItems?: any[],
   ) {
-    const res = await this.toolEngine.executeTool(call.name, call.args, userId, sessionId, branchId);
+    const res = await this.toolEngine.executeTool(call.name, call.args, userId, sessionId, branchId, undefined, cartItems);
     return {
       functionResult: res.data || { success: res.success, message: res.message, code: res.code },
       lastActionType: res.actionType || null,

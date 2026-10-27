@@ -508,7 +508,9 @@ export class OrderService {
     if (requestedPoints > 0 && user.points >= requestedPoints) {
       if (branch && branch.allowDirectDiscount !== false) {
         const pointRedeemRate = branch?.pointRedeemRate && branch.pointRedeemRate > 0 ? branch.pointRedeemRate : 1;
-        const maxDiscountable = Math.max(0, subTotal - discountAmount);
+        const maxPercent = (branch as any)?.maxPointDiscountPercent !== null && (branch as any)?.maxPointDiscountPercent !== undefined ? (branch as any).maxPointDiscountPercent : 20;
+        const maxFromPercent = Math.round((subTotal * maxPercent) / 100);
+        const maxDiscountable = Math.min(Math.max(0, subTotal - discountAmount), maxFromPercent);
         pointsDiscount = Math.min(Math.round(requestedPoints * pointRedeemRate), maxDiscountable);
       }
     }
@@ -1008,7 +1010,9 @@ export class OrderService {
         }
         pointsUsedInt = requestedPoints;
         const pointRedeemRate = branch?.pointRedeemRate && branch.pointRedeemRate > 0 ? branch.pointRedeemRate : 1;
-        const maxDiscountable = Math.max(0, subTotal - discountAmount);
+        const maxPercent = (branch as any)?.maxPointDiscountPercent !== null && (branch as any)?.maxPointDiscountPercent !== undefined ? (branch as any).maxPointDiscountPercent : 20;
+        const maxFromPercent = Math.round((subTotal * maxPercent) / 100);
+        const maxDiscountable = Math.min(Math.max(0, subTotal - discountAmount), maxFromPercent);
         pointsDiscount = Math.min(Math.round(pointsUsedInt * pointRedeemRate), maxDiscountable);
 
         // Trừ điểm user (đồng bộ cả points và currentPoints)
