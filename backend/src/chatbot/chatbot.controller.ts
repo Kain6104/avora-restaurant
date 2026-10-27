@@ -10,6 +10,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { ChatbotService } from './chatbot.service';
@@ -40,6 +41,7 @@ export class ChatbotController {
   constructor(private readonly chatbotService: ChatbotService) {}
 
   @Post('chat')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @UseGuards(OptionalJwtAuthGuard)
   async chat(@Body() body: ChatDto, @Req() request?: AuthenticatedRequest) {
     try {

@@ -34,14 +34,13 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'findNearestBranch',
-    description: 'Tìm chi nhánh gần vị trí của khách hàng nhất theo tọa độ GPS (vĩ độ, kinh độ).',
+    description: 'Tìm chi nhánh gần vị trí của khách hàng nhất. Nếu chưa có tọa độ GPS (vĩ độ, kinh độ), hãy gọi hàm này không tham số để hệ thống gửi nút yêu cầu chia sẻ vị trí vào khung chat cho khách.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        latitude: { type: SchemaType.NUMBER, description: 'Vĩ độ GPS của khách hàng' },
-        longitude: { type: SchemaType.NUMBER, description: 'Kinh độ GPS của khách hàng' }
-      },
-      required: ['latitude', 'longitude']
+        latitude: { type: SchemaType.NUMBER, description: 'Vĩ độ GPS của khách hàng (nếu đã có)' },
+        longitude: { type: SchemaType.NUMBER, description: 'Kinh độ GPS của khách hàng (nếu đã có)' }
+      }
     }
   },
 
@@ -87,19 +86,24 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   // ==========================================
   {
     name: 'addToCart',
-    description: 'Thêm món ăn vào giỏ hàng trên máy chủ kèm số lượng, các tùy chọn (Options: Size, Topping...) và ghi chú riêng. NẾU MÓN CÓ OPTION BẮT BUỘC, PHẢI HỎI KHÁCH VÀ TRUYỀN optionItemIds.',
+    description: 'Thêm món ăn vào giỏ hàng trên máy chủ kèm số lượng, các tùy chọn (Options: Size, Topping...) và ghi chú. Khi khách nói "lấy món đó", "cho tôi món này", truyền tên món vừa gợi ý vào productName. Có thể truyền optionNames hoặc optionItemIds; nếu khách không nói rõ option, hệ thống sẽ tự động chọn tùy chọn mặc định (Regular size, 100% đường đá) để đơn hàng không bị gián đoạn.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
         productId: { type: SchemaType.STRING, description: 'ID món ăn' },
-        productName: { type: SchemaType.STRING, description: 'Tên món ăn (nếu không biết ID)' },
+        productName: { type: SchemaType.STRING, description: 'Tên món ăn (hoặc tên món vừa đề xuất trong câu thoại trước)' },
         quantity: { type: SchemaType.NUMBER, description: 'Số lượng phần ăn (mặc định: 1)' },
         optionItemIds: {
           type: SchemaType.ARRAY,
           items: { type: SchemaType.STRING },
           description: 'Danh sách ID của các tùy chọn đã chọn (Size, Vị, Topping)'
         },
-        note: { type: SchemaType.STRING, description: 'Ghi chú cho món (VD: ít đường, không hành)' }
+        optionNames: {
+          type: SchemaType.ARRAY,
+          items: { type: SchemaType.STRING },
+          description: 'Tên các tùy chọn nếu không biết ID (VD: ["Size L", "50% đường", "Ít đá", "Trân châu trắng"]). Hệ thống tự động khớp tên.'
+        },
+        note: { type: SchemaType.STRING, description: 'Ghi chú cho món (VD: ít đường, không hành, làm nóng)' }
       }
     }
   },

@@ -71,6 +71,7 @@ export interface ChatSessionContext {
   orderConfirmation?: ChatConfirmationState;
   reservationConfirmation?: ChatConfirmationState;
   lastIdempotencyKey?: string;
+  lastSuggestedProducts?: { id: string; name: string }[];
 }
 
 export interface ChatCartSnapshot {
@@ -81,6 +82,13 @@ export interface ChatCartSnapshot {
   totalItems: number;
 }
 
+export interface ChatbotSuggestion {
+  label: string;
+  action?: 'SEND_MESSAGE' | 'SHOW_PRODUCT' | 'ADD_TO_CART' | 'VIEW_CATEGORY' | 'APPLY_VOUCHER' | string;
+  payload?: any;
+  entityId?: string;
+}
+
 export interface ChatbotToolResult<T = unknown> {
   success: boolean;
   code: string;
@@ -89,7 +97,8 @@ export interface ChatbotToolResult<T = unknown> {
   actionType?: ChatActionType | string;
   actionPayload?: string;
   content?: string;
-  suggestedReplies?: string[];
+  suggestedReplies?: (string | ChatbotSuggestion)[];
   requiresConfirmation?: boolean;
   recoverable?: boolean;
 }
+

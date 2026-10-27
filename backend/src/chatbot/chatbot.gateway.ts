@@ -73,7 +73,16 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         try {
           const payload = this.jwtService.verify(token);
           userId = payload.sub || payload.id;
-          userContext = `THÔNG TIN KHÁCH HÀNG: UserID: ${userId}`;
+          const userRecord = await this.prisma.user.findUnique({
+            where: { id: userId },
+            include: { membershipTier: true },
+          });
+          const rawName = (userRecord?.fullName || '').trim();
+          const isBrandOrNick = /official|admin|user|tester|bot|shop|store|\d{3,}/i.test(rawName);
+          const nameHint = (!isBrandOrNick && rawName.length > 1 && rawName.length < 25)
+            ? `Tên khách: "${rawName}". Thỉnh thoảng có thể gọi tên tự nhiên.`
+            : `Xưng "em", gọi khách là "quý khách", TUYỆT ĐỐI KHÔNG lặp lại username/nickname "${rawName}".`;
+          userContext = `THÔNG TIN KHÁCH HÀNG: Hạng thẻ: ${userRecord?.membershipTier?.name || 'Thành viên'}. ${nameHint}`;
           this.logger.log(`Authenticated voice session: userId=${userId}`);
         } catch (e: any) {
           this.logger.warn(`Invalid/expired JWT for connection ${client.id}: ${e.message}`);
@@ -81,8 +90,18 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
           client.disconnect(true);
           return;
         }
-      } else {
-        this.logger.log(`Guest voice session for connection ${client.id}`);
+      }
+
+      // Quy tắc bảo mật & phân quyền: Voice AI chỉ dành cho thành viên đã đăng nhập
+      if (!userId) {
+        this.logger.warn(`Voice connection rejected for client ${client.id}: Voice is restricted to logged-in members.`);
+        client.emit('voice_error', {
+          code: 'AUTH_REQUIRED',
+          message: 'Tính năng Voice AI chỉ dành cho thành viên đã đăng nhập.',
+          retryable: false,
+        });
+        client.disconnect(true);
+        return;
       }
 
       const sessionIdQuery = client.handshake.query?.sessionId as string | undefined;
@@ -171,15 +190,21 @@ Bạn giao tiếp qua điện thoại/giọng nói trực tiếp với khách h�
 Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang trò chuyện với khách, lịch sự, hiếu khách, dễ nghe. ${userContext}
 
 [QUY TẮC CHECKOUT & ĐẶT MÓN TỐI ƯU]:
-1. CHI NHÁNH HIỆN TẠI:
-- Sử dụng luôn chi nhánh hiện tại của khách đã có trong ngữ cảnh. Chỉ nhắc lại để xác nhận, TUYỆT ĐỐI KHÔNG bắt chọn lại!
+0. CHỌN MÓN & TÙY CHỌN (OPTIONS):
+- Khi khách nói "cho tôi món đó", "lấy món này", "món vừa gợi ý": Gọi ngay \`addToCart\` với tên món vừa nhắc tới.
+- Khi thêm món vào giỏ: Cứ gọi \`addToCart\` với tên món, máy chủ sẽ tự động chọn tùy chọn mặc định (Regular size, 100% đường đá) nếu khách không nói rõ; nếu khách nêu tùy chọn, truyền vào \`optionNames\`.
+
+1. CHI NHÁNH & TÌM CHI NHÁNH GẦN NHẤT:
+- Khi khách hỏi tìm chi nhánh gần nhất ("tìm chi nhánh gần nhất", "chi nhánh nào gần tôi"): Nếu chưa có GPS, gọi \`findNearestBranch\` để hệ thống gửi nút "📍 Chia sẻ vị trí của tôi" vào khung chat.
+- Khi nhận được tọa độ GPS từ hệ thống (Vị trí của khách hàng là vĩ độ X, kinh độ Y): Nếu khách tìm chi nhánh, gọi \`findNearestBranch\`; nếu khách đặt giao hàng, gọi \`validateDeliveryAddress\`.
+- Sử dụng luôn chi nhánh hiện tại của khách đã có trong ngữ cảnh. Không bắt chọn lại!
 
 2. ĐỊA CHỈ GIAO HÀNG & PHÍ SHIP:
-- Nếu khách giao hàng mà chưa có địa chỉ: Hướng dẫn khách bấm nút "📍 Chia sẻ vị trí hiện tại" trên màn hình.
+- Nếu khách giao hàng mà chưa có địa chỉ: Hướng dẫn khách bấm nút "📍 Chia sẻ vị trí của tôi" trên khung chat.
 - Khi nhận được tin nhắn vị trí từ hệ thống (Vị trí của khách hàng là vĩ độ X, kinh độ Y), BẮT BUỘC gọi ngay \`validateDeliveryAddress\` để máy chủ tự động quy đổi địa chỉ và tính phí giao hàng chính xác!
 
 3. KHUNG GIỜ GIAO HÀNG (SLOTS):
-- BẮT BUỘC gọi \`getAvailableOrderSlots\`. Nếu khách nói giờ cụ thể (VD: "11h45", "12h trưa", "7h tối"), truyền \`requestedTime\` vào tool để hệ thống tự chọn slot gần nhất.
+- BẮT BUỘC gọi \`getAvailableOrderSlots\`. Nếu khách nói giờ cụ thể (VD: "11h45", "12h trưa", "7h tối"), truyền \`requestedTime\` vào tool để hệ thống tự chọn slot gần nhất. Luôn hỗ trợ "Giao ngay (ASAP 30-45 phút)".
 
 4. TINH GỌN THÔNG TIN:
 - Tận dụng họ tên và SĐT có sẵn trong hồ sơ, không hỏi lại.
@@ -192,8 +217,10 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
 - CHỈ KHI KHÁCH NÓI ĐỒNG Ý / XÁC NHẬN thì mới gọi \`createReservation\` để tạo đơn đặt bàn chính thức.
 
 [QUY TẮC BẤT DI BẤT DỊCH]:
+- Xưng "em", gọi khách là "quý khách". TUYỆT ĐỐI KHÔNG lặp lại tên/username của khách gây phiền toái.
 - TUYỆT ĐỐI KHÔNG tự bịa giá tiền, mã voucher, món ăn hay số bàn.
 - Trả lời ngắn gọn, súc tích (1-2 câu ngắn), thích hợp cho đàm thoại giọng nói.
+- TUYỆT ĐỐI KHÔNG đọc JSON, tên hàm, mã code hoặc thông báo kỹ thuật ra giọng nói.
 - Nếu khách chào tạm biệt hoặc xin dừng cuộc gọi, gọi hàm \`stopVoice\`.
 - Nếu khách giận dữ hoặc yêu cầu gặp người thật, gọi hàm \`handoffToHuman\`.`,
                 },
@@ -277,7 +304,7 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
               );
 
               // Gửi rich action về UI để cập nhật màn hình
-              if (result.lastActionType || result.content) {
+              if (result.lastActionType || result.content || result.suggestedReplies) {
                 client.emit('rich_action', {
                   content: result.content || null,
                   actionType: result.lastActionType || null,

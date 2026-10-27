@@ -509,7 +509,15 @@ export class ChatbotToolEngineService {
   private async toolFindNearestBranch(args: ChatbotToolArgsMap['findNearestBranch']): Promise<ChatbotToolResult> {
     const { latitude, longitude } = args;
     if (!latitude || !longitude) {
-      return { success: false, code: 'INVALID_COORDINATES', message: 'Thiếu tọa độ GPS.' };
+      return {
+        success: true,
+        code: 'LOCATION_REQUIRED',
+        actionType: 'REQUEST_LOCATION',
+        actionPayload: JSON.stringify({ reason: 'FIND_NEAREST_BRANCH' }),
+        suggestedReplies: ['📍 Chia sẻ vị trí của tôi'],
+        message: 'Vui lòng chia sẻ vị trí để tìm chi nhánh gần bạn nhất.',
+        content: 'Để tìm chi nhánh Avora gần bạn nhất và hướng dẫn chỉ đường chính xác, bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới nhé!',
+      };
     }
 
     const branches = await this.prisma.branch.findMany({
@@ -1237,8 +1245,8 @@ export class ChatbotToolEngineService {
         data: { addresses: [] },
         actionType: 'REQUEST_LOCATION',
         actionPayload: JSON.stringify({ reason: 'NO_SAVED_ADDRESS' }),
-        suggestedReplies: ['📍 Chia sẻ vị trí hiện tại'],
-        content: 'Bạn chưa có địa chỉ giao hàng trong sổ địa chỉ. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí hiện tại"** bên dưới để Avora tự động định vị địa chỉ và tính phí giao hàng chính xác nhất cho bạn nhé!',
+        suggestedReplies: ['📍 Chia sẻ vị trí của tôi'],
+        content: 'Bạn chưa có địa chỉ giao hàng trong sổ địa chỉ. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới để Avora tự động định vị địa chỉ và tính phí giao hàng chính xác nhất cho bạn nhé!',
       };
     }
 
@@ -1355,9 +1363,9 @@ export class ChatbotToolEngineService {
         code: 'ADDRESS_NOT_FOUND',
         actionType: 'REQUEST_LOCATION',
         actionPayload: JSON.stringify({ reason: 'ADDRESS_NOT_FOUND' }),
-        suggestedReplies: ['📍 Chia sẻ vị trí hiện tại'],
+        suggestedReplies: ['📍 Chia sẻ vị trí của tôi'],
         message: 'Không tìm thấy địa chỉ này. Vui lòng bấm nút chia sẻ vị trí để tiếp tục.',
-        content: 'Avora chưa xác định được địa chỉ của bạn. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí hiện tại"** bên dưới để hệ thống tự động định vị và tính phí giao hàng chính xác nhé!',
+        content: 'Avora chưa xác định được địa chỉ của bạn. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới để hệ thống tự động định vị và tính phí giao hàng chính xác nhé!',
       };
     }
 
@@ -1940,9 +1948,9 @@ export class ChatbotToolEngineService {
           code: 'ADDRESS_REQUIRED',
           actionType: 'REQUEST_LOCATION',
           actionPayload: JSON.stringify({ reason: 'ADDRESS_REQUIRED' }),
-          suggestedReplies: ['📍 Chia sẻ vị trí hiện tại'],
+          suggestedReplies: ['📍 Chia sẻ vị trí của tôi'],
           message: 'Vui lòng cung cấp địa chỉ nhận hàng trước khi xem trước đơn giao hàng.',
-          content: 'Bạn ơi, đơn hàng giao tận nơi cần có địa chỉ nhận hàng. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí hiện tại"** bên dưới để Avora tự động tính phí ship nhé!',
+          content: 'Bạn ơi, đơn hàng giao tận nơi cần có địa chỉ nhận hàng. Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới để Avora tự động tính phí ship nhé!',
         };
       }
       if (address && !ctx.deliveryAddressSummary) {

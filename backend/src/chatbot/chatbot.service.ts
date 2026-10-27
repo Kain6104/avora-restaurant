@@ -5,7 +5,7 @@ import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { ChatbotToolEngineService } from './chatbot-tool-engine.service';
 import { ALL_CHATBOT_TOOL_DECLARATIONS } from './chatbot-tool-declarations';
 import * as crypto from 'crypto';
-import { ChatSessionContext } from './dto/chatbot-tool.dto';
+import { ChatSessionContext, ChatbotSuggestion } from './dto/chatbot-tool.dto';
 import { getRequiredEnv } from '../common/utils/env.util';
 
 @Injectable()
@@ -160,23 +160,48 @@ export class ChatbotService {
     return this.genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
       systemInstruction: `Bạn là Trợ lý AI Thông minh (AI Restaurant Assistant) cao cấp của hệ thống nhà hàng Avora Restaurant.
-Bạn đang tương tác trực tiếp với khách hàng để hỗ trợ thực đơn, đặt bàn và đặt món - thanh toán.
-Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên nghiệp và hiếu khách. ${personality ? `Tính cách: ${personality}.` : ''} ${userContext || ''}
+Bạn đang tương tác trực tiếp với khách hàng để hỗ trợ thực đơn, tư vấn món ăn, đặt bàn và đặt món - thanh toán.
+Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên nghiệp và hiếu khách. Xưng "em", gọi khách là "quý khách" hoặc "anh/chị". ${personality ? `Tính cách: ${personality}.` : ''} ${userContext || ''}
+
+[PHONG CÁCH GIAO TIẾP NHÀ HÀNG CAO CẤP]:
+- TUYỆT ĐỐI KHÔNG lặp đi lặp lại tên tài khoản, nickname hoặc username của khách (như "HTP Official") trong mọi câu nói. Chỉ xưng hô "quý khách" hoặc "anh/chị" một cách tự nhiên.
+- Hiểu rõ ngữ cảnh các tin nhắn trước: "món này", "món đó", "thêm món vừa rồi vào giỏ", "cho tôi món rẻ hơn", "đổi món khác".
+- Khi khách hỏi tư vấn theo ngân sách (VD: "Tôi có 150k", "Gợi ý bữa ăn cho 2 người khoảng 300k"): BẮT BUỘC gọi tool \`searchMenu\` với tham số \`budget\` để tra cứu các món có thật từ thực đơn nhà hàng. Tính toán chính xác tổng tiền dựa trên giá thực tế, đề xuất phương án tối ưu và giải thích ngắn gọn vì sao chọn những món đó.
+- TUYỆT ĐỐI KHÔNG tự bịa món ăn, giá tiền hoặc tự nhận món tốt cho sức khỏe/giảm giá nếu không có dữ liệu thực tế.
+- Trả lời súc tích, ngắn gọn, có cấu trúc rõ ràng.
+
+[GỢI Ý HÀNH ĐỘNG TIẾP THEO (SMART SUGGESTIONS)]:
+Ở cuối mỗi câu trả lời, bạn HÃY ĐỀ XUẤT từ 1 đến 3 hành động tiếp theo hữu ích nhất cho khách dưới dạng tag JSON đặc biệt:
+<<<SUGGESTIONS>>>[{"label": "Nội dung ngắn gọn trên nút", "action": "SEND_MESSAGE", "payload": "Câu yêu cầu gửi đi"}]
+Quy tắc cho SUGGESTIONS:
+- Nếu bạn nhắc đến danh mục món ăn (ví dụ: Sushi & Maki, Sashimi Tươi Sống): Hãy tạo nút dạng: "Gợi ý món trong danh mục Sushi & Maki", "Gợi ý món trong danh mục Sashimi Tươi Sống".
+- Nếu khách hỏi món bán chạy: Tạo nút: "Xem chi tiết món bán chạy nhất", "Gợi ý món phù hợp ngân sách".
+- Nếu khách quan tâm ngân sách: Tạo nút: "Gợi ý món dưới 100.000đ", "Gợi ý một phần ăn cho hai người".
+- Nếu khách hỏi về ưu đãi/khuyến mãi: Tạo nút: "Xem ưu đãi đang áp dụng", "Kiểm tra ưu đãi tôi có thể dùng".
+- Nếu khách đang xem món cụ thể: Tạo nút: "Thêm món vào giỏ hàng", "Gợi ý món ăn kèm".
+- Nhãn nút ngắn gọn (dưới 35 ký tự), phản ánh đúng hành động thực tế. Luôn đặt tag <<<SUGGESTIONS>>>[...] ở dòng cuối cùng của câu trả lời.
 
 [QUY TẮC CHECKOUT & ĐẶT MÓN TỐI ƯU NHẤT]:
-1. CHI NHÁNH HIỆN TẠI:
-- Nếu trong ngữ cảnh đã có thông tin chi nhánh hiện tại của khách, SỬ DỤNG LUÔN chi nhánh đó làm mặc định.
-- Chỉ cần nhắc lại nhẹ nhàng để xác nhận (ví dụ: "Đơn này giao từ chi nhánh [Tên] đúng không ạ?"), TUYỆT ĐỐI KHÔNG bắt khách chọn lại chi nhánh từ đầu!
+0. TÌM KIẾM MÓN & TÙY CHỌN (OPTIONS / TOPPING):
+- Khi khách nói "cho tôi món đó", "lấy món này", "thêm món vừa gợi ý", "lấy món 1": BẮT BUỘC gọi ngay \`addToCart\` với tên món vừa đề xuất trong câu trước.
+- Xử lý Tùy chọn (Options: Size, Vị, Topping, Độ ngọt/đá):
+  + Nếu khách nói rõ (VD: "Size L", "ít đá", "50% đường"): Truyền vào tham số \`optionNames\` của \`addToCart\`.
+  + Nếu khách KHÔNG nói gì về options: CỨ GỌI NGAY \`addToCart\` với tên món! Máy chủ đã có cơ chế TỰ ĐỘNG CHỌN tùy chọn mặc định (Regular size, 100% đường đá) giúp khách đặt hàng trơn tru không bị nghẽn.
+
+1. CHI NHÁNH & TÌM CHI NHÁNH GẦN NHẤT:
+- Khi khách hỏi tìm chi nhánh gần nhất ("tìm chi nhánh gần nhất", "quán ở đâu gần đây", "chi nhánh nào gần tôi"): Nếu chưa có tọa độ GPS, BẮT BUỘC gọi ngay tool \`findNearestBranch\` (không cần tham số). Hệ thống sẽ tự động gửi nút "📍 Chia sẻ vị trí của tôi" trực tiếp vào khung chat cho khách.
+- Khi nhận được tin nhắn tọa độ GPS dạng "[HỆ THỐNG: Vị trí của khách hàng là vĩ độ X, kinh độ Y]": Nếu khách đang tìm chi nhánh, BẮT BUỘC gọi ngay \`findNearestBranch\` với latitude và longitude đó để phản hồi danh sách chi nhánh gần nhất kèm link Google Maps!
+- Nếu đang đặt món và trong ngữ cảnh đã có thông tin chi nhánh hiện tại của khách, SỬ DỤNG LUÔN chi nhánh đó làm mặc định. Không bắt khách chọn lại chi nhánh từ đầu!
 
 2. ĐỊA CHỈ & VỊ TRÍ GIAO HÀNG (DELIVERY):
-- Nếu khách chọn Giao hàng (DELIVERY) mà chưa có địa chỉ: BẮT BUỘC gọi \`getUserAddresses\` (hoặc hướng dẫn bấm nút "📍 Chia sẻ vị trí hiện tại").
-- Khi nhận được tin nhắn tọa độ GPS từ hệ thống dạng: "[HỆ THỐNG: Vị trí của khách hàng là vĩ độ X, kinh độ Y]", BẮT BUỘC gọi ngay \`validateDeliveryAddress\` với latitude và longitude đó để máy chủ tự động quy đổi thành địa chỉ thực tế và tính phí giao hàng chính xác!
+- Nếu khách chọn Giao hàng (DELIVERY) mà chưa có địa chỉ: BẮT BUỘC gọi \`getUserAddresses\` (hệ thống sẽ tự gửi nút "📍 Chia sẻ vị trí của tôi" vào khung chat nếu khách chưa lưu địa chỉ).
+- Khi nhận được tin nhắn tọa độ GPS từ hệ thống dạng: "[HỆ THỐNG: Vị trí của khách hàng là vĩ độ X, kinh độ Y]", nếu khách đang đặt giao hàng, BẮT BUỘC gọi ngay \`validateDeliveryAddress\` với latitude và longitude đó để máy chủ tự động quy đổi thành địa chỉ thực tế và tính phí giao hàng chính xác!
 - Không bắt khách gõ tay lại địa chỉ nếu đã có tọa độ GPS.
 
 3. KHUNG GIỜ GIAO HÀNG (OPERATING SLOTS):
 - BẮT BUỘC gọi \`getAvailableOrderSlots\`.
 - Nếu khách nói giờ cụ thể (ví dụ: "11h45", "12h trưa", "tầm 7 giờ tối", "18h30"): BẮT BUỘC truyền tham số \`requestedTime\` vào tool \`getAvailableOrderSlots\` để hệ thống tự động đối chiếu và chọn khung giờ phù hợp nhất!
-- Nếu khách muốn nhận càng sớm càng tốt: Khung giờ là "Giao ngay (ASAP)".
+- Nếu khách muốn nhận sớm hoặc hệ thống kích hoạt ASAP: Xác nhận khung giờ "Giao ngay (ASAP 30-45 phút)". Luôn có khung giờ khả dụng cho khách.
 
 4. TINH GỌN THÔNG TIN KHÁCH HÀNG:
 - TẬN DỤNG HỌ TÊN VÀ SĐT ĐÃ CÓ trong hồ sơ khách hàng. TUYỆT ĐỐI KHÔNG hỏi lại tên hay SĐT nếu tài khoản đã có sẵn!
@@ -313,7 +338,13 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
           include: { membershipTier: true },
         });
         if (user) {
-          userContext = `THÔNG TIN KHÁCH HÀNG: Tên: ${user.fullName || 'Khách'}, Hạng thẻ: ${user.membershipTier?.name || 'Thành viên'}. Xưng hô thân mật bằng tên của khách. `;
+          const rawName = (user.fullName || '').trim();
+          const isBrandOrNick = /official|admin|user|tester|bot|shop|store|\d{3,}/i.test(rawName);
+          const nameHint = (!isBrandOrNick && rawName.length > 1 && rawName.length < 25)
+            ? `Tên khách: "${rawName}". Thỉnh thoảng có thể gọi tên một cách tự nhiên, KHÔNG lặp lại tên ở mọi câu nói.`
+            : `Xưng "em", gọi khách là "quý khách", TUYỆT ĐỐI KHÔNG lặp lại nickname/username "${rawName}" trong câu trả lời.`;
+
+          userContext = `THÔNG TIN KHÁCH HÀNG: Hạng thẻ: ${user.membershipTier?.name || 'Thành viên'}. ${nameHint} `;
         }
       } catch (e) {
         console.error('Error fetching user context:', e);
@@ -401,7 +432,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
     let lastActionType: any = null;
     let lastActionPayload: string | null = null;
     let lastContent: string | null = null;
-    let lastSuggestedReplies: string[] | null = null;
+    let lastSuggestedReplies: (string | ChatbotSuggestion)[] | null = null;
 
     let functionCalls =
       typeof result.response.functionCalls === 'function'
@@ -486,7 +517,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
           : result.response.functionCalls;
     }
 
-    // 7. Final Message
+    // 7. Final Message & Smart Suggestion Chips
     let textResponse = '';
     try {
       textResponse = result.response.text();
@@ -495,7 +526,63 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
     }
 
     if (!textResponse) {
-      textResponse = lastContent || (lastActionType ? 'Dạ em đã chuẩn bị thông tin bên dưới cho bạn nhé:' : 'Xin lỗi, tôi chưa hiểu rõ yêu cầu của bạn. Bạn có thể nói rõ hơn được không?');
+      textResponse = lastContent || (lastActionType ? 'Dạ em đã chuẩn bị thông tin bên dưới cho quý khách nhé:' : 'Xin lỗi, em chưa hiểu rõ yêu cầu của quý khách. Quý khách có thể nói rõ hơn được không ạ?');
+    }
+
+    // Trích xuất <<<SUGGESTIONS>>> tag nếu Gemini trả về
+    let extractedSuggestions: any[] | null = null;
+    const suggestionsMatch = textResponse.match(/<<<SUGGESTIONS>>>([\s\S]*?)(?:$|\n)/);
+    if (suggestionsMatch && suggestionsMatch[1]) {
+      try {
+        const rawJson = suggestionsMatch[1].trim();
+        const parsed = JSON.parse(rawJson);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          extractedSuggestions = parsed.map((item) => {
+            if (typeof item === 'string') {
+              return { label: item, action: 'SEND_MESSAGE', payload: item };
+            }
+            return {
+              label: item.label || item.text || 'Gợi ý',
+              action: item.action || 'SEND_MESSAGE',
+              payload: item.payload || item.label || item.text,
+              entityId: item.entityId,
+            };
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to parse <<<SUGGESTIONS>>> from Gemini:', err);
+      }
+      textResponse = textResponse.replace(/<<<SUGGESTIONS>>>[\s\S]*?(?:$|\n)/g, '').trim();
+    }
+
+    // Hợp nhất gợi ý: Ưu tiên tool suggestions, rồi đến suggestions từ Gemini
+    let finalSuggestions: any[] | null = lastSuggestedReplies || extractedSuggestions;
+
+    // Smart Contextual Fallback: Nếu câu trả lời nhắc đến tên danh mục trong DB (ví dụ: Sushi & Maki, Sashimi Tươi Sống...)
+    if (!finalSuggestions || finalSuggestions.length === 0) {
+      try {
+        const allCategories = await this.prisma.category.findMany({
+          select: { id: true, name: true, slug: true },
+          orderBy: { displayOrder: 'asc' },
+        });
+
+        const matchedCats = allCategories.filter((cat) => {
+          const lowerName = cat.name.toLowerCase();
+          const lowerText = textResponse.toLowerCase();
+          return lowerText.includes(lowerName);
+        });
+
+        if (matchedCats.length > 0) {
+          finalSuggestions = matchedCats.slice(0, 3).map((cat) => ({
+            label: `Gợi ý món trong danh mục ${cat.name}`,
+            action: 'SEND_MESSAGE',
+            payload: `Gợi ý cho tôi các món trong danh mục ${cat.name}`,
+            entityId: cat.id,
+          }));
+        }
+      } catch (err) {
+        console.warn('Error matching categories for suggestion chips:', err);
+      }
     }
 
     let persistedActionPayload = lastActionPayload;
@@ -518,7 +605,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       content: textResponse,
       actionType: lastActionType,
       actionPayload: lastActionPayload,
-      suggestedReplies: lastSuggestedReplies,
+      suggestedReplies: finalSuggestions,
       createdAt: new Date().toISOString(),
     };
 
@@ -540,7 +627,7 @@ Giọng điệu: Thân thiện, lịch thiệp, chu đáo, tự nhiên, chuyên 
       messages: [finalMessage],
       actionType: lastActionType,
       actionPayload: lastActionPayload,
-      suggestedReplies: lastSuggestedReplies,
+      suggestedReplies: finalSuggestions,
     };
   }
 

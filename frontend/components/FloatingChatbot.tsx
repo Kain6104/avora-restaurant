@@ -817,21 +817,28 @@ export function FloatingChatbot() {
     await handleSendMessage(confirmationMessage);
   }
 
-  const handleShareLocation = () => {
+  const handleShareLocation = (targetMsgId?: string) => {
     if (typeof window === 'undefined') return;
     if (!("geolocation" in navigator)) {
       toast.error('Trình duyệt của bạn không hỗ trợ định vị GPS. Vui lòng nhập địa chỉ nhận hàng vào ô chat.');
-      setInputValue('Địa chỉ nhận hàng của tôi là: ');
+      setInputValue('Địa chỉ của tôi là: ');
       inputRef.current?.focus();
       return;
     }
 
     setIsLocating(true);
+    if (targetMsgId) {
+      setLoadingLocationIds(prev => [...prev, targetMsgId]);
+    }
     const toastId = toast.loading('Đang lấy vị trí GPS từ thiết bị...');
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         setIsLocating(false);
+        if (targetMsgId) {
+          setLoadingLocationIds(prev => prev.filter(id => id !== targetMsgId));
+          setSharedLocationIds(prev => [...prev, targetMsgId]);
+        }
         toast.dismiss(toastId);
         toast.success('Đã chia sẻ vị trí thành công!');
         const lat = position.coords.latitude;
@@ -847,6 +854,9 @@ export function FloatingChatbot() {
       },
       (error) => {
         setIsLocating(false);
+        if (targetMsgId) {
+          setLoadingLocationIds(prev => prev.filter(id => id !== targetMsgId));
+        }
         toast.dismiss(toastId);
         let errorMsg = 'Không thể lấy vị trí hiện tại.';
         if (error.code === error.PERMISSION_DENIED) {
@@ -854,8 +864,8 @@ export function FloatingChatbot() {
         } else if (error.code === error.TIMEOUT) {
           errorMsg = 'Quá thời gian chờ phản hồi từ GPS thiết bị.';
         }
-        toast.error(`${errorMsg} Bạn có thể nhập địa chỉ nhận hàng trực tiếp vào ô chat.`);
-        setInputValue('Địa chỉ nhận hàng của tôi là: ');
+        toast.error(`${errorMsg} Bạn có thể nhập địa chỉ trực tiếp vào ô chat.`);
+        setInputValue('Địa chỉ của tôi là: ');
         inputRef.current?.focus();
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
@@ -1435,6 +1445,16 @@ export function FloatingChatbot() {
 
   const handleSuggestionClick = async (suggestion: string | ChatSuggestion, msgId: string) => {
     if (isLoading || activeSuggestionLabel) return;
+
+    const label = typeof suggestion === 'string' ? suggestion : suggestion.label;
+    if (
+      label.toLowerCase().includes('chia sẻ vị trí') ||
+      label.toLowerCase().includes('vị trí hiện tại') ||
+      label.toLowerCase().includes('vị trí mới')
+    ) {
+      handleShareLocation(msgId);
+      return;
+    }
 
     if (typeof suggestion === 'string') {
       setActiveSuggestionLabel(suggestion);
@@ -2441,54 +2461,41 @@ export function FloatingChatbot() {
                       <MapPin size={24} className="animate-pulse" />
                     </div>
                     <div className="text-center space-y-1">
-                      <p className="text-sm font-bold text-slate-800">Xác nhận vị trí nhận hàng</p>
-                      <p className="text-xs text-slate-600">Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.</p>
+                      <p className="text-sm font-bold text-slate-800">
+                        {(() => {
+                          try {
+                            const payload = msg.actionPayload ? JSON.parse(msg.actionPayload) : {};
+                            if (payload.reason === 'FIND_NEAREST_BRANCH') return 'Tìm chi nhánh gần bạn nhất';
+                            return 'Xác nhận vị trí nhận hàng';
+                          } catch {
+                            return 'Xác nhận vị trí nhận hàng';
+                          }
+                        })()}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        {(() => {
+                          try {
+                            const payload = msg.actionPayload ? JSON.parse(msg.actionPayload) : {};
+                            if (payload.reason === 'FIND_NEAREST_BRANCH') return 'Bấm nút bên dưới để Avora tự động định vị và tìm chi nhánh gần bạn nhất kèm đường đi.';
+                            return 'Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.';
+                          } catch {
+                            return 'Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.';
+                          }
+                        })()}
+                      </p>
                     </div>
                     <button
-                      disabled={sharedLocationIds.includes(msg.id) || loadingLocationIds.includes(msg.id) || isLoading}
-                      onClick={() => {
-                        if (sharedLocationIds.includes(msg.id)) return;
-
-                        setLoadingLocationIds(prev => [...prev, msg.id]);
-                        if ("geolocation" in navigator) {
-                          navigator.geolocation.getCurrentPosition(
-                            (position) => {
-                              const lat = position.coords.latitude;
-                              const lon = position.coords.longitude;
-                              if (isVoiceMode && socketRef.current) {
-                                socketRef.current.emit('client_content', {
-                                  turns: [{ role: 'user', parts: [{ text: `[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon}]` }] }],
-                                  turnComplete: true
-                                });
-                              } else {
-                                handleSendMessage(`[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon}]`);
-                              }
-                              setSharedLocationIds(prev => [...prev, msg.id]);
-                              setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
-                            },
-                            (error) => {
-                              let errorMsg = 'Không thể lấy vị trí GPS từ thiết bị.';
-                              if (error.code === error.PERMISSION_DENIED) {
-                                errorMsg = 'Quyền truy cập vị trí trên trình duyệt đã bị từ chối.';
-                              } else if (error.code === error.TIMEOUT) {
-                                errorMsg = 'Quá thời gian chờ phản hồi GPS.';
-                              }
-                              toast.error(`${errorMsg} Vui lòng nhập địa chỉ nhận hàng của bạn vào ô chat.`);
-                              setInputValue('Địa chỉ nhận hàng của tôi là: ');
-                              inputRef.current?.focus();
-                              setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
-                            }
-                          );
-                        } else {
-                          toast.error('Trình duyệt không hỗ trợ GPS. Vui lòng nhập địa chỉ nhận hàng vào ô chat.');
-                          setInputValue('Địa chỉ nhận hàng của tôi là: ');
-                          inputRef.current?.focus();
-                          setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
-                        }
-                      }}
+                      disabled={sharedLocationIds.includes(msg.id) || loadingLocationIds.includes(msg.id) || isLoading || isLocating}
+                      onClick={() => handleShareLocation(msg.id)}
                       className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 active:scale-95 text-white font-bold py-2.5 px-6 rounded-xl text-sm transition-all w-full flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-70 disabled:active:scale-100 disabled:cursor-not-allowed"
                     >
-                      {sharedLocationIds.includes(msg.id) ? "✓ Đã chia sẻ vị trí thành công" : (loadingLocationIds.includes(msg.id) ? <><Loader2 size={16} className="animate-spin" /> Đang định vị GPS...</> : "📍 Chia sẻ vị trí hiện tại")}
+                      {sharedLocationIds.includes(msg.id) ? (
+                        "✓ Đã chia sẻ vị trí thành công"
+                      ) : (loadingLocationIds.includes(msg.id) || isLocating ? (
+                        <><Loader2 size={16} className="animate-spin" /> Đang định vị GPS...</>
+                      ) : (
+                        "📍 Chia sẻ vị trí của tôi"
+                      ))}
                     </button>
                   </div>
                 )}
@@ -2645,9 +2652,6 @@ export function FloatingChatbot() {
               <button onClick={() => { setIsActionMenuOpen(false); handleDeleteHistory(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
                 <User size={18} className="text-slate-500" /> Đổi tính cách Avora
               </button>
-              <button onClick={() => { setIsActionMenuOpen(false); handleShareLocation(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-emerald-50 rounded-xl text-[13.5px] font-semibold text-emerald-700 transition-colors">
-                <MapPin size={18} className="text-emerald-600" /> Chia sẻ vị trí của tôi
-              </button>
               <button onClick={() => { setIsActionMenuOpen(false); setIsAudioEnabled(!isAudioEnabled); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
                 <VolumeX size={18} className={isAudioEnabled ? "text-red-500" : "text-slate-500"} /> {isAudioEnabled ? "Tắt đọc văn bản" : "Bật đọc văn bản"}
               </button>
@@ -2701,15 +2705,6 @@ export function FloatingChatbot() {
                   </button>
                 ) : (
                   <>
-                    <button
-                      type="button"
-                      onClick={handleShareLocation}
-                      disabled={isLoading || isLocating}
-                      title="Chia sẻ vị trí của tôi"
-                      className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                    >
-                      {isLocating ? <Loader2 size={16} className="animate-spin text-emerald-600" /> : <MapPin size={16} />}
-                    </button>
                     <button
                       onClick={toggleVoiceMode}
                       className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full transition-colors ${isVoiceMode ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:text-red-500 hover:bg-slate-50'}`}
