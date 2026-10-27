@@ -975,13 +975,18 @@ export default function ArticleDetailClient({
 
                         <button
                           onClick={() => {
+                            const unitPrice = Number(product.flashSalePrice || product.price || 0);
+                            const origPrice = Number(product.originalPrice || product.price || 0);
                             addToCart(
                               {
                                 id: product.id,
+                                productId: product.id,
                                 name: product.name,
-                                price: product.price,
-                                image: img,
+                                priceAtSale: unitPrice,
+                                originalPriceAtSale: origPrice,
+                                imageUrl: img,
                                 quantity: 1,
+                                rawProduct: product,
                               } as any,
                               currentBranchId || ''
                             );

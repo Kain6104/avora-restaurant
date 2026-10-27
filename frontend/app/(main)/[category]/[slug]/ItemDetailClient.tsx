@@ -2,13 +2,14 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ChevronRight, Star, Heart, MapPin, Leaf, ChefHat, Timer, RotateCcw, Plus, Minus, ShoppingCart, Zap, Home, ArrowRight } from 'lucide-react';
+import { ChevronRight, Star, Heart, MapPin, Leaf, ChefHat, Timer, RotateCcw, Plus, Minus, ShoppingCart, Zap, Home, ArrowRight, ZoomIn } from 'lucide-react';
 import { useCart } from '../../../../context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { toast } from 'react-hot-toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import ProductReviewsSection from '@/components/reviews/ProductReviewsSection';
+import ImageViewerModal from '@/components/product/ImageViewerModal';
 
 interface ItemDetailClientProps {
   product: any;
@@ -154,13 +155,39 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
     });
   }, [relatedDishes, currentBranchId, flashSaleQuotas, cartItems]);
 
-  const thumbnails = [
-    displayProduct.imageUrl,
-    displayProduct.imageUrl,
-    displayProduct.imageUrl,
-    displayProduct.imageUrl,
-    displayProduct.imageUrl,
-  ];
+  const allImages = useMemo(() => {
+    const list: string[] = [];
+    if (displayProduct.imageUrl) list.push(displayProduct.imageUrl);
+
+    const rawSecondary = displayProduct.secondaryImages;
+    let secondaryList: string[] = [];
+    if (Array.isArray(rawSecondary)) {
+      secondaryList = rawSecondary;
+    } else if (typeof rawSecondary === 'string' && rawSecondary.trim()) {
+      try {
+        const parsed = JSON.parse(rawSecondary);
+        if (Array.isArray(parsed)) secondaryList = parsed;
+        else if (typeof parsed === 'string') secondaryList = [parsed];
+      } catch {
+        secondaryList = rawSecondary.split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+    }
+
+    secondaryList.forEach((url: string) => {
+      if (url && typeof url === 'string' && url.trim() && !list.includes(url.trim())) {
+        list.push(url.trim());
+      }
+    });
+
+    return list.length > 0 ? list : [displayProduct.imageUrl || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c'];
+  }, [displayProduct.imageUrl, displayProduct.secondaryImages]);
+
+  // Keep activeImage synced if product changes
+  useEffect(() => {
+    if (allImages.length > 0 && !allImages.includes(activeImage)) {
+      setActiveImage(allImages[0]);
+    }
+  }, [allImages, activeImage]);
 
   const handleAddToCart = (): boolean => {
     if (!isAvailableHere) {
@@ -252,8 +279,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
           {/* LEFT: GALLERY (~42%) */}
           <div className="w-full lg:w-[42%] flex flex-col gap-4">
             {/* Main Image */}
-            <div className="relative aspect-[4/3] bg-white rounded-2xl overflow-hidden flex items-center justify-center group shadow-sm border border-slate-100">
-              <img src={activeImage} alt={displayProduct.name} className="w-full h-full object-cover mix-blend-multiply group-hover:scale-105 transition-transform duration-700" />
+            <div className="relative aspect-[4/3] bg-[#FAF9F6] rounded-2xl overflow-hidden flex items-center justify-center group shadow-sm border border-slate-100">
+              <img src={activeImage} alt={displayProduct.name} className="w-full h-full object-contain p-2 group-hover:scale-105 transition-transform duration-500" />
               {displayProduct.flashSalePrice ? (
                 <div className="absolute top-4 left-4 bg-yellow-500 text-white text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-wider shadow-sm flex items-center gap-1">
                   <Zap className="w-3 h-3 fill-white" />
@@ -264,29 +291,54 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                   Best Seller
                 </div>
               )}
-              <div onClick={() => setIsZoomModalOpen(true)} className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm text-slate-700 text-[11px] font-bold px-3 py-1.5 rounded-full shadow-sm flex items-center gap-1.5 cursor-pointer hover:bg-white transition-colors border border-slate-200">
-                <MapPin className="w-3 h-3" /> Xem phóng to
+              <div onClick={() => setIsZoomModalOpen(true)} className="absolute bottom-4 right-4 bg-white/95 backdrop-blur-sm text-slate-800 text-[11px] font-bold px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 cursor-pointer hover:bg-white hover:text-red-600 transition-colors border border-slate-200/80">
+                <ZoomIn className="w-3.5 h-3.5 text-red-600" /> Xem phóng to
               </div>
-              <button className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-slate-100 transition-all opacity-0 group-hover:opacity-100 -translate-x-4 group-hover:translate-x-0">
-                <ChevronRight className="w-4 h-4 rotate-180 text-slate-600" />
-              </button>
-              <button className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-sm border border-slate-100 transition-all opacity-0 group-hover:opacity-100 translate-x-4 group-hover:translate-x-0">
-                <ChevronRight className="w-4 h-4 text-slate-600" />
-              </button>
+              {allImages.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const curIdx = allImages.indexOf(activeImage);
+                      const prevIdx = (curIdx - 1 + allImages.length) % allImages.length;
+                      setActiveImage(allImages[prevIdx]);
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-md border border-slate-100 transition-all opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 rotate-180 text-slate-700" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const curIdx = allImages.indexOf(activeImage);
+                      const nextIdx = (curIdx + 1) % allImages.length;
+                      setActiveImage(allImages[nextIdx]);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 bg-white/90 hover:bg-white rounded-full flex items-center justify-center shadow-md border border-slate-100 transition-all opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 cursor-pointer"
+                  >
+                    <ChevronRight className="w-4 h-4 text-slate-700" />
+                  </button>
+                </>
+              )}
             </div>
             
-            {/* Thumbnails */}
-            <div className="flex gap-2.5 overflow-x-auto pb-2 hide-scrollbar">
-              {thumbnails.map((thumb, idx) => (
-                <button 
-                  key={idx} 
-                  onClick={() => setActiveImage(thumb)}
-                  className={`relative w-[80px] md:w-[95px] aspect-[4/3] rounded-lg overflow-hidden flex-shrink-0 bg-white transition-all duration-300 ${activeImage === thumb ? 'border-[1.5px] border-red-600 shadow-sm' : 'border border-slate-200 hover:border-slate-300'}`}
-                >
-                  <img src={thumb} alt={`Thumbnail ${idx}`} className="w-full h-full object-cover mix-blend-multiply" />
-                </button>
-              ))}
-            </div>
+            {/* Thumbnails (Only rendered if there are secondary images) */}
+            {allImages.length > 1 && (
+              <div className="flex gap-2.5 overflow-x-auto pb-2 hide-scrollbar">
+                {allImages.map((thumb, idx) => (
+                  <button 
+                    key={idx} 
+                    type="button"
+                    onClick={() => setActiveImage(thumb)}
+                    className={`relative w-[80px] md:w-[95px] aspect-[4/3] rounded-xl overflow-hidden flex-shrink-0 bg-[#FAF9F6] p-1 flex items-center justify-center transition-all duration-300 ${activeImage === thumb ? 'border-2 border-red-600 shadow-md ring-1 ring-red-200' : 'border border-slate-200 hover:border-slate-300'}`}
+                  >
+                    <img src={thumb} alt={`Thumbnail ${idx}`} className="w-full h-full object-contain" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* CENTER: INFO (~33%) */}
@@ -534,8 +586,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
             <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredRelatedDishes.slice(0,4).map((item: any) => (
                 <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-2.5 flex flex-col group hover:-translate-y-1 hover:shadow-lg hover:border-slate-200 transition-all duration-300">
-                  <Link href={`/${category?.slug || 'menu'}/${item.slug}`} className="relative aspect-[4/3] rounded-lg overflow-hidden mb-3 bg-[#F7F5F0]">
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover mix-blend-multiply group-hover:scale-105 transition-transform duration-500" />
+                  <Link href={`/${category?.slug || 'menu'}/${item.slug}`} className="relative aspect-[4/3] rounded-xl overflow-hidden mb-3 bg-[#FAF9F6] flex items-center justify-center p-1.5">
+                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
                   </Link>
                   <Link href={`/${category?.slug || 'menu'}/${item.slug}`}>
                     <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">{item.name}</h4>
@@ -571,8 +623,8 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
                 <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
                   {recentlyViewed.slice(0, 4).map((item: any) => (
                     <div key={item.id} className="bg-white border border-slate-100 rounded-xl p-2.5 flex flex-col group hover:-translate-y-1 hover:shadow-lg hover:border-slate-200 transition-all duration-300">
-                      <Link href={`/${item.category?.slug || 'menu'}/${item.slug}`} className="relative aspect-[4/3] rounded-lg overflow-hidden mb-3 bg-[#F7F5F0]">
-                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover mix-blend-multiply group-hover:scale-105 transition-transform duration-500" />
+                      <Link href={`/${item.category?.slug || 'menu'}/${item.slug}`} className="relative aspect-[4/3] rounded-xl overflow-hidden mb-3 bg-[#FAF9F6] flex items-center justify-center p-1.5">
+                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
                       </Link>
                       <Link href={`/${item.category?.slug || 'menu'}/${item.slug}`}>
                         <h4 className="font-bold text-slate-800 text-[12px] md:text-[13px] mb-1 leading-tight line-clamp-2 group-hover:text-red-600 transition-colors">{item.name}</h4>
@@ -630,15 +682,14 @@ export default function ItemDetailClient({ product, relatedDishes }: ItemDetailC
 
       </div>
 
-      {/* ZOOM MODAL */}
-      {isZoomModalOpen && (
-        <div className="fixed inset-0 z-[999] bg-black/90 backdrop-blur-sm flex items-center justify-center" onClick={() => setIsZoomModalOpen(false)}>
-          <button className="absolute top-6 right-6 text-white bg-white/20 hover:bg-white/40 p-2 rounded-full transition-colors">
-            <Plus className="w-6 h-6 rotate-45" />
-          </button>
-          <img src={activeImage} alt={displayProduct.name} className="max-w-[95%] max-h-[95vh] object-contain rounded-xl" onClick={(e) => e.stopPropagation()} />
-        </div>
-      )}
+      {/* 7. SUPER UPGRADED ZOOM VIEWER MODAL */}
+      <ImageViewerModal
+        isOpen={isZoomModalOpen}
+        onClose={() => setIsZoomModalOpen(false)}
+        images={allImages}
+        initialIndex={Math.max(0, allImages.indexOf(activeImage))}
+        productName={displayProduct.name}
+      />
 
       <style dangerouslySetInnerHTML={{
         __html: `

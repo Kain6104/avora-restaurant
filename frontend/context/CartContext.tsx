@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { X, AlertCircle, Check, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AddToCartForm from "../components/AddToCartForm";
+import { getAuthToken, clearAuthSession, getAuthHeaders, getApiBaseUrl } from "@/lib/auth";
 
 export interface CartItemOption {
   optionItemId: string;
@@ -219,12 +220,40 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const originalFetch = window.fetch;
-    window.fetch = async (...args) => {
-      try {
-        const response = await originalFetch(...args);
-        if (response.status === 401) {
-          const url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof URL ? args[0].href : (args[0] as Request).url);
+    window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      // 1. Chuẩn hóa URL
+      const url = typeof input === 'string'
+        ? input
+        : input instanceof URL
+        ? input.href
+        : (input as Request)?.url || '';
 
+      const isInternalApi =
+        url.startsWith('/api/') ||
+        url.includes('/api/') ||
+        (typeof window !== 'undefined' && url.startsWith(window.location.origin) && url.includes('/api/'));
+
+      // 2. Tự động đính kèm token và credentials cho request API nội bộ nếu chưa có
+      const token = getAuthToken();
+      let modifiedInit = init ? { ...init } : {};
+
+      if (isInternalApi) {
+        const headers = new Headers(modifiedInit.headers || (input instanceof Request ? input.headers : {}));
+        if (token && !headers.has('Authorization')) {
+          headers.set('Authorization', `Bearer ${token}`);
+        }
+        if (!headers.has('ngrok-skip-browser-warning')) {
+          headers.set('ngrok-skip-browser-warning', 'true');
+        }
+        modifiedInit.headers = headers;
+        if (!modifiedInit.credentials) {
+          modifiedInit.credentials = 'include';
+        }
+      }
+
+      try {
+        const response = await originalFetch(input, modifiedInit);
+        if (response.status === 401) {
           // Bỏ qua tuyệt đối nếu đang ở màn hình POS hoặc request liên quan đến Print Agent / POS / settings / printers
           const isPosScreen = typeof window !== 'undefined' && (
             window.location.pathname.startsWith('/pos') ||
@@ -253,44 +282,41 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               url.includes('/api/auth/register') ||
               url.includes('/api/auth/verify-email') ||
               url.includes('/api/auth/forgot-password') ||
-              url.includes('/api/auth/reset-password'));
+              url.includes('/api/auth/reset-password') ||
+              url.includes('/api/auth/google'));
 
-          if (url && !isPublicAuthRoute) {
-            const hadUser = localStorage.getItem('user');
-            
-            if (hadUser) {
-              localStorage.removeItem('user');
-              setShowInvalidTokenModal(true);
+          // Tuyệt đối không coi request công khai là phiên hết hạn
+          if (isPublicAuthRoute) {
+            return response;
+          }
 
-              // Chỉ khi user đã từng đăng nhập nhưng token bị hết hạn/thu hồi thì mới gọi logout dọn cookie
-              const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-              originalFetch(`${baseUrl}/api/auth/logout`, {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'ngrok-skip-browser-warning': 'true' }
-              }).catch(() => {});
-            }
+          // CHỈ kích hoạt "Phiên đăng nhập hết hạn" khi client ĐANG CÓ token xác thực
+          // Khách vãng lai gọi API thăm dò nhận 401 là trạng thái bình thường, không bao giờ bật modal
+          const currentToken = getAuthToken();
+          if (currentToken) {
+            clearAuthSession();
+            setShowInvalidTokenModal(true);
+
+            const baseUrl = getApiBaseUrl();
+            originalFetch(`${baseUrl}/api/auth/logout`, {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'ngrok-skip-browser-warning': 'true' }
+            }).catch(() => {});
           }
         }
         return response;
       } catch (error: any) {
         // Tự động phục hồi nếu môi trường còn sót URL ngrok đã hết hạn (Tunnel not found / Failed to fetch)
-        const url = typeof args[0] === 'string' ? args[0] : (args[0] instanceof URL ? args[0].href : (args[0] as Request)?.url);
         if (
           url &&
           url.includes('.ngrok-free.app') &&
           (error?.message?.includes('Failed to fetch') || error?.name === 'TypeError')
         ) {
           try {
-            const fallbackBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+            const fallbackBase = getApiBaseUrl();
             const localFallbackUrl = url.replace(/^https?:\/\/[^/]+/, fallbackBase);
-            const fallbackArgs = [...args];
-            if (typeof fallbackArgs[0] === 'string') {
-              fallbackArgs[0] = localFallbackUrl;
-            } else if (fallbackArgs[0] instanceof URL) {
-              fallbackArgs[0] = new URL(localFallbackUrl);
-            }
-            return await originalFetch(...(fallbackArgs as [any, any]));
+            return await originalFetch(localFallbackUrl, modifiedInit);
           } catch (fallbackError) {
             throw error;
           }
@@ -358,23 +384,22 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     try {
       let quotas: Record<string, number> = {};
       let quotaExceededMessage = "";
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+      const baseUrl = getApiBaseUrl();
       let user = null;
-      try {
-        const meRes = await fetch(`${baseUrl}/api/auth/me`, {
-          credentials: 'include',
-          headers: { 'ngrok-skip-browser-warning': 'true' }
-        });
-        if (meRes.ok) {
-          user = await meRes.json();
-          // Đồng bộ lại vào localStorage để các màn hình khác sử dụng (Checkout, v.v.)
-          localStorage.setItem('user', JSON.stringify(user));
-        } else {
-          localStorage.removeItem('user');
+      const token = getAuthToken();
+      if (token) {
+        try {
+          const meRes = await fetch(`${baseUrl}/api/auth/me`, {
+            credentials: 'include',
+            headers: getAuthHeaders(),
+          });
+          if (meRes.ok) {
+            user = await meRes.json();
+            localStorage.setItem('user', JSON.stringify(user));
+          }
+        } catch (e) {
+          console.warn('Backend auth check skipped:', e);
         }
-      } catch (e) {
-        // Fallback gracefully if backend is temporarily starting or offline
-        console.warn('Backend auth check skipped (offline or connecting):', e);
       }
 
       if (user?.id) {
@@ -515,7 +540,17 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       let loadedCart = [];
       const savedCart = localStorage.getItem("cartItems");
       if (savedCart) {
-        loadedCart = JSON.parse(savedCart);
+        const parsed = JSON.parse(savedCart);
+        if (Array.isArray(parsed)) {
+          loadedCart = parsed.map((it: any) => ({
+            ...it,
+            productId: it.productId || it.id,
+            priceAtSale: Number(it.priceAtSale ?? it.price ?? 0),
+            originalPriceAtSale: Number(it.originalPriceAtSale ?? it.priceAtSale ?? it.price ?? 0),
+            imageUrl: it.imageUrl || it.image || '',
+            quantity: Math.max(1, Number(it.quantity) || 1),
+          }));
+        }
         setCartItems(loadedCart);
       }
 
@@ -582,6 +617,21 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addToCart = (item: CartItem, branchId: string, silent?: boolean): boolean => {
+    if (!item) return false;
+    const price = Number(item.priceAtSale ?? (item as any).price ?? 0);
+    const origPrice = Number(item.originalPriceAtSale ?? price);
+    const normalizedItem: CartItem = {
+      ...item,
+      id: item.id || (item as any).productId || String(Date.now()),
+      productId: item.productId || item.id,
+      name: item.name || 'Món ăn',
+      priceAtSale: price,
+      originalPriceAtSale: origPrice,
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      imageUrl: item.imageUrl || (item as any).image || '',
+    };
+    item = normalizedItem;
+
     if (item.rawProduct?.optionGroups && item.rawProduct.optionGroups.length > 0 && !item.selectedOptions) {
       setOptionsModalProduct(item.rawProduct);
       return false;
@@ -916,12 +966,16 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const getCartItemTotal = (item: CartItem) => {
+    if (!item) return 0;
+    const priceAtSale = Number(item.priceAtSale ?? (item as any).price ?? 0);
+    const origPrice = Number(item.originalPriceAtSale ?? priceAtSale);
+    const qty = Math.max(1, Number(item.quantity) || 1);
     if (item.isFlashSaleItem && item.flashSaleStock !== undefined && item.maxQuantityPerUser !== undefined && item.maxQuantityPerUser !== null) {
-      const flashSaleQty = Math.min(item.quantity, item.maxQuantityPerUser);
-      const normalQty = item.quantity - flashSaleQty;
-      return (flashSaleQty * item.priceAtSale) + (normalQty * item.originalPriceAtSale);
+      const flashSaleQty = Math.min(qty, item.maxQuantityPerUser);
+      const normalQty = qty - flashSaleQty;
+      return (flashSaleQty * priceAtSale) + (normalQty * origPrice);
     }
-    return item.quantity * item.priceAtSale;
+    return qty * priceAtSale;
   };
 
   const handleOptionsConfirm = (quantity: number, selectedOptions: Record<string, string[]>, addonsTotal: number, note?: string) => {

@@ -65,6 +65,11 @@ export default function CheckoutPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   
+  // Phương thức nhận hàng: Giao tận nơi (DELIVERY) hoặc Tự đến quán lấy (TAKEAWAY)
+  const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEAWAY'>('DELIVERY');
+  const [takeawayName, setTakeawayName] = useState('');
+  const [takeawayPhone, setTakeawayPhone] = useState('');
+
   // Khung giờ hoạt động
   const [selectedSlot, setSelectedSlot] = useState<OperatingSlot | null>(null);
   const [deliveryDate, setDeliveryDate] = useState<string>(() => getVietnamDate());
@@ -181,6 +186,8 @@ export default function CheckoutPage() {
         if (res.ok) {
           const data = await res.json();
           setUser(data);
+          if (data.fullName) setTakeawayName((prev) => prev || data.fullName);
+          if (data.phone) setTakeawayPhone((prev) => prev || data.phone);
         }
       } catch (e) {
         console.error('Failed to fetch user', e);
@@ -201,19 +208,24 @@ export default function CheckoutPage() {
     fetchSettings();
   }, []);
 
-  const fetchAddresses = async () => {
+  const fetchAddresses = async (preferredId?: string) => {
     try {
       const res = await fetch('/api/addresses', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         const addressList = Array.isArray(data) ? data : (data?.data || []);
         setAddresses(addressList);
-        const defaultAddr = addressList.find((a: Address) => a.isDefault);
-        if (defaultAddr) {
-          setSelectedAddressId(defaultAddr.id);
-        } else if (addressList.length > 0) {
-          setSelectedAddressId(addressList[0].id);
-        }
+
+        setSelectedAddressId((currentId) => {
+          const targetId = preferredId || currentId;
+          const exists = addressList.some((a: Address) => a.id === targetId);
+          if (exists && targetId) return targetId;
+
+          const defaultAddr = addressList.find((a: Address) => a.isDefault);
+          if (defaultAddr) return defaultAddr.id;
+          if (addressList.length > 0) return addressList[0].id;
+          return '';
+        });
       }
     } catch (error) {
       console.error('Failed to fetch addresses:', error);
@@ -238,7 +250,8 @@ export default function CheckoutPage() {
     try {
       const payload = {
         branchId: currentBranchId,
-        addressId: selectedAddressId || undefined,
+        addressId: orderType === 'TAKEAWAY' ? undefined : (selectedAddressId || undefined),
+        orderType: orderType,
         cartItems: cartItems.map(item => ({
           productId: item.productId,
           quantity: item.quantity,
@@ -284,6 +297,7 @@ export default function CheckoutPage() {
     cartItems,
     currentBranchId,
     selectedAddressId,
+    orderType,
     appliedDiscountVoucher?.code,
     appliedShippingVoucher?.code,
     selectedSlot?.id,
@@ -316,7 +330,7 @@ export default function CheckoutPage() {
   useEffect(() => {
     if (!isLoaded || cartItems.length === 0) return;
     fetchCheckoutPreview();
-  }, [isLoaded, cartItems.length, selectedAddressId, currentBranchId, appliedDiscountVoucher?.code, appliedShippingVoucher?.code, selectedSlot?.id, paymentMethod, effectivePointsUsed, fetchCheckoutPreview]);
+  }, [isLoaded, cartItems.length, orderType, selectedAddressId, currentBranchId, appliedDiscountVoucher?.code, appliedShippingVoucher?.code, selectedSlot?.id, paymentMethod, effectivePointsUsed, fetchCheckoutPreview]);
 
   // Tự động kiểm tra và gỡ bỏ voucher nếu phương thức thanh toán không thỏa mãn điều kiện
   useEffect(() => {
@@ -340,28 +354,38 @@ export default function CheckoutPage() {
   }, [selectedPaymentMethodItem, appliedDiscountVoucher, appliedShippingVoucher, setVouchers]);
 
   const handlePlaceOrder = () => {
-    // 1. Kiểm tra địa chỉ nhận hàng
-    if (!selectedAddressId) {
-      setValidationErrors(prev => ({ ...prev, address: true }));
-      toast.error('Vui lòng chọn địa chỉ giao hàng trước khi đặt hàng!');
-      const el = document.getElementById('delivery-address-section');
-      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      return;
+    // 1. Kiểm tra thông tin nhận hàng tùy theo hình thức
+    if (orderType === 'DELIVERY') {
+      if (!selectedAddressId) {
+        setValidationErrors(prev => ({ ...prev, address: true }));
+        toast.error('Vui lòng chọn địa chỉ giao hàng trước khi đặt hàng!');
+        const el = document.getElementById('delivery-address-section');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      if (shippingQuote && !shippingQuote.deliveryAvailable) {
+        toast.error(
+          shippingQuote.reason ||
+            'Địa chỉ này nằm ngoài phạm vi giao hàng của chi nhánh. Quý khách vui lòng chọn địa chỉ khác hoặc đổi chi nhánh!',
+          { duration: 5000 }
+        );
+        return;
+      }
+    } else {
+      // TAKEAWAY mode
+      if (!takeawayPhone && !user?.phone) {
+        toast.error('Vui lòng nhập số điện thoại người nhận để quán liên hệ chuẩn bị món!');
+        const el = document.getElementById('takeaway-contact-section');
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
     }
 
-    if (shippingQuote && !shippingQuote.deliveryAvailable) {
-      toast.error(
-        shippingQuote.reason ||
-          'Địa chỉ này nằm ngoài phạm vi giao hàng của chi nhánh. Quý khách vui lòng chọn địa chỉ khác hoặc đổi chi nhánh!',
-        { duration: 5000 }
-      );
-      return;
-    }
-
-    // 2. Kiểm tra khung giờ giao hàng
+    // 2. Kiểm tra khung giờ nhận hàng
     if (!selectedSlot) {
       setValidationErrors(prev => ({ ...prev, slot: true }));
-      toast.error('Vui lòng chọn khung giờ giao hàng trước khi đặt hàng!');
+      toast.error(`Vui lòng chọn khung giờ ${orderType === 'TAKEAWAY' ? 'đến lấy món' : 'giao hàng'} trước khi đặt hàng!`);
       const el = document.getElementById('operating-slot-section');
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -393,9 +417,9 @@ export default function CheckoutPage() {
       return;
     }
 
-    // 3.5. Bắt buộc kiểm tra khung giờ giao hàng
+    // 3.5. Bắt buộc kiểm tra khung giờ nhận hàng
     if (!selectedSlot?.id || !deliveryDate) {
-      toast.error('Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn.');
+      toast.error(`Vui lòng chọn khung giờ ${orderType === 'TAKEAWAY' ? 'đến lấy món' : 'giao hàng'} trước khi xác nhận đơn.`);
       const el = document.getElementById('operating-slot-section');
       el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
@@ -408,18 +432,18 @@ export default function CheckoutPage() {
 
   const executePlaceOrder = async () => {
     if (!selectedSlot?.id || !deliveryDate) {
-      toast.error('Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn.');
+      toast.error(`Vui lòng chọn khung giờ ${orderType === 'TAKEAWAY' ? 'đến lấy món' : 'giao hàng'} trước khi xác nhận đơn.`);
       return;
     }
     setIsSubmitting(true);
     const loadingToast = toast.loading('Đang xử lý đơn hàng...');
     try {
       const fullNote = selectedSlot
-        ? `[Giao lúc: ${selectedSlot.startTime} - ${selectedSlot.endTime} Ngày: ${deliveryDate}] ${note}`
+        ? `[${orderType === 'TAKEAWAY' ? 'Tự đến quán lấy' : 'Giao lúc'}: ${selectedSlot.startTime} - ${selectedSlot.endTime} Ngày: ${deliveryDate}] ${note}`
         : note;
 
       const payload = {
-        addressId: selectedAddressId,
+        addressId: orderType === 'TAKEAWAY' ? undefined : (selectedAddressId || undefined),
         branchId: currentBranchId,
         cartItems: cartItems.map(item => ({
           productId: item.productId,
@@ -436,7 +460,9 @@ export default function CheckoutPage() {
         operatingSlotId: selectedSlot?.id || undefined,
         deliveryDate: deliveryDate || undefined,
         deliverySlotSnapshot: selectedSlot ? `${selectedSlot.startTime} - ${selectedSlot.endTime}` : undefined,
-        orderType: 'DELIVERY',
+        orderType: orderType,
+        customerName: orderType === 'TAKEAWAY' ? (takeawayName || user?.fullName || 'Khách tự đến lấy') : undefined,
+        customerPhone: orderType === 'TAKEAWAY' ? (takeawayPhone || user?.phone || '') : undefined,
         expectedTotalAmount: totalAmount,
         vatInfo: isInvoiceRequested ? {
           isInvoiceRequested: true,
@@ -547,52 +573,162 @@ export default function CheckoutPage() {
           {/* LEFT COLUMN */}
           <div className="w-full lg:w-[65%] space-y-4 sm:space-y-6">
 
-            {/* ĐỊA CHỈ NHẬN HÀNG */}
-            <div
-              id="delivery-address-section"
-              onClick={() => {
-                setValidationErrors(prev => ({ ...prev, address: false }));
-                setIsAddressModalOpen(true);
-              }}
-              className={`bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border cursor-pointer transition-all ${
-                validationErrors.address
-                  ? 'border-red-500 ring-2 ring-red-300 bg-red-50/20'
-                  : 'border-slate-200/60 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h2 className="flex items-center text-base font-bold text-slate-800">
-                  <MapPin className="mr-2 text-[#da251d]" size={20} />
-                  Địa chỉ nhận hàng
-                </h2>
-                <span className="text-xs font-bold text-[#da251d] hover:underline">
-                  {selectedAddress ? 'Thay đổi' : 'Chọn địa chỉ'}
+            {/* CHỌN HÌNH THỨC NHẬN HÀNG: GIAO HÀNG TẬN NƠI vs TỰ ĐẾN QUÁN LẤY */}
+            <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-200/70 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setOrderType('DELIVERY')}
+                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  orderType === 'DELIVERY'
+                    ? 'bg-[#da251d] text-white shadow-md shadow-red-500/25 ring-2 ring-[#da251d]/20'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <TruckIcon size={18} className="shrink-0" />
+                <span>Giao hàng tận nơi</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setOrderType('TAKEAWAY')}
+                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer relative ${
+                  orderType === 'TAKEAWAY'
+                    ? 'bg-[#da251d] text-white shadow-md shadow-red-500/25 ring-2 ring-[#da251d]/20'
+                    : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <Store size={18} className="shrink-0" />
+                <span>Tự đến quán lấy</span>
+                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${
+                  orderType === 'TAKEAWAY' ? 'bg-amber-300 text-amber-950' : 'bg-emerald-100 text-emerald-700'
+                }`}>
+                  Freeship 0đ
                 </span>
-              </div>
+              </button>
+            </div>
 
-              <div className="mt-3 flex items-center justify-between">
-                <div>
-                  {selectedAddress ? (
-                    <div>
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-bold text-slate-900 text-sm">{selectedAddress.recipientName || user?.fullName}</span>
-                        <span className="text-xs text-slate-400">|</span>
-                        <span className="text-xs text-slate-600 font-medium">{selectedAddress.phone || user?.phone}</span>
-                        {selectedAddress.isDefault && (
-                          <span className="text-[10px] bg-red-50 text-[#da251d] font-bold px-1.5 py-0.5 rounded border border-red-100">Mặc định</span>
-                        )}
+            {/* ĐỊA CHỈ NHẬN HÀNG (DELIVERY) HOẶC CHI NHÁNH NHẬN MÓN (TAKEAWAY) */}
+            {orderType === 'DELIVERY' ? (
+              <div
+                id="delivery-address-section"
+                onClick={() => {
+                  setValidationErrors(prev => ({ ...prev, address: false }));
+                  setIsAddressModalOpen(true);
+                }}
+                className={`bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border cursor-pointer transition-all ${
+                  validationErrors.address
+                    ? 'border-red-500 ring-2 ring-red-300 bg-red-50/20'
+                    : 'border-slate-200/60 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h2 className="flex items-center text-base font-bold text-slate-800">
+                    <MapPin className="mr-2 text-[#da251d]" size={20} />
+                    Địa chỉ nhận hàng
+                  </h2>
+                  <span className="text-xs font-bold text-[#da251d] hover:underline">
+                    {selectedAddress ? 'Thay đổi' : 'Chọn địa chỉ'}
+                  </span>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between">
+                  <div>
+                    {selectedAddress ? (
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-bold text-slate-900 text-sm">{selectedAddress.recipientName || user?.fullName}</span>
+                          <span className="text-xs text-slate-400">|</span>
+                          <span className="text-xs text-slate-600 font-medium">{selectedAddress.phone || user?.phone}</span>
+                          {selectedAddress.isDefault && (
+                            <span className="text-[10px] bg-red-50 text-[#da251d] font-bold px-1.5 py-0.5 rounded border border-red-100">Mặc định</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed">
+                          {selectedAddress.streetDetail}, {selectedAddress.ward}, {selectedAddress.province}
+                        </p>
                       </div>
-                      <p className="text-xs text-slate-500 leading-relaxed">
-                        {selectedAddress.streetDetail}, {selectedAddress.ward}, {selectedAddress.province}
+                    ) : (
+                      <p className="text-xs text-slate-400 italic">Vui lòng chọn địa chỉ giao hàng</p>
+                    )}
+                  </div>
+                  <ChevronRight className="text-slate-400 shrink-0" size={20} />
+                </div>
+              </div>
+            ) : (
+              <div
+                id="takeaway-contact-section"
+                className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border border-slate-200/70 space-y-4"
+              >
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <h2 className="flex items-center text-base font-bold text-slate-800">
+                    <Store className="mr-2 text-[#da251d]" size={20} />
+                    Chi nhánh nhận món (Tự đến lấy)
+                  </h2>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                    Miễn phí ship 100%
+                  </span>
+                </div>
+
+                {/* Thông tin chi nhánh */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900 text-sm">{activeBranch?.name || 'Chi nhánh Avora Restaurant'}</h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      {[activeBranch?.street, activeBranch?.ward, activeBranch?.district, activeBranch?.province].filter(Boolean).join(', ') || 'Đang cập nhật địa chỉ'}
+                    </p>
+                    {activeBranch?.phone && (
+                      <p className="text-xs text-slate-600 font-medium mt-1">
+                        Hotline: <strong className="text-slate-900">{activeBranch.phone}</strong>
                       </p>
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">Vui lòng chọn địa chỉ giao hàng</p>
+                    )}
+                  </div>
+                  {activeBranch?.latitude && activeBranch?.longitude && (
+                    <a
+                      href={`https://www.google.com/maps/dir/?api=1&destination=${activeBranch.latitude},${activeBranch.longitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-blue-600 rounded-xl text-xs font-bold transition-all shadow-2xs shrink-0"
+                    >
+                      <Navigation size={14} /> Chỉ đường
+                    </a>
                   )}
                 </div>
-                <ChevronRight className="text-slate-400 shrink-0" size={20} />
+
+                {/* Thông tin người đến lấy */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Họ và tên người nhận <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={takeawayName}
+                      onChange={(e) => setTakeawayName(e.target.value)}
+                      placeholder="Nhập tên người đến nhận..."
+                      className="w-full p-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium outline-none focus:border-[#da251d] focus:bg-white transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Số điện thoại liên hệ <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="tel"
+                      value={takeawayPhone}
+                      onChange={(e) => setTakeawayPhone(e.target.value)}
+                      placeholder="Nhập số điện thoại nhận hàng..."
+                      className="w-full p-2.5 bg-slate-50/70 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium outline-none focus:border-[#da251d] focus:bg-white transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl flex items-start gap-2 text-xs text-amber-900 leading-relaxed">
+                  <Info size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    Quý khách vui lòng đến nhận món theo đúng khung giờ đã chọn bên dưới để nhà hàng phục vụ món nóng sốt thơm ngon nhất nhé!
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* BƯỚC 4: THỜI GIAN NHẬN HÀNG (OPERATING SLOTS REALTIME) */}
             <div
@@ -604,7 +740,7 @@ export default function CheckoutPage() {
             >
               <OperatingSlotPicker
                 branchId={currentBranchId}
-                orderType="DELIVERY"
+                orderType={orderType}
                 selectedSlotId={selectedSlot?.id || null}
                 selectedDate={deliveryDate}
                 onSelectSlot={(slot, dateStr) => {
@@ -666,24 +802,41 @@ export default function CheckoutPage() {
               </div>
             </div>
 
-            {/* PHÍ GIAO HÀNG */}
+            {/* PHÍ GIAO HÀNG / HÌNH THỨC NHẬN HÀNG */}
             <div className="bg-white p-4 sm:p-6 sm:rounded-2xl shadow-sm border-y sm:border border-slate-200/60">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <TruckIcon className="w-6 h-6 text-[#00B14F]" />
-                  <span className="font-bold text-slate-800 text-sm">Phí giao hàng</span>
-                  <span className="text-[10px] font-bold text-white bg-[#00B14F] px-2 py-0.5 rounded-full">
-                    {shippingQuote?.provider &&
-                    !shippingQuote.provider.includes('ROUTING') &&
-                    !shippingQuote.provider.includes('OSRM') &&
-                    !shippingQuote.provider.includes('HAVERSINE') &&
-                    !shippingQuote.provider.includes('STANDARD_DELIVERY')
-                      ? shippingQuote.provider
-                      : 'Giao hàng tiêu chuẩn'}
+                  {orderType === 'TAKEAWAY' ? (
+                    <Store className="w-6 h-6 text-[#da251d]" />
+                  ) : (
+                    <TruckIcon className="w-6 h-6 text-[#00B14F]" />
+                  )}
+                  <span className="font-bold text-slate-800 text-sm">
+                    {orderType === 'TAKEAWAY' ? 'Hình thức nhận món' : 'Phí giao hàng'}
+                  </span>
+                  <span className={`text-[10px] font-bold text-white px-2 py-0.5 rounded-full ${
+                    orderType === 'TAKEAWAY' ? 'bg-[#da251d]' : 'bg-[#00B14F]'
+                  }`}>
+                    {orderType === 'TAKEAWAY' ? 'Tự đến quán lấy' : (
+                      shippingQuote?.provider &&
+                      !shippingQuote.provider.includes('ROUTING') &&
+                      !shippingQuote.provider.includes('OSRM') &&
+                      !shippingQuote.provider.includes('HAVERSINE') &&
+                      !shippingQuote.provider.includes('STANDARD_DELIVERY')
+                        ? shippingQuote.provider
+                        : 'Giao hàng tiêu chuẩn'
+                    )}
                   </span>
                 </div>
                 <div className="text-right">
-                  {isCalculatingPreview ? (
+                  {orderType === 'TAKEAWAY' ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 line-through text-xs font-medium">15.000đ</span>
+                      <span className="bg-emerald-100 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-xs tracking-wide">
+                        MIỄN PHÍ 0Đ
+                      </span>
+                    </div>
+                  ) : isCalculatingPreview ? (
                     <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
                       <Loader2 className="w-3.5 h-3.5 animate-spin text-[#00B14F]" />
                       <span>Đang tính theo tọa độ...</span>
@@ -705,38 +858,49 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
-              {shippingQuote && (
-                <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
-                  <div className="flex items-center gap-1.5 font-medium">
-                    <Navigation className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Khoảng cách di chuyển: <strong className="text-slate-800 font-bold">{shippingQuote.distanceKm} km</strong></span>
-                    {shippingQuote.durationMinutes > 0 && (
-                      <span className="text-slate-400 font-normal">(~{shippingQuote.durationMinutes} phút)</span>
-                    )}
+              {orderType === 'TAKEAWAY' ? (
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Đơn tự đến lấy được <strong>miễn phí vận chuyển 100%</strong>. Nhà hàng sẽ chuẩn bị sẵn sàng món nóng sốt cho bạn!</span>
                   </div>
-                  {shippingQuote.shippingDiscount > 0 && (
-                    <span className="text-emerald-600 font-bold text-[11px]">
-                      Voucher freeship: -{shippingQuote.shippingDiscount.toLocaleString('vi-VN')}đ
-                    </span>
+                </div>
+              ) : (
+                <>
+                  {shippingQuote && (
+                    <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <Navigation className="w-3.5 h-3.5 text-blue-600" />
+                        <span>Khoảng cách di chuyển: <strong className="text-slate-800 font-bold">{shippingQuote.distanceKm} km</strong></span>
+                        {shippingQuote.durationMinutes > 0 && (
+                          <span className="text-slate-400 font-normal">(~{shippingQuote.durationMinutes} phút)</span>
+                        )}
+                      </div>
+                      {shippingQuote.shippingDiscount > 0 && (
+                        <span className="text-emerald-600 font-bold text-[11px]">
+                          Voucher freeship: -{shippingQuote.shippingDiscount.toLocaleString('vi-VN')}đ
+                        </span>
+                      )}
+                    </div>
                   )}
-                </div>
-              )}
 
-              {shippingQuote && !shippingQuote.deliveryAvailable && (
-                <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <strong className="font-bold block">Địa chỉ nằm ngoài phạm vi giao hàng!</strong>
-                    <p className="mt-0.5 leading-relaxed text-rose-700">
-                      {shippingQuote.reason || `Khoảng cách (${shippingQuote.distanceKm} km) vượt quá bán kính phục vụ của chi nhánh. Quý khách vui lòng chọn địa chỉ khác gần hơn hoặc đổi chi nhánh!`}
-                    </p>
-                  </div>
-                </div>
-              )}
+                  {shippingQuote && !shippingQuote.deliveryAvailable && (
+                    <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="font-bold block">Địa chỉ nằm ngoài phạm vi giao hàng!</strong>
+                        <p className="mt-0.5 leading-relaxed text-rose-700">
+                          {shippingQuote.reason || `Khoảng cách (${shippingQuote.distanceKm} km) vượt quá bán kính phục vụ của chi nhánh. Quý khách vui lòng chọn địa chỉ khác gần hơn hoặc đổi chi nhánh!`}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
-              <p className="text-[11px] text-slate-400 mt-2">
-                * Phí vận chuyển được tính tự động dựa trên quãng đường giao thông thực tế giữa chi nhánh và địa chỉ của bạn.
-              </p>
+                  <p className="text-[11px] text-slate-400 mt-2">
+                    * Phí vận chuyển được tính tự động dựa trên quãng đường giao thông thực tế giữa chi nhánh và địa chỉ của bạn.
+                  </p>
+                </>
+              )}
             </div>
 
             {/* YÊU CẦU XUẤT HÓA ĐƠN */}
@@ -1067,7 +1231,7 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 onClick={handlePlaceOrder}
-                disabled={isSubmitting || isCalculatingPreview || (shippingQuote !== null && !shippingQuote.deliveryAvailable)}
+                disabled={isSubmitting || isCalculatingPreview || (orderType === 'DELIVERY' && shippingQuote !== null && !shippingQuote.deliveryAvailable)}
                 className="w-full bg-[#da251d] hover:bg-[#b91c2c] text-white font-bold py-3.5 rounded-xl shadow-lg shadow-[#da251d]/20 transition-all active:scale-[0.98] disabled:opacity-50 disabled:scale-100 flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
@@ -1080,7 +1244,7 @@ export default function CheckoutPage() {
                     <Loader2 className="w-5 h-5 animate-spin" />
                     <span>ĐANG TÍNH GIÁ...</span>
                   </>
-                ) : shippingQuote !== null && !shippingQuote.deliveryAvailable ? (
+                ) : orderType === 'DELIVERY' && shippingQuote !== null && !shippingQuote.deliveryAvailable ? (
                   <span>NGOÀI PHẠM VI GIAO HÀNG</span>
                 ) : (
                   <span>XÁC NHẬN ĐẶT HÀNG →</span>
@@ -1148,9 +1312,22 @@ export default function CheckoutPage() {
         onClose={() => setIsConfirmOrderModalOpen(false)}
         onConfirm={executePlaceOrder}
         isSubmitting={isSubmitting}
-        recipientName={selectedAddress?.recipientName || user?.fullName || 'Khách hàng'}
-        phone={selectedAddress?.phone || user?.phone || 'Chưa cập nhật'}
-        address={selectedAddress ? `${selectedAddress.streetDetail}, ${selectedAddress.ward}, ${selectedAddress.province}` : ''}
+        orderType={orderType}
+        recipientName={
+          orderType === 'TAKEAWAY'
+            ? (takeawayName || user?.fullName || 'Khách đến lấy')
+            : (selectedAddress?.recipientName || user?.fullName || 'Khách hàng')
+        }
+        phone={
+          orderType === 'TAKEAWAY'
+            ? (takeawayPhone || user?.phone || 'Chưa cập nhật')
+            : (selectedAddress?.phone || user?.phone || 'Chưa cập nhật')
+        }
+        address={
+          orderType === 'TAKEAWAY'
+            ? `${activeBranch?.name || 'Avora Restaurant'} - ${[activeBranch?.street, activeBranch?.ward, activeBranch?.district, activeBranch?.province].filter(Boolean).join(', ') || 'Chi nhánh chính'}`
+            : (selectedAddress ? `${selectedAddress.streetDetail}, ${selectedAddress.ward}, ${selectedAddress.province}` : '')
+        }
         deliveryTimeText={
           selectedSlot
             ? `Hôm nay (${deliveryDate ? deliveryDate.split('-').slice(1).reverse().join('/') : ''}) (${selectedSlot.startTime} - ${selectedSlot.endTime})`
@@ -1162,7 +1339,9 @@ export default function CheckoutPage() {
             : 'Không sử dụng'
         }
         shippingVoucherText={
-          appliedShippingVoucher
+          orderType === 'TAKEAWAY'
+            ? 'Miễn phí ship tự lấy (0đ)'
+            : appliedShippingVoucher
             ? `${appliedShippingVoucher.code} (-${shippingDiscountAmount.toLocaleString('vi-VN')}đ)`
             : 'Không sử dụng'
         }

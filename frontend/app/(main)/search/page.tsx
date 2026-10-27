@@ -34,7 +34,7 @@ import { useCart } from '@/context/CartContext';
 import AddToCartButton from '@/components/AddToCartButton';
 import toast from 'react-hot-toast';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4001';
+const API_URL = '';
 
 // Article type definitions & aesthetics
 const ARTICLE_TYPES = [
@@ -673,10 +673,10 @@ function SearchPageContent() {
                             key={product.id}
                             className="bg-white rounded-2xl border border-slate-200/80 overflow-hidden hover:shadow-xl hover:border-red-100 hover:-translate-y-1 transition-all duration-300 group flex flex-col h-full"
                           >
-                            <div className="block relative aspect-[4/3] bg-slate-50">
+                            <div className="block relative aspect-[4/3] bg-[#FAF9F6] flex items-center justify-center p-2">
                               <Link
-                                href={`/${product.category?.slug}/${product.slug}`}
-                                className="absolute inset-0 z-0"
+                                href={`/${product.category?.slug || 'menu'}/${product.slug}`}
+                                className="absolute inset-0 z-0 flex items-center justify-center p-2"
                               >
                                 <img
                                   src={
@@ -684,9 +684,9 @@ function SearchPageContent() {
                                     'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500'
                                   }
                                   alt={product.name}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
                                 />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                               </Link>
 
                               <button

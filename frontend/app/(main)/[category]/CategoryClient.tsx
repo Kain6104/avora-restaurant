@@ -6,6 +6,7 @@ import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import { ChevronRight, Heart, Star, SlidersHorizontal, Check, Leaf, Ban, ChefHat, LayoutGrid, List, X } from 'lucide-react';
 import AddToCartButton from '../../../components/AddToCartButton';
 import { useCart } from '../../../context/CartContext';
+import CategoryAvatar from '@/components/category/CategoryAvatar';
 
 interface CategoryClientProps {
   category: any;
@@ -139,8 +140,14 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
           <div className="absolute inset-0 bg-gradient-to-r from-[#FEFDFB] via-[#FEFDFB]/90 to-transparent pointer-events-none" />
 
           <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-8 p-8 md:p-12 w-full">
-            <div className="w-32 h-32 md:w-[160px] md:h-[160px] rounded-full mx-auto md:mx-0 shrink-0 border-[6px] border-white shadow-lg overflow-hidden">
-              <img src={image || 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=400'} alt={name} className="w-full h-full object-cover" />
+            <div className="w-32 h-32 md:w-[160px] md:h-[160px] rounded-full mx-auto md:mx-0 shrink-0 border-[6px] border-white shadow-lg overflow-hidden flex items-center justify-center">
+              <CategoryAvatar
+                image={image}
+                name={name}
+                slug={categorySlug}
+                className="w-full h-full rounded-full"
+                iconClassName="w-16 h-16 md:w-20 md:h-20"
+              />
             </div>
             <div className="flex flex-col text-center md:text-left mt-2 md:mt-4 w-full">
               <h1 className="text-[22px] sm:text-3xl md:text-4xl font-black text-[#3E2723] mb-2 md:mb-3 uppercase tracking-tight whitespace-nowrap overflow-hidden text-ellipsis w-full">{name}</h1>
@@ -213,8 +220,8 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
               {filteredProducts.map((item: any) => (
                 <div key={item.id} className="bg-white rounded-2xl shadow-[0_2px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 group flex flex-col relative overflow-hidden">
 
-                  <Link href={`/${categorySlug}/${item.slug}`} className="block relative aspect-[4/3] bg-[#F8F7F5] w-full overflow-hidden">
-                    <img src={item.imageUrl || item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c'} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                  <Link href={`/${categorySlug}/${item.slug}`} className="block relative aspect-[4/3] bg-[#FAF9F6] w-full overflow-hidden flex items-center justify-center p-2">
+                    <img src={item.imageUrl || item.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c'} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
 
                     {/* Badges */}
                     {item.isBestSeller && (

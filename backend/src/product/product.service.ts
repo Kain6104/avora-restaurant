@@ -268,7 +268,29 @@ export class ProductService {
     }
 
     if (!product) {
-      throw new NotFoundException(`Product with slug ${productSlug} not found in category ${categorySlug}`);
+      // Secondary fallback: find product by slug directly regardless of category in URL
+      product = await this.prisma.product.findFirst({
+        where: isUUID
+          ? { id: productSlug, available: true }
+          : { slug: productSlug, available: true },
+        include: {
+          category: true,
+          branches: { select: { id: true } },
+          optionGroups: {
+            include: {
+              optionItems: true
+            }
+          }
+        }
+      });
+
+      if (product && product.category) {
+        category = product.category;
+      }
+    }
+
+    if (!product) {
+      throw new NotFoundException(`Product with slug ${productSlug} not found`);
     }
 
     const targetCategoryId = category?.id || product.categoryId;

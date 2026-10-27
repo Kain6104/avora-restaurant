@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RealtimeBroadcastService } from '../../order/realtime-broadcast.service';
+import { generateUniqueProductSlug } from '../../common/utils/slug.util';
 
 @Injectable()
 export class ProductsService {
@@ -149,10 +150,14 @@ export class ProductsService {
       'QR_ORDER',
     ];
 
+    const finalSlug = slug?.trim()
+      ? await generateUniqueProductSlug(this.prisma, slug)
+      : await generateUniqueProductSlug(this.prisma, data.name);
+
     const product = await this.prisma.product.create({
       data: {
         ...restData,
-        slug: slug || data.name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-'),
+        slug: finalSlug,
         salesChannels: salesChannels || defaultChannels,
         secondaryImages: secondaryImages || [],
         redeemAllBranches: Boolean(redeemAllBranches),

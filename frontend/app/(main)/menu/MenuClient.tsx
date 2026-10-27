@@ -718,14 +718,14 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                               {/* Product Thumbnail */}
                               <Link
                                 href={`/${cat.slug || 'menu'}/${item.slug || item.id}`}
-                                className="block relative aspect-square overflow-hidden bg-slate-100"
+                                className="block relative aspect-square overflow-hidden bg-[#FAF9F6] flex items-center justify-center p-2"
                               >
                                 <img
                                   src={item.imageUrl || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'}
                                   alt={item.name}
-                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500"
                                 />
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none" />
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent pointer-events-none" />
 
                                 {/* Badges */}
                                 <div className="absolute top-2 left-2 flex flex-col gap-1 pointer-events-none z-10">
@@ -828,12 +828,12 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                             {/* Thumbnail */}
                             <Link
                               href={`/${cat.slug || 'menu'}/${item.slug || item.id}`}
-                              className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-slate-100 shrink-0"
+                              className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-2xl overflow-hidden bg-[#FAF9F6] shrink-0 flex items-center justify-center p-1.5"
                             >
                               <img
                                 src={item.imageUrl || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=300'}
                                 alt={item.name}
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
                               />
                               {item.isFlashSaleItem ? (
                                 <span className="absolute top-1.5 left-1.5 bg-gradient-to-r from-red-600 to-amber-500 text-white text-[9px] font-black px-1.5 py-0.2 rounded-md shadow-xs">

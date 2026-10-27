@@ -17,12 +17,15 @@ export interface ArticleProductItem {
     slug?: string;
     price: number;
     originalPrice?: number | null;
+    flashSalePrice?: number | null;
+    discountedPrice?: number | null;
     image?: string | null;
     imageUrl?: string | null;
     description?: string | null;
     isAvailable?: boolean;
     category?: {
       name: string;
+      slug?: string;
     } | null;
   };
 }
@@ -59,13 +62,20 @@ export default function RelatedProducts({ articleId, products }: RelatedProducts
     e.stopPropagation();
     handleProductClick(item.product.id);
 
+    const unitPrice = Number(item.product.flashSalePrice || item.product.price || 0);
+    const origPrice = Number(item.product.originalPrice || item.product.price || 0);
+    const img = item.product.image || item.product.imageUrl || '';
+
     addToCart(
       {
         id: item.product.id,
+        productId: item.product.id,
         name: item.product.name,
-        price: item.product.price,
-        image: item.product.image || item.product.imageUrl || '',
+        priceAtSale: unitPrice,
+        originalPriceAtSale: origPrice,
+        imageUrl: img,
         quantity: 1,
+        rawProduct: item.product,
       } as any,
       currentBranchId || ''
     );

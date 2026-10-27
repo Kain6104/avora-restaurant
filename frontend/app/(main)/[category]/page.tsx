@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Metadata } from 'next';
 import CategoryClient from './CategoryClient';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4001';
 
 export async function generateMetadata({ params }: { params: Promise<{ category: string }> }): Promise<Metadata> {
   const resolvedParams = await params;
@@ -14,9 +14,9 @@ export async function generateMetadata({ params }: { params: Promise<{ category:
     .then(res => res.ok ? res.json() : null)
     .catch(() => null);
 
-  const title = data ? `${data.name} - Avora Restaurant | Đặt Món Trực Tuyến` : 'Danh mục - Avora Restaurant';
+  const title = data ? `${data.name} - Đặt Món Trực Tuyến` : 'Danh Mục Thực Đơn';
   const description = data?.description || (data ? `Khám phá hương vị đặc trưng và đặt món ${data.name} trực tuyến ngay tại Avora Restaurant với nhiều ưu đãi hấp dẫn.` : 'Khám phá thực đơn đa dạng tại Avora Restaurant.');
-  const imageUrl = data?.image || data?.imageUrl || 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=1200';
+  const imageUrl = data?.image || data?.imageUrl || data?.products?.[0]?.imageUrl || '/avora_logo.png';
 
   return {
     title,

@@ -127,9 +127,9 @@ export default function CartPage() {
 
                         {/* Price (Desktop only - Mobile merged below) */}
                         <div className="hidden sm:flex sm:col-span-2 flex-col items-center justify-center">
-                          <span className="font-bold text-slate-900">{item.priceAtSale.toLocaleString('vi-VN')}đ</span>
-                          {item.originalPriceAtSale > item.priceAtSale && (
-                            <span className="text-[10px] text-slate-400 line-through">{item.originalPriceAtSale.toLocaleString('vi-VN')}đ</span>
+                          <span className="font-bold text-slate-900">{(Number(item.priceAtSale) || 0).toLocaleString('vi-VN')}đ</span>
+                          {Number(item.originalPriceAtSale || 0) > Number(item.priceAtSale || 0) && (
+                            <span className="text-[10px] text-slate-400 line-through">{(Number(item.originalPriceAtSale) || 0).toLocaleString('vi-VN')}đ</span>
                           )}
                         </div>
 
@@ -137,9 +137,9 @@ export default function CartPage() {
                         <div className="flex items-center justify-between sm:justify-center mt-2 sm:mt-0 sm:col-span-2">
                           {/* Mobile Price */}
                           <div className="flex sm:hidden flex-col">
-                            <span className="font-black text-red-600 text-sm">{item.priceAtSale.toLocaleString('vi-VN')}đ</span>
-                            {item.originalPriceAtSale > item.priceAtSale && (
-                              <span className="text-[9px] text-slate-400 line-through">{item.originalPriceAtSale.toLocaleString('vi-VN')}đ</span>
+                            <span className="font-black text-red-600 text-sm">{(Number(item.priceAtSale) || 0).toLocaleString('vi-VN')}đ</span>
+                            {Number(item.originalPriceAtSale || 0) > Number(item.priceAtSale || 0) && (
+                              <span className="text-[9px] text-slate-400 line-through">{(Number(item.originalPriceAtSale) || 0).toLocaleString('vi-VN')}đ</span>
                             )}
                           </div>
 
@@ -154,7 +154,7 @@ export default function CartPage() {
                         {/* Total (Desktop only) */}
                         <div className="hidden sm:flex sm:col-span-3 justify-end pr-6">
                           <span className="font-black text-red-600 text-[15px] whitespace-nowrap">
-                            {getCartItemTotal(item).toLocaleString('vi-VN')}đ
+                            {(getCartItemTotal(item) || 0).toLocaleString('vi-VN')}đ
                           </span>
                         </div>
 

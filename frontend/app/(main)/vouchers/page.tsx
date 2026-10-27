@@ -3,11 +3,15 @@ import type { Metadata } from 'next';
 import VouchersClient from './VouchersClient';
 
 export const metadata: Metadata = {
-  title: 'Kho Voucher & Ví Ưu Đãi | Avora Restaurant',
-  description: 'Khám phá hàng loạt mã giảm giá, voucher miễn phí vận chuyển và quản lý ví voucher của bạn tại Avora Restaurant.',
+  title: 'Kho Voucher & Ưu Đãi Độc Quyền',
+  description: 'Khám phá hàng loạt mã giảm giá, voucher miễn phí món ăn và ưu đãi đặt bàn độc quyền tại AVORA Restaurant.',
+  openGraph: {
+    title: 'Kho Voucher & Ưu Đãi Độc Quyền | AVORA Restaurant',
+    description: 'Nhận voucher ưu đãi ẩm thực hấp dẫn tại AVORA Restaurant.',
+  },
 };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.INTERNAL_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:4001';
 
 async function getInitialVouchers(): Promise<any[]> {
   try {

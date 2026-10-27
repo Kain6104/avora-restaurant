@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as ExcelJS from 'exceljs';
 import { PrintRouteRole, PrintTemplateType } from '@prisma/client';
+import { generateUniqueProductSlug, generateUniqueCategorySlug } from '../../common/utils/slug.util';
 
 export interface ImportResultSummary {
   totalProcessed: number;
@@ -817,11 +818,11 @@ export class ProductsExcelService {
       let categoryId = catMap.get(categoryName.trim().toLowerCase());
       if (!categoryId) {
         // Tự động tạo danh mục mới nếu chưa có
-        const newCatSlug = this.generateSlug(categoryName);
+        const newCatSlug = await generateUniqueCategorySlug(this.prisma, categoryName);
         const createdCat = await this.prisma.category.create({
           data: {
             name: categoryName.trim(),
-            slug: `${newCatSlug}-${Date.now().toString().slice(-4)}`,
+            slug: newCatSlug,
             displayOrder: allCategories.length + 1,
           },
         });
@@ -919,8 +920,7 @@ export class ProductsExcelService {
         summary.updatedCount++;
       } else {
         // Tạo mới sản phẩm
-        const slugBase = this.generateSlug(name);
-        const slug = `${slugBase}-${Date.now().toString().slice(-4)}${Math.floor(Math.random() * 90 + 10)}`;
+        const slug = await generateUniqueProductSlug(this.prisma, name);
         const created = await this.prisma.product.create({
           data: {
             itemCode,

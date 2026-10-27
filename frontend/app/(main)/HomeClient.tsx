@@ -2,13 +2,15 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import {
-  ArrowRight, Truck, Leaf, ShieldCheck, Zap, Gift, Star, Package, User, Flame, ChevronRight, ChevronLeft, Heart, Check
+  ArrowRight, Truck, Leaf, ShieldCheck, Zap, Gift, Star, Package, User, Flame, ChevronRight, ChevronLeft, Heart, Check, Sparkles
 } from 'lucide-react';
 import Link from 'next/link';
 import HeroBanner from '../../components/HeroBanner';
 import AddToCartButton from '../../components/AddToCartButton';
 import { useCart } from '../../context/CartContext';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
+import CategoryAvatar from '@/components/category/CategoryAvatar';
+import { getAuthHeaders, getApiBaseUrl, getAuthToken } from '@/lib/auth';
 
 interface HomeClientProps {
   banners: any[];
@@ -19,6 +21,42 @@ interface HomeClientProps {
 
 export default function HomeClient({ banners, categories, bestSellers, aiRecommended }: HomeClientProps) {
   const { currentBranchId, flashSaleQuotas, cartItems } = useCart();
+  const [currentUser, setCurrentUser] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const headers = getAuthHeaders();
+        const res = await fetch(`${baseUrl}/api/auth/me`, {
+          credentials: 'include',
+          headers,
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setCurrentUser(data);
+        } else {
+          try {
+            const saved = localStorage.getItem('user');
+            if (saved) setCurrentUser(JSON.parse(saved));
+          } catch {}
+        }
+      } catch {
+        try {
+          const saved = localStorage.getItem('user');
+          if (saved) setCurrentUser(JSON.parse(saved));
+        } catch {}
+      }
+    };
+    fetchUser();
+
+    const handleUserUpdate = (e: any) => {
+      if (e.detail) setCurrentUser(e.detail);
+      else fetchUser();
+    };
+    window.addEventListener('user-updated', handleUserUpdate);
+    return () => window.removeEventListener('user-updated', handleUserUpdate);
+  }, []);
 
   // Filter banners by branch
   const filteredBanners = useMemo(() => {
@@ -171,8 +209,14 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
 
           {categories?.map((cat: any) => (
             <Link key={cat.id} href={`/${cat.slug}`} className="flex flex-col items-center gap-1.5 shrink-0 group">
-              <div className="w-11 h-11 md:w-[64px] md:h-[64px] rounded-full bg-white flex items-center justify-center p-0.5 group-hover:-translate-y-1.5 transition-all duration-300 shadow-sm border border-slate-100 group-hover:border-red-300 group-hover:shadow-md group-hover:shadow-red-100 ring-2 ring-transparent group-hover:ring-red-100">
-                <img src={cat.image} alt={cat.name} className="w-full h-full object-cover rounded-full" />
+              <div className="w-11 h-11 md:w-[64px] md:h-[64px] rounded-full bg-white flex items-center justify-center p-0.5 group-hover:-translate-y-1.5 transition-all duration-300 shadow-sm border border-slate-100 group-hover:border-red-300 group-hover:shadow-md group-hover:shadow-red-100 ring-2 ring-transparent group-hover:ring-red-100 overflow-hidden">
+                <CategoryAvatar
+                  image={cat.image}
+                  name={cat.name}
+                  slug={cat.slug}
+                  className="w-full h-full rounded-full"
+                  iconClassName="w-5 h-5 md:w-7 md:h-7"
+                />
               </div>
               <span className="text-[10px] md:text-[11px] font-semibold text-slate-600 group-hover:text-red-600 transition-colors whitespace-nowrap">{cat.name}</span>
             </Link>
@@ -513,12 +557,16 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 <div className="absolute inset-0 bg-gradient-to-br from-red-600 to-rose-700 rounded-2xl flex items-center justify-center border border-white/10 shadow-xl overflow-hidden">
                   <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10" />
                   <p className="text-white font-black text-xl tracking-[0.3em] opacity-80 relative z-10">AVORA</p>
-                  <div className="absolute bottom-2 right-3 text-white/30 text-[10px] font-mono tracking-widest">•••• 8421</div>
+                  <div className="absolute bottom-2 right-3 text-white/40 text-[10px] font-mono tracking-widest">
+                    •••• {currentUser?.phone ? currentUser.phone.slice(-4) : (currentUser?.id ? currentUser.id.slice(-4) : '8421')}
+                  </div>
                   <div className="absolute top-2 left-3">
                     <div className="w-6 h-4 bg-yellow-400/80 rounded-sm" />
                   </div>
                 </div>
-                <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded-full shadow-lg">+500 Pt</div>
+                <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded-full shadow-lg">
+                  {currentUser?.points !== undefined ? `${Number(currentUser.points).toLocaleString('vi-VN')} PT` : '+500 Pt'}
+                </div>
               </div>
             </div>
           </div>
@@ -542,11 +590,11 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
             <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-4">
               {displayBestSellers.map((item: any) => (
                 <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-slate-100/80 hover:shadow-xl hover:-translate-y-1 hover:border-red-100 transition-all duration-300 group flex flex-col overflow-hidden">
-                  <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="block relative aspect-[4/3] overflow-hidden bg-slate-50">
-                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                  <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="block relative aspect-[4/3] overflow-hidden bg-[#FAF9F6] flex items-center justify-center p-2">
+                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
                     {/* Gradient overlay */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                    <div className="absolute top-2 left-2 flex flex-col gap-1">
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+                    <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
                       {item.badge && <span className="bg-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm uppercase">{item.badge}</span>}
                       {item.flashSalePrice ? (
                         <span className="bg-yellow-400 text-yellow-900 text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
@@ -559,8 +607,8 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                       )}
                     </div>
                     {/* Quick view on hover */}
-                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                      <span className="bg-white/90 backdrop-blur-sm text-slate-800 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">Xem nhanh</span>
+                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <span className="bg-white/90 backdrop-blur-sm text-slate-800 text-xs font-bold px-3 py-1.5 rounded-full shadow-sm">Xem chi tiết</span>
                     </div>
                   </Link>
 
@@ -674,10 +722,10 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3 md:gap-4">
           {displayAiRecommended.map((item: any) => (
             <div key={item.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-red-100 transition-all duration-300 border border-slate-100/80 group flex flex-col">
-              <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="relative aspect-square overflow-hidden bg-slate-50 block">
-                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-                {item.badge && <span className="absolute top-2 left-2 bg-green-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase">{item.badge}</span>}
-                <button className="absolute top-2 right-2 w-7 h-7 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50">
+              <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="relative aspect-square overflow-hidden bg-[#FAF9F6] block flex items-center justify-center p-2">
+                <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
+                {item.badge && <span className="absolute top-2 left-2 bg-green-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase z-10">{item.badge}</span>}
+                <button className="absolute top-2 right-2 w-7 h-7 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 z-10">
                   <Heart className="w-3.5 h-3.5 text-slate-400 hover:text-red-500" />
                 </button>
               </Link>

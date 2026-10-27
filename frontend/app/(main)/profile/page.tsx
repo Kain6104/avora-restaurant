@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Barcode from 'react-barcode';
+import { logoutUser, getAuthHeaders, getApiBaseUrl, getAuthToken } from '@/lib/auth';
 import {
   User,
   LayoutDashboard,
@@ -130,12 +131,16 @@ function ProfileContent() {
   // Fetch authenticated user
   useEffect(() => {
     const fetchUser = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        window.location.href = '/login?redirectURL=/profile';
+        return;
+      }
       try {
-        const res = await fetch(`${API_URL}/api/auth/me`, {
+        const baseUrl = getApiBaseUrl();
+        const res = await fetch(`${baseUrl}/api/auth/me`, {
           credentials: 'include',
-          headers: {
-            'ngrok-skip-browser-warning': 'true',
-          },
+          headers: getAuthHeaders(),
         });
         if (res.ok) {
           const data = await res.json();
@@ -620,16 +625,7 @@ function ProfileContent() {
                 {/* Logout Button */}
                 <button
                   onClick={async () => {
-                    try {
-                      await fetch(`${API_URL}/api/auth/logout`, {
-                        method: 'POST',
-                        credentials: 'include',
-                        headers: { 'ngrok-skip-browser-warning': 'true' },
-                      });
-                      window.location.href = '/login';
-                    } catch (err) {
-                      console.error('Logout failed:', err);
-                    }
+                    await logoutUser({ redirectUrl: '/login', reload: true });
                   }}
                   className="flex items-center gap-3 px-5 py-3.5 text-slate-500 hover:bg-red-50 hover:text-red-600 font-semibold transition-colors w-full text-left text-xs sm:text-sm cursor-pointer"
                 >
