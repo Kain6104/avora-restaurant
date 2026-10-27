@@ -315,9 +315,15 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        note: { type: SchemaType.STRING, description: 'Ghi chú chung cho toàn bộ đơn hàng' }
-      }
-    }
+        note: { type: SchemaType.STRING, description: 'Ghi chú chung cho toàn bộ đơn hàng' },
+        paymentMethod: {
+          type: SchemaType.STRING,
+          description: 'Phương thức thanh toán được chọn (COD, SEPAY_QR, TRANSFER, CASH, CARD)',
+          format: 'enum',
+          enum: ['COD', 'CASH', 'SEPAY_QR', 'TRANSFER', 'CARD', 'PAYOS', 'MOMO', 'VNPAY'],
+        },
+      },
+    },
   },
   {
     name: 'checkOrder',

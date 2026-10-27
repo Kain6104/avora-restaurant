@@ -175,9 +175,17 @@ export class OperatingSlotService {
       if (isPastDay) {
         isLeadTimeRestricted = true;
       } else if (isToday) {
-        const slotStartMin = timeToMinutes(slot.startTime);
-        if (slotStartMin < currentMinutesVn + slot.leadTimeMinutes) {
-          isLeadTimeRestricted = true;
+        const isAllDay = slot.startTime === '00:00' && slot.endTime === '23:59';
+        if (isAllDay) {
+          const slotEndMin = timeToMinutes(slot.endTime);
+          if (slotEndMin < currentMinutesVn) {
+            isLeadTimeRestricted = true;
+          }
+        } else {
+          const slotStartMin = timeToMinutes(slot.startTime);
+          if (slotStartMin < currentMinutesVn + slot.leadTimeMinutes) {
+            isLeadTimeRestricted = true;
+          }
         }
       }
 

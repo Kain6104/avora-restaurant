@@ -1,4 +1,5 @@
 import { Controller, Post, Body, UseGuards, Request, Get, Param, Patch } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { OrderStatus } from '@prisma/client';
 import { OrderService } from './order.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -15,6 +16,7 @@ export class OrderController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Post()
   async createOrder(@Request() req, @Body() payload: any) {
     const userId = req.user.id;

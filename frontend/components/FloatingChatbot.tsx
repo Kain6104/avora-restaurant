@@ -797,6 +797,8 @@ export function FloatingChatbot() {
     operation: 'ORDER' | 'RESERVATION',
     previewToken: string | undefined,
     confirmationMessage: string,
+    paymentMethod?: string,
+    usePoints?: boolean,
   ) {
     if (!user || !sessionId || !previewToken) {
       toast.error('Vui lòng đăng nhập và tạo lại bản xem trước để xác nhận.');
@@ -807,7 +809,7 @@ export function FloatingChatbot() {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, operation, previewToken }),
+      body: JSON.stringify({ sessionId, operation, previewToken, paymentMethod, usePoints }),
     });
     if (!response.ok) {
       if (response.status === 409) {
@@ -960,10 +962,15 @@ export function FloatingChatbot() {
 
       clearCart();
 
+      const pointsDeducted = payload.pointsUsed || 0;
+      const pointsSpeech = pointsDeducted > 0
+        ? `Đã trừ chính xác ${pointsDeducted.toLocaleString('vi-VN')} điểm tích lũy.`
+        : `Không sử dụng điểm tích lũy.`;
+
       if (isSepay && orderCode) {
-        // Voice AvoBOT nhắc khách quét mã thanh toán
+        // Voice AvoBOT nhắc khách quét mã thanh toán kèm số điểm chính xác
         if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-          const utterance = new SpeechSynthesisUtterance("Đơn hàng của quý khách đã được tạo thành công! Quý khách vui lòng quét mã QR chuyển khoản để hoàn tất thanh toán nhé.");
+          const utterance = new SpeechSynthesisUtterance(`Đơn hàng của quý khách đã được tạo thành công! ${pointsSpeech} Quý khách vui lòng quét mã QR chuyển khoản để hoàn tất thanh toán nhé.`);
           utterance.lang = 'vi-VN';
           utterance.rate = 1.0;
           window.speechSynthesis.speak(utterance);
@@ -1000,6 +1007,13 @@ export function FloatingChatbot() {
             }
           } catch {}
         }, 3000);
+      } else {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+          const utterance = new SpeechSynthesisUtterance(`Đơn hàng của quý khách đã được tạo thành công! ${pointsSpeech} Cảm ơn quý khách đã đặt món tại Avora Restaurant.`);
+          utterance.lang = 'vi-VN';
+          utterance.rate = 1.0;
+          window.speechSynthesis.speak(utterance);
+        }
       }
     } catch (e) {
       console.error('Error handling order success', e);
@@ -2417,13 +2431,13 @@ export function FloatingChatbot() {
                             <button
                               type="button"
                               onClick={() => handleSendMessage(previewData.pointsUsed > 0 ? "Tôi không dùng điểm tích lũy" : "Tôi muốn dùng điểm tích lũy thành viên")}
-                              className={`px-2.5 py-1 rounded-lg font-bold text-[10px] transition-all shrink-0 ${
+                              className={`px-2 py-1 rounded-lg font-bold text-[10px] transition-all shrink-0 ${
                                 previewData.pointsUsed > 0
-                                  ? 'bg-amber-600 text-white shadow-xs'
+                                  ? 'bg-rose-100 hover:bg-rose-200 border border-rose-300 text-rose-700'
                                   : 'bg-white border border-amber-300 text-amber-800 hover:bg-amber-100/50'
                               }`}
                             >
-                              {previewData.pointsUsed > 0 ? `Đã trừ ${previewData.pointsUsed}đ` : 'Áp dụng điểm'}
+                              {previewData.pointsUsed > 0 ? `Đã trừ ${previewData.pointsUsed}đ (Bỏ dùng)` : 'Áp dụng điểm'}
                             </button>
                           </div>
                         )}
@@ -2505,16 +2519,24 @@ export function FloatingChatbot() {
 
                         <button
                           onClick={() => {
+                            const hasSlot = Boolean(previewData.operatingSlotId || previewData.deliverySlotTime);
+                            if (!hasSlot) {
+                              toast.error("Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn!");
+                              handleSendMessage("Tôi muốn chọn khung giờ giao hàng");
+                              return;
+                            }
                             const chosenMethod = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
                             const chosenMethodName = previewData.availablePaymentMethods?.find((m: any) => m.code === chosenMethod)?.name || chosenMethod;
                             confirmChatTransaction(
                               'ORDER',
                               previewData.previewToken,
                               `Tôi xác nhận đơn hàng trên với phương thức thanh toán [${chosenMethodName}], hãy tạo đơn giúp tôi.`,
+                              chosenMethod,
+                              previewData.pointsUsed > 0,
                             );
                           }}
                           disabled={isLoading}
-                          className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] text-xs"
+                          className="mt-1 w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] text-xs"
                         >
                           <CreditCard size={14} /> Xác nhận đặt đơn ngay
                         </button>
@@ -2549,13 +2571,14 @@ export function FloatingChatbot() {
                           {slotData.branchName ? `Chi nhánh phục vụ: ${slotData.branchName}` : 'Khung giờ giao hàng còn khả dụng:'}
                         </p>
 
-                        {/* Nút bấm nhanh ASAP */}
+                        {/* Nút bấm nhanh ASAP - Thu nhỏ gọn cân đối */}
                         <button
                           onClick={() => handleSendMessage("Tôi muốn giao ngay (ASAP)")}
                           disabled={isLoading}
-                          className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs sm:text-sm rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                          className="w-full py-1.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-xs rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]"
                         >
-                          <Zap size={16} /> ⚡ Giao ngay (ASAP - Càng sớm càng tốt)
+                          <Zap size={13} className="shrink-0" />
+                          <span>⚡ Giao ngay (ASAP - Càng sớm càng tốt)</span>
                         </button>
 
                         {/* Lưới các khung giờ cụ thể */}

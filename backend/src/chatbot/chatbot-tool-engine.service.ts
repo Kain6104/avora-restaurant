@@ -2176,13 +2176,26 @@ export class ChatbotToolEngineService {
     const pointRate = branch.pointRedeemRate || 1;
     const maxPercent = (branch as any).maxPointDiscountPercent !== undefined ? (branch as any).maxPointDiscountPercent : 20;
 
-    if (args.usePoints !== undefined) {
-      (ctx as any).usePoints = args.usePoints;
-    }
-    if (args.pointsToUse !== undefined) {
+    if (args.usePoints === false || args.pointsToUse === 0) {
+      (ctx as any).usePoints = false;
+      ctx.pointsToUse = 0;
+    } else if (args.usePoints === true) {
+      (ctx as any).usePoints = true;
+      if (userId && branch.allowDirectDiscount) {
+        const user = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { currentPoints: true },
+        });
+        const userPoints = user?.currentPoints || 0;
+        const maxDiscountAllowed = (basePricing.subTotal * maxPercent) / 100;
+        const maxPointsAllowed = Math.floor(maxDiscountAllowed / pointRate);
+        ctx.pointsToUse = Math.max(0, Math.min(userPoints, maxPointsAllowed));
+      }
+    } else if (args.pointsToUse !== undefined) {
       const maxDiscountAllowed = (basePricing.subTotal * maxPercent) / 100;
       const maxPointsAllowed = Math.floor(maxDiscountAllowed / pointRate);
       ctx.pointsToUse = Math.max(0, Math.min(args.pointsToUse, maxPointsAllowed));
+      (ctx as any).usePoints = ctx.pointsToUse > 0;
     } else if ((ctx as any).usePoints && userId && branch.allowDirectDiscount) {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
@@ -2192,6 +2205,8 @@ export class ChatbotToolEngineService {
       const maxDiscountAllowed = (basePricing.subTotal * maxPercent) / 100;
       const maxPointsAllowed = Math.floor(maxDiscountAllowed / pointRate);
       ctx.pointsToUse = Math.max(0, Math.min(userPoints, maxPointsAllowed));
+    } else {
+      ctx.pointsToUse = 0;
     }
 
     const pricing = await this.orderPricingService.calculatePricing({
@@ -2252,7 +2267,7 @@ export class ChatbotToolEngineService {
       data: previewData,
       actionType: 'ORDER_PREVIEW',
       actionPayload: JSON.stringify({ ...previewData, previewToken: confirmation.previewToken }),
-      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT và phí ship). Phương thức thanh toán đang chọn: [${paymentMethodName}]. Bạn có thể chọn đổi phương thức thanh toán ngay bên dưới hoặc xác nhận đặt đơn hàng nhé!`,
+      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT, phí ship${ctx.pointsToUse && ctx.pointsToUse > 0 ? `, đã áp dụng giảm ${(ctx.pointsToUse * pointRate).toLocaleString('vi-VN')}đ từ ${ctx.pointsToUse} điểm tích lũy` : ', không dùng điểm tích lũy'}). Phương thức thanh toán đang chọn: [${paymentMethodName}]. Bạn có thể chọn đổi phương thức thanh toán ngay bên dưới hoặc xác nhận đặt đơn hàng nhé!`,
       suggestedReplies: ['Xác nhận đặt đơn', 'Đổi phương thức thanh toán', 'Thêm món khác'],
       requiresConfirmation: true,
     };
@@ -2277,7 +2292,12 @@ export class ChatbotToolEngineService {
     if (!branchId) return { success: false, code: 'BRANCH_REQUIRED', message: 'Thiếu thông tin chi nhánh.' };
 
     if (args.paymentMethod) ctx.paymentMethod = args.paymentMethod;
-    const paymentMethod = ctx.paymentMethod || 'COD';
+    let paymentMethod = ctx.paymentMethod || 'COD';
+    let norm = paymentMethod.toUpperCase().trim();
+    if (norm === 'TRANSFER' || norm === 'SEPAY' || norm === 'CHUYEN_KHOAN') {
+      paymentMethod = 'SEPAY_QR';
+    }
+    ctx.paymentMethod = paymentMethod;
     const idempotencyKey = ctx.lastIdempotencyKey!;
 
     // Chuẩn bị payload chuẩn cho OrderService.createOrder
@@ -2345,6 +2365,11 @@ export class ChatbotToolEngineService {
       ? `https://avorafnb.com/payment/sepay?orderCode=${finalOrderCode}`
       : undefined;
 
+    const pointsDeducted = createdOrder?.pointsUsed || 0;
+    const pointsNote = pointsDeducted > 0
+      ? ` (đã trừ chính xác ${pointsDeducted.toLocaleString('vi-VN')} điểm tích lũy)`
+      : ` (không sử dụng điểm tích lũy)`;
+
     return {
       success: true,
       code: 'ORDER_PLACED_SUCCESS',
@@ -2356,6 +2381,7 @@ export class ChatbotToolEngineService {
         paymentMethod,
         isSepay: isSepayMethod,
         redirectUrl,
+        pointsUsed: pointsDeducted,
       },
       actionType: 'SHOW_ORDER_SUCCESS',
       actionPayload: JSON.stringify({
@@ -2364,10 +2390,11 @@ export class ChatbotToolEngineService {
         paymentMethod,
         isSepay: isSepayMethod,
         redirectUrl,
+        pointsUsed: pointsDeducted,
       }),
       content: isSepayMethod
-        ? `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] đã được tạo thành công với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ. Hệ thống đang tự động chuyển hướng bạn đến cổng thanh toán SePay. Quý khách vui lòng quét mã QR để hoàn tất thanh toán nhé!`
-        : `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ đã được tạo thành công. Nhà hàng sẽ chuẩn bị và giao món đúng khung giờ cho bạn nhé!`,
+        ? `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] đã được tạo thành công với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote}. Hệ thống đang tự động chuyển hướng bạn đến cổng thanh toán SePay. Quý khách vui lòng quét mã QR để hoàn tất thanh toán nhé!`
+        : `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote} đã được tạo thành công. Nhà hàng sẽ chuẩn bị và giao món đúng khung giờ cho bạn nhé!`,
     };
   }
 

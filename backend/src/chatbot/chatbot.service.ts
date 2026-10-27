@@ -198,7 +198,9 @@ Quy tắc cho SUGGESTIONS:
 - Khi khách hàng nói "Không, đổi địa chỉ khác", "dùng địa chỉ khác", "thêm địa chỉ mới", "giao nơi khác", "đổi địa chỉ": BẮT BUỘC gọi ngay tool \`requestDeliveryLocation\` để hệ thống hiển thị nút "📍 Chia sẻ vị trí của tôi" cho khách chọn GPS hoặc nhập địa chỉ mới!
 - Khi nhận được tin nhắn tọa độ GPS từ hệ thống dạng: "[HỆ THỐNG: Vị trí của khách hàng là vĩ độ X, kinh độ Y]", nếu khách đang đặt giao hàng, BẮT BUỘC gọi ngay \`validateDeliveryAddress\` với latitude và longitude đó để máy chủ tự động quy đổi thành địa chỉ thực tế và tính phí giao hàng chính xác!
 - Không bắt khách gõ tay lại địa chỉ nếu đã có tọa độ GPS.
-- Khi khách hàng hỏi hoặc yêu cầu dùng điểm tích lũy ("dùng điểm", "trừ điểm", "tiêu điểm"): BẮT BUỘC truyền tham số \`usePoints: true\` vào tool \`previewOrder\` để hệ thống tự động trừ điểm tối đa theo % quy định của chi nhánh!
+- Khi khách hàng hỏi hoặc yêu cầu dùng điểm tích lũy ("dùng điểm", "trừ điểm", "tiêu điểm"): BẮT BUỘC gọi tool \`previewOrder\` với tham số \`usePoints: true\` để hệ thống tự động trừ điểm tối đa theo % quy định của chi nhánh!
+- Khi khách hàng nói "KHÔNG DÙNG ĐIỂM", "không dùng điểm", "bỏ điểm", "không trừ điểm": BẮT BUỘC gọi tool \`previewOrder\` với tham số \`usePoints: false, pointsToUse: 0\` để cập nhật lại bảng giá KHÔNG trừ điểm!
+- Khi khách hàng gửi tin nhắn xác nhận đơn hàng (VD: "Tôi xác nhận đơn hàng trên với phương thức thanh toán [Chuyển khoản], hãy tạo đơn giúp tôi."): BẮT BUỘC gọi ngay tool \`placeOrder\` với \`paymentMethod\` tương ứng (nếu là Chuyển khoản / SePay thì truyền \`paymentMethod: 'SEPAY_QR'\`, nếu Tiền mặt / COD thì truyền \`paymentMethod: 'COD'\`, nếu Quẹt thẻ thì \`paymentMethod: 'CARD'\`, Tiền mặt quầy thì \`paymentMethod: 'CASH'\`).
 
 3. KHUNG GIỜ GIAO HÀNG (OPERATING SLOTS):
 - BẮT BUỘC gọi \`getAvailableOrderSlots\`.
@@ -665,6 +667,8 @@ Quy tắc cho SUGGESTIONS:
     sessionId: string,
     operation: 'ORDER' | 'RESERVATION',
     previewToken: string,
+    paymentMethod?: string,
+    usePoints?: boolean,
   ) {
     if (!sessionId || !previewToken || !['ORDER', 'RESERVATION'].includes(operation)) {
       throw new BadRequestException('Invalid confirmation request');
@@ -689,6 +693,39 @@ Quy tắc cho SUGGESTIONS:
     }
     if (new Date(state.expiresAt).getTime() <= Date.now()) {
       throw new BadRequestException('Confirmation has expired');
+    }
+
+    if (operation === 'ORDER') {
+      if (paymentMethod) {
+        let norm = paymentMethod.toUpperCase().trim();
+        if (norm === 'TRANSFER' || norm === 'SEPAY' || norm === 'CHUYEN_KHOAN') {
+          norm = 'SEPAY_QR';
+        }
+        context.paymentMethod = norm;
+      }
+      if (usePoints !== undefined) {
+        (context as any).usePoints = usePoints;
+        if (!usePoints) context.pointsToUse = 0;
+      }
+
+      // Recompute payloadHash with updated paymentMethod / pointsToUse so requireConfirmation passes cleanly
+      const confirmationPayload = {
+        branchId: context.currentBranchId,
+        fulfillmentType: context.fulfillmentType,
+        addressId: context.deliveryAddressId,
+        operatingSlotId: context.operatingSlotId,
+        deliveryDate: context.deliveryDate,
+        paymentMethod: context.paymentMethod || 'COD',
+        discountVoucherCode: context.discountVoucherCode,
+        shippingVoucherCode: context.shippingVoucherCode,
+        pointsToUse: context.pointsToUse || 0,
+        expectedTotalAmount: context.expectedTotalAmount,
+        cart: context.cart,
+      };
+      state.payloadHash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(confirmationPayload))
+        .digest('hex');
     }
 
     state.status = 'CONFIRMED';

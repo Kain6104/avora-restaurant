@@ -8,6 +8,7 @@ import {
   Query,
   Body,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { OperatingSlotService } from './operating-slot.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -26,9 +27,14 @@ export class OperatingSlotController {
   @Get('for-date')
   async getSlotsForDate(
     @Query('branchId') branchId: string,
-    @Query('date') dateStr: string,
+    @Query('date') dateQuery?: string,
+    @Query('dateStr') dateStrQuery?: string,
     @Query('orderType') orderType?: SlotOrderType,
   ) {
+    const dateStr = dateQuery || dateStrQuery;
+    if (!dateStr) {
+      throw new BadRequestException('Ngày không hợp lệ (định dạng chuẩn YYYY-MM-DD)');
+    }
     const data = await this.slotService.getSlotsForDate({
       branchId,
       dateStr,

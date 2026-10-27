@@ -31,6 +31,8 @@ class ConfirmChatTransactionDto {
   sessionId: string;
   operation: 'ORDER' | 'RESERVATION';
   previewToken: string;
+  paymentMethod?: string;
+  usePoints?: boolean;
 }
 
 interface AuthenticatedRequest {
@@ -87,6 +89,8 @@ export class ChatbotController {
       body.sessionId,
       body.operation,
       body.previewToken,
+      body.paymentMethod,
+      body.usePoints,
     );
   }
 

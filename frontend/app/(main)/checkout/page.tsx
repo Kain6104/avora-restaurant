@@ -393,12 +393,24 @@ export default function CheckoutPage() {
       return;
     }
 
+    // 3.5. Bắt buộc kiểm tra khung giờ giao hàng
+    if (!selectedSlot?.id || !deliveryDate) {
+      toast.error('Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn.');
+      const el = document.getElementById('operating-slot-section');
+      el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
     // Thông tin hoàn toàn hợp lệ -> Mở modal kiểm tra lại đơn hàng lần nữa
     setValidationErrors({});
     setIsConfirmOrderModalOpen(true);
   };
 
   const executePlaceOrder = async () => {
+    if (!selectedSlot?.id || !deliveryDate) {
+      toast.error('Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn.');
+      return;
+    }
     setIsSubmitting(true);
     const loadingToast = toast.loading('Đang xử lý đơn hàng...');
     try {

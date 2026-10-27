@@ -1068,9 +1068,16 @@ export class OrderService {
         throw new BadRequestException('Vui lòng chọn 1 phương thức thanh toán');
       }
 
+      let normalizedPaymentMethod = paymentMethod.toUpperCase().trim();
+      if (normalizedPaymentMethod === 'TRANSFER' || normalizedPaymentMethod === 'SEPAY' || normalizedPaymentMethod === 'CHUYEN_KHOAN') {
+        normalizedPaymentMethod = 'SEPAY_QR';
+      }
+
       const pMethod = await tx.paymentMethod.findFirst({
         where: {
           OR: [
+            { methodCode: normalizedPaymentMethod },
+            { gatewayType: normalizedPaymentMethod },
             { methodCode: paymentMethod.toUpperCase().trim() },
             { gatewayType: paymentMethod.toUpperCase().trim() },
             { id: paymentMethod },
