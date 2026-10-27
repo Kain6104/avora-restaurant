@@ -51,7 +51,21 @@ export class PaymentMethodService {
       const isEligible = typeof totalAmount === 'number' ? totalAmount >= m.minOrderValue : true;
       const remainingToMin = typeof totalAmount === 'number' ? Math.max(0, m.minOrderValue - totalAmount) : 0;
       return {
-        ...m,
+        id: m.id,
+        code: m.methodCode,
+        methodCode: m.methodCode,
+        name: m.name,
+        type: m.gatewayType,
+        gatewayType: m.gatewayType,
+        description: m.description,
+        iconUrl: m.iconUrl,
+        bankCode: m.bankCode,
+        accountNumber: m.accountNumber,
+        accountName: m.accountName,
+        displayOrder: m.displayOrder,
+        minOrderValue: m.minOrderValue,
+        isAllBranches: m.isAllBranches,
+        branches: m.branches,
         isEligible,
         remainingToMin,
       };

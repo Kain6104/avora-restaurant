@@ -12,6 +12,7 @@ import {
   ChatbotToolResult,
   ChatSessionCartItem,
   ChatCartSnapshot,
+  ChatbotSuggestion,
 } from './dto/chatbot-tool.dto';
 import {
   ChatbotToolArgsMap,
@@ -306,7 +307,7 @@ export class ChatbotToolEngineService {
           result = await this.toolSearchMenu(command.args, ctx);
           break;
         case 'getProductDetail':
-          result = await this.toolGetProductDetail(command.args);
+          result = await this.toolGetProductDetail(command.args, ctx);
           break;
         case 'listCategories':
           result = await this.toolListCategories();
@@ -573,22 +574,54 @@ export class ChatbotToolEngineService {
       where.branches = { some: { id: effectiveBranchId } };
     }
 
-    const q = args.query ? args.query.trim().toLowerCase() : '';
+    const rawQuery = args.query ? args.query.trim() : '';
+    const q = rawQuery.toLowerCase();
     const isHotQuery = ['bestseller', 'bán chạy', 'hot', 'nổi bật', 'gợi ý'].some((w) => q.includes(w));
 
-    if (!isHotQuery && q) {
+    // Bóc tách tên danh mục nếu khách gửi câu kiểu: "Gợi ý món trong danh mục Sushi & Maki"
+    const catPrefixRegex = /^(?:gợi ý|tìm|xem|cho tôi|danh sách)?\s*(?:các|những)?\s*món\s*(?:ăn)?\s*(?:trong|thuộc)?\s*(?:danh mục|loại)?\s*[:\-]?\s*/i;
+    let categorySearchTerm = args.category ? args.category.trim() : '';
+    if (!categorySearchTerm && catPrefixRegex.test(rawQuery)) {
+      categorySearchTerm = rawQuery.replace(catPrefixRegex, '').trim();
+    }
+
+    // Đối chiếu xem từ khóa có trùng khớp với danh mục nào trong DB không
+    let targetCategory: any = null;
+    if (categorySearchTerm) {
+      targetCategory = await this.prisma.category.findFirst({
+        where: {
+          OR: [
+            { name: { contains: categorySearchTerm } },
+            { slug: { contains: categorySearchTerm.toLowerCase() } },
+          ],
+        },
+      });
+    }
+
+    if (!targetCategory && q && !isHotQuery) {
+      targetCategory = await this.prisma.category.findFirst({
+        where: {
+          OR: [
+            { name: { contains: q } },
+            { slug: { contains: q } },
+          ],
+        },
+      });
+    }
+
+    if (targetCategory) {
+      where.categoryId = targetCategory.id;
+    } else if (!isHotQuery && q) {
       where.OR = [
         { name: { contains: q } },
         { description: { contains: q } },
+        { category: { name: { contains: q } } },
+        { category: { slug: { contains: q } } },
       ];
     }
 
     if (args.budget && Number(args.budget) > 0) {
       where.price = { lte: Number(args.budget) };
-    }
-
-    if (args.category) {
-      where.category = { name: { contains: args.category.trim() } };
     }
 
     const products = await this.prisma.product.findMany({
@@ -639,6 +672,55 @@ export class ChatbotToolEngineService {
       };
     });
 
+    if (ctx && formatted.length > 0) {
+      ctx.lastSuggestedProducts = formatted.map((p) => ({ id: p.id, name: p.name }));
+    }
+
+    // Xây dựng gợi ý thông minh theo ngữ cảnh thực tế
+    const suggestions: (string | ChatbotSuggestion)[] = [];
+    if (formatted.length > 0) {
+      const topDish = formatted[0];
+      suggestions.push({
+        label: `Thêm ${topDish.name} vào giỏ`,
+        action: 'ADD_TO_CART',
+        payload: { productName: topDish.name, productId: topDish.id },
+        entityId: topDish.id,
+      });
+
+      if (formatted.length > 1) {
+        suggestions.push({
+          label: `Gợi ý món ăn kèm`,
+          action: 'SEND_MESSAGE',
+          payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${topDish.name}`,
+        });
+      }
+
+      if (args.budget) {
+        suggestions.push({
+          label: 'Gợi ý món ăn khác',
+          action: 'SEND_MESSAGE',
+          payload: 'Gợi ý thêm một lựa chọn khác cùng tầm giá',
+        });
+      } else {
+        suggestions.push({
+          label: 'Gợi ý theo ngân sách',
+          action: 'SEND_MESSAGE',
+          payload: 'Gợi ý cho tôi bữa ăn dưới 150.000đ',
+        });
+      }
+    } else {
+      suggestions.push({
+        label: 'Xem toàn bộ danh mục thực đơn',
+        action: 'SEND_MESSAGE',
+        payload: 'Liệt kê các danh mục thực đơn của quán',
+      });
+      suggestions.push({
+        label: 'Gợi ý món bán chạy nhất',
+        action: 'SEND_MESSAGE',
+        payload: 'Món nào đang bán chạy nhất?',
+      });
+    }
+
     return {
       success: true,
       code: 'MENU_SEARCH_COMPLETED',
@@ -646,45 +728,55 @@ export class ChatbotToolEngineService {
       data: { products: formatted },
       actionType: 'SHOW_PRODUCT',
       actionPayload: JSON.stringify({ products: formatted }),
+      suggestedReplies: suggestions.slice(0, 3),
     };
   }
 
-  private async toolGetProductDetail(args: ChatbotToolArgsMap['getProductDetail']): Promise<ChatbotToolResult> {
+  private async toolGetProductDetail(args: ChatbotToolArgsMap['getProductDetail'], ctx?: ChatSessionContext): Promise<ChatbotToolResult> {
     let product: any = null;
+    const includeConfig = {
+      category: true,
+      optionGroups: {
+        include: { optionItems: { where: { available: true } } },
+      },
+      FlashSaleItem: {
+        where: { flashSale: { status: 'ACTIVE' } },
+        include: { flashSale: true },
+      },
+      branches: { select: { id: true } },
+    };
+
     if (args.productId) {
       product = await this.prisma.product.findUnique({
         where: { id: args.productId },
-        include: {
-          category: true,
-          optionGroups: {
-            include: { optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } } },
-          },
-          FlashSaleItem: {
-            where: { flashSale: { status: 'ACTIVE' } },
-            include: { flashSale: true },
-          },
-          branches: { select: { id: true } },
-        },
+        include: includeConfig,
       });
     } else if (args.productName) {
+      const q = args.productName.trim();
       product = await this.prisma.product.findFirst({
-        where: { name: { contains: args.productName.trim() } },
-        include: {
-          category: true,
-          optionGroups: {
-            include: { optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } } },
-          },
-          FlashSaleItem: {
-            where: { flashSale: { status: 'ACTIVE' } },
-            include: { flashSale: true },
-          },
-          branches: { select: { id: true } },
-        },
+        where: { name: { contains: q } },
+        include: includeConfig,
       });
+
+      if (!product) {
+        const words = q.split(/\s+/).filter((w) => w.length > 1);
+        if (words.length > 0) {
+          product = await this.prisma.product.findFirst({
+            where: {
+              AND: words.map((w) => ({ name: { contains: w } })),
+            },
+            include: includeConfig,
+          });
+        }
+      }
     }
 
     if (!product) {
       return { success: false, code: 'PRODUCT_NOT_FOUND', message: 'Không tìm thấy món ăn này trong thực đơn.' };
+    }
+
+    if (ctx) {
+      ctx.lastSuggestedProducts = [{ id: product.id, name: product.name }];
     }
 
     const now = new Date();
@@ -723,6 +815,24 @@ export class ChatbotToolEngineService {
           optionGroups,
         },
       },
+      suggestedReplies: [
+        {
+          label: `Thêm ${product.name} vào giỏ`,
+          action: 'ADD_TO_CART',
+          payload: { productName: product.name, productId: product.id },
+          entityId: product.id,
+        },
+        {
+          label: 'Gợi ý món ăn kèm',
+          action: 'SEND_MESSAGE',
+          payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${product.name}`,
+        },
+        {
+          label: 'Món khác cùng danh mục',
+          action: 'SEND_MESSAGE',
+          payload: `Gợi ý thêm món khác thuộc danh mục ${product.category?.name || 'này'}`,
+        },
+      ],
     };
   }
 
@@ -730,12 +840,19 @@ export class ChatbotToolEngineService {
     const categories = await this.prisma.category.findMany({
       orderBy: { displayOrder: 'asc' },
     });
+    const categorySuggestions: (string | ChatbotSuggestion)[] = categories.slice(0, 3).map((c) => ({
+      label: `Gợi ý món trong danh mục ${c.name}`,
+      action: 'SEND_MESSAGE',
+      payload: `Gợi ý cho tôi các món trong danh mục ${c.name}`,
+      entityId: c.id,
+    }));
     return {
       success: true,
       code: 'CATEGORIES_LOADED',
       message: `Có ${categories.length} danh mục món ăn.`,
       data: { categories },
       content: `Danh mục thực đơn gồm: ${categories.map((c) => c.name).join(', ')}.`,
+      suggestedReplies: categorySuggestions,
     };
   }
 
@@ -765,41 +882,90 @@ export class ChatbotToolEngineService {
 
   private async toolAddToCart(args: ChatbotToolArgsMap['addToCart'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     let product: any = null;
+    const productInclude = {
+      optionGroups: {
+        include: { optionItems: { where: { available: true } } },
+      },
+      FlashSaleItem: {
+        where: { flashSale: { status: 'ACTIVE' } },
+        include: { flashSale: true },
+      },
+      branches: { select: { id: true } },
+    };
+
+    // 1. Giải quyết món ăn (Fuzzy lookup & nhớ ngữ cảnh câu trước)
     if (args.productId) {
       product = await this.prisma.product.findUnique({
         where: { id: args.productId },
-        include: {
-          optionGroups: {
-            include: { optionItems: { where: { available: true } } },
-          },
-          FlashSaleItem: {
-            where: { flashSale: { status: 'ACTIVE' } },
-            include: { flashSale: true },
-          },
-          branches: { select: { id: true } },
-        },
+        include: productInclude,
       });
-    } else if (args.productName) {
-      product = await this.prisma.product.findFirst({
-        where: { name: { contains: args.productName.trim() } },
-        include: {
-          optionGroups: {
-            include: { optionItems: { where: { available: true } } },
-          },
-          FlashSaleItem: {
-            where: { flashSale: { status: 'ACTIVE' } },
-            include: { flashSale: true },
-          },
-          branches: { select: { id: true } },
-        },
+    }
+
+    if (!product && args.productName) {
+      const rawName = args.productName.trim();
+      const lowerName = rawName.toLowerCase();
+      const isGenericRef = [
+        'món đó', 'món này', 'món vừa', 'món trên', 'món gợi ý', 'món 1', 'món đầu tiên', 'món vừa rồi', 'nó'
+      ].some((ref) => lowerName.includes(ref));
+
+      // Khách nói "cho tôi món đó" -> dùng món vừa gợi ý
+      if (isGenericRef && ctx.lastSuggestedProducts && ctx.lastSuggestedProducts.length > 0) {
+        product = await this.prisma.product.findUnique({
+          where: { id: ctx.lastSuggestedProducts[0].id },
+          include: productInclude,
+        });
+      }
+
+      if (!product) {
+        product = await this.prisma.product.findFirst({
+          where: { name: { contains: rawName } },
+          include: productInclude,
+        });
+      }
+
+      if (!product) {
+        const words = rawName.split(/\s+/).filter((w) => w.length > 1);
+        if (words.length > 0) {
+          product = await this.prisma.product.findFirst({
+            where: {
+              AND: words.map((w) => ({ name: { contains: w } })),
+            },
+            include: productInclude,
+          });
+        }
+      }
+
+      if (!product && ctx.lastSuggestedProducts && ctx.lastSuggestedProducts.length > 0) {
+        const words = lowerName.split(/\s+/).filter((w) => w.length > 1);
+        const matchedInCtx = ctx.lastSuggestedProducts.find((p) =>
+          words.some((w) => p.name.toLowerCase().includes(w))
+        );
+        if (matchedInCtx) {
+          product = await this.prisma.product.findUnique({
+            where: { id: matchedInCtx.id },
+            include: productInclude,
+          });
+        }
+      }
+    }
+
+    // Fallback: nếu khách chỉ nói "thêm vào giỏ" và vừa gợi ý đúng 1 món
+    if (!product && ctx.lastSuggestedProducts && ctx.lastSuggestedProducts.length === 1) {
+      product = await this.prisma.product.findUnique({
+        where: { id: ctx.lastSuggestedProducts[0].id },
+        include: productInclude,
       });
     }
 
     if (!product) {
-      return { success: false, code: 'PRODUCT_NOT_FOUND', message: 'Không tìm thấy món ăn này.' };
+      return {
+        success: false,
+        code: 'PRODUCT_NOT_FOUND',
+        message: 'Không tìm thấy món ăn này. Bạn có thể nói rõ tên món hoặc tham khảo danh sách món vừa được gợi ý nhé!',
+      };
     }
 
-    // 1. Kiểm tra Required Options
+    // 2. Kiểm tra Chi nhánh
     const productBranchIds = (product.branches || []).map((branch: { id: string }) => branch.id);
     if (ctx.currentBranchId && productBranchIds.length > 0 && !productBranchIds.includes(ctx.currentBranchId)) {
       return {
@@ -821,22 +987,42 @@ export class ChatbotToolEngineService {
       ctx.currentBranchId = productBranchIds[0];
     }
 
-    const providedOptionIds = args.optionItemIds || [];
-    const missingRequiredGroups: string[] = [];
+    // 3. Xử lý Options/Toppings thông minh
+    const providedOptionIds = new Set<string>(args.optionItemIds || []);
+    const optionNamesToMatch = ((args as any).optionNames || []).map((n: string) => n.trim().toLowerCase());
+    if (args.note) {
+      optionNamesToMatch.push(args.note.trim().toLowerCase());
+    }
+
+    // Khớp tên tùy chọn nếu AI truyền optionNames hoặc note
+    for (const group of product.optionGroups || []) {
+      for (const item of group.optionItems || []) {
+        const itemLower = item.name.toLowerCase();
+        if (optionNamesToMatch.some((n: string) => itemLower.includes(n) || n.includes(itemLower))) {
+          providedOptionIds.add(item.id);
+        }
+      }
+    }
+
+    const autoSelectedNotes: string[] = [];
     const validOptionIds = new Set<string>();
 
     for (const group of product.optionGroups || []) {
-      const selectedCount = group.optionItems.filter((item: any) => {
-        validOptionIds.add(item.id);
-        return providedOptionIds.includes(item.id);
-      }).length;
+      group.optionItems.forEach((item: any) => validOptionIds.add(item.id));
+      const selectedCount = group.optionItems.filter((item: any) => providedOptionIds.has(item.id)).length;
       const minimum = Math.max(group.isRequired ? 1 : 0, group.minSelect || 0);
       const maximum = group.multipleChoice ? Math.max(1, group.maxSelect || 1) : 1;
 
-      if (selectedCount < minimum) {
-        const choices = group.optionItems.map((item: any) => `${item.name} (+${item.priceAdjustment.toLocaleString('vi-VN')}đ)`).join(', ');
-        missingRequiredGroups.push(`${group.name} (Tùy chọn: ${choices})`);
+      // Tự động chọn tùy chọn mặc định nếu nhóm bắt buộc mà khách chưa chọn
+      if (selectedCount < minimum && group.optionItems.length > 0) {
+        const defaultItem = group.optionItems.find((it: any) => it.isDefault) || group.optionItems[0];
+        if (defaultItem) {
+          providedOptionIds.add(defaultItem.id);
+          validOptionIds.add(defaultItem.id);
+          autoSelectedNotes.push(`${defaultItem.name}`);
+        }
       }
+
       if (selectedCount > maximum) {
         return {
           success: false,
@@ -847,7 +1033,8 @@ export class ChatbotToolEngineService {
       }
     }
 
-    const unknownOptionIds = providedOptionIds.filter((optionId) => !validOptionIds.has(optionId));
+    const finalOptionIds = Array.from(providedOptionIds);
+    const unknownOptionIds = finalOptionIds.filter((optionId) => !validOptionIds.has(optionId));
     if (unknownOptionIds.length > 0) {
       return {
         success: false,
@@ -858,17 +1045,7 @@ export class ChatbotToolEngineService {
       };
     }
 
-    if (missingRequiredGroups.length > 0) {
-      return {
-        success: false,
-        code: 'REQUIRED_OPTIONS_MISSING',
-        message: 'Món này có tùy chọn bắt buộc cần chọn.',
-        data: { missingGroups: missingRequiredGroups, productId: product.id },
-        content: `Món [${product.name}] cần bạn chọn thêm: ${missingRequiredGroups.join('; ')}. Bạn muốn chọn loại nào ạ?`,
-      };
-    }
-
-    // 2. Tính toán giá món và options
+    // 4. Tính toán giá món và options
     const now = new Date();
     const activeFs = product.FlashSaleItem?.find(
       (fs: any) => fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold,
@@ -880,7 +1057,7 @@ export class ChatbotToolEngineService {
 
     for (const group of product.optionGroups || []) {
       for (const item of group.optionItems || []) {
-        if (providedOptionIds.includes(item.id)) {
+        if (finalOptionIds.includes(item.id)) {
           optionsAdjustment += item.priceAdjustment;
           selectedOptions.push({
             optionGroupId: group.id,
@@ -896,7 +1073,7 @@ export class ChatbotToolEngineService {
     const priceAtSale = basePrice + optionsAdjustment;
     const quantity = Math.max(1, Number(args.quantity) || 1);
 
-    // 3. Quản lý Cart trong ctx
+    // 5. Quản lý Cart trong ctx
     if (!ctx.cart) ctx.cart = [];
 
     // Tạo khóa phân biệt dòng giỏ hàng (Line Identity)
@@ -928,6 +1105,7 @@ export class ChatbotToolEngineService {
 
     ctx.cartVersion = (ctx.cartVersion || 0) + 1;
     const snapshot = this.createCartSnapshot(ctx);
+    const autoNotice = autoSelectedNotes.length > 0 ? ` (tùy chọn: ${autoSelectedNotes.join(', ')})` : '';
 
     return {
       success: true,
@@ -936,7 +1114,12 @@ export class ChatbotToolEngineService {
       data: this.cartResultData(ctx),
       actionType: 'ADD_TO_CART',
       actionPayload: JSON.stringify(snapshot),
-      content: `Đã thêm ${quantity}x ${product.name} vào giỏ hàng. Hiện giỏ hàng của bạn có tổng tạm tính là ${snapshot.subTotal.toLocaleString('vi-VN')}đ.`,
+      content: `Đã thêm ${quantity}x ${product.name}${autoNotice} vào giỏ hàng. Hiện giỏ hàng của bạn có tổng tạm tính là ${snapshot.subTotal.toLocaleString('vi-VN')}đ. Bạn muốn chọn thêm món gì nữa không ạ?`,
+      suggestedReplies: [
+        { label: 'Kiểm tra giỏ hàng', action: 'SEND_MESSAGE', payload: 'Kiểm tra giỏ hàng của tôi' },
+        { label: 'Tiến hành chốt đơn', action: 'SEND_MESSAGE', payload: 'Tiến hành chốt đơn và thanh toán' },
+        { label: 'Gợi ý món ăn kèm', action: 'SEND_MESSAGE', payload: `Gợi ý món ăn kèm với ${product.name}` },
+      ],
     };
   }
 
@@ -1312,54 +1495,85 @@ export class ChatbotToolEngineService {
 
     const openSlots = slots.filter((s) => s.isAvailable);
 
-    const targetSlots = openSlots.length > 0 ? openSlots : slots;
+    // Dynamic ASAP Express Slot Fallback: nếu các slot trong ngày đã qua giờ thì tự động kích hoạt ASAP
+    let displaySlots = [...openSlots];
+    if (displaySlots.length === 0) {
+      const now = new Date();
+      const currentH = now.getHours().toString().padStart(2, '0');
+      const currentM = now.getMinutes().toString().padStart(2, '0');
+      const endTotalM = now.getMinutes() + 45;
+      const endH = ((now.getHours() + Math.floor(endTotalM / 60)) % 24).toString().padStart(2, '0');
+      const endM = (endTotalM % 60).toString().padStart(2, '0');
 
-    // If customer specified a concrete time (e.g. "11h45", "12h", "19:30")
-    if (args.requestedTime && targetSlots.length > 0) {
-      const matched = this.matchClosestSlot(args.requestedTime, targetSlots);
-      if (matched) {
-        ctx.operatingSlotId = matched.id;
-        ctx.deliveryDate = dateStr;
-        ctx.scheduledTime = `${matched.startTime} - ${matched.endTime}`;
+      const fallbackDbSlot = slots[0] || (await this.prisma.operatingSlot.findFirst({
+        where: { branchId: effectiveBranchId, isActive: true },
+      }));
 
-        return {
-          success: true,
-          code: 'ORDER_SLOT_SELECTED',
-          message: `Đã tự động chọn khung giờ ${matched.startTime} - ${matched.endTime} phù hợp nhất cho thời gian "${args.requestedTime}".`,
-          data: {
-            selectedSlot: matched,
-            slots: targetSlots,
-            date: dateStr,
-            orderType,
-            branchName: branch?.name,
-          },
-          actionType: 'SELECT_ORDER_SLOT',
-          actionPayload: JSON.stringify({
-            selectedSlot: matched,
-            slots: targetSlots,
-            date: dateStr,
-            orderType,
-            branchId: effectiveBranchId,
-            branchName: branch?.name,
-          }),
-          suggestedReplies: [
-            `Xác nhận: ${matched.startTime} - ${matched.endTime}`,
-            '⚡ Giao ngay (ASAP)',
-            'Chọn khung giờ khác',
-          ],
-          content: `Hệ thống đã tự động chọn khung giờ **${matched.startTime} - ${matched.endTime}** (phù hợp nhất với yêu cầu *${args.requestedTime}* của bạn) để giao hàng. Bạn có muốn điều chỉnh khung giờ nào khác không ạ?`,
-        };
-      }
+      const asapSlot = {
+        id: fallbackDbSlot ? fallbackDbSlot.id : 'ASAP_DELIVERY_SLOT',
+        startTime: `${currentH}:${currentM}`,
+        endTime: `${endH}:${endM}`,
+        isAvailable: true,
+        name: 'Giao ngay (ASAP 30-45 phút)',
+        leadTimeMinutes: 0,
+        orderType,
+        isAsap: true,
+      };
+
+      displaySlots = [asapSlot as any, ...slots.map((s) => ({ ...s, isAvailable: true }))];
+    }
+
+    // Tự động khớp và chọn slot nếu khách nói giờ cụ thể hoặc yêu cầu giao sớm/giao ngay
+    let selectedSlot: any = null;
+    if (args.requestedTime) {
+      selectedSlot = this.matchClosestSlot(args.requestedTime, displaySlots);
+    } else if (displaySlots.length > 0) {
+      selectedSlot = displaySlots[0];
+    }
+
+    if (selectedSlot) {
+      ctx.operatingSlotId = selectedSlot.id;
+      ctx.deliveryDate = dateStr;
+      ctx.scheduledTime = `${selectedSlot.startTime} - ${selectedSlot.endTime}`;
+      ctx.deliverySlotTime = selectedSlot.name || `${selectedSlot.startTime} - ${selectedSlot.endTime}`;
+
+      return {
+        success: true,
+        code: 'ORDER_SLOT_SELECTED',
+        message: `Đã chọn khung giờ ${selectedSlot.startTime} - ${selectedSlot.endTime} cho đơn giao hàng.`,
+        data: {
+          selectedSlot,
+          slots: displaySlots,
+          date: dateStr,
+          orderType,
+          branchName: branch?.name,
+        },
+        actionType: 'SELECT_ORDER_SLOT',
+        actionPayload: JSON.stringify({
+          selectedSlot,
+          slots: displaySlots,
+          date: dateStr,
+          orderType,
+          branchId: effectiveBranchId,
+          branchName: branch?.name,
+        }),
+        suggestedReplies: [
+          `Xác nhận: ${selectedSlot.startTime} - ${selectedSlot.endTime}`,
+          '⚡ Giao ngay (ASAP)',
+          'Chọn khung giờ khác',
+        ],
+        content: `Hệ thống đã chọn khung giờ **${selectedSlot.startTime} - ${selectedSlot.endTime}** (từ chi nhánh ${branch?.name}) cho đơn của bạn. Bạn có muốn đổi khung giờ nào khác không ạ?`,
+      };
     }
 
     return {
       success: true,
       code: 'ORDER_SLOTS_RETRIEVED',
-      message: `Tìm thấy ${openSlots.length} khung giờ khả dụng cho ngày ${dateStr}.`,
-      data: { slots: openSlots, date: dateStr, orderType, branchName: branch?.name },
+      message: `Tìm thấy ${displaySlots.length} khung giờ khả dụng cho ngày ${dateStr}.`,
+      data: { slots: displaySlots, date: dateStr, orderType, branchName: branch?.name },
       actionType: 'SELECT_ORDER_SLOT',
       actionPayload: JSON.stringify({
-        slots: openSlots,
+        slots: displaySlots,
         date: dateStr,
         orderType,
         branchId: effectiveBranchId,
@@ -1367,7 +1581,7 @@ export class ChatbotToolEngineService {
       }),
       suggestedReplies: [
         '⚡ Giao ngay (ASAP)',
-        ...openSlots.slice(0, 3).map((s) => `Khung giờ ${s.startTime} - ${s.endTime}`),
+        ...displaySlots.slice(0, 3).map((s) => `Khung giờ ${s.startTime} - ${s.endTime}`),
       ],
       content: `Dạ nhà hàng có các khung giờ nhận đơn trong ngày ${dateStr}. Bạn có thể chọn nhanh khung giờ phù hợp trên màn hình hoặc báo giờ bạn muốn nhận nhé!`,
     };
@@ -1440,6 +1654,26 @@ export class ChatbotToolEngineService {
       }
     }
 
+    const voucherSuggestions: (string | ChatbotSuggestion)[] = [];
+    const bestEligible = foodVouchers.find((v) => v.isEligible) || shippingVouchers.find((v) => v.isEligible);
+    if (bestEligible) {
+      voucherSuggestions.push({
+        label: `Áp dụng mã ${bestEligible.code}`,
+        action: 'SEND_MESSAGE',
+        payload: `Áp dụng voucher ${bestEligible.code} cho đơn của tôi`,
+      });
+    }
+    voucherSuggestions.push({
+      label: 'Xem ưu đãi đang áp dụng',
+      action: 'SEND_MESSAGE',
+      payload: 'Cho tôi xem chi tiết ưu đãi và khuyến mãi hôm nay',
+    });
+    voucherSuggestions.push({
+      label: 'Kiểm tra giỏ hàng',
+      action: 'SEND_MESSAGE',
+      payload: 'Kiểm tra giỏ hàng của tôi',
+    });
+
     return {
       success: true,
       code: 'VOUCHERS_FOUND',
@@ -1447,6 +1681,7 @@ export class ChatbotToolEngineService {
       data: { foodVouchers, shippingVouchers, cartTotal },
       actionType: 'SHOW_VOUCHERS',
       actionPayload: JSON.stringify({ foodVouchers, shippingVouchers }),
+      suggestedReplies: voucherSuggestions.slice(0, 3),
     };
   }
 
@@ -1788,13 +2023,21 @@ export class ChatbotToolEngineService {
       shippingDiscount = quote.shippingDiscount;
     }
 
-    // Chuẩn bị tính toán qua OrderPricingService
+    // Chuẩn bị tính toán qua OrderPricingService kèm taxPercentage từ database
+    const cartProductIds = ctx.cart.map((item) => item.productId).filter(Boolean);
+    const cartDbProducts = await this.prisma.product.findMany({
+      where: { id: { in: cartProductIds } },
+      select: { id: true, taxPercentage: true },
+    });
+    const cartTaxMap = new Map(cartDbProducts.map((p) => [p.id, p.taxPercentage || 0]));
+
     const pricingItems = ctx.cart.map((item) => ({
       productId: item.productId,
       name: item.productName,
       priceAtSale: item.priceAtSale,
       originalPriceAtSale: item.basePrice,
       quantity: item.quantity,
+      taxPercentage: cartTaxMap.get(item.productId) || 0,
     }));
 
     ctx.discountVoucherCode = ctx.discountVoucherCode?.trim().toUpperCase();
@@ -1859,6 +2102,22 @@ export class ChatbotToolEngineService {
       pointsDiscount: (ctx.pointsToUse || 0) * (branch.pointRedeemRate || 1000),
     });
 
+    // Lấy phương thức thanh toán động từ Database
+    const activePaymentMethodsRaw = await this.paymentMethodService.getActiveMethods(pricing.totalAmount, branch.id);
+    const availablePaymentMethods = activePaymentMethodsRaw
+      .filter((m) => m.isEligible && (fulfillmentType === 'DINE_IN' ? true : (m.type !== 'CASH' && m.type !== 'CARD')))
+      .map((m) => ({
+        code: m.code,
+        name: m.name,
+        type: m.type,
+        description: m.description,
+        instructionNote: (m as any).instructionNote || m.description,
+      }));
+
+    if (availablePaymentMethods.length > 0 && (!ctx.paymentMethod || !availablePaymentMethods.some((m) => m.code === ctx.paymentMethod))) {
+      ctx.paymentMethod = availablePaymentMethods[0].code;
+    }
+
     const previewData = {
       items: ctx.cart,
       subTotal: pricing.subTotal,
@@ -1872,6 +2131,7 @@ export class ChatbotToolEngineService {
       deliveryAddress: address ? `${address.streetDetail}, ${address.ward}, ${address.province}` : null,
       deliverySlotTime: ctx.deliverySlotTime || 'Giao sớm nhất',
       paymentMethod: ctx.paymentMethod || 'COD',
+      availablePaymentMethods,
       discountVoucherCode: ctx.discountVoucherCode,
       shippingVoucherCode: ctx.shippingVoucherCode,
     };
@@ -1880,6 +2140,8 @@ export class ChatbotToolEngineService {
     ctx.orderConfirmation = confirmation.state;
     ctx.lastIdempotencyKey = crypto.randomUUID();
 
+    const paymentMethodName = availablePaymentMethods.find((m) => m.code === ctx.paymentMethod)?.name || ctx.paymentMethod || 'COD';
+
     return {
       success: true,
       code: 'ORDER_PREVIEW_READY',
@@ -1887,7 +2149,7 @@ export class ChatbotToolEngineService {
       data: previewData,
       actionType: 'ORDER_PREVIEW',
       actionPayload: JSON.stringify({ ...previewData, previewToken: confirmation.previewToken }),
-      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT và phí ship). Bạn có muốn xác nhận đặt đơn hàng này với phương thức thanh toán [${ctx.paymentMethod || 'COD'}] không ạ?`,
+      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT và phí ship). Phương thức thanh toán đang chọn: [${paymentMethodName}]. Bạn có thể chọn đổi phương thức thanh toán ngay bên dưới hoặc xác nhận đặt đơn hàng nhé!`,
       suggestedReplies: ['Xác nhận đặt đơn', 'Đổi phương thức thanh toán', 'Thêm món khác'],
       requiresConfirmation: true,
     };
@@ -1911,6 +2173,7 @@ export class ChatbotToolEngineService {
     const branchId = ctx.currentBranchId || (await this.prisma.branch.findFirst({ where: { onlineOrderingEnabled: true } }))?.id;
     if (!branchId) return { success: false, code: 'BRANCH_REQUIRED', message: 'Thiếu thông tin chi nhánh.' };
 
+    if (args.paymentMethod) ctx.paymentMethod = args.paymentMethod;
     const paymentMethod = ctx.paymentMethod || 'COD';
     const idempotencyKey = ctx.lastIdempotencyKey!;
 
@@ -1938,8 +2201,28 @@ export class ChatbotToolEngineService {
       expectedTotalAmount: ctx.expectedTotalAmount,
     };
 
-    // Gọi atomic createOrder từ OrderService
-    const orderResult = await this.orderService.createOrder(userId || 'guest-user', payload);
+    // Gọi atomic createOrder từ OrderService có xử lý khi giá hoặc điều kiện thay đổi
+    let orderResult: any;
+    try {
+      orderResult = await this.orderService.createOrder(userId || 'guest-user', payload);
+    } catch (err: any) {
+      if (err.response?.error === 'CHECKOUT_CHANGED' || err.message?.includes('CHECKOUT_CHANGED')) {
+        const newTotal = err.response?.newTotal || 0;
+        ctx.expectedTotalAmount = newTotal;
+        const confirmation = this.createConfirmation(this.orderConfirmationPayload(ctx));
+        ctx.orderConfirmation = confirmation.state;
+        return {
+          success: false,
+          code: 'CHECKOUT_CHANGED',
+          recoverable: true,
+          message: `Đơn hàng vừa có cập nhật lại giá hoặc ưu đãi từ hệ thống. Tổng thanh toán mới là ${newTotal.toLocaleString('vi-VN')}đ. Bạn có đồng ý tiếp tục đặt đơn với số tiền mới này không ạ?`,
+          data: { newTotal, previewToken: confirmation.previewToken },
+          suggestedReplies: ['Tôi đồng ý đặt với giá mới', 'Hủy đơn hàng'],
+          requiresConfirmation: true,
+        };
+      }
+      throw err;
+    }
     const createdOrder = await this.prisma.order.findUnique({
       where: { id: orderResult.orderId },
     });

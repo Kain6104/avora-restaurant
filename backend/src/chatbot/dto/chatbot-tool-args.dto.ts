@@ -27,7 +27,7 @@ const CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export const FULFILLMENT_TYPES = ['DELIVERY', 'TAKE_AWAY', 'TAKEAWAY', 'DINE_IN'] as const;
 export const ORDER_SLOT_TYPES = ['DELIVERY', 'TAKE_AWAY', 'TAKEAWAY'] as const;
-export const PAYMENT_METHODS = ['COD', 'TRANSFER', 'PAYOS', 'MOMO', 'VNPAY'] as const;
+export const PAYMENT_METHODS = ['COD', 'SEPAY_QR', 'TRANSFER', 'PAYOS', 'MOMO', 'VNPAY', 'CASH', 'CARD'] as const;
 
 export class EmptyToolArgsDto {
   @Allow()
@@ -124,6 +124,13 @@ export class AddToCartArgsDto extends ProductLookupArgsDto {
   @IsString({ each: true })
   @MaxLength(100, { each: true })
   optionItemIds?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @IsString({ each: true })
+  @MaxLength(100, { each: true })
+  optionNames?: string[];
 
   @IsOptional()
   @IsString()
@@ -330,6 +337,11 @@ export class PlaceOrderArgsDto {
   @IsString()
   @MaxLength(500)
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  paymentMethod?: string;
 }
 
 export class CheckOrderArgsDto {

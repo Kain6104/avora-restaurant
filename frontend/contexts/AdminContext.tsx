@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
+import { getAuthToken, getAuthHeaders, clearAuthSession, saveAuthSession } from '@/lib/auth';
 
 export interface AdminUser {
   id: string;
@@ -10,6 +11,7 @@ export interface AdminUser {
   fullName: string;
   avatarUrl?: string | null;
   role?: string;
+  roleName?: string;
   branchId?: string | null;
   branch?: { id: string; name: string } | null;
 }
@@ -126,12 +128,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   const fetchCapabilities = useCallback(async () => {
     try {
-      const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('access_token')) : null;
-      const headers: Record<string, string> = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
+      const headers = getAuthHeaders();
       const res = await fetch('/api/auth/me/capabilities', {
         credentials: 'include',
         headers,
@@ -141,8 +138,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         // Fallback to /api/auth/me if capabilities endpoint fails
         const meRes = await fetch('/api/auth/me', { credentials: 'include', headers });
         if (!meRes.ok) {
-          setCachedCapabilities(null);
-          router.push('/login');
+          // Chỉ redirect khi thực sự không có session xác thực nào
+          if (res.status === 401 || meRes.status === 401) {
+            clearAuthSession();
+            setCachedCapabilities(null);
+            router.push('/login');
+          }
           return null;
         }
         const meData = await meRes.json();
@@ -151,7 +152,20 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           router.push('/');
           return null;
         }
+        if (meData.token) {
+          saveAuthSession(meData.token, meData);
+        }
         setUser(meData);
+        if (meData.capabilities) {
+          setCapabilities(meData.capabilities);
+          setCachedCapabilities(meData.capabilities);
+          setEffectivePermissions(meData.capabilities.effectivePermissions || {});
+          setAllBranches(meData.capabilities.allBranches || []);
+          if (meData.capabilities.roles?.some((r: any) => r.code === 'ADMIN') || meData.role === 'ADMIN') {
+            setAvailableBranches(meData.capabilities.allBranches || []);
+          }
+          return meData.capabilities;
+        }
         return null;
       }
 
@@ -163,7 +177,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       setEffectivePermissions(caps.effectivePermissions || {});
 
       // Calculate distinct branches the user is authorized to operate on
-      const isSystemAdmin = caps.roles.some((r) => r.code === 'ADMIN');
+      const isSystemAdmin = caps.roles.some((r) => r.code === 'ADMIN') || caps.user?.role === 'ADMIN';
       let branchesForUser: Branch[] = [];
 
       if (isSystemAdmin) {
@@ -351,15 +365,17 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
    */
   const can = useCallback(
     (permissionKey: string, branchId?: string | null): boolean => {
+      // Check System Admin role across all possible representations
+      const isSystemAdmin =
+        capabilities?.roles?.some((r) => r.code === 'ADMIN') ||
+        capabilities?.user?.role === 'ADMIN' ||
+        user?.role === 'ADMIN';
+
+      if (isSystemAdmin) return true;
+
       if (!capabilities) {
-        // Fallback check on user.role
-        if (user?.role === 'ADMIN') return true;
         return false;
       }
-
-      // Check System Admin role
-      const isSystemAdmin = capabilities.roles.some((r) => r.code === 'ADMIN');
-      if (isSystemAdmin) return true;
 
       const perm = effectivePermissions[permissionKey];
       if (!perm) return false;

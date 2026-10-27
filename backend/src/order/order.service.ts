@@ -614,6 +614,7 @@ export class OrderService {
     const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
     if (!user) throw new BadRequestException('User not found');
 
+    const isTakeaway = orderType === 'TAKE_AWAY' || orderType === 'TAKEAWAY';
     let address: any = null;
     if (addressId) {
       address = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
@@ -624,13 +625,15 @@ export class OrderService {
         (await this.prisma.address.findFirst({ where: { userId }, orderBy: { updatedAt: 'desc' } }));
     }
 
-    if (!address) {
+    if (!address && !isTakeaway) {
       throw new BadRequestException('Vui lòng chọn hoặc thêm địa chỉ nhận hàng trước khi đặt đơn.');
     }
 
-    const customerName = address.recipientName || user.fullName || 'Quý khách';
-    const customerPhone = address.phone || user.phone || '';
-    const deliveryAddress = `${address.streetDetail}, ${address.ward}, ${address.province}`;
+    const customerName = address?.recipientName || user.fullName || 'Quý khách';
+    const customerPhone = address?.phone || user.phone || '';
+    const deliveryAddress = isTakeaway
+      ? (address ? `[Nhận tại quầy] ${address.streetDetail}, ${address.ward}, ${address.province}` : 'Nhận tại quầy (Takeaway)')
+      : `${address?.streetDetail}, ${address?.ward}, ${address?.province}`;
 
     // 2. Wrap order logic in Transaction with Atomic Updates
     let txResult: any;
@@ -849,35 +852,39 @@ export class OrderService {
 
       const branchLat = branch?.latitude ?? 21.028511;
       const branchLng = branch?.longitude ?? 105.854444;
-      let destLat = address.latitude;
-      let destLng = address.longitude;
+      let destLat = address?.latitude;
+      let destLng = address?.longitude;
       if (destLat === null || destLat === undefined || destLng === null || destLng === undefined) {
         destLat = branchLat + 0.025;
         destLng = branchLng + 0.025;
       }
 
-      const route = await this.shippingFeeService.calculateRoute(
-        { lat: branchLat, lng: branchLng },
-        { lat: destLat, lng: destLng },
-      );
+      let route: any = null;
+      let shippingFee = 0;
+      if (!isTakeaway) {
+        route = await this.shippingFeeService.calculateRoute(
+          { lat: branchLat, lng: branchLng },
+          { lat: destLat, lng: destLng },
+        );
 
-      const distanceKm = Math.round((route.distanceMeters / 1000) * 10) / 10;
-      const shippingPolicy = await this.shippingFeeService.getShippingPolicy(orderBranchId);
+        const distanceKm = Math.round((route.distanceMeters / 1000) * 10) / 10;
+        const shippingPolicy = await this.shippingFeeService.getShippingPolicy(orderBranchId);
 
-      if (!shippingPolicy.deliveryEnabled) {
-        throw new BadRequestException('Dịch vụ giao hàng trực tuyến hiện đang tạm đóng.');
-      }
-      if (distanceKm > shippingPolicy.maxDeliveryDistanceKm) {
-        throw new BadRequestException(
-          `Địa chỉ nhận hàng nằm ngoài phạm vi giao hàng của chi nhánh (${distanceKm} km > tối đa ${shippingPolicy.maxDeliveryDistanceKm} km).`,
+        if (!shippingPolicy.deliveryEnabled) {
+          throw new BadRequestException('Dịch vụ giao hàng trực tuyến hiện đang tạm đóng.');
+        }
+        if (distanceKm > shippingPolicy.maxDeliveryDistanceKm) {
+          throw new BadRequestException(
+            `Địa chỉ nhận hàng nằm ngoài phạm vi giao hàng của chi nhánh (${distanceKm} km > tối đa ${shippingPolicy.maxDeliveryDistanceKm} km).`,
+          );
+        }
+
+        shippingFee = this.shippingFeeService.calculateFeeFromDistance(
+          distanceKm,
+          shippingPolicy,
+          subTotal,
         );
       }
-
-      const shippingFee = this.shippingFeeService.calculateFeeFromDistance(
-        distanceKm,
-        shippingPolicy,
-        subTotal,
-      );
 
       let discountAmount = 0;
       let shippingDiscount = 0;
@@ -1068,22 +1075,24 @@ export class OrderService {
         include: { branches: true },
       });
 
-      if (pMethod) {
-        if (!pMethod.isActive) {
-          throw new BadRequestException(`Phương thức thanh toán "${pMethod.name}" hiện đang tạm ngưng phục vụ`);
+      if (!pMethod) {
+        throw new BadRequestException(`Phương thức thanh toán "${paymentMethod}" không tồn tại hoặc không được hỗ trợ`);
+      }
+
+      if (!pMethod.isActive) {
+        throw new BadRequestException(`Phương thức thanh toán "${pMethod.name}" hiện đang tạm ngưng phục vụ`);
+      }
+      if (!pMethod.isAllBranches && orderBranchId && pMethod.branches && pMethod.branches.length > 0) {
+        const isBranchAllowed = pMethod.branches.some((b: any) => b.id === orderBranchId);
+        if (!isBranchAllowed) {
+          throw new BadRequestException(`Phương thức thanh toán "${pMethod.name}" không áp dụng cho chi nhánh đã chọn`);
         }
-        if (!pMethod.isAllBranches && orderBranchId && pMethod.branches && pMethod.branches.length > 0) {
-          const isBranchAllowed = pMethod.branches.some((b: any) => b.id === orderBranchId);
-          if (!isBranchAllowed) {
-            throw new BadRequestException(`Phương thức thanh toán "${pMethod.name}" không áp dụng cho chi nhánh đã chọn`);
-          }
-        }
-        const orderSubTotal = pricingBreakdown.subTotal;
-        if (orderSubTotal < pMethod.minOrderValue) {
-          throw new BadRequestException(
-            `Phương thức thanh toán "${pMethod.name}" yêu cầu đơn hàng tối thiểu (trước giảm giá) từ ${pMethod.minOrderValue.toLocaleString('vi-VN')}đ (Tiền hàng hiện tại: ${orderSubTotal.toLocaleString('vi-VN')}đ)`
-          );
-        }
+      }
+      const orderSubTotal = pricingBreakdown.subTotal;
+      if (orderSubTotal < pMethod.minOrderValue) {
+        throw new BadRequestException(
+          `Phương thức thanh toán "${pMethod.name}" yêu cầu đơn hàng tối thiểu (trước giảm giá) từ ${pMethod.minOrderValue.toLocaleString('vi-VN')}đ (Tiền hàng hiện tại: ${orderSubTotal.toLocaleString('vi-VN')}đ)`
+        );
       }
 
       // 7. Ghi nhận công suất khung giờ nếu có chọn slot
@@ -1107,10 +1116,10 @@ export class OrderService {
           deliveryAddress,
           latitude: destLat,
           longitude: destLng,
-          deliveryDistanceMeters: route.distanceMeters,
-          deliveryDurationSeconds: route.durationSeconds,
-          shippingProvider: route.provider,
-          shippingCalculatedAt: route.calculatedAt,
+          deliveryDistanceMeters: route?.distanceMeters ?? 0,
+          deliveryDurationSeconds: route?.durationSeconds ?? 0,
+          shippingProvider: route?.provider ?? 'INTERNAL',
+          shippingCalculatedAt: route?.calculatedAt ?? now,
           shippingOriginLatitude: branchLat,
           shippingOriginLongitude: branchLng,
           shippingDestinationLatitude: destLat,
@@ -1120,7 +1129,7 @@ export class OrderService {
           paymentStatus: 'PENDING',
           status: OrderStatus.PENDING,
           orderSource: OrderSource.ONLINE,
-          orderType: SlotOrderType.DELIVERY,
+          orderType: isTakeaway ? SlotOrderType.TAKEAWAY : SlotOrderType.DELIVERY,
           subTotal: pricingBreakdown.subTotal,
           discountAmount: pricingBreakdown.discountAmount,
           shippingFee: pricingBreakdown.shippingFee,

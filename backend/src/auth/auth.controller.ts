@@ -24,6 +24,7 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
 import { randomUUID } from 'crypto';
+import { Throttle } from '@nestjs/throttler';
 
 interface DesktopAuthEntry {
   token: string;
@@ -80,19 +81,22 @@ export class AuthController {
   }
 
   @Post('register')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async register(@Body() body: any) {
     return this.authService.register(body);
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: any, @Res({ passthrough: true }) res: Response) {
     const data = await this.authService.login(body);
 
-    // Set HTTP-Only Cookie
+    // Set HTTP-Only Cookie with production-aware secure flag
+    const isSecure = process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL?.startsWith('https');
     res.cookie('token', data.access_token, {
       httpOnly: true,
-      secure: false, // Set to true if using HTTPS in production
+      secure: !!isSecure,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -108,6 +112,7 @@ export class AuthController {
   }
 
   @Post('desktop/login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async desktopLogin(@Body() body: any) {
     const data = await this.authService.login(body);
@@ -201,8 +206,14 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@Res({ passthrough: true }) res: Response) {
-    res.clearCookie('token', { path: '/' });
-    return { message: 'Đăng xuất thành công' };
+    const isSecure = process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL?.startsWith('https');
+    res.clearCookie('token', {
+      path: '/',
+      httpOnly: true,
+      secure: !!isSecure,
+      sameSite: 'lax',
+    });
+    return { success: true, message: 'Đăng xuất thành công' };
   }
 
   @Get('google')
@@ -217,10 +228,11 @@ export class AuthController {
     // This will be called after successful Google authentication
     const token = this.authService.generateToken(req.user);
 
-    // Set HTTP-Only Cookie
+    // Set HTTP-Only Cookie with production-aware secure flag
+    const isSecure = process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL?.startsWith('https');
     res.cookie('token', token, {
       httpOnly: true,
-      secure: false, // Set to true if using HTTPS in production
+      secure: !!isSecure,
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
@@ -328,11 +340,11 @@ export class AuthController {
       `);
     }
 
-    // Redirect back to frontend with loginSuccess flag
+    // Redirect back to frontend with loginSuccess flag and auth_token
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const cleanPath = targetRedirect.startsWith('/') ? targetRedirect : `/${targetRedirect}`;
     const separator = cleanPath.includes('?') ? '&' : '?';
-    res.redirect(`${frontendUrl}${cleanPath}${separator}loginSuccess=true`);
+    res.redirect(`${frontendUrl}${cleanPath}${separator}auth_token=${encodeURIComponent(token)}&loginSuccess=true`);
   }
 
   @Get('me')
@@ -373,21 +385,25 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async forgotPassword(@Body('email') email: string) {
     return this.authService.forgotPassword(email);
   }
 
   @Post('reset-password')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async resetPassword(@Body() body: any) {
     return this.authService.resetPassword(body.email, body.otp, body.newPassword);
   }
 
   @Post('verify-otp')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   async verifyOtp(@Body() body: any) {
     return this.authService.verifyOtp(body.email, body.otp);
   }
 
   @Post('verify-account')
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   async verifyAccount(@Body() body: any, @Res({ passthrough: true }) res: Response) {
     const data = await this.authService.verifyAccount(body.email, body.otp);
@@ -405,6 +421,7 @@ export class AuthController {
   }
 
   @Post('resend-verification')
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   async resendVerification(@Body('email') email: string) {
     return this.authService.resendVerificationOtp(email);
   }

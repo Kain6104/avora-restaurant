@@ -318,9 +318,11 @@ export class AuthService {
 
     const { passwordHash, ...result } = user;
     const capabilities = await this.authorizationService.getCapabilities(userId);
+    const token = this.generateToken(user);
 
     return {
       ...result,
+      token,
       hasPassword: !!passwordHash,
       permissions: Object.keys(capabilities.effectivePermissions),
       roles: capabilities.roles,

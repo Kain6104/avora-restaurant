@@ -13,8 +13,9 @@ import { useCart } from '../context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { toast } from 'react-hot-toast';
+import { logoutUser, getAuthHeaders, getApiBaseUrl, getAuthToken, saveAuthSession } from '@/lib/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) {
   const [phone, setPhone] = useState('');
@@ -216,31 +217,34 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   }, [initialCategories]);
 
   /* ── fetch user ── */
+  /* ── fetch user ── */
   const fetchCurrentUser = useCallback(async () => {
     try {
-      const apiUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? ''
-        : (process.env.NEXT_PUBLIC_API_URL || '');
-      const token = typeof window !== 'undefined' ? (localStorage.getItem('token') || localStorage.getItem('access_token')) : null;
-      const headers: Record<string, string> = { 'ngrok-skip-browser-warning': 'true' };
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch(`${apiUrl}/api/auth/me`, {
+      const baseUrl = getApiBaseUrl();
+      const token = getAuthToken();
+      const headers = getAuthHeaders();
+      const res = await fetch(`${baseUrl}/api/auth/me`, {
         credentials: 'include',
         headers,
       });
       if (res.ok) {
         const userData = await res.json();
         setUser(userData);
-        if (typeof window !== 'undefined') {
+        if (userData.token) {
+          saveAuthSession(userData.token, userData);
+        } else if (typeof window !== 'undefined') {
           localStorage.setItem('user', JSON.stringify(userData));
         }
       } else {
+        if (!token) {
+          setUser(null);
+        }
+      }
+    } catch {
+      if (!getAuthToken()) {
         setUser(null);
       }
-    } catch { setUser(null); }
+    }
   }, []);
 
   useEffect(() => {
@@ -262,15 +266,25 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      if (url.searchParams.get('loginSuccess') === 'true') {
+      const urlToken = url.searchParams.get('auth_token') || url.searchParams.get('token');
+      const isLoginSuccess = url.searchParams.get('loginSuccess') === 'true';
+
+      if (urlToken) {
+        saveAuthSession(urlToken);
+        url.searchParams.delete('auth_token');
+        url.searchParams.delete('token');
+      }
+
+      if (isLoginSuccess || urlToken) {
+        url.searchParams.delete('loginSuccess');
+        window.history.replaceState({}, '', url.toString());
         import('react-hot-toast').then(({ toast }) => {
           toast.success('Đăng nhập thành công!');
         });
-        url.searchParams.delete('loginSuccess');
-        window.history.replaceState({}, '', url.toString());
+        fetchCurrentUser();
       }
     }
-  }, []);
+  }, [fetchCurrentUser]);
 
   const handleNotificationClick = (notif: any) => {
     if (!notif.isRead) {
@@ -311,14 +325,7 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   }, [searchQuery]);
 
   const handleLogout = async () => {
-    try {
-      await fetch(`${API_URL}/api/auth/logout`, {
-        method: 'POST', credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': 'true' },
-      });
-      localStorage.removeItem('user');
-      window.location.reload();
-    } catch { }
+    await logoutUser({ redirectUrl: '/', reload: true });
   };
 
   /* ── scroll: compact desktop header ── */

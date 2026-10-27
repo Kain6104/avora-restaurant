@@ -6,6 +6,7 @@ import { io, Socket } from 'socket.io-client';
 import { useCart, CartItem, ServerCartSnapshot } from '../context/CartContext';
 import { toast } from 'react-hot-toast';
 import { useRouter, usePathname } from 'next/navigation';
+import { getAuthToken, getAuthHeaders, getApiBaseUrl } from '@/lib/auth';
 
 const renderFormattedText = (text: string) => {
   const regex = /(\[.*?\]\(.*?\))|(\*\*.*?\*\*)/g;
@@ -35,6 +36,13 @@ type ChatActionType = "ADD_TO_CART" | "ADD_ALL_TO_CART" | "ADD_ALL_SUMMARY" | "C
 const GUEST_HISTORY_STORAGE_KEY = 'avora_chat_guest_history';
 const GUEST_HISTORY_TTL_MS = 30 * 60 * 1000;
 
+export interface ChatSuggestion {
+  label: string;
+  action?: 'SEND_MESSAGE' | 'SHOW_PRODUCT' | 'ADD_TO_CART' | 'VIEW_CATEGORY' | 'APPLY_VOUCHER' | string;
+  payload?: any;
+  entityId?: string;
+}
+
 interface ChatMessage {
   id: string;
   sessionId: string;
@@ -43,7 +51,7 @@ interface ChatMessage {
   actionType: ChatActionType | null;
   actionPayload: string | null;
   createdAt: string;
-  suggestedReplies?: string[];
+  suggestedReplies?: (string | ChatSuggestion)[];
 }
 
 export function FloatingChatbot() {
@@ -57,6 +65,7 @@ export function FloatingChatbot() {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [addingToCartId, setAddingToCartId] = useState<string | null>(null);
+  const [activeSuggestionLabel, setActiveSuggestionLabel] = useState<string | null>(null);
   const [isAddingAll, setIsAddingAll] = useState(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [checkoutAddressId, setCheckoutAddressId] = useState<string | null>(null);
@@ -69,6 +78,8 @@ export function FloatingChatbot() {
   const [personality, setPersonality] = useState("Thân thiện");
   const [user, setUser] = useState<any>(null);
   const [topProducts, setTopProducts] = useState<any[]>([]);
+  const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<Record<string, string>>({});
+  const [isLocating, setIsLocating] = useState(false);
 
   const [isDragging, setIsDragging] = useState(false);
   const [buttonPos, setButtonPos] = useState({ bottom: 24, right: 24 });
@@ -79,10 +90,10 @@ export function FloatingChatbot() {
   const dragStartRef = useRef<{ x: number, y: number, b: number, r: number } | null>(null);
   // --- VOICE MODE STATES ---
   const [isVoiceMode, setIsVoiceMode] = useState(false);
-  const [voiceState, _setVoiceState] = useState<'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING'>('IDLE');
+  const [voiceState, _setVoiceState] = useState<'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING' | 'PERMISSION_DENIED' | 'RECONNECTING'>('IDLE');
   const voiceStateRef = useRef(voiceState);
 
-  const setVoiceState = (state: 'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING') => {
+  const setVoiceState = (state: 'IDLE' | 'LISTENING' | 'THINKING' | 'SPEAKING' | 'PERMISSION_DENIED' | 'RECONNECTING') => {
     voiceStateRef.current = state;
     _setVoiceState(state);
   };
@@ -200,8 +211,14 @@ export function FloatingChatbot() {
 
     fetchGlobalTopProducts();
 
-    fetch(`${API_URL}/api/auth/me`, { credentials: 'include', headers: { 'ngrok-skip-browser-warning': 'true' } })
-      .then(res => res.ok ? res.json() : null)
+    const token = getAuthToken();
+    const authPromise = token
+      ? fetch(`${API_URL}/api/auth/me`, { credentials: 'include', headers: getAuthHeaders() })
+          .then(res => res.ok ? res.json() : null)
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    authPromise
       .then(data => {
         if (data) {
           setUser(data);
@@ -251,6 +268,14 @@ export function FloatingChatbot() {
         localStorage.removeItem('avora_chat_hidden_until');
       }
     }
+  }, []);
+
+  useEffect(() => {
+    const handleUserUpdate = (e: any) => {
+      setUser(e.detail || null);
+    };
+    window.addEventListener('user-updated', handleUserUpdate);
+    return () => window.removeEventListener('user-updated', handleUserUpdate);
   }, []);
 
   const hideChatbot = (minutes: number) => {
@@ -606,7 +631,20 @@ export function FloatingChatbot() {
       });
 
       socket.on('voice_error', (err: { code?: string; message?: string; retryable?: boolean }) => {
-        toast.error(err.message || 'Voice server đã đóng kết nối.');
+        if (err.code === 'AUTH_REQUIRED') {
+          const sysMsg: ChatMessage = {
+            id: `sys-voice-${Date.now()}`,
+            sessionId: sessionId || "temp-session",
+            senderType: "SYSTEM",
+            content: "Tính năng Voice AI chỉ dành cho thành viên đã đăng nhập. Quý khách vui lòng đăng nhập để sử dụng nhé!",
+            actionType: 'PROMPT_LOGIN' as any,
+            actionPayload: null,
+            createdAt: new Date().toISOString()
+          };
+          setMessages(prev => [...prev, sysMsg]);
+        } else {
+          toast.error(err.message || 'Voice server đã đóng kết nối.');
+        }
         stopVoiceMode();
       });
 
@@ -696,10 +734,16 @@ export function FloatingChatbot() {
         }
       });
 
-    } catch (err) {
+    } catch (err: any) {
       console.error("Mic error:", err);
-      toast.error("Không thể truy cập Microphone.");
-      stopVoiceMode();
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setIsVoiceMode(true);
+        setVoiceState('PERMISSION_DENIED');
+        toast.error("Trình duyệt đang chặn truy cập Microphone.");
+      } else {
+        toast.error("Không thể truy cập Microphone.");
+        stopVoiceMode();
+      }
     }
   };
 
@@ -772,6 +816,51 @@ export function FloatingChatbot() {
     }
     await handleSendMessage(confirmationMessage);
   }
+
+  const handleShareLocation = () => {
+    if (typeof window === 'undefined') return;
+    if (!("geolocation" in navigator)) {
+      toast.error('Trình duyệt của bạn không hỗ trợ định vị GPS. Vui lòng nhập địa chỉ nhận hàng vào ô chat.');
+      setInputValue('Địa chỉ nhận hàng của tôi là: ');
+      inputRef.current?.focus();
+      return;
+    }
+
+    setIsLocating(true);
+    const toastId = toast.loading('Đang lấy vị trí GPS từ thiết bị...');
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setIsLocating(false);
+        toast.dismiss(toastId);
+        toast.success('Đã chia sẻ vị trí thành công!');
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+        if (isVoiceMode && socketRef.current) {
+          socketRef.current.emit('client_content', {
+            turns: [{ role: 'user', parts: [{ text: `[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon}]` }] }],
+            turnComplete: true
+          });
+        } else {
+          handleSendMessage(`[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon}]`);
+        }
+      },
+      (error) => {
+        setIsLocating(false);
+        toast.dismiss(toastId);
+        let errorMsg = 'Không thể lấy vị trí hiện tại.';
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMsg = 'Quyền truy cập vị trí trên trình duyệt đã bị từ chối.';
+        } else if (error.code === error.TIMEOUT) {
+          errorMsg = 'Quá thời gian chờ phản hồi từ GPS thiết bị.';
+        }
+        toast.error(`${errorMsg} Bạn có thể nhập địa chỉ nhận hàng trực tiếp vào ô chat.`);
+        setInputValue('Địa chỉ nhận hàng của tôi là: ');
+        inputRef.current?.focus();
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+    );
+  };
 
   const handleSuggestVoucher = async () => {
     try {
@@ -1040,11 +1129,11 @@ export function FloatingChatbot() {
       let currentUserId = user?.id;
 
       // Double check auth status just in case component state is stale after login
-      if (!currentUserId) {
+      if (!currentUserId && getAuthToken()) {
         try {
           const authRes = await fetch(`${API_URL}/api/auth/me`, {
             credentials: 'include',
-            headers: { 'ngrok-skip-browser-warning': 'true' }
+            headers: getAuthHeaders()
           });
           if (authRes.ok) {
             const authData = await authRes.json();
@@ -1342,6 +1431,52 @@ export function FloatingChatbot() {
     m.senderType === 'SYSTEM'
   );
 
+  const latestAiMessageId = [...displayMessages].reverse().find(m => m.senderType === 'AI')?.id;
+
+  const handleSuggestionClick = async (suggestion: string | ChatSuggestion, msgId: string) => {
+    if (isLoading || activeSuggestionLabel) return;
+
+    if (typeof suggestion === 'string') {
+      setActiveSuggestionLabel(suggestion);
+      try {
+        if (isVoiceMode && socketRef.current) {
+          socketRef.current.emit('client_content', {
+            turns: [{ role: 'user', parts: [{ text: suggestion }] }],
+            turnComplete: true,
+          });
+        }
+        await handleSendMessage(suggestion);
+      } finally {
+        setActiveSuggestionLabel(null);
+      }
+      return;
+    }
+
+    setActiveSuggestionLabel(suggestion.label);
+    try {
+      if (suggestion.action === 'ADD_TO_CART' && suggestion.payload) {
+        const payloadStr = typeof suggestion.payload === 'string'
+          ? suggestion.payload
+          : JSON.stringify(suggestion.payload);
+        await handleAddToCart(payloadStr, msgId);
+      } else {
+        const textToSend = typeof suggestion.payload === 'string'
+          ? suggestion.payload
+          : suggestion.label;
+
+        if (isVoiceMode && socketRef.current) {
+          socketRef.current.emit('client_content', {
+            turns: [{ role: 'user', parts: [{ text: textToSend }] }],
+            turnComplete: true,
+          });
+        }
+        await handleSendMessage(textToSend);
+      }
+    } finally {
+      setActiveSuggestionLabel(null);
+    }
+  };
+
   if (hideUntil && Date.now() < hideUntil) {
     return null;
   }
@@ -1463,11 +1598,15 @@ export function FloatingChatbot() {
                 }}
               ></div>
 
-              <div className={`relative z-10 w-full h-full rounded-full flex items-center justify-center text-white shadow-[0_0_15px_rgba(0,0,0,0.3)] transition-colors duration-500 border border-white/10 ${voiceState === 'LISTENING' ? 'bg-gradient-to-br from-red-500 to-rose-600' : (voiceState === 'THINKING' ? 'bg-gradient-to-br from-amber-400 to-orange-500' : (voiceState === 'SPEAKING' ? 'bg-gradient-to-br from-emerald-400 to-green-600' : 'bg-slate-700'))}`}>
+              <div className={`relative z-10 w-full h-full rounded-full flex items-center justify-center text-white shadow-[0_0_15px_rgba(0,0,0,0.3)] transition-colors duration-500 border border-white/10 ${voiceState === 'LISTENING' ? 'bg-gradient-to-br from-red-500 to-rose-600' : (voiceState === 'THINKING' ? 'bg-gradient-to-br from-amber-400 to-orange-500' : (voiceState === 'SPEAKING' ? 'bg-gradient-to-br from-emerald-400 to-green-600' : (voiceState === 'PERMISSION_DENIED' ? 'bg-gradient-to-br from-amber-600 to-red-600' : (voiceState === 'RECONNECTING' ? 'bg-gradient-to-br from-blue-500 to-indigo-600' : 'bg-slate-700'))))}`}>
                 {voiceState === 'THINKING' ? (
                   <Loader2 size={18} className="animate-spin sm:w-[24px] sm:h-[24px]" />
                 ) : voiceState === 'SPEAKING' ? (
                   <Activity size={18} className="animate-pulse sm:w-[24px] sm:h-[24px]" />
+                ) : voiceState === 'PERMISSION_DENIED' ? (
+                  <AlertTriangle size={18} className="text-amber-200 sm:w-[24px] sm:h-[24px]" />
+                ) : voiceState === 'RECONNECTING' ? (
+                  <RefreshCw size={18} className="animate-spin text-blue-200 sm:w-[24px] sm:h-[24px]" />
                 ) : (
                   <Mic size={18} className={`sm:w-[24px] sm:h-[24px] ${audioLevel > 10 ? 'animate-bounce' : ''}`} />
                 )}
@@ -1476,11 +1615,11 @@ export function FloatingChatbot() {
 
             <div className="flex-1 relative z-10 min-w-0">
               <h3 className="font-bold text-white text-[13px] sm:text-[15px] tracking-wide flex items-center gap-1.5 truncate">
-                {voiceState === 'LISTENING' ? "Avora đang nghe..." : (voiceState === 'THINKING' ? "Đang xử lý..." : (voiceState === 'SPEAKING' ? "Avora đang trả lời..." : "Sẵn sàng"))}
+                {voiceState === 'LISTENING' ? "Avora đang nghe..." : (voiceState === 'THINKING' ? "Đang xử lý..." : (voiceState === 'SPEAKING' ? "Avora đang trả lời..." : (voiceState === 'PERMISSION_DENIED' ? "Chưa cấp quyền Micro" : (voiceState === 'RECONNECTING' ? "Đang kết nối lại..." : "Sẵn sàng trò chuyện"))))}
                 {voiceState === 'LISTENING' && <span className="flex h-1.5 w-1.5 sm:h-2 sm:w-2 relative shrink-0"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span><span className="relative inline-flex rounded-full h-full w-full bg-red-500"></span></span>}
               </h3>
               <p className="text-slate-300 text-[10px] sm:text-xs font-medium flex items-center gap-1 mt-0.5 truncate">
-                <Sparkles size={10} className="text-amber-400 shrink-0" /> {voiceState === 'LISTENING' ? "Hãy nói điều gì đó..." : "Trợ lý AI Giọng nói"}
+                <Sparkles size={10} className="text-amber-400 shrink-0" /> {voiceState === 'LISTENING' ? "Hãy nói điều gì đó..." : (voiceState === 'PERMISSION_DENIED' ? "Cần bật Micro trên trình duyệt" : (voiceState === 'RECONNECTING' ? "Vui lòng đợi giây lát..." : "Trợ lý AI Giọng nói"))}
               </p>
             </div>
 
@@ -1511,6 +1650,28 @@ export function FloatingChatbot() {
 
         {/* Message Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 relative">
+
+          {/* Micro Permission Denied Guide Banner */}
+          {isVoiceMode && voiceState === 'PERMISSION_DENIED' && (
+            <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl text-amber-900 text-xs flex flex-col gap-2 animate-in fade-in">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <AlertTriangle size={15} className="text-amber-600" />
+                Trình duyệt đang chặn truy cập Microphone
+              </div>
+              <p className="text-slate-600 leading-relaxed">
+                Để trò chuyện bằng giọng nói với AvoBOT, bạn hãy bấm vào biểu tượng <strong>Cài đặt trang / Ổ khóa</strong> bên cạnh thanh địa chỉ trình duyệt và chuyển quyền <strong>Microphone sang "Cho phép"</strong>.
+              </p>
+              <button
+                onClick={() => {
+                  stopVoiceMode();
+                  startVoiceMode();
+                }}
+                className="self-start px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold rounded-xl text-xs transition-colors shadow-sm"
+              >
+                Thử kết nối lại
+              </button>
+            </div>
+          )}
 
           {/* Welcome Message & Empty State UI */}
           {displayMessages.length === 0 && (
@@ -2140,18 +2301,61 @@ export function FloatingChatbot() {
                             <span>{formatter.format(previewData.finalTotal || previewData.totalAmount || 0)}</span>
                           </div>
                         </div>
-                        <div className="bg-slate-50 p-2.5 rounded-xl text-xs space-y-1 text-slate-600">
+                        <div className="bg-slate-50 p-3 rounded-2xl text-xs space-y-2 text-slate-600">
                           <div><span className="font-semibold text-slate-700">Hình thức:</span> {previewData.fulfillmentType || 'Giao hàng'}</div>
                           {previewData.deliveryAddress && <div><span className="font-semibold text-slate-700">Địa chỉ:</span> {previewData.deliveryAddress}</div>}
                           {previewData.scheduledTime && <div><span className="font-semibold text-slate-700">Khung giờ:</span> {previewData.scheduledTime}</div>}
-                          <div><span className="font-semibold text-slate-700">Thanh toán:</span> {previewData.paymentMethod || 'COD'}</div>
+
+                          {/* Chọn Phương thức thanh toán động từ Database */}
+                          <div className="pt-2 border-t border-slate-200/70">
+                            <span className="font-bold text-slate-800 block mb-1.5 flex items-center gap-1.5">
+                              <CreditCard size={13} className="text-red-500" /> Chọn phương thức thanh toán:
+                            </span>
+                            {previewData.availablePaymentMethods && previewData.availablePaymentMethods.length > 0 ? (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                                {previewData.availablePaymentMethods.map((pm: any) => {
+                                  const currentSelected = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
+                                  const isSelected = currentSelected === pm.code;
+                                  return (
+                                    <button
+                                      key={pm.code}
+                                      type="button"
+                                      disabled={isLoading}
+                                      onClick={() => setSelectedPaymentMethods(prev => ({ ...prev, [msg.id]: pm.code }))}
+                                      className={`p-2 rounded-xl border text-left transition-all flex flex-col gap-0.5 ${
+                                        isSelected
+                                          ? 'bg-red-50/90 border-red-500 text-red-900 shadow-2xs ring-1 ring-red-500'
+                                          : 'bg-white border-slate-200 hover:border-slate-300 text-slate-700'
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between font-bold text-xs">
+                                        <span>{pm.name}</span>
+                                        {isSelected && <span className="w-2 h-2 rounded-full bg-red-600"></span>}
+                                      </div>
+                                      {pm.description && (
+                                        <span className="text-[10px] text-slate-500 line-clamp-1">{pm.description}</span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="font-semibold text-slate-700 bg-white p-2 rounded-xl border border-slate-200">
+                                {previewData.paymentMethod || 'COD'}
+                              </div>
+                            )}
+                          </div>
                         </div>
                         <button
-                          onClick={() => confirmChatTransaction(
-                            'ORDER',
-                            previewData.previewToken,
-                            'Tôi xác nhận đơn hàng trên, hãy tạo đơn giúp tôi.',
-                          )}
+                          onClick={() => {
+                            const chosenMethod = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
+                            const chosenMethodName = previewData.availablePaymentMethods?.find((m: any) => m.code === chosenMethod)?.name || chosenMethod;
+                            confirmChatTransaction(
+                              'ORDER',
+                              previewData.previewToken,
+                              `Tôi xác nhận đơn hàng trên với phương thức thanh toán [${chosenMethodName}], hãy tạo đơn giúp tôi.`,
+                            );
+                          }}
                           disabled={isLoading}
                           className="mt-1 w-full py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
                         >
@@ -2263,35 +2467,22 @@ export function FloatingChatbot() {
                               setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
                             },
                             (error) => {
-                              toast.error('Không thể lấy vị trí thực tế, đang dùng vị trí mặc định để tiếp tục.');
-                              const lat = 10.762622;
-                              const lon = 106.660172;
-                              if (isVoiceMode && socketRef.current) {
-                                socketRef.current.emit('client_content', {
-                                  turns: [{ role: 'user', parts: [{ text: `[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon} (Fallback)]` }] }],
-                                  turnComplete: true
-                                });
-                              } else {
-                                handleSendMessage(`[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon} (Fallback)]`);
+                              let errorMsg = 'Không thể lấy vị trí GPS từ thiết bị.';
+                              if (error.code === error.PERMISSION_DENIED) {
+                                errorMsg = 'Quyền truy cập vị trí trên trình duyệt đã bị từ chối.';
+                              } else if (error.code === error.TIMEOUT) {
+                                errorMsg = 'Quá thời gian chờ phản hồi GPS.';
                               }
-                              setSharedLocationIds(prev => [...prev, msg.id]);
+                              toast.error(`${errorMsg} Vui lòng nhập địa chỉ nhận hàng của bạn vào ô chat.`);
+                              setInputValue('Địa chỉ nhận hàng của tôi là: ');
+                              inputRef.current?.focus();
                               setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
                             }
                           );
                         } else {
-                          toast.error('Trình duyệt không hỗ trợ GPS, đang dùng vị trí mặc định.');
-                          const lat = 10.762622;
-                          const lon = 106.660172;
-                          if (isVoiceMode && socketRef.current) {
-                            socketRef.current.emit('client_content', {
-                              turns: [{ role: 'user', parts: [{ text: `[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon} (Fallback)]` }] }],
-                              turnComplete: true
-                            });
-                          } else {
-                            handleSendMessage(`[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lon} (Fallback)]`);
-                          }
-                          setSharedLocationIds(prev => [...prev, msg.id]);
-                          setHasSharedLocationSession(true);
+                          toast.error('Trình duyệt không hỗ trợ GPS. Vui lòng nhập địa chỉ nhận hàng vào ô chat.');
+                          setInputValue('Địa chỉ nhận hàng của tôi là: ');
+                          inputRef.current?.focus();
                           setLoadingLocationIds(prev => prev.filter(id => id !== msg.id));
                         }
                       }}
@@ -2302,33 +2493,47 @@ export function FloatingChatbot() {
                   </div>
                 )}
 
-                {/* Suggested Replies */}
-                {msg.senderType === 'AI' && msg.suggestedReplies && msg.suggestedReplies.length > 0 && (
-                  <div className="flex flex-col gap-2 w-full mt-2">
-                    {msg.suggestedReplies.map((reply: string, i: number) => (
-                      <button
-                        key={i}
-                        disabled={isLoading}
-                        onClick={() => handleSendMessage(reply)}
-                        className="text-left px-4 py-2.5 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-700 text-sm font-semibold rounded-xl border border-slate-200 hover:border-red-200 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {reply}
-                      </button>
-                    ))}
+                {/* Modern Contextual Suggestion Chips under AI message */}
+                {msg.senderType === 'AI' && msg.id === latestAiMessageId && msg.suggestedReplies && msg.suggestedReplies.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 w-full mt-2.5 pt-0.5">
+                    {msg.suggestedReplies.map((reply: any, i: number) => {
+                      const label = typeof reply === 'string' ? reply : reply.label;
+                      const isProcessingThis = activeSuggestionLabel === label;
+                      const isActionAddToCart = typeof reply === 'object' && reply?.action === 'ADD_TO_CART';
+
+                      return (
+                        <button
+                          key={i}
+                          disabled={isLoading || Boolean(activeSuggestionLabel)}
+                          onClick={() => handleSuggestionClick(reply, msg.id)}
+                          className="group inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-red-50/80 active:bg-red-100/80 text-slate-700 hover:text-red-600 active:text-red-700 font-semibold text-xs sm:text-[13px] rounded-full border border-slate-200/90 hover:border-red-300 shadow-[0_1px_3px_rgba(0,0,0,0.04)] hover:shadow-sm active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed max-w-full"
+                        >
+                          {isProcessingThis ? (
+                            <Loader2 size={13} className="animate-spin text-red-500 shrink-0" />
+                          ) : isActionAddToCart ? (
+                            <ShoppingCart size={13} className="text-red-500 group-hover:scale-110 transition-transform shrink-0" />
+                          ) : (
+                            <Sparkles size={13} className="text-red-500 group-hover:scale-110 transition-transform shrink-0" />
+                          )}
+                          <span className="truncate">{label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
 
-                {/* Hardcoded Address Confirmation Buttons */}
+                {/* Hardcoded Address Confirmation Buttons (Chỉ hiện khi chưa có suggestedReplies) */}
                 {msg.senderType === 'AI' && msg.content && msg.content.match(/dùng địa chỉ này/i) && (!msg.suggestedReplies || msg.suggestedReplies.length === 0) && (
-                  <div className="flex flex-col gap-2 w-full mt-2">
-                    {["Ok", "Không"].map((reply: string, i: number) => (
+                  <div className="flex flex-wrap gap-2 w-full mt-2">
+                    {["Đồng ý dùng địa chỉ này", "Không, đổi địa chỉ khác"].map((reply: string, i: number) => (
                       <button
                         key={`addr-${i}`}
                         disabled={isLoading}
                         onClick={() => handleSendMessage(reply)}
-                        className="text-left px-4 py-2.5 bg-slate-50 hover:bg-red-50 text-slate-700 hover:text-red-700 text-sm font-semibold rounded-xl border border-slate-200 hover:border-red-200 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-white hover:bg-red-50 text-slate-700 hover:text-red-600 text-xs sm:text-[13px] font-semibold rounded-full border border-slate-200 hover:border-red-300 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {reply}
+                        <Sparkles size={13} className="text-red-500 shrink-0" />
+                        <span>{reply}</span>
                       </button>
                     ))}
                   </div>
@@ -2358,8 +2563,13 @@ export function FloatingChatbot() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggestion Chips */}
+        {/* Bottom Quick Suggestion Bar (Chỉ hiển thị khi tin nhắn AI mới nhất chưa có chips gợi ý ngữ cảnh) */}
         {displayMessages.length > 0 && (() => {
+          const lastAiMsg = [...displayMessages].reverse().find(m => m.senderType === 'AI');
+          if (lastAiMsg?.suggestedReplies && lastAiMsg.suggestedReplies.length > 0) {
+            return null;
+          }
+
           let currentSuggestions: { text: string; icon: React.ReactNode; action?: string }[] = [
             { text: "Món nào đang bán chạy nhất?", icon: <Flame size={16} /> },
             { text: "Có khuyến mãi gì hôm nay không?", icon: <Gift size={16} /> },
@@ -2435,6 +2645,9 @@ export function FloatingChatbot() {
               <button onClick={() => { setIsActionMenuOpen(false); handleDeleteHistory(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
                 <User size={18} className="text-slate-500" /> Đổi tính cách Avora
               </button>
+              <button onClick={() => { setIsActionMenuOpen(false); handleShareLocation(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-emerald-50 rounded-xl text-[13.5px] font-semibold text-emerald-700 transition-colors">
+                <MapPin size={18} className="text-emerald-600" /> Chia sẻ vị trí của tôi
+              </button>
               <button onClick={() => { setIsActionMenuOpen(false); setIsAudioEnabled(!isAudioEnabled); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
                 <VolumeX size={18} className={isAudioEnabled ? "text-red-500" : "text-slate-500"} /> {isAudioEnabled ? "Tắt đọc văn bản" : "Bật đọc văn bản"}
               </button>
@@ -2488,6 +2701,15 @@ export function FloatingChatbot() {
                   </button>
                 ) : (
                   <>
+                    <button
+                      type="button"
+                      onClick={handleShareLocation}
+                      disabled={isLoading || isLocating}
+                      title="Chia sẻ vị trí của tôi"
+                      className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
+                    >
+                      {isLocating ? <Loader2 size={16} className="animate-spin text-emerald-600" /> : <MapPin size={16} />}
+                    </button>
                     <button
                       onClick={toggleVoiceMode}
                       className={`w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded-full transition-colors ${isVoiceMode ? 'text-red-600 bg-red-50' : 'text-slate-400 hover:text-red-500 hover:bg-slate-50'}`}

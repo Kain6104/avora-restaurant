@@ -31,12 +31,21 @@ export function AdminPageGuard({
   branchId,
   children,
 }: AdminPageGuardProps) {
-  const { loading, can, selectedBranchId, capabilities, role } = useAdmin();
+  const { loading, can, selectedBranchId, capabilities, role, user } = useAdmin();
   const targetBranch = branchId !== undefined ? branchId : selectedBranchId;
-  const isAllowed = !permission || can(permission, targetBranch);
+
+  const isSystemAdmin =
+    capabilities?.roles?.some((r) => r.code === 'ADMIN') ||
+    capabilities?.user?.role === 'ADMIN' ||
+    user?.role === 'ADMIN' ||
+    role === 'ADMIN';
+
+  const isAllowed = isSystemAdmin || !permission || can(permission, targetBranch);
 
   const primaryRole = capabilities?.roles?.[0];
-  const roleName = primaryRole?.name || role || 'Nhân viên';
+  const roleName = isSystemAdmin
+    ? 'Admin toàn quyền'
+    : (primaryRole?.name || capabilities?.user?.roleName || role || 'Nhân viên');
 
   // Danh sách các shortcut chức năng hữu ích mà tài khoản NÀY có quyền truy cập
   const availableShortcuts = [
@@ -51,7 +60,7 @@ export function AdminPageGuard({
   // Khi chưa có dữ liệu quyền (chỉ xảy ra ở lần cold start đầu tiên chưa có cache):
   // Hiển thị một skeleton placeholder Premium Light thanh lịch, không hiển thị bất kỳ text hay spinner nào,
   // tuyệt đối không lộ nội dung trang trước khi quyền được xác nhận an toàn.
-  if (loading && !capabilities) {
+  if (loading && !isAllowed) {
     return (
       <div className="w-full space-y-4 animate-pulse">
         {/* Header placeholder */}
