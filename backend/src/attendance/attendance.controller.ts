@@ -27,7 +27,7 @@ import { AttendanceFilterDto } from './dto/attendance-filter.dto';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 
-@Controller('api/attendance')
+@Controller('attendance')
 @UseGuards(JwtAuthGuard)
 export class AttendanceController {
   constructor(
