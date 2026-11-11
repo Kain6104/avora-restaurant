@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
-import { getAuthToken, getAuthHeaders, clearAuthSession, saveAuthSession } from '@/lib/auth';
+import { getAuthToken, getAuthHeaders, clearAuthSession, saveAuthSession, getAuthUser } from '@/lib/auth';
 
 export interface AdminUser {
   id: string;
@@ -77,25 +77,71 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_BRANCH_KEY = 'avora_admin_selected_branch';
 
-const CAPS_CACHE_KEY = 'avora_admin_caps_cache_v1';
+const CAPS_SESSION_KEY = 'avora_admin_caps_cache_v1';
+const CAPS_OFFLINE_KEY = 'avora_offline_capabilities_v2';
+
+interface OfflineCapabilitiesStore {
+  version: number;
+  userId: string;
+  email?: string;
+  cachedAt: number;
+  expiresAt: number;
+  capabilities: UserCapabilities;
+}
 
 const getCachedCapabilities = (): UserCapabilities | null => {
   if (typeof window === 'undefined') return null;
+  const currentAuth = getAuthUser();
+
+  // 1. Kiểm tra nhanh sessionStorage
   try {
-    const raw = sessionStorage.getItem(CAPS_CACHE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+    const rawSession = sessionStorage.getItem(CAPS_SESSION_KEY);
+    if (rawSession) {
+      const parsed: UserCapabilities = JSON.parse(rawSession);
+      if (!currentAuth || parsed.user?.id === currentAuth.id) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 2. Kiểm tra persistent offline cache từ localStorage
+  try {
+    const rawOffline = localStorage.getItem(CAPS_OFFLINE_KEY);
+    if (rawOffline) {
+      const record: OfflineCapabilitiesStore = JSON.parse(rawOffline);
+      // Chống dùng chéo quyền của tài khoản khác
+      if (currentAuth && record.userId !== currentAuth.id) {
+        return null;
+      }
+      // Kiểm tra thời hạn hiệu lực offline lease
+      if (Date.now() > record.expiresAt) {
+        console.warn('[AdminContext] Phiên làm việc ngoại tuyến (offline lease) đã hết hạn');
+        return null;
+      }
+      return record.capabilities;
+    }
+  } catch {}
+
+  return null;
 };
 
 const setCachedCapabilities = (caps: UserCapabilities | null) => {
   if (typeof window === 'undefined') return;
   try {
-    if (caps) {
-      sessionStorage.setItem(CAPS_CACHE_KEY, JSON.stringify(caps));
+    if (caps && caps.user?.id) {
+      sessionStorage.setItem(CAPS_SESSION_KEY, JSON.stringify(caps));
+      const payload: OfflineCapabilitiesStore = {
+        version: 2,
+        userId: caps.user.id,
+        email: caps.user.email,
+        cachedAt: Date.now(),
+        expiresAt: Date.now() + 7 * 24 * 3600 * 1000, // 7-day offline authorization lease
+        capabilities: caps,
+      };
+      localStorage.setItem(CAPS_OFFLINE_KEY, JSON.stringify(payload));
     } else {
-      sessionStorage.removeItem(CAPS_CACHE_KEY);
+      sessionStorage.removeItem(CAPS_SESSION_KEY);
+      localStorage.removeItem(CAPS_OFFLINE_KEY);
     }
   } catch {}
 };
@@ -116,6 +162,54 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
   const socketRef = useRef<Socket | null>(null);
 
+  // Helper áp dụng capabilities và tính toán phân quyền chi nhánh an toàn
+  const applyCapabilities = useCallback((caps: UserCapabilities) => {
+    setCapabilities(caps);
+    setUser(caps.user);
+    setAllBranches(caps.allBranches || []);
+    setEffectivePermissions(caps.effectivePermissions || {});
+
+    const isSystemAdmin = caps.roles?.some((r) => r.code === 'ADMIN') || caps.user?.role === 'ADMIN';
+    let branchesForUser: Branch[] = [];
+
+    if (isSystemAdmin) {
+      branchesForUser = caps.allBranches || [];
+    } else {
+      const branchMap = new Map<string, Branch>();
+      caps.assignments?.forEach((assignment) => {
+        if (assignment.branchScope === 'ALL_BRANCHES') {
+          caps.allBranches?.forEach((b) => branchMap.set(b.id, b));
+        } else if (assignment.branches) {
+          assignment.branches.forEach((b) => branchMap.set(b.id, b));
+        }
+      });
+      branchesForUser = Array.from(branchMap.values());
+    }
+
+    setAvailableBranches(branchesForUser);
+
+    setSelectedBranchIdState((prev) => {
+      if (prev && prev !== 'ALL' && branchesForUser.some((b) => b.id === prev)) {
+        return prev;
+      }
+      const branchFromStorage =
+        typeof window !== 'undefined'
+          ? localStorage.getItem(LOCAL_STORAGE_BRANCH_KEY)
+          : null;
+
+      if (branchFromStorage && (branchFromStorage === 'ALL' || branchesForUser.some((b) => b.id === branchFromStorage))) {
+        return branchFromStorage;
+      }
+      if (caps.user?.branchId && branchesForUser.some((b) => b.id === caps.user.branchId)) {
+        return caps.user.branchId;
+      }
+      if (branchesForUser.length > 0) {
+        return isSystemAdmin ? 'ALL' : branchesForUser[0].id;
+      }
+      return 'ALL';
+    });
+  }, []);
+
   // Đồng bộ branch từ URL khi query thay đổi mà không re-fetch capabilities
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -127,24 +221,61 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   }, [pathname, selectedBranchId]);
 
   const fetchCapabilities = useCallback(async () => {
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+
+    // Khi mất mạng hoàn toàn (Offline): Sử dụng offline lease hợp lệ của chính tài khoản này
+    if (!isOnline) {
+      const cached = getCachedCapabilities();
+      if (cached) {
+        applyCapabilities(cached);
+        setLoading(false);
+        return cached;
+      }
+      setLoading(false);
+      return null;
+    }
+
     try {
       const headers = getAuthHeaders();
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
       const res = await fetch('/api/auth/me/capabilities', {
         credentials: 'include',
         headers,
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
+
+      // Nếu máy chủ từ chối rõ ràng (401 Không đăng nhập hoặc 403 Bị thu hồi quyền):
+      // TUYỆT ĐỐI không bypass, lập tức thu hồi phiên
+      if (res.status === 401 || res.status === 403) {
+        console.warn('[AdminContext] Máy chủ từ chối quyền truy cập:', res.status);
+        setCachedCapabilities(null);
+        clearAuthSession();
+        setCapabilities(null);
+        setUser(null);
+        setEffectivePermissions({});
+        setAvailableBranches([]);
+        if (res.status === 401) {
+          const currentTarget = typeof window !== 'undefined' ? window.location.pathname + window.location.search : (pathname || '/admin');
+          router.push(`/login?redirect=${encodeURIComponent(currentTarget)}`);
+        }
+        return null;
+      }
 
       if (!res.ok) {
         // Fallback to /api/auth/me if capabilities endpoint fails
         const meRes = await fetch('/api/auth/me', { credentials: 'include', headers });
         if (!meRes.ok) {
-          // Chỉ redirect khi thực sự không có session xác thực nào
-          if (res.status === 401 || meRes.status === 401) {
+          if (meRes.status === 401 || meRes.status === 403) {
             clearAuthSession();
             setCachedCapabilities(null);
-            router.push('/login');
+            const currentTarget = typeof window !== 'undefined' ? window.location.pathname + window.location.search : (pathname || '/admin');
+            router.push(`/login?redirect=${encodeURIComponent(currentTarget)}`);
+            return null;
           }
-          return null;
+          throw new Error(`Server returned ${res.status}`);
         }
         const meData = await meRes.json();
         if (!meData?.role || meData.role === 'USER') {
@@ -155,77 +286,41 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         if (meData.token) {
           saveAuthSession(meData.token, meData);
         }
-        setUser(meData);
         if (meData.capabilities) {
-          setCapabilities(meData.capabilities);
           setCachedCapabilities(meData.capabilities);
-          setEffectivePermissions(meData.capabilities.effectivePermissions || {});
-          setAllBranches(meData.capabilities.allBranches || []);
-          if (meData.capabilities.roles?.some((r: any) => r.code === 'ADMIN') || meData.role === 'ADMIN') {
-            setAvailableBranches(meData.capabilities.allBranches || []);
-          }
+          applyCapabilities(meData.capabilities);
           return meData.capabilities;
         }
-        return null;
+        throw new Error('Capabilities payload missing in fallback');
       }
 
       const caps: UserCapabilities = await res.json();
       setCachedCapabilities(caps);
-      setCapabilities(caps);
-      setUser(caps.user);
-      setAllBranches(caps.allBranches || []);
-      setEffectivePermissions(caps.effectivePermissions || {});
-
-      // Calculate distinct branches the user is authorized to operate on
-      const isSystemAdmin = caps.roles.some((r) => r.code === 'ADMIN') || caps.user?.role === 'ADMIN';
-      let branchesForUser: Branch[] = [];
-
-      if (isSystemAdmin) {
-        branchesForUser = caps.allBranches || [];
-      } else {
-        const branchMap = new Map<string, Branch>();
-        caps.assignments.forEach((assignment) => {
-          if (assignment.branchScope === 'ALL_BRANCHES') {
-            caps.allBranches.forEach((b) => branchMap.set(b.id, b));
-          } else if (assignment.branches) {
-            assignment.branches.forEach((b) => branchMap.set(b.id, b));
-          }
-        });
-        branchesForUser = Array.from(branchMap.values());
-      }
-
-      setAvailableBranches(branchesForUser);
-
-      // Determine selected branch from Storage or Default if not already selected
-      setSelectedBranchIdState((prev) => {
-        if (prev && prev !== 'ALL' && branchesForUser.some((b) => b.id === prev)) {
-          return prev;
-        }
-        const branchFromStorage =
-          typeof window !== 'undefined'
-            ? localStorage.getItem(LOCAL_STORAGE_BRANCH_KEY)
-            : null;
-
-        if (branchFromStorage && (branchFromStorage === 'ALL' || branchesForUser.some((b) => b.id === branchFromStorage))) {
-          return branchFromStorage;
-        }
-        if (caps.user.branchId && branchesForUser.some((b) => b.id === caps.user.branchId)) {
-          return caps.user.branchId;
-        }
-        if (branchesForUser.length > 0) {
-          return isSystemAdmin ? 'ALL' : branchesForUser[0].id;
-        }
-        return 'ALL';
-      });
-
+      applyCapabilities(caps);
       return caps;
-    } catch (err) {
-      console.error('Error fetching admin capabilities:', err);
+    } catch (err: any) {
+      console.warn('[AdminContext] Không thể kết nối máy chủ, kích hoạt phiên ngoại tuyến (Offline Lease):', err?.message);
+      const cached = getCachedCapabilities();
+      if (cached) {
+        applyCapabilities(cached);
+        return cached;
+      }
       return null;
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [router, applyCapabilities]);
+
+  // Tự động xác thực lại quyền với máy chủ ngay khi có Internet trở lại
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOnline = () => {
+      console.log('[AdminContext] Thiết bị đã kết nối mạng trở lại, xác thực lại quyền với máy chủ...');
+      fetchCapabilities();
+    };
+    window.addEventListener('online', handleOnline);
+    return () => window.removeEventListener('online', handleOnline);
+  }, [fetchCapabilities]);
 
   useEffect(() => {
     let mounted = true;

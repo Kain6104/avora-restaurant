@@ -6,8 +6,9 @@ import { useRouter } from 'next/navigation';
 import { ArrowRight, Lock, User, Eye, EyeOff, X, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import LoadingOverlay from '@/components/LoadingOverlay';
+import { getApiBaseUrl, saveAuthSession } from '@/lib/auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const API_URL = '';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -80,9 +81,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const apiUrl = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
-        ? ''
-        : API_URL;
+      const apiUrl = getApiBaseUrl();
 
       const res = await fetch(`${apiUrl}/api/auth/login`, {
         method: 'POST',
@@ -113,17 +112,10 @@ export default function LoginPage() {
       // Success!
       toast.success('Đăng nhập thành công!');
       const authToken = data?.access_token || data?.token;
+      if (authToken) {
+        saveAuthSession(authToken, data.user);
+      }
       if (typeof window !== 'undefined') {
-        if (authToken) {
-          localStorage.setItem('token', authToken);
-          localStorage.setItem('access_token', authToken);
-          // Set client-side cookie so middleware and fetches always see it
-          document.cookie = `token=${authToken}; path=/; max-age=${7 * 24 * 60 * 60}; SameSite=Lax`;
-        }
-        if (data?.user) {
-          localStorage.setItem('user', JSON.stringify(data.user));
-          window.dispatchEvent(new CustomEvent('user-updated', { detail: data.user }));
-        }
         localStorage.setItem(
           'avora_remembered_account',
           JSON.stringify({
@@ -134,8 +126,10 @@ export default function LoginPage() {
         );
       }
       const searchParams = new URLSearchParams(window.location.search);
-      const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER') ? '/admin' : '/';
-      const redirectURL = searchParams.get('redirectURL') || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : defaultDest);
+      const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
+      const isSafeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//');
+      const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF') ? '/admin' : '/';
+      const redirectURL = isSafeRedirect ? redirectParam : (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : defaultDest);
       window.location.href = redirectURL;
     } catch (err) {
       console.error('Login error:', err);
@@ -185,7 +179,11 @@ export default function LoginPage() {
         inputRefs.current[0]?.focus();
       } else {
         toast.success('Xác thực thành công! Đang chuyển hướng...');
-        const redirectURL = new URLSearchParams(window.location.search).get('redirectURL') || '/';
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
+        const isSafeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//');
+        const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF') ? '/admin' : '/';
+        const redirectURL = isSafeRedirect ? redirectParam : defaultDest;
         router.push(redirectURL);
         router.refresh();
       }
@@ -474,8 +472,9 @@ export default function LoginPage() {
                 onClick={() => {
                   setIsGoogleLoading(true);
                   const searchParams = new URLSearchParams(window.location.search);
-                  const targetRedirect = searchParams.get('redirectURL') || (typeof window !== 'undefined' && window.IS_AVORA_DESKTOP ? '/admin/pos' : '/');
-                  window.location.href = `${API_URL}/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
+                  const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
+                  const targetRedirect = redirectParam || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : '/');
+                  window.location.href = `/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
                 }}
                 className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
               >
@@ -498,9 +497,15 @@ export default function LoginPage() {
 
           <div className="mt-10 text-center text-xs lg:text-sm text-white/90 lg:text-slate-600 font-bold drop-shadow-md lg:drop-shadow-sm">
             Khách mới đến Avora?{' '}
-            <Link href="/register" className="font-black text-red-500 lg:text-red-600 hover:text-red-400 lg:hover:text-red-700 underline decoration-2 underline-offset-4">
-              Tạo tài khoản ngay
-            </Link>
+            {(() => {
+              const redirectParam = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('redirect') || new URLSearchParams(window.location.search).get('redirectURL')) : '';
+              const registerUrl = redirectParam ? `/register?redirect=${encodeURIComponent(redirectParam)}` : '/register';
+              return (
+                <Link href={registerUrl} className="font-black text-red-500 lg:text-red-600 hover:text-red-400 lg:hover:text-red-700 underline decoration-2 underline-offset-4">
+                  Tạo tài khoản ngay
+                </Link>
+              );
+            })()}
           </div>
         </div>
       </div>
@@ -532,8 +537,9 @@ export default function LoginPage() {
                 onClick={() => {
                   setIsGoogleLoading(true);
                   const searchParams = new URLSearchParams(window.location.search);
-                  const targetRedirect = searchParams.get('redirectURL') || (typeof window !== 'undefined' && window.IS_AVORA_DESKTOP ? '/admin/pos' : '/');
-                  window.location.href = `${API_URL}/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
+                  const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
+                  const targetRedirect = redirectParam || (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : '/');
+                  window.location.href = `/api/auth/google?redirectURL=${encodeURIComponent(targetRedirect)}`;
                 }}
                 disabled={isGoogleLoading}
                 className="w-full flex items-center justify-center gap-2 py-3 px-4 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg disabled:opacity-70 disabled:cursor-not-allowed"

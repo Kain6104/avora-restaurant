@@ -64,10 +64,6 @@ export default function NotificationCenter({ isOpen, onClose }: NotificationCent
                   key={n.id}
                   onClick={() => {
                     markAsRead(n.id);
-                    if (n.url) {
-                      router.push(n.url);
-                      onClose();
-                    }
                   }}
                   className={`p-4 rounded-2xl shadow-sm border transition-all cursor-pointer flex gap-3 relative ${
                     !n.isRead ? 'bg-white border-red-200 ring-1 ring-red-100' : 'bg-white/80 border-slate-100'

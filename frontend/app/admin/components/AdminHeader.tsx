@@ -23,6 +23,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import Link from 'next/link';
+import { logoutUser } from '@/lib/auth';
 import BranchSelector from './BranchSelector';
 import GlobalSearchModal from './GlobalSearchModal';
 
@@ -75,13 +76,8 @@ export default function AdminHeader() {
 
 
   const handleLogout = async () => {
-    try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-      router.push('/login');
-    } catch (err) {
-      console.error('Logout error:', err);
-      router.push('/login');
-    }
+    const currentTarget = typeof window !== 'undefined' ? window.location.pathname + window.location.search : (pathname || '/admin');
+    await logoutUser({ redirectUrl: `/login?redirect=${encodeURIComponent(currentTarget)}`, reload: true });
   };
 
   const pageTitle = getRouteTitle(pathname);

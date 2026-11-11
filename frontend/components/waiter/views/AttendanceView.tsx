@@ -6,7 +6,7 @@ import { useWaiterStore } from '@/store/useWaiterStore';
 import { Clock, Camera, Calendar, ShieldCheck, MapPin } from 'lucide-react';
 
 export default function AttendanceView() {
-  const { setAttendanceModalOpen, currentBranch, currentUser } = useWaiterStore();
+  const { setAttendanceScannerOpen, currentBranch, currentUser } = useWaiterStore();
 
   return (
     <div className="w-full h-full p-4 flex flex-col items-center justify-center bg-slate-50">
@@ -42,11 +42,11 @@ export default function AttendanceView() {
         </div>
 
         <button
-          onClick={() => setAttendanceModalOpen(true)}
-          className="w-full py-3.5 bg-gradient-to-r from-[#FF3B30] to-[#DA251D] hover:opacity-95 active:scale-95 text-white rounded-2xl font-bold text-sm shadow-lg shadow-[#DA251D]/30 flex items-center justify-center gap-2 transition-all"
+          onClick={() => setAttendanceScannerOpen(true)}
+          className="w-full py-3.5 bg-gradient-to-r from-[#FF3B30] to-[#DA251D] hover:opacity-95 active:scale-95 text-white rounded-2xl font-bold text-sm shadow-lg shadow-[#DA251D]/30 flex items-center justify-center gap-2 transition-all cursor-pointer"
         >
           <Camera size={20} />
-          <span>Mở Bảng Chấm Công & Quét QR</span>
+          <span>Quét Mã QR Chấm Công</span>
         </button>
       </div>
 

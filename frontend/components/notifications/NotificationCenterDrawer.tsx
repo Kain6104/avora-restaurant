@@ -182,10 +182,18 @@ export default function NotificationCenterDrawer({
     };
   }, [isOpen]);
 
+  const isCurrentWaiter = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/pos/waiter');
+
   const handleItemClick = (item: NotificationItem) => {
     if (!item.isRead) {
       onMarkAsRead(item.id);
     }
+
+    // Ở giao diện /admin/pos/waiter: Tuyệt đối chỉ chuyển trạng thái sang Đã đọc, không điều hướng
+    if (isCurrentWaiter) {
+      return;
+    }
+
     onClose();
 
     let targetUrl = item.url;
@@ -240,7 +248,7 @@ export default function NotificationCenterDrawer({
             </div>
             <div>
               <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">
-                Trung Tâm Thông Báo
+                THÔNG BÁO
               </h2>
               <div className="flex items-center gap-2 mt-0.5">
                 {unreadCount > 0 ? (
@@ -386,7 +394,7 @@ export default function NotificationCenterDrawer({
 
                     <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-400 font-medium">
                       <span>{formatRelativeTime(item.createdAt)}</span>
-                      {item.url && (
+                      {!isCurrentWaiter && item.url && (
                         <span className="text-red-600 font-bold flex items-center gap-0.5 group-hover:underline">
                           Xem chi tiết <ArrowRight size={11} />
                         </span>

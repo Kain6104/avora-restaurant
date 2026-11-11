@@ -160,6 +160,12 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
   // 4. Custom Rich Toast Renderer in AVORA Premium Light style
   const showNotificationToast = useCallback(
     (envelope: any) => {
+      // 1. Tuyệt đối không hiển thị bất kỳ thông báo Toast nào ở màn hình bếp KDS (/admin/kds)
+      const currentPath = pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
+      if (currentPath.includes('/kds')) {
+        return;
+      }
+
       const getIcon = () => {
         const cat = (envelope.category || envelope.eventType || '').toUpperCase();
         if (cat.includes('ORDER')) return <ShoppingBag className="w-5 h-5 text-red-600" />;
@@ -222,6 +228,11 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
               if (envelope.notificationId) {
                 markAsRead(envelope.notificationId);
               }
+              const isCurrentWaiter = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/pos/waiter');
+              if (isCurrentWaiter) {
+                // Trên giao diện /admin/pos/waiter: tuyệt đối không điều hướng khi click Toast
+                return;
+              }
               if (envelope.reference?.url) {
                 router.push(envelope.reference.url);
               } else if (envelope.category === 'ORDER' && envelope.reference?.id) {
@@ -253,9 +264,13 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
                     {envelope.message}
                   </p>
                   <div className="mt-1.5 flex items-center justify-between text-[10px]">
-                    <span className="font-bold text-red-600 flex items-center gap-0.5">
-                      Bấm để xem chi tiết <ArrowRight size={10} />
-                    </span>
+                    {typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin/pos/waiter') ? (
+                      <span className="font-bold text-red-600 flex items-center gap-0.5">
+                        Bấm để xem chi tiết <ArrowRight size={10} />
+                      </span>
+                    ) : (
+                      <span className="text-slate-400 font-medium">Thông báo POS</span>
+                    )}
                     <span className="text-slate-400">Vừa xong</span>
                   </div>
                 </div>
@@ -446,6 +461,21 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
 
     socket.on('PAYMENT_SUCCESS', (envelope: any) => {
       handleRealtimeEnvelope(envelope);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('avora_chatbot_payment_success', {
+          detail: {
+            orderCode: envelope?.reference?.id || envelope?.metadata?.orderCode,
+            amount: envelope?.metadata?.amount,
+            message: envelope?.message,
+          },
+        }));
+      }
+    });
+
+    socket.on('chatbot_payment_success', (payload: any) => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('avora_chatbot_payment_success', { detail: payload }));
+      }
     });
 
     socket.on('RESERVATION_CREATED', (envelope: any) => {

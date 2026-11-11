@@ -168,7 +168,24 @@ export function clearAuthSession() {
  * Đăng xuất người dùng toàn diện (Client + Server + Redirect)
  */
 export async function logoutUser(options?: { redirectUrl?: string; reload?: boolean }) {
-  const { redirectUrl = '/login', reload = true } = options || {};
+  let targetUrl = options?.redirectUrl;
+  const reload = options?.reload ?? true;
+
+  if (typeof window !== 'undefined') {
+    const currentPath = window.location.pathname + window.location.search;
+    // Nếu đang ở bất kỳ trang quản trị nào thuộc /admin/*, tự động lưu lại tham số redirect
+    if (!targetUrl) {
+      if (currentPath.startsWith('/admin')) {
+        targetUrl = `/login?redirect=${encodeURIComponent(currentPath)}`;
+      } else {
+        targetUrl = '/login';
+      }
+    } else if (targetUrl === '/login' && currentPath.startsWith('/admin')) {
+      targetUrl = `/login?redirect=${encodeURIComponent(currentPath)}`;
+    }
+  }
+
+  if (!targetUrl) targetUrl = '/login';
 
   // 1. Gửi request hủy session lên backend
   try {
@@ -188,9 +205,9 @@ export async function logoutUser(options?: { redirectUrl?: string; reload?: bool
   // 3. Chuyển hướng an toàn
   if (typeof window !== 'undefined') {
     if (reload) {
-      window.location.href = redirectUrl;
+      window.location.href = targetUrl;
     } else {
-      window.location.replace(redirectUrl);
+      window.location.replace(targetUrl);
     }
   }
 }
