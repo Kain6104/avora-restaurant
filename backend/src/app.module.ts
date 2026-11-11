@@ -26,16 +26,34 @@ import { ShippingModule } from './shipping/shipping.module';
 import { RealtimeModule } from './realtime/realtime.module';
 
 import { CommonModule } from './common/common.module';
+import { CartModule } from './cart/cart.module';
 import { RolesModule } from './admin/roles/roles.module';
 import { BannerModule } from './banner/banner.module';
 import { FlashSaleCoreModule } from './flash-sale/flash-sale.module';
 import { BuffetModule } from './buffet/buffet.module';
 import { QrOrderModule } from './qr-order/qr-order.module';
 import { FarmModule } from './farm/farm.module';
+import { MealArchitectModule } from './meal-architect/meal-architect.module';
+import { SubscriptionModule } from './subscription/subscription.module';
 import { ReviewModule } from './review/review.module';
+import { BankConnectModule } from './bank-connect/bank-connect.module';
+import { AttendanceModule } from './attendance/attendance.module';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
+import { AppThrottlerGuard } from './common/guards/app-throttler.guard';
 
 @Module({
   imports: [
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'default',
+          ttl: 60000,
+          limit: 120,
+        },
+      ],
+      errorMessage: 'Hệ thống ghi nhận quá nhiều thao tác trong thời gian ngắn. Vui lòng đợi trong giây lát rồi thử lại.',
+    }),
     ScheduleModule.forRoot(),
     PrismaModule,
     CommonModule,
@@ -67,8 +85,20 @@ import { ReviewModule } from './review/review.module';
     BuffetModule,
     QrOrderModule,
     FarmModule,
+    MealArchitectModule,
+    SubscriptionModule,
+    CartModule,
+    BankConnectModule,
+    AttendanceModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: AppThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
+

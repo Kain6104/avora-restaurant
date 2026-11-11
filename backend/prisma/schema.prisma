@@ -128,11 +128,20 @@ model User {
   farmLayoutVersionsPublished FarmGardenLayoutVersion[]  @relation("GardenLayoutPublishedBy")
 
   // Đánh giá & Trải nghiệm khách hàng
+  // Quản lý thiết bị chấm công & Bảng công nhân sự
+  registeredDeviceId          String?                    @map("registered_device_id") @db.VarChar(255)
+  attendances                 Attendance[]
+  attendanceLogs              AttendanceLog[]
+  assignedShifts              Shift[]                    @relation("ShiftAssignedUsers")
   productReviews       ProductReview[]
   orderReviews         OrderReview[]
   reviewReactions      ReviewReaction[]
-  adminReviewReplies   ReviewReply[]         @relation("AdminReviewReplies")
+  adminReviewReplies   ReviewReply[]          @relation("AdminReviewReplies")
   orderReviewFollowUps OrderReviewFollowUp[]
+  // AI Meal Architect & Auto-Pantry
+  customRecipes        CustomUserRecipe[]     @relation("UserCustomRecipes")
+  mealSubscriptions    UserMealSubscription[] @relation("UserMealSubscriptions")
+  cart                 Cart?
 }
 
 model Address {
@@ -208,6 +217,12 @@ model Branch {
   allowRedeemVoucherOnline Boolean @default(true) // Bật/tắt quy đổi điểm thành voucher (đặt Online)
   allowRedeemItemPos       Boolean @default(true) // Bật/tắt quy đổi điểm sang món (tại cửa hàng POS)
 
+  // Cấu hình kích hoạt & chính sách kiểm soát kho (Phase 3.1)
+  inventoryActivated    Boolean                 @default(false)
+  inventoryPolicy       InventoryTrackingPolicy @default(WARN_AND_ALLOW)
+  inventoryActivatedAt  DateTime?
+  inventoryActivatedBy  String?
+
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   orders                Order[]
@@ -244,6 +259,21 @@ model Branch {
   tableServiceRequests  TableServiceRequest[]
   orderSequences        OrderSequence[]
   assignedUserRoles     UserRoleBranch[]
+  carts                 Cart[]
+  cancellations         OrderCancellation[]
+  warehouses            Warehouse[]
+  inventoryTransactions InventoryTransaction[]
+  purchaseRequests      PurchaseRequest[]
+  purchaseOrders        PurchaseOrder[]
+  goodsReceipts         GoodsReceipt[]
+  transfersOut          StockTransfer[]        @relation("TransfersFromBranch")
+  transfersIn           StockTransfer[]        @relation("TransfersToBranch")
+  stocktakes            Stocktake[]
+  inventoryWaste        InventoryWaste[]
+  inventoryExceptions   InventoryOperationalException[]
+  attendances           Attendance[]
+  attendanceLogs        AttendanceLog[]
+  shifts                Shift[]
 }
 
 model Banner {
@@ -300,50 +330,58 @@ model Category {
 }
 
 model Product {
-  id                   String                @id @default(uuid())
-  itemCode             String                @unique
-  name                 String
-  slug                 String                @unique
-  description          String?               @db.Text
-  post                 String?               @db.Text
-  price                Float
-  oldPrice             Float?
-  discountedPrice      Float?
-  flashSalePrice       Float?
-  unit                 String?               @default("phần")
-  taxPercentage        Float                 @default(0)
-  badge                String?
-  imageUrl             String?
-  videoUrl             String?               @db.Text
-  available            Boolean               @default(true)
-  isBestSeller         Boolean               @default(false)
-  isAiRecommended      Boolean               @default(false)
-  avgRating            Float                 @default(0)
-  ratingCount          Int                   @default(0)
-  soldQuantity         Int                   @default(0)
-  isRedeemable         Boolean               @default(false)
-  redemptionPoints     Int?
-  categoryId           String
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  spiciness            Int                   @default(0)
-  targetAudience       String?               @default("Mọi lứa tuổi")
-  FlashSaleItem        FlashSaleItem[]
-  optionGroups         OptionGroup[]
-  orderItems           OrderItem[]
-  category             Category              @relation(fields: [categoryId], references: [id])
-  branches             Branch[]              @relation("ProductToBranch")
-  salesChannels        Json?
-  secondaryImages      Json?
-  redeemAllBranches    Boolean               @default(true)
-  redeemableBranches   Branch[]              @relation("ProductRedeemableBranches")
-  favoritedBy          User[]                @relation("UserFavoriteItems")
-  ComboItem            ComboItem[]
-  articleProducts      ArticleProduct[]
-  printRoutes          ProductPrintRoute[]
-  buffetPackageTickets BuffetPackageTicket[]
-  buffetPackageItems   BuffetPackageItem[]
-  reviews              ProductReview[]
+  id                    String                         @id @default(uuid())
+  itemCode              String                         @unique
+  name                  String
+  slug                  String                         @unique
+  description           String?                        @db.Text
+  post                  String?                        @db.Text
+  price                 Float
+  oldPrice              Float?
+  discountedPrice       Float?
+  flashSalePrice        Float?
+  unit                  String?                        @default("phần")
+  allowOpenPriceOnPos   Boolean                        @default(false)
+  taxPercentage         Float                          @default(0)
+  badge                 String?
+  imageUrl              String?
+  videoUrl              String?                        @db.Text
+  available             Boolean                        @default(true)
+  isBestSeller          Boolean                        @default(false)
+  isAiRecommended       Boolean                        @default(false)
+  avgRating             Float                          @default(0)
+  ratingCount           Int                            @default(0)
+  soldQuantity          Int                            @default(0)
+  isRedeemable          Boolean                        @default(false)
+  redemptionPoints      Int?
+  categoryId            String
+  createdAt             DateTime                       @default(now())
+  updatedAt             DateTime                       @updatedAt
+  spiciness             Int                            @default(0)
+  targetAudience        String?                        @default("Mọi lứa tuổi")
+  FlashSaleItem         FlashSaleItem[]
+  optionGroups          OptionGroup[]
+  orderItems            OrderItem[]
+  category              Category                       @relation(fields: [categoryId], references: [id])
+  branches              Branch[]                       @relation("ProductToBranch")
+  salesChannels         Json?
+  secondaryImages       Json?
+  redeemAllBranches     Boolean                        @default(true)
+  redeemableBranches    Branch[]                       @relation("ProductRedeemableBranches")
+  favoritedBy           User[]                         @relation("UserFavoriteItems")
+  ComboItem             ComboItem[]
+  articleProducts       ArticleProduct[]
+  printRoutes           ProductPrintRoute[]
+  buffetPackageTickets  BuffetPackageTicket[]
+  buffetPackageItems    BuffetPackageItem[]
+  reviews               ProductReview[]
+  subscriptionSchedules SubscriptionDeliverySchedule[] @relation("ScheduleProduct")
+  cartItems             CartItem[]
+  costPrice             Float?                         @default(0)
+  inventoryTracked      Boolean                        @default(true)
+  inventoryPolicyOverride InventoryTrackingPolicy?
+  recipes               Recipe[]
+  inventoryExceptions   InventoryOperationalException[]
 
   @@index([categoryId], map: "Product_categoryId_fkey")
 }
@@ -373,8 +411,9 @@ model OptionItem {
   available        Boolean           @default(true)
   displayOrder     Int               @default(0)
   maxQuantity      Int               @default(1)
-  optionGroup      OptionGroup       @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
-  orderItemOptions OrderItemOption[]
+  optionGroup           OptionGroup            @relation(fields: [optionGroupId], references: [id], onDelete: Cascade)
+  orderItemOptions      OrderItemOption[]
+  recipeOptionModifiers RecipeOptionModifier[]
 
   @@index([optionGroupId], map: "OptionItem_optionGroupId_fkey")
 }
@@ -411,6 +450,10 @@ model Reservation {
   cancelReason String?   @db.Text
   canceledBy   String?
   noShowAt     DateTime?
+
+  // Món đặt trước dùng tại quán (Pre-order Dine-in)
+  preOrderedItems Json?
+  preOrderTotal   Float? @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -508,19 +551,55 @@ model Order {
   kitchenReadyAt  DateTime?
   servedAt        DateTime?
 
-  createdAt              DateTime              @default(now())
-  updatedAt              DateTime              @updatedAt
-  branch                 Branch                @relation(fields: [branchId], references: [id])
-  user                   User?                 @relation(fields: [userId], references: [id])
-  voucher                Voucher?              @relation("OrderDiscountVoucher", fields: [voucherId], references: [id])
-  shippingVoucher        Voucher?              @relation("OrderShippingVoucher", fields: [shippingVoucherId], references: [id])
-  operatingSlot          OperatingSlot?        @relation(fields: [operatingSlotId], references: [id])
-  table                  RestaurantTable?      @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  tableSession           TableSession?         @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
+  // Staff Actor Snapshots & Cancellation Metadata
+  createdById               String?
+  createdByName             String?
+  createdByRole             String?
+  updatedById               String?
+  updatedByName             String?
+  confirmedById             String?
+  confirmedByName           String?
+  canceledByName            String?
+  canceledByRole            String?
+  paymentStatusBeforeCancel String?
+  refundStatus              String?   @default("NONE")
+  pointsRefunded            Boolean   @default(false)
+
+  // Controlled Permanent Delete / Archive Metadata
+  isDeleted       Boolean   @default(false)
+  deletedAt       DateTime?
+  deletedBy       String?
+  deletedByName   String?
+  deletedByRole   String?
+  deleteReason    String?   @db.Text
+  deletedSnapshot Json?
+  restoredAt      DateTime?
+  restoredBy      String?
+  restoredByName  String?
+
+  // Payment Intent & Financial Lock Lifecycle
+  paymentIntentStatus        String    @default("NONE") // NONE, ACTIVE, SUPERSEDED, CANCELLED, COMPLETED, EXPIRED
+  paymentIntentCode          String?
+  paymentIntentAmount        Float?
+  paymentIntentMethod        String?
+  paymentIntentCreatedAt     DateTime?
+  paymentIntentCreatedBy     String?
+  paymentIntentCreatedByName String?
+  paymentLockedAt            DateTime?
+
+  createdAt              DateTime                      @default(now())
+  updatedAt              DateTime                      @updatedAt
+  branch                 Branch                        @relation(fields: [branchId], references: [id])
+  user                   User?                         @relation(fields: [userId], references: [id])
+  voucher                Voucher?                      @relation("OrderDiscountVoucher", fields: [voucherId], references: [id])
+  shippingVoucher        Voucher?                      @relation("OrderShippingVoucher", fields: [shippingVoucherId], references: [id])
+  operatingSlot          OperatingSlot?                @relation(fields: [operatingSlotId], references: [id])
+  table                  RestaurantTable?              @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  tableSession           TableSession?                 @relation(fields: [tableSessionId], references: [id], onDelete: SetNull)
   orderItems             OrderItem[]
   PointTransaction       PointTransaction[]
-  parentRelations        OrderRelation[]       @relation("ParentOrderRelations")
-  childRelations         OrderRelation[]       @relation("ChildOrderRelations")
+  parentRelations        OrderRelation[]               @relation("ParentOrderRelations")
+  childRelations         OrderRelation[]               @relation("ChildOrderRelations")
   payments               OrderPayment[]
   printJobs              PrintJob[]
   kitchenEvents          KitchenEvent[]
@@ -529,7 +608,14 @@ model Order {
   qrOrderSessions        QrOrderSession[]
   tableServiceRequests   TableServiceRequest[]
   review                 OrderReview?
-  verifiedProductReviews ProductReview[]       @relation("VerifiedOrderReviews")
+  verifiedProductReviews ProductReview[]               @relation("VerifiedOrderReviews")
+  subscriptionSchedule   SubscriptionDeliverySchedule? @relation("ScheduleOrder")
+  bankTransactions       BankTransaction[]
+  overpaidRefunds        OverpaidRefund[]
+  auditLogs              OrderAuditLog[]
+  cancellation           OrderCancellation?
+  inventoryReservations  InventoryReservation[]
+  inventoryTransactions  InventoryTransaction[]
 
   @@index([branchId], map: "Order_branchId_fkey")
   @@index([userId], map: "Order_userId_fkey")
@@ -546,13 +632,15 @@ model Order {
   @@index([createdAt])
   @@index([branchId, createdAt])
   @@index([status, createdAt])
+  @@index([isDeleted])
+  @@index([paymentIntentStatus])
 }
 
 model OrderItem {
   id                     String  @id @default(uuid())
   orderId                String
   productId              String
-  quantity               Int
+  quantity               Float
   priceAtSale            Float
   originalPriceAtSale    Float
   discountAmount         Float   @default(0)
@@ -580,8 +668,8 @@ model OrderItem {
   readyAt          DateTime?
   servedAt         DateTime?
   isKitchenPrinted Boolean       @default(false)
-  sentQuantity     Int           @default(0)
-  printedQuantity  Int           @default(0)
+  sentQuantity     Float         @default(0)
+  printedQuantity  Float         @default(0)
   printVersion     Int           @default(0)
   orderedById      String?
   orderedByName    String?
@@ -597,6 +685,19 @@ model OrderItem {
   qrOrderRoundId               String?
   excludedFromFinalReceipt     Boolean              @default(false)
 
+  // Point Redemption & Promotion Fields
+  isPointRedemption      Boolean   @default(false)
+  pointsUsed             Int       @default(0)
+  redemptionSource       String?
+  redemptionCustomerId   String?
+  redemptionCustomerName String?
+  redeemedByStaffId      String?
+  redeemedByStaffName    String?
+  redeemedAt             DateTime?
+  redemptionReference    String?
+  redemptionStatus       String? // ACTIVE, REFUNDED, CANCELLED
+  promotionSource        String?
+
   order                  Order             @relation(fields: [orderId], references: [id], onDelete: Cascade)
   product                Product           @relation(fields: [productId], references: [id])
   selectedOptions        OrderItemOption[]
@@ -604,6 +705,14 @@ model OrderItem {
   buffetSession          BuffetSession?    @relation(fields: [buffetSessionId], references: [id], onDelete: SetNull)
   qrOrderRound           QrOrderRound?     @relation(fields: [qrOrderRoundId], references: [id], onDelete: SetNull)
   verifiedProductReviews ProductReview[]   @relation("VerifiedOrderItemReviews")
+  customRecipeId         String?
+  customRecipe           CustomUserRecipe? @relation(fields: [customRecipeId], references: [id], onDelete: SetNull)
+
+  // Phase 3 Inventory & Costing Snapshots
+  costPriceSnapshot     Float?                 @default(0)
+  recipeSnapshot        Json?
+  inventoryReservations InventoryReservation[]
+  inventoryTransactions InventoryTransaction[]
 
   @@index([orderId], map: "OrderItem_orderId_fkey")
   @@index([productId], map: "OrderItem_productId_fkey")
@@ -614,6 +723,8 @@ model OrderItem {
   @@index([buffetSessionId])
   @@index([source])
   @@index([qrOrderRoundId])
+  @@index([customRecipeId])
+  @@index([isPointRedemption])
 }
 
 model OrderItemOption {
@@ -887,7 +998,7 @@ model ChatSession {
   id          String        @id @default(uuid())
   userId      String?
   title       String?
-  contextData String?       @db.Text
+  contextData String?       @db.LongText
   version     Int           @default(0)
   channel     String?       @default("TEXT")
   createdAt   DateTime      @default(now())
@@ -970,6 +1081,25 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum CancellationType {
+  UNPAID_ORDER_CANCELLATION
+  PAID_INVOICE_CANCELLATION
+}
+
+enum CancellationStatus {
+  CANCELLED
+  REQUESTED
+  PENDING_APPROVAL
+  APPROVED
+  REFUND_PENDING
+  REFUND_PROCESSING
+  PARTIALLY_REFUNDED
+  REFUNDED
+  REJECTED
+  FAILED
+  COMPLETED
+}
+
 enum OrderSource {
   ONLINE
   POS
@@ -1020,6 +1150,8 @@ enum OrderItemPricingMode {
   REGULAR
   BUFFET_TICKET
   BUFFET_INCLUDED
+  POINT_REDEMPTION
+  PROMOTION
 }
 
 enum OrderItemSource {
@@ -1105,6 +1237,7 @@ enum ChatActionType {
   SHOW_BEAUTIFUL_ORDER
   CONFIRM_CANCEL
   CONFIRM_RESERVATION
+  SHOW_RESERVATION_SUCCESS
   SHOW_VOUCHERS
   NAVIGATE
   REQUEST_LOCATION
@@ -1762,43 +1895,61 @@ model OrderPayment {
 }
 
 model PaymentRefund {
-  id             String   @id @default(uuid())
-  orderPaymentId String
-  amount         Float
-  reason         String?  @db.Text
-  cashierId      String?
-  createdAt      DateTime @default(now())
+  id               String             @id @default(uuid())
+  orderPaymentId   String
+  amount           Float
+  reason           String?            @db.Text
+  cashierId        String?
+  refundMethod     String?            // CASH, BANK_TRANSFER, CARD, EWALLET
+  status           String             @default("COMPLETED") // PENDING, PROCESSING, COMPLETED, FAILED
+  shiftId          String?
+  bankReference    String?
+  bankDestination  String?
+  approvedById     String?
+  approvedByName   String?
+  executedById     String?
+  executedByName   String?
+  cancellationId   String?
+  taxInvoiceAction String?            // NONE, CANCEL, ADJUST, REPLACE
+  taxInvoiceStatus String?            @default("NONE") // NONE, PENDING, COMPLETED
+  taxInvoiceNotes  String?            @db.Text
+  createdAt        DateTime           @default(now())
 
-  payment OrderPayment @relation(fields: [orderPaymentId], references: [id], onDelete: Cascade)
+  payment          OrderPayment       @relation(fields: [orderPaymentId], references: [id], onDelete: Cascade)
+  shift            CashShift?         @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  cancellation     OrderCancellation? @relation(fields: [cancellationId], references: [id], onDelete: SetNull)
 
   @@index([orderPaymentId])
+  @@index([shiftId])
+  @@index([cancellationId])
 }
 
 model CashShift {
-  id              String      @id @default(uuid())
+  id              String          @id @default(uuid())
   branchId        String
   cashierId       String
-  status          ShiftStatus @default(OPEN)
-  openedAt        DateTime    @default(now())
+  status          ShiftStatus     @default(OPEN)
+  openedAt        DateTime        @default(now())
   closedAt        DateTime?
-  openingBalance  Float       @default(0)
+  openingBalance  Float           @default(0)
   closingBalance  Float?
   expectedBalance Float?
   cashDifference  Float?
-  totalRevenue    Float       @default(0)
-  totalCash       Float       @default(0)
-  totalCard       Float       @default(0)
-  totalTransfer   Float       @default(0)
-  orderCount      Int         @default(0)
-  note            String?     @db.Text
+  totalRevenue    Float           @default(0)
+  totalCash       Float           @default(0)
+  totalCard       Float           @default(0)
+  totalTransfer   Float           @default(0)
+  orderCount      Int             @default(0)
+  note            String?         @db.Text
   openedById      String
   closedById      String?
 
-  branch   Branch         @relation(fields: [branchId], references: [id], onDelete: Cascade)
-  cashier  User           @relation("CashierShifts", fields: [cashierId], references: [id])
-  openedBy User           @relation("ShiftOpenedBy", fields: [openedById], references: [id])
-  closedBy User?          @relation("ShiftClosedBy", fields: [closedById], references: [id])
+  branch   Branch          @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  cashier  User            @relation("CashierShifts", fields: [cashierId], references: [id])
+  openedBy User            @relation("ShiftOpenedBy", fields: [openedById], references: [id])
+  closedBy User?           @relation("ShiftClosedBy", fields: [closedById], references: [id])
   payments OrderPayment[]
+  refunds  PaymentRefund[]
 
   @@index([branchId, cashierId, status])
   @@index([openedAt])
@@ -2037,18 +2188,24 @@ model PrintJob {
   orderId         String
   orderItemId     String?
   branchId        String
-  stationId       String
-  printerId       String
+  stationId       String?
+  printerId       String?
   printTemplateId String?
+  printerName     String?
+  templateName    String?
+  templateVersion Int?
+  paperSize       String?
+  printedById     String?
+  printedByName   String?
   routeId         String?
   routeRole       PrintRouteRole     @default(PREPARATION)
   payloadType     PrinterPayloadType @default(ESC_POS)
   printType       PrintTemplateType  @default(KITCHEN_TICKET)
   eventType       PrintJobEventType  @default(NEW_ITEM)
 
-  quantity         Int @default(1)
-  quantityDelta    Int @default(1)
-  printedQtyBefore Int @default(0)
+  quantity         Float @default(1)
+  quantityDelta    Float @default(1)
+  printedQtyBefore Float @default(0)
   copies           Int @default(1)
 
   contentHtml  String  @db.LongText
@@ -2070,18 +2227,151 @@ model PrintJob {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
-  order         Order          @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  orderItem     OrderItem?     @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
-  branch        Branch         @relation(fields: [branchId], references: [id], onDelete: Restrict)
-  station       KitchenStation @relation(fields: [stationId], references: [id], onDelete: Restrict)
-  printer       Printer        @relation(fields: [printerId], references: [id], onDelete: Restrict)
-  printTemplate PrintTemplate? @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
+  order         Order           @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  orderItem     OrderItem?      @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  branch        Branch          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  station       KitchenStation? @relation(fields: [stationId], references: [id], onDelete: SetNull)
+  printer       Printer?        @relation(fields: [printerId], references: [id], onDelete: SetNull)
+  printTemplate PrintTemplate?  @relation(fields: [printTemplateId], references: [id], onDelete: SetNull)
 
   @@index([branchId, status])
   @@index([orderId])
   @@index([orderItemId])
   @@index([printerId])
   @@index([reprintOfId])
+}
+
+model OrderAuditLog {
+  id             String   @id @default(uuid())
+  orderId        String
+  orderCode      String?
+  action         String
+  category       String   @default("ORDER") // ORDER, PAYMENT, CANCEL, ITEM, KITCHEN, PRINT, POINTS, ADMIN
+  actorId        String?
+  actorName      String?
+  actorUsername  String?
+  actorAvatarUrl String?
+  actorRole      String?
+  branchId       String?
+  branchName     String?
+  ipAddress      String?
+  userAgent      String?  @db.Text
+  reason         String?  @db.Text
+  oldValue       Json?
+  newValue       Json?
+  metadata       Json?
+  correlationId  String?
+  isSensitive    Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  @@index([orderId, createdAt])
+  @@index([orderCode])
+  @@index([action])
+  @@index([category])
+  @@index([actorId])
+  @@index([branchId, createdAt])
+  @@index([correlationId])
+}
+
+model OrderCancellation {
+  id                          String             @id @default(uuid())
+  cancellationCode            String             @unique
+  orderId                     String             @unique
+  orderCode                   String?
+  branchId                    String
+  cancellationType            CancellationType
+  status                      CancellationStatus @default(CANCELLED)
+
+  // Financial Snapshots
+  originalTotal               Float
+  subtotal                    Float              @default(0)
+  discountAmount              Float              @default(0)
+  taxAmount                   Float              @default(0)
+  serviceChargeTotal          Float              @default(0)
+  shippingFee                 Float              @default(0)
+
+  // Paid & Refund Tracking
+  totalCollected              Float              @default(0)
+  totalRefunded               Float              @default(0)
+  requestedRefundAmount       Float              @default(0)
+  retainedAmount              Float              @default(0)
+
+  // Customer & Cashier Snapshots
+  customerName                String?
+  customerPhone               String?
+  customerSnapshot            Json?
+  cashierId                   String?
+  cashierName                 String?
+
+  // Reason & Explanation
+  reasonCode                  String
+  explanation                 String?            @db.Text
+  notes                       String?            @db.Text
+
+  // Multi-step Actors
+  requestedById               String?
+  requestedByName             String?
+  requestedByRole             String?
+  requestedAt                 DateTime           @default(now())
+
+  approvedById                String?
+  approvedByName              String?
+  approvedByRole              String?
+  approvedAt                  DateTime?
+
+  rejectedById                String?
+  rejectedByName              String?
+  rejectedByRole              String?
+  rejectedAt                  DateTime?
+  rejectionReason             String?            @db.Text
+
+  cancelledById               String?
+  cancelledByName             String?
+  cancelledByRole             String?
+  cancelledAt                 DateTime?
+
+  completedAt                 DateTime?
+
+  // Operational State Snapshots
+  kitchenStatusSnapshot       String?
+  paymentStatusSnapshot       String?
+  paymentIntentStatusSnapshot String?
+  paymentIntentCodeSnapshot   String?
+
+  // Kitchen Handling
+  kitchenTicketDispatched     Boolean            @default(false)
+  kitchenAcknowledgedAt       DateTime?
+  kitchenAcknowledgedById     String?
+  wasteRecorded               Boolean            @default(false)
+  wasteNotes                  String?            @db.Text
+
+  // Tax Invoice / Electronic Invoice
+  isTaxInvoiceIssued          Boolean            @default(false)
+  taxInvoiceNumber            String?
+  taxInvoiceSeries            String?
+  taxInvoiceTaxCode           String?
+  taxInvoiceAction            String?            // NONE, CANCEL, ADJUST, REPLACE
+  taxInvoiceStatus            String?            @default("NONE") // NONE, PENDING, COMPLETED
+  taxInvoiceNotes             String?            @db.Text
+  taxInvoiceHandledById       String?
+  taxInvoiceHandledAt         DateTime?
+
+  correlationId               String?
+  metadata                    Json?
+  createdAt                   DateTime           @default(now())
+  updatedAt                   DateTime           @updatedAt
+
+  order                       Order              @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  branch                      Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  refunds                     PaymentRefund[]
+
+  @@index([branchId, cancellationType, createdAt])
+  @@index([orderId])
+  @@index([status])
+  @@index([cancellationType])
+  @@index([createdAt])
 }
 
 model KitchenEvent {
@@ -2161,6 +2451,7 @@ model AccessRole {
 
   permissions RolePermission[]
   assignments UserRoleAssignment[]
+  shifts      Shift[]
 
   @@index([isSystem])
   @@index([isActive])
@@ -2545,8 +2836,33 @@ model UserFarm {
   userDecorations FarmUserDecoration[]
   transactions    FarmTransaction[]
 
+  preferredTimeMode    FarmGardenDisplayMode @default(ALWAYS) // ALWAYS (Auto theo giờ), DAY_ONLY, NIGHT_ONLY
+  lastEquippedTool     String                @default("NONE") // NONE, FAST_PLANT, FAST_WATER, FAST_HARVEST, SHOVEL
+  selectedSeedCropCode String?               @default("STRAWBERRY")
+  clientSyncVersion    Int                   @default(1) // Chống ghi đè khi mở nhiều tab WebGL
+
+  recipeCraftLogs FarmRecipeCraftLog[]
+
   @@index([level])
   @@index([farmCoin])
+}
+
+model FarmRecipeCraftLog {
+  id       String     @id @default(uuid())
+  userId   String
+  farmId   String
+  farm     UserFarm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  recipeId String
+  recipe   FarmRecipe @relation(fields: [recipeId], references: [id])
+
+  expAwarded          Int      @default(0)
+  farmCoinAwarded     Int      @default(0)
+  loyaltyPointAwarded Int      @default(0)
+  customerVoucherId   String?
+  createdAt           DateTime @default(now())
+
+  @@index([farmId, createdAt])
+  @@index([userId, recipeId])
 }
 
 model FarmPlot {
@@ -2937,7 +3253,8 @@ model FarmRecipe {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  ingredients FarmRecipeIngredient[]
+  ingredients        FarmRecipeIngredient[]
+  FarmRecipeCraftLog FarmRecipeCraftLog[]
 }
 
 model FarmRecipeIngredient {
@@ -3458,3 +3775,1404 @@ model OrderReviewFollowUp {
   @@index([orderReviewId, createdAt])
   @@index([userId])
 }
+
+// =========================================================================
+// AI MEAL ARCHITECT™ SCHEMAS
+// =========================================================================
+
+enum ArchitectIngredientCategory {
+  BASE_CARB // Tinh bột nền
+  PROTEIN // Đạm chính
+  GREENS_VEGGIES // Rau xanh & chất xơ
+  SIGNATURE_SAUCE // Nước sốt độc quyền
+  CRUNCH_TOPPING // Topping giòn rắc mặt
+}
+
+model ArchitectIngredient {
+  id          String                      @id @default(uuid())
+  code        String                      @unique
+  name        String
+  category    ArchitectIngredientCategory
+  description String?                     @db.Text
+  imageUrl    String                      @db.Text
+  baseGram    Float                       @default(100)
+  price       Float
+
+  // Dinh dưỡng trên baseGram
+  calories Float
+  protein  Float
+  carbs    Float
+  fat      Float
+  fiber    Float @default(0)
+  sodiumMg Float @default(0)
+
+  // Flavor Profile (Thang điểm 0 - 10)
+  spiciness Int @default(0)
+  sweetness Int @default(0)
+  saltiness Int @default(0)
+  sourness  Int @default(0)
+  richness  Int @default(0)
+  umami     Int @default(0)
+
+  // Cảnh báo dị ứng & Chế độ ăn
+  allergensJson String? @db.Text // JSON string: ["PEANUT", "SEAFOOD"]
+  isVegan       Boolean @default(false)
+  isKeto        Boolean @default(false)
+  isGlutenFree  Boolean @default(false)
+
+  isAvailable Boolean @default(true)
+  sortOrder   Int     @default(0)
+
+  recipeItems CustomRecipeItem[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@index([category, isAvailable])
+}
+
+model CustomUserRecipe {
+  id            String  @id @default(uuid())
+  recipeCode    String  @unique
+  userId        String?
+  user          User?   @relation("UserCustomRecipes", fields: [userId], references: [id], onDelete: SetNull)
+  recipeName    String
+  creatorName   String  @default("Thực khách sành ăn")
+  description   String? @db.Text
+  coverImageUrl String? @db.Text
+
+  totalPrice    Float
+  totalCalories Float
+  totalProtein  Float
+  totalCarbs    Float
+  totalFat      Float
+
+  isPublic      Boolean @default(true)
+  forkCount     Int     @default(0)
+  likeCount     Int     @default(0)
+  affiliateCode String? @unique
+
+  items      CustomRecipeItem[]
+  orderItems OrderItem[]
+  schedules  SubscriptionDeliverySchedule[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([isPublic, forkCount])
+}
+
+model CustomRecipeItem {
+  id              String              @id @default(uuid())
+  recipeId        String
+  recipe          CustomUserRecipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredientId    String
+  ingredient      ArchitectIngredient @relation(fields: [ingredientId], references: [id])
+  gram            Float
+  calculatedPrice Float
+
+  createdAt DateTime @default(now())
+
+  @@index([recipeId])
+  @@index([ingredientId])
+}
+
+// =========================================================================
+// AUTO-PANTRY™ SUBSCRIPTION SCHEMAS
+// =========================================================================
+
+enum SubscriptionPlanType {
+  WEEKLY_5_DAYS // T2 - T6
+  WEEKLY_7_DAYS // Cả tuần
+  MONTHLY_20_DAYS // 20 ngày làm việc
+  MONTHLY_30_DAYS // Trọn tháng
+  CUSTOM_SCHEDULE // Lịch tự chọn ngày
+}
+
+enum SubscriptionMealSlot {
+  LUNCH // Giao 11:15 - 11:45
+  DINNER // Giao 18:00 - 18:30
+  FULL_DAY // Cả trưa và tối
+}
+
+enum SubscriptionStatus {
+  PENDING_PAYMENT // Chờ thanh toán kích hoạt
+  ACTIVE // Đang hoạt động
+  PAUSED // Tạm dừng
+  EXPIRED // Hết hạn chu kỳ
+  CANCELLED // Đã hủy
+}
+
+enum DeliveryScheduleStatus {
+  SCHEDULED // Đã lên lịch
+  PAUSED_SKIPPED // Khách tạm hoãn ngày này
+  PREPARING // Đang nấu tại bếp
+  DELIVERING // Đang giao hàng
+  DELIVERED // Giao thành công
+  CANCELLED // Hủy bỏ
+}
+
+model MealSubscriptionPlan {
+  id            String               @id @default(uuid())
+  code          String               @unique
+  name          String
+  description   String               @db.Text
+  planType      SubscriptionPlanType
+  mealSlot      SubscriptionMealSlot
+  totalMeals    Int
+  basePrice     Float
+  discountPrice Float
+  isActive      Boolean              @default(true)
+
+  subscriptions UserMealSubscription[]
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+}
+
+model UserMealSubscription {
+  id               String               @id @default(uuid())
+  subscriptionCode String               @unique
+  userId           String
+  user             User                 @relation("UserMealSubscriptions", fields: [userId], references: [id], onDelete: Restrict)
+  planId           String
+  plan             MealSubscriptionPlan @relation(fields: [planId], references: [id])
+
+  status   SubscriptionStatus   @default(PENDING_PAYMENT)
+  mealSlot SubscriptionMealSlot
+  branchId String               @default("AVO-Q1")
+
+  recipientName     String
+  recipientPhone    String
+  deliveryAddress   String  @db.Text
+  deliveryLatitude  Float?
+  deliveryLongitude Float?
+  deliveryTimeSlot  String  @default("11:30")
+  deliveryNote      String? @db.Text
+
+  isAutoSurprise            Boolean @default(true)
+  dietaryPreferencesJson    String? @db.Text
+  dislikedIngredientIdsJson String? @db.Text
+
+  startDate      DateTime
+  endDate        DateTime
+  remainingMeals Int
+  usedMeals      Int      @default(0)
+
+  autoRenew          Boolean @default(true)
+  sePayCustomerToken String?
+
+  schedules SubscriptionDeliverySchedule[]
+  createdAt DateTime                       @default(now())
+  updatedAt DateTime                       @updatedAt
+
+  @@index([userId, status])
+  @@index([status, startDate, endDate])
+}
+
+model SubscriptionDeliverySchedule {
+  id             String               @id @default(uuid())
+  subscriptionId String
+  subscription   UserMealSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  deliveryDate DateTime               @db.Date
+  deliverySlot String                 @default("11:30")
+  status       DeliveryScheduleStatus @default(SCHEDULED)
+
+  productId      String?
+  product        Product?          @relation("ScheduleProduct", fields: [productId], references: [id], onDelete: SetNull)
+  customRecipeId String?
+  customRecipe   CustomUserRecipe? @relation(fields: [customRecipeId], references: [id], onDelete: SetNull)
+
+  generatedOrderId String? @unique
+  order            Order?  @relation("ScheduleOrder", fields: [generatedOrderId], references: [id], onDelete: SetNull)
+
+  pauseReason     String?   @db.Text
+  rescheduledDate DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([subscriptionId, deliveryDate])
+  @@index([deliveryDate, status])
+}
+
+model Cart {
+  id             String    @id @default(uuid())
+  userId         String?   @unique
+  guestTokenHash String?   @unique
+  branchId       String?
+  cartVersion    Int       @default(1)
+  expiresAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user   User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch?    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  items  CartItem[]
+
+  @@index([userId])
+  @@index([guestTokenHash])
+  @@index([branchId])
+}
+
+model CartItem {
+  id                  String   @id @default(uuid())
+  cartId              String
+  productId           String
+  quantity            Int      @default(1)
+  priceAtSale         Float
+  originalPriceAtSale Float
+  optionsTextSnapshot String?  @db.Text
+  selectedOptionsJson Json?
+  isFlashSaleItem     Boolean  @default(false)
+  flashSaleId         String?
+  isCombo             Boolean  @default(false)
+  comboId             String?
+  note                String?  @db.Text
+  isCustomRecipe      Boolean  @default(false)
+  customRecipeData    Json?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  cart    Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([cartId])
+  @@index([productId])
+}
+
+// ==========================================
+// AVORA BANK CONNECT (VIETCOMBANK GATEWAY)
+// ==========================================
+
+model BankConnectedDevice {
+  id                             String    @id @default(uuid())
+  deviceId                       String    @unique
+  deviceName                     String
+  appVersion                     String    @default("1.0.0")
+  publicKeyPem                   String    @db.Text
+  status                         String    @default("ACTIVE") // ACTIVE, REVOKED, SUSPENDED
+  batteryLevel                   Int?
+  isCharging                     Boolean?
+  networkType                    String?
+  isNotificationAccessGranted    Boolean?
+  isPowerSaveMode                Boolean?
+  isIgnoringBatteryOptimizations Boolean?
+  lastHeartbeatAt                DateTime?
+  lastIp                         String?
+  pairedAt                       DateTime  @default(now())
+  pairedByUserId                 String?
+  revokedAt                      DateTime?
+  revokedByUserId                String?
+  createdAt                      DateTime  @default(now())
+  updatedAt                      DateTime  @updatedAt
+
+  transactions BankTransaction[]
+  logs         BankConnectionLog[]
+
+  @@index([status])
+}
+
+model BankPairingCode {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  expiresAt       DateTime
+  isUsed          Boolean  @default(false)
+  usedByDeviceId  String?
+  createdByUserId String?
+  createdAt       DateTime @default(now())
+
+  @@index([code, isUsed])
+}
+
+model BankTransaction {
+  id                  String    @id @default(uuid())
+  eventId             String    @unique
+  deviceId            String
+  bank                String    @default("VIETCOMBANK")
+  accountNumberMasked String
+  accountNumber       String?
+  direction           String // CREDIT, DEBIT
+  amount              BigInt // in VND
+  balanceAfter        BigInt? // in VND
+  currency            String    @default("VND")
+  occurredAt          DateTime
+  receivedAt          DateTime  @default(now())
+  counterparty        String?
+  transferContent     String?   @db.Text
+  bankReference       String?
+  fingerprint         String    @unique
+  rawText             String?   @db.Text
+  parserVersion       String    @default("1.0.0")
+  matchingStatus      String    @default("UNMATCHED") // MATCHED, UNMATCHED, REVIEW_REQUIRED, DUPLICATE, IGNORED
+  orderId             String?
+  matchedAt           DateTime?
+  isArchived          Boolean   @default(false)
+  archivedAt          DateTime?
+  archivedByUserId    String?
+  archiveReason       String?   @db.Text
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  device         BankConnectedDevice         @relation(fields: [deviceId], references: [deviceId])
+  order          Order?                      @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderMatches   BankTransactionOrderMatch[]
+  overpaidRefund OverpaidRefund?
+
+  @@index([deviceId])
+  @@index([bankReference])
+  @@index([matchingStatus])
+  @@index([isArchived])
+  @@index([occurredAt])
+  @@index([createdAt])
+  @@index([orderId])
+}
+
+model BankTransactionOrderMatch {
+  id            String   @id @default(uuid())
+  transactionId String
+  orderId       String
+  matchedAmount BigInt
+  matchedBy     String   @default("AUTO") // AUTO or USER_ID
+  matchedAt     DateTime @default(now())
+  notes         String?  @db.Text
+  createdAt     DateTime @default(now())
+
+  transaction BankTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@index([orderId])
+}
+
+model BankConnectionLog {
+  id        String   @id @default(uuid())
+  deviceId  String?
+  action    String // PAIR, HEARTBEAT, EVENT_RECEIVED, REVOKE, ERROR
+  ip        String?
+  userAgent String?
+  details   String?  @db.Text
+  createdAt DateTime @default(now())
+
+  device BankConnectedDevice? @relation(fields: [deviceId], references: [deviceId], onDelete: SetNull)
+
+  @@index([deviceId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model OverpaidRefund {
+  id                  String    @id @default(uuid())
+  transactionId       String    @unique
+  orderId             String
+  overpaidAmount      BigInt    // in VND
+  status              String    @default("REFUND_PENDING") // REFUND_PENDING, REFUND_PROCESSING, REFUNDED, REFUND_FAILED
+  refundBankReference String?
+  refundedAmount      BigInt?
+  refundedAt          DateTime?
+  refundedByUserId    String?
+  notes               String?   @db.Text
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  transaction BankTransaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BankScanJob {
+  id                       String    @id @default(uuid())
+  scanJobId                String    @unique
+  branchId                 String?
+  orderId                  String?
+  requestedByUserId        String?
+  status                   String    @default("SCAN_REQUESTED") // SCAN_REQUESTED, DEVICE_RECEIVED, SCANNING, SCAN_COMPLETED, TRANSACTION_FOUND, TRANSACTION_SYNCED, NO_MATCHING_NOTIFICATION, DEVICE_OFFLINE, SCAN_TIMEOUT
+  activeNotificationsCount Int?      @default(0)
+  newTransactionsCount     Int?      @default(0)
+  resultMessage            String?   @db.Text
+  createdAt                DateTime  @default(now())
+  completedAt              DateTime?
+
+  @@index([scanJobId])
+  @@index([branchId])
+  @@index([createdAt])
+}
+
+
+// =========================================================================
+// PHASE 3: ENTERPRISE INVENTORY, RECIPE COSTING & SUPPLY CHAIN INTELLIGENCE
+// =========================================================================
+
+enum InventoryTransactionType {
+  OPENING_BALANCE
+  PURCHASE_RECEIPT
+  PURCHASE_RETURN
+  STOCK_TRANSFER_OUT
+  STOCK_TRANSFER_IN
+  ORDER_RESERVATION
+  ORDER_RESERVATION_RELEASE
+  RECIPE_CONSUMPTION
+  STOCK_ADJUSTMENT
+  STOCK_COUNT_GAIN
+  STOCK_COUNT_LOSS
+  WASTE
+  SPOILAGE
+  PREPARATION_LOSS
+  SUPPLIER_RETURN
+}
+
+enum RecipeStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PurchaseRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CONVERTED_TO_PO
+  CANCELLED
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_APPROVAL
+  APPROVED
+  SENT_TO_SUPPLIER
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CLOSED
+  REJECTED
+  CANCELLED
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  CONFIRMED
+  CANCELLED
+}
+
+enum StockTransferStatus {
+  DRAFT
+  REQUESTED
+  APPROVED
+  DISPATCHED
+  IN_TRANSIT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  REJECTED
+  CANCELLED
+}
+
+enum StocktakeStatus {
+  DRAFT
+  IN_PROGRESS
+  SUBMITTED
+  APPROVED
+  REJECTED
+  COMPLETED
+  CANCELLED
+}
+
+enum InventoryWasteReason {
+  EXPIRED
+  DAMAGED
+  PREPARATION_WASTE
+  KITCHEN_SPOILAGE
+  CUSTOMER_RETURN
+  STAFF_MEAL
+  COMPLIMENTARY
+  TRAINING
+  INVENTORY_ADJUSTMENT
+  OTHER
+}
+
+enum StorageCondition {
+  AMBIENT
+  CHILLED
+  FROZEN
+  DRY
+  COOL_DARK
+}
+
+model IngredientCategory {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  name         String
+  description  String?      @db.Text
+  color        String?      @default("#da251d")
+  displayOrder Int          @default(0)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  ingredients  Ingredient[]
+
+  @@index([isActive])
+}
+
+model IngredientUnit {
+  id          String   @id @default(uuid())
+  name        String
+  symbol      String   @unique
+  description String?  @db.Text
+  isBaseUnit  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  primaryIngredients  Ingredient[]               @relation("IngredientPrimaryUnit")
+  purchaseIngredients Ingredient[]               @relation("IngredientPurchaseUnit")
+  storageIngredients  Ingredient[]               @relation("IngredientStorageUnit")
+  conversionsFrom     IngredientUnitConversion[] @relation("UnitConversionsFrom")
+  conversionsTo       IngredientUnitConversion[] @relation("UnitConversionsTo")
+}
+
+model Ingredient {
+  id                      String           @id @default(uuid())
+  code                    String           @unique
+  name                    String
+  description             String?          @db.Text
+  imageUrl                String?
+  categoryId              String
+  category                IngredientCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  // Units
+  primaryUnitId           String
+  primaryUnit             IngredientUnit   @relation("IngredientPrimaryUnit", fields: [primaryUnitId], references: [id], onDelete: Restrict)
+  purchaseUnitId          String?
+  purchaseUnit            IngredientUnit?  @relation("IngredientPurchaseUnit", fields: [purchaseUnitId], references: [id], onDelete: SetNull)
+  storageUnitId           String?
+  storageUnit             IngredientUnit?  @relation("IngredientStorageUnit", fields: [storageUnitId], references: [id], onDelete: SetNull)
+
+  // Explicit Conversion Multipliers to Primary Unit (e.g., 1 purchaseUnit = factor * primaryUnit)
+  purchaseToPrimaryFactor Float            @default(1.0)
+  storageToPrimaryFactor  Float            @default(1.0)
+
+  // Inventory Thresholds (stored in primary unit)
+  minimumStock            Decimal          @default(0) @db.Decimal(14, 4)
+  maximumStock            Decimal          @default(0) @db.Decimal(14, 4)
+  reorderThreshold        Decimal          @default(0) @db.Decimal(14, 4)
+
+  // Costing & Valuation (in VND)
+  averagePurchaseCost     Decimal          @default(0) @db.Decimal(14, 2)
+  latestPurchaseCost      Decimal          @default(0) @db.Decimal(14, 2)
+  costPerPrimaryUnit      Decimal          @default(0) @db.Decimal(14, 4)
+
+  // Default Supplier & Storage
+  defaultSupplierId       String?
+  defaultSupplier         Supplier?        @relation("IngredientDefaultSupplier", fields: [defaultSupplierId], references: [id], onDelete: SetNull)
+  storageCondition        StorageCondition @default(AMBIENT)
+  shelfLifeDays           Int?
+  isActive                Boolean          @default(true)
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  balances                InventoryBalance[]
+  batches                 IngredientBatch[]
+  recipeIngredients       RecipeIngredient[]
+  recipeOptionModifiers   RecipeOptionModifier[]
+  unitConversionsFrom     IngredientUnitConversion[] @relation("FromUnitConversions")
+  unitConversionsTo       IngredientUnitConversion[] @relation("ToUnitConversions")
+  supplierIngredients     SupplierIngredient[]
+  ledgerTransactions      InventoryTransaction[]
+  wasteItems              InventoryWaste[]
+  reservations            InventoryReservation[]
+  purchaseRequestItems    PurchaseRequestItem[]
+  purchaseOrderItems      PurchaseOrderItem[]
+  goodsReceiptItems       GoodsReceiptItem[]
+  stockTransferItems      StockTransferItem[]
+  stocktakeItems          StocktakeItem[]
+
+  @@index([categoryId])
+  @@index([isActive])
+  @@index([defaultSupplierId])
+}
+
+model IngredientUnitConversion {
+  id               String         @id @default(uuid())
+  ingredientId     String
+  ingredient       Ingredient     @relation("FromUnitConversions", fields: [ingredientId], references: [id], onDelete: Cascade)
+  fromUnitId       String
+  fromUnit         IngredientUnit @relation("UnitConversionsFrom", fields: [fromUnitId], references: [id], onDelete: Restrict)
+  toUnitId         String
+  toUnit           IngredientUnit @relation("UnitConversionsTo", fields: [toUnitId], references: [id], onDelete: Restrict)
+  conversionFactor Float
+  notes            String?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  IngredientToConversion Ingredient[] @relation("ToUnitConversions")
+
+  @@unique([ingredientId, fromUnitId, toUnitId])
+  @@index([ingredientId])
+}
+
+model Warehouse {
+  id                   String                 @id @default(uuid())
+  code                 String                 @unique
+  name                 String
+  description          String?                @db.Text
+  branchId             String?
+  branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  managerId            String?
+  managerName          String?
+  storageZone          String?                // KITCHEN_STORAGE, BAR_STORAGE, FROZEN_STORAGE, DRY_STORAGE, CENTRAL_HUB
+  isCentral            Boolean                @default(false)
+  isActive             Boolean                @default(true)
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  locations            WarehouseLocation[]
+  balances             InventoryBalance[]
+  batches              IngredientBatch[]
+  ledgerTransactions   InventoryTransaction[]
+  reservations         InventoryReservation[]
+  purchaseRequests     PurchaseRequest[]
+  purchaseOrders       PurchaseOrder[]
+  goodsReceipts        GoodsReceipt[]
+  transfersOut         StockTransfer[]        @relation("TransfersFromWarehouse")
+  transfersIn          StockTransfer[]        @relation("TransfersToWarehouse")
+  stocktakes           Stocktake[]
+  wasteRecords         InventoryWaste[]
+
+  @@index([branchId])
+  @@index([isCentral, isActive])
+}
+
+model WarehouseLocation {
+  id          String    @id @default(uuid())
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+  zone        String    @db.VarChar(50)
+  aisle       String?   @db.VarChar(50)
+  shelf       String?   @db.VarChar(50)
+  bin         String?   @db.VarChar(50)
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  batches     IngredientBatch[]
+
+  @@unique([warehouseId, zone, aisle, shelf, bin])
+  @@index([warehouseId])
+}
+
+model InventoryBalance {
+  id             String     @id @default(uuid())
+  ingredientId   String
+  ingredient     Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  warehouseId    String
+  warehouse      Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Cascade)
+
+  // Quantities in primary base unit
+  currentStock   Decimal    @default(0) @db.Decimal(14, 4)
+  reservedStock  Decimal    @default(0) @db.Decimal(14, 4)
+  availableStock Decimal    @default(0) @db.Decimal(14, 4) // currentStock - reservedStock
+  valuation      Decimal    @default(0) @db.Decimal(14, 2) // currentStock * averagePurchaseCost
+
+  lastCountDate  DateTime?
+  lastReceivedAt DateTime?
+  lastConsumedAt DateTime?
+  updatedAt      DateTime   @updatedAt
+
+  @@unique([ingredientId, warehouseId])
+  @@index([warehouseId])
+  @@index([ingredientId])
+}
+
+model IngredientBatch {
+  id                String            @id @default(uuid())
+  batchNumber       String            @db.VarChar(100)
+  ingredientId      String
+  ingredient        Ingredient        @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  warehouseId       String
+  warehouse         Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  locationId        String?
+  location          WarehouseLocation? @relation(fields: [locationId], references: [id], onDelete: SetNull)
+  supplierId        String?
+  supplier          Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+
+  receivedDate      DateTime          @default(now())
+  expirationDate    DateTime
+  initialQuantity   Decimal           @db.Decimal(14, 4)
+  remainingQuantity Decimal           @db.Decimal(14, 4)
+  unitCost          Decimal           @db.Decimal(14, 2)
+  status            String            @default("ACTIVE") // ACTIVE, DEPLETED, EXPIRED, BLOCKED
+  storageCondition  StorageCondition  @default(AMBIENT)
+  notes             String?           @db.Text
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  transactions      InventoryTransaction[]
+  wasteRecords      InventoryWaste[]
+  transferItems     StockTransferItem[]
+  stocktakeItems    StocktakeItem[]
+
+  @@unique([batchNumber, ingredientId, warehouseId])
+  @@index([ingredientId, warehouseId, expirationDate])
+  @@index([status, expirationDate])
+}
+
+model InventoryTransaction {
+  id                     String                   @id @default(uuid())
+  transactionCode        String                   @unique
+  ingredientId           String
+  ingredient             Ingredient               @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  ingredientNameSnapshot String
+  branchId               String
+  branch                 Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouseId            String
+  warehouse              Warehouse                @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  batchId                String?
+  batch                  IngredientBatch?         @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  type                   InventoryTransactionType
+
+  // Quantity movements in primary unit
+  quantityIn             Decimal                  @default(0) @db.Decimal(14, 4)
+  quantityOut            Decimal                  @default(0) @db.Decimal(14, 4)
+  unitSymbol             String
+  unitCost               Decimal                  @default(0) @db.Decimal(14, 4)
+  totalCost              Decimal                  @default(0) @db.Decimal(14, 2)
+
+  // Balance snapshots after transaction
+  beforeQuantity         Decimal                  @db.Decimal(14, 4)
+  afterQuantity          Decimal                  @db.Decimal(14, 4)
+
+  // Document references
+  sourceReference        String?
+  orderId                String?
+  order                  Order?                   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  orderItemId            String?
+  orderItem              OrderItem?               @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  purchaseOrderId        String?
+  purchaseOrder          PurchaseOrder?           @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  goodsReceiptId         String?
+  goodsReceipt           GoodsReceipt?            @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
+  stockTransferId        String?
+  stockTransfer          StockTransfer?           @relation(fields: [stockTransferId], references: [id], onDelete: SetNull)
+  stocktakeId            String?
+  stocktake              Stocktake?               @relation(fields: [stocktakeId], references: [id], onDelete: SetNull)
+  wasteId                String?
+  wasteRecord            InventoryWaste?          @relation(fields: [wasteId], references: [id], onDelete: SetNull)
+
+  // Audit and Concurrency
+  actorId                String?
+  actorName              String?
+  notes                  String?                  @db.Text
+  idempotencyKey         String?                  @unique
+  correlationId          String?
+  createdAt              DateTime                 @default(now())
+
+  @@index([ingredientId, warehouseId, createdAt])
+  @@index([branchId, type, createdAt])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([purchaseOrderId])
+  @@index([stockTransferId])
+  @@index([correlationId])
+}
+
+model InventoryReservation {
+  id               String     @id @default(uuid())
+  orderId          String
+  order            Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItemId      String
+  orderItem        OrderItem  @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  ingredientId     String
+  ingredient       Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  warehouseId      String
+  warehouse        Warehouse  @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  reservedQuantity Decimal    @db.Decimal(14, 4)
+  unitSymbol       String
+  status           String     @default("ACTIVE") // ACTIVE, CONSUMED, RELEASED
+  releasedAt       DateTime?
+  consumedAt       DateTime?
+  createdAt        DateTime   @default(now())
+
+  @@index([orderId, orderItemId])
+  @@index([ingredientId, warehouseId, status])
+}
+
+model Recipe {
+  id             String          @id @default(uuid())
+  code           String          @unique
+  name           String
+  description    String?         @db.Text
+  productId      String?         @unique
+  product        Product?        @relation(fields: [productId], references: [id], onDelete: SetNull)
+  isSemiFinished Boolean         @default(false)
+  servingSize    Float           @default(1.0)
+  yieldQuantity  Float           @default(1.0)
+  yieldUnit      String          @default("phần")
+  activeVersionId String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  versions       RecipeVersion[]
+
+  @@index([isSemiFinished])
+}
+
+model RecipeVersion {
+  id                     String           @id @default(uuid())
+  recipeId               String
+  recipe                 Recipe           @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  versionNumber          Int              @default(1)
+  status                 RecipeStatus     @default(DRAFT)
+  effectiveDate          DateTime         @default(now())
+
+  costPerServing         Decimal          @default(0) @db.Decimal(14, 2)
+  totalRecipeCost        Decimal          @default(0) @db.Decimal(14, 2)
+  preparationLossPercent Float            @default(0)
+  notes                  String?          @db.Text
+
+  createdById            String?
+  createdByName          String?
+  approvedById           String?
+  approvedByName         String?
+  approvedAt             DateTime?
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+
+  ingredients            RecipeIngredient[]
+  optionModifiers        RecipeOptionModifier[]
+
+  @@unique([recipeId, versionNumber])
+  @@index([recipeId, status])
+}
+
+model RecipeIngredient {
+  id                     String        @id @default(uuid())
+  recipeVersionId        String
+  recipeVersion          RecipeVersion @relation(fields: [recipeVersionId], references: [id], onDelete: Cascade)
+  ingredientId           String
+  ingredient             Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantity               Decimal       @db.Decimal(14, 4)
+  unitSymbol             String
+  unitCostSnapshot       Decimal       @default(0) @db.Decimal(14, 4)
+  totalCostSnapshot      Decimal       @default(0) @db.Decimal(14, 2)
+  preparationLossPercent Float         @default(0)
+  isSubstitutable        Boolean       @default(false)
+  notes                  String?
+
+  @@index([recipeVersionId])
+  @@index([ingredientId])
+}
+
+model RecipeOptionModifier {
+  id                String        @id @default(uuid())
+  recipeVersionId   String
+  recipeVersion     RecipeVersion @relation(fields: [recipeVersionId], references: [id], onDelete: Cascade)
+  optionItemId      String
+  optionItem        OptionItem    @relation(fields: [optionItemId], references: [id], onDelete: Cascade)
+  ingredientId      String
+  ingredient        Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  quantityDelta     Decimal       @db.Decimal(14, 4) // e.g. +30g or -10g
+  unitSymbol        String
+  costDeltaSnapshot Decimal       @default(0) @db.Decimal(14, 2)
+  notes             String?
+
+  @@index([recipeVersionId])
+  @@index([optionItemId])
+  @@index([ingredientId])
+}
+
+model Supplier {
+  id                String               @id @default(uuid())
+  code              String               @unique
+  name              String
+  contactPerson     String?
+  phone             String?
+  email             String?
+  address           String?
+  taxCode           String?
+  paymentTerms      String               @default("COD") // COD, NET15, NET30, NET45
+  bankName          String?
+  bankAccountNumber String?
+  bankAccountHolder String?
+  status            String               @default("ACTIVE") // ACTIVE, SUSPENDED, INACTIVE
+  rating            Float                @default(5.0)
+  notes             String?              @db.Text
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  defaultIngredients Ingredient[]        @relation("IngredientDefaultSupplier")
+  supplierIngredients SupplierIngredient[]
+  batches            IngredientBatch[]
+  purchaseOrders     PurchaseOrder[]
+
+  @@index([status])
+}
+
+model SupplierIngredient {
+  id                  String     @id @default(uuid())
+  supplierId          String
+  supplier            Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  ingredientId        String
+  ingredient          Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
+  supplierProductCode String?
+  purchasePrice       Decimal    @db.Decimal(14, 2)
+  purchaseUnitSymbol  String
+  leadTimeDays        Int        @default(1)
+  minOrderQuantity    Decimal    @default(1) @db.Decimal(14, 4)
+  isPreferred         Boolean    @default(false)
+  updatedAt           DateTime   @updatedAt
+
+  @@unique([supplierId, ingredientId])
+  @@index([supplierId])
+  @@index([ingredientId])
+}
+
+model PurchaseRequest {
+  id              String                @id @default(uuid())
+  requestCode     String                @unique
+  branchId        String
+  branch          Branch                @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouseId     String
+  warehouse       Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status          PurchaseRequestStatus @default(PENDING)
+  requiredDate    DateTime
+  reason          String?               @db.Text
+  requestedById   String?
+  requestedByName String?
+  approvedById    String?
+  approvedByName  String?
+  approvedAt      DateTime?
+  notes           String?               @db.Text
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  items           PurchaseRequestItem[]
+  purchaseOrders  PurchaseOrder[]
+
+  @@index([branchId, status])
+  @@index([warehouseId])
+}
+
+model PurchaseRequestItem {
+  id                String          @id @default(uuid())
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  ingredientId      String
+  ingredient        Ingredient      @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  requestedQuantity Decimal         @db.Decimal(14, 4)
+  approvedQuantity  Decimal?        @db.Decimal(14, 4)
+  unitSymbol        String
+  estimatedCost     Decimal         @default(0) @db.Decimal(14, 2)
+
+  @@index([purchaseRequestId])
+  @@index([ingredientId])
+}
+
+model PurchaseOrder {
+  id                   String              @id @default(uuid())
+  orderCode            String              @unique
+  supplierId           String
+  supplier             Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  branchId             String
+  branch               Branch              @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouseId          String
+  warehouse            Warehouse           @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  purchaseRequestId    String?
+  purchaseRequest      PurchaseRequest?    @relation(fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  status               PurchaseOrderStatus @default(DRAFT)
+  orderDate            DateTime            @default(now())
+  expectedDeliveryDate DateTime?
+
+  subtotal             Decimal             @default(0) @db.Decimal(14, 2)
+  taxAmount            Decimal             @default(0) @db.Decimal(14, 2)
+  shippingFee          Decimal             @default(0) @db.Decimal(14, 2)
+  totalAmount          Decimal             @default(0) @db.Decimal(14, 2)
+  notes                String?             @db.Text
+
+  createdById          String?
+  createdByName        String?
+  approvedById         String?
+  approvedByName       String?
+  approvedAt           DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+
+  items                PurchaseOrderItem[]
+  receipts             GoodsReceipt[]
+  transactions         InventoryTransaction[]
+
+  @@index([supplierId])
+  @@index([branchId, status])
+  @@index([warehouseId])
+  @@index([orderDate])
+}
+
+model PurchaseOrderItem {
+  id               String        @id @default(uuid())
+  purchaseOrderId  String
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  ingredientId     String
+  ingredient       Ingredient    @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  orderQuantity    Decimal       @db.Decimal(14, 4)
+  receivedQuantity Decimal       @default(0) @db.Decimal(14, 4)
+  unitSymbol       String
+  unitPrice        Decimal       @db.Decimal(14, 2)
+  taxPercent       Float         @default(0)
+  totalAmount      Decimal       @db.Decimal(14, 2)
+
+  goodsReceiptItems GoodsReceiptItem[]
+
+  @@index([purchaseOrderId])
+  @@index([ingredientId])
+}
+
+model GoodsReceipt {
+  id                     String             @id @default(uuid())
+  receiptCode            String             @unique
+  purchaseOrderId        String?
+  purchaseOrder          PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  branchId               String
+  branch                 Branch             @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouseId            String
+  warehouse              Warehouse          @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  receiptDate            DateTime           @default(now())
+  supplierInvoiceNumber  String?
+  deliveryNoteNumber     String?
+  status                 GoodsReceiptStatus @default(DRAFT)
+  totalAmount            Decimal            @default(0) @db.Decimal(14, 2)
+
+  receivedById           String?
+  receivedByName         String?
+  confirmedById          String?
+  confirmedByName        String?
+  confirmedAt            DateTime?
+  notes                  String?            @db.Text
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  items                  GoodsReceiptItem[]
+  transactions           InventoryTransaction[]
+
+  @@index([purchaseOrderId])
+  @@index([branchId, status])
+  @@index([warehouseId])
+  @@index([receiptDate])
+}
+
+model GoodsReceiptItem {
+  id                  String             @id @default(uuid())
+  goodsReceiptId      String
+  goodsReceipt        GoodsReceipt       @relation(fields: [goodsReceiptId], references: [id], onDelete: Cascade)
+  purchaseOrderItemId String?
+  purchaseOrderItem   PurchaseOrderItem? @relation(fields: [purchaseOrderItemId], references: [id], onDelete: SetNull)
+  ingredientId        String
+  ingredient          Ingredient         @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  batchNumber         String?
+  expirationDate      DateTime?
+  receivedQuantity    Decimal            @db.Decimal(14, 4)
+  rejectedQuantity    Decimal            @default(0) @db.Decimal(14, 4)
+  rejectionReason     String?
+  unitSymbol          String
+  unitCost            Decimal            @db.Decimal(14, 2)
+  totalAmount         Decimal            @db.Decimal(14, 2)
+  storageLocation     String?
+
+  @@index([goodsReceiptId])
+  @@index([ingredientId])
+}
+
+model StockTransfer {
+  id              String              @id @default(uuid())
+  transferCode    String              @unique
+  fromBranchId    String
+  fromBranch      Branch              @relation("TransfersFromBranch", fields: [fromBranchId], references: [id], onDelete: Restrict)
+  toBranchId      String
+  toBranch        Branch              @relation("TransfersToBranch", fields: [toBranchId], references: [id], onDelete: Restrict)
+  fromWarehouseId String
+  fromWarehouse   Warehouse           @relation("TransfersFromWarehouse", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+  toWarehouseId   String
+  toWarehouse     Warehouse           @relation("TransfersToWarehouse", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+  status          StockTransferStatus @default(DRAFT)
+
+  requestedById   String?
+  requestedByName String?
+  approvedById    String?
+  approvedByName  String?
+  dispatchedById  String?
+  dispatchedByName String?
+  dispatchedAt    DateTime?
+  receivedById    String?
+  receivedByName  String?
+  receivedAt      DateTime?
+  notes           String?             @db.Text
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  items           StockTransferItem[]
+  transactions    InventoryTransaction[]
+
+  @@index([fromBranchId, toBranchId, status])
+  @@index([fromWarehouseId, toWarehouseId])
+  @@index([createdAt])
+}
+
+model StockTransferItem {
+  id                 String           @id @default(uuid())
+  stockTransferId    String
+  stockTransfer      StockTransfer    @relation(fields: [stockTransferId], references: [id], onDelete: Cascade)
+  ingredientId       String
+  ingredient         Ingredient       @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  batchId            String?
+  batch              IngredientBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  requestedQuantity  Decimal          @db.Decimal(14, 4)
+  dispatchedQuantity Decimal          @default(0) @db.Decimal(14, 4)
+  receivedQuantity   Decimal          @default(0) @db.Decimal(14, 4)
+  unitSymbol         String
+  unitCost           Decimal          @default(0) @db.Decimal(14, 2)
+  notes              String?
+
+  @@index([stockTransferId])
+  @@index([ingredientId])
+}
+
+model Stocktake {
+  id                    String          @id @default(uuid())
+  stocktakeCode         String          @unique
+  warehouseId           String
+  warehouse             Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  branchId              String
+  branch                Branch          @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  status                StocktakeStatus @default(DRAFT)
+  isBlindCount          Boolean         @default(false)
+
+  totalSystemQuantity   Decimal         @default(0) @db.Decimal(14, 4)
+  totalActualQuantity   Decimal         @default(0) @db.Decimal(14, 4)
+  totalVarianceQuantity Decimal         @default(0) @db.Decimal(14, 4)
+  totalVarianceValue    Decimal         @default(0) @db.Decimal(14, 2)
+
+  conductedById         String?
+  conductedByName       String?
+  conductedAt           DateTime?
+  approvedById          String?
+  approvedByName        String?
+  approvedAt            DateTime?
+  notes                 String?         @db.Text
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  items                 StocktakeItem[]
+  transactions          InventoryTransaction[]
+
+  @@index([branchId, warehouseId, status])
+  @@index([createdAt])
+}
+
+model StocktakeItem {
+  id               String           @id @default(uuid())
+  stocktakeId      String
+  stocktake        Stocktake        @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  ingredientId     String
+  ingredient       Ingredient       @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  batchId          String?
+  batch            IngredientBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  systemQuantity   Decimal          @db.Decimal(14, 4)
+  actualQuantity   Decimal          @db.Decimal(14, 4)
+  varianceQuantity Decimal          @db.Decimal(14, 4) // actual - system
+  unitSymbol       String
+  unitCost         Decimal          @db.Decimal(14, 2)
+  varianceValue    Decimal          @db.Decimal(14, 2) // varianceQuantity * unitCost
+  reason           String?
+  notes            String?
+
+  @@index([stocktakeId])
+  @@index([ingredientId])
+}
+
+model InventoryWaste {
+  id                String               @id @default(uuid())
+  wasteCode         String               @unique
+  branchId          String
+  branch            Branch               @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  warehouseId       String
+  warehouse         Warehouse            @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  ingredientId      String
+  ingredient        Ingredient           @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+  batchId           String?
+  batch             IngredientBatch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  orderId           String?
+  orderItemId       String?
+
+  quantity          Decimal              @db.Decimal(14, 4)
+  unitSymbol        String
+  unitCost          Decimal              @db.Decimal(14, 2)
+  totalLossValue    Decimal              @db.Decimal(14, 2)
+  reason            InventoryWasteReason @default(EXPIRED)
+  explanation       String?              @db.Text
+
+  reportedById      String?
+  reportedByName    String?
+  approvedById      String?
+  approvedByName    String?
+  approvedAt        DateTime?
+  evidenceImageUrl  String?
+  notes             String?              @db.Text
+  createdAt         DateTime             @default(now())
+
+  transactions      InventoryTransaction[]
+
+  @@index([branchId, warehouseId, reason])
+  @@index([ingredientId])
+  @@index([createdAt])
+}
+
+// =========================================================================
+// PHASE 3.1 — OPERATIONAL INVENTORY POLICY & EXCEPTION MONITORING
+// =========================================================================
+
+enum InventoryTrackingPolicy {
+  STRICT_TRACKING
+  WARN_AND_ALLOW
+  MANUAL_CONSUMPTION
+}
+
+enum InventoryExceptionType {
+  MISSING_RECIPE
+  INSUFFICIENT_STOCK
+  NEGATIVE_STOCK_ATTEMPT
+  EXPIRED_BATCH_BLOCKED
+  QUARANTINED_BATCH_BLOCKED
+  RESERVATION_FAILED
+  CONSUMPTION_FAILED
+  MANUAL_CONSUMPTION_PENDING
+  OFFLINE_SYNC_CONFLICT
+}
+
+enum InventoryExceptionStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model InventoryOperationalException {
+  id               String                   @id @default(uuid())
+  branchId         String
+  branch           Branch                   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  warehouseId      String?
+  orderId          String?
+  orderCode        String?
+  orderItemId      String?
+  productId        String?
+  product          Product?                 @relation(fields: [productId], references: [id], onDelete: SetNull)
+  productName      String?
+  recipeVersionId  String?
+  ingredientId     String?
+  ingredientName   String?
+  exceptionType    InventoryExceptionType
+  policyApplied    InventoryTrackingPolicy
+  status           InventoryExceptionStatus @default(OPEN)
+  severity         String                   @default("WARNING") // CRITICAL, WARNING, INFO
+  failureReason    String                   @db.Text
+  recommendedAction String?                 @db.Text
+  correlationId    String?
+  actorId          String?
+  actorName        String?
+  detectedAt       DateTime                 @default(now())
+  resolvedById     String?
+  resolvedByName   String?
+  resolutionNotes  String?                  @db.Text
+  resolvedAt       DateTime?
+
+  @@index([branchId, status, detectedAt])
+  @@index([exceptionType, status])
+  @@index([orderId])
+  @@index([correlationId])
+}
+
+// ====================================================================
+// HỆ THỐNG CHẤM CÔNG & LỊCH CA NHÂN VIÊN (ATTENDANCE & SHIFT MANAGEMENT)
+// Tương đương 100% nghiệp vụ SUSHI WA Legacy
+// ====================================================================
+
+model Shift {
+  id              String      @id @default(uuid())
+  shiftDate       DateTime    @map("shift_date") @db.Date
+  roleId          String?     @map("role_id")
+  name            String
+  startTime       String      @map("start_time") // HH:mm
+  endTime         String      @map("end_time")   // HH:mm
+  gracePeriodMins Int         @default(5) @map("grace_period_mins")
+  branchId        String?     @map("branch_id")
+  isSplitShift    Boolean     @default(false) @map("is_split_shift")
+  startTime2      String?     @map("start_time_2") // HH:mm
+  endTime2        String?     @map("end_time_2")   // HH:mm
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
+
+  role            AccessRole? @relation(fields: [roleId], references: [id], onDelete: SetNull)
+  branch          Branch?     @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  assignedUsers   User[]      @relation("ShiftAssignedUsers")
+  attendances     Attendance[]
+
+  @@index([shiftDate])
+  @@index([roleId])
+  @@index([branchId])
+  @@map("shifts")
+}
+
+model Attendance {
+  id             String      @id @default(uuid())
+  userId         String      @map("user_id")
+  branchId       String      @map("branch_id")
+  shiftId        String?     @map("shift_id")
+  workDate       DateTime    @map("work_date") @db.Date
+  checkInTime    DateTime?   @map("check_in_time")
+  checkOutTime   DateTime?   @map("check_out_time")
+  status         String      @default("ON_TIME") // ON_TIME, LATE, EARLY_LEAVE, LATE_AND_EARLY_LEAVE, FLEXIBLE, MISSING_CHECKOUT
+  totalWorkHours Float?      @map("total_work_hours")
+  notes          String?     @db.VarChar(500)
+  sourceSystem   String?     @default("AVORA") @map("source_system") // AVORA or SUSHI_WA
+  legacyId       String?     @map("legacy_id") // Truy vết dữ liệu migration
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch         Branch      @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  shift          Shift?      @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+
+  @@index([userId, workDate])
+  @@index([branchId, workDate])
+  @@index([workDate])
+  @@map("attendances")
+}
+
+model AttendanceLog {
+  id                 String    @id @default(uuid())
+  userId             String?   @map("user_id")
+  branchId           String?   @map("branch_id")
+  scanTime           DateTime  @default(now()) @map("scan_time")
+  scanType           String    @map("scan_type") // CHECK_IN, CHECK_OUT, MANUAL_ADD, UPDATE_RECORD, DELETE_RECORD
+  clientLatitude     Float     @default(0) @map("client_latitude")
+  clientLongitude    Float     @default(0) @map("client_longitude")
+  distanceCalculated Float     @default(0) @map("distance_calculated")
+  clientAccuracy     Float     @default(0) @map("client_accuracy")
+  isSuccess          Boolean   @default(false) @map("is_success")
+  errorCode          String?   @map("error_code")
+  deviceId           String?   @map("device_id")
+  rawQrData          String?   @map("raw_qr_data") @db.Text
+  shiftName          String?   @map("shift_name")
+  createdAt          DateTime  @default(now()) @map("created_at")
+
+  user               User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  branch             Branch?   @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([userId, scanTime])
+  @@index([branchId, scanTime])
+  @@index([scanTime])
+  @@map("attendance_logs")
+}
+

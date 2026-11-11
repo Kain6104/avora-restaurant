@@ -8,6 +8,7 @@ import QrOrdersView from '@/components/waiter/views/QrOrdersView';
 import OrderDetailView from '@/components/waiter/order/OrderDetailView';
 import MenuView from '@/components/waiter/views/MenuView';
 import SettingsView from '@/components/waiter/views/SettingsView';
+import AttendanceView from '@/components/waiter/views/AttendanceView';
 
 export default function WaiterAppPage() {
   const { activeTab, selectedTableId, selectedOrderId } = useWaiterStore();
@@ -29,6 +30,7 @@ export default function WaiterAppPage() {
       {activeTab === 'ORDERS' && <ActiveOrdersView />}
       {activeTab === 'QR' && <QrOrdersView />}
       {activeTab === 'SETTINGS' && <SettingsView />}
+      {activeTab === 'ATTENDANCE' && <AttendanceView />}
     </div>
   );
 }

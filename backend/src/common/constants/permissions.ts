@@ -40,6 +40,14 @@ export const PERMISSIONS = {
   ARTICLES_NOTIFY: 'article_campaigns.send',
   SETTINGS_VIEW: 'settings.general.view',
   SETTINGS_UPDATE: 'settings.general.update',
+  // ATTENDANCE ALIASES
+  ATTENDANCE_VIEW_LIST: 'attendance.view',
+  ATTENDANCE_EDIT: 'attendance.edit',
+  ATTENDANCE_EXPORT: 'attendance.export',
+  ATTENDANCE_IMPORT: 'attendance.import',
+  ATTENDANCE_VIEW_LOG: 'attendance.log.view',
+  ATTENDANCE_DEVICE_MANAGE: 'attendance.device.manage',
+  ATTENDANCE_QR_MANAGE: 'attendance.qr.manage',
 };
 
 export const ROLE_PERMISSIONS: Record<RoleType, string[]> = {

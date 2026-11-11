@@ -42,6 +42,15 @@ import {
   Sprout,
   Dna,
   ShieldAlert,
+  Boxes,
+  Warehouse,
+  BookOpen,
+  Truck,
+  ClipboardCheck,
+  TrendingUp,
+  ArrowRightLeft,
+  Activity,
+  Ban,
 } from 'lucide-react';
 
 /* ==========================================================================
@@ -111,11 +120,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.pos',
               defaultLabel: 'Bán hàng (POS)',
               permission: 'pos.access',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#da251d] text-white rounded shadow-2xs">
-                  POS
-                </span>
-              ),
             },
             {
               id: 'kds',
@@ -124,11 +128,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.kds',
               defaultLabel: 'Bếp & Bar (KDS)',
               permission: 'kds.access',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-amber-500 text-white rounded shadow-2xs">
-                  KDS
-                </span>
-              ),
             },
             {
               id: 'tables',
@@ -175,11 +174,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsFinancial',
               defaultLabel: 'Báo cáo tài chính',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#800020] text-white rounded shadow-2xs">
-                  VIP
-                </span>
-              ),
             },
             {
               id: 'reports_tax',
@@ -188,11 +182,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsTax',
               defaultLabel: 'Báo cáo thuế / VAT',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#800020] text-white rounded shadow-2xs">
-                  VAT
-                </span>
-              ),
             },
             {
               id: 'reports_payment_methods',
@@ -201,11 +190,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsPaymentMethods',
               defaultLabel: 'Phương thức thanh toán',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#800020] text-white rounded shadow-2xs">
-                  PAY
-                </span>
-              ),
             },
             {
               id: 'reports_products',
@@ -214,11 +198,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsProducts',
               defaultLabel: 'Báo cáo mặt hàng',
               permission: 'reports.products.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#da251d] text-white rounded shadow-2xs">
-                  MỚI
-                </span>
-              ),
             },
             {
               id: 'reports_vouchers',
@@ -227,11 +206,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsVouchers',
               defaultLabel: 'Voucher & Khuyến mãi',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-[#800020] text-white rounded shadow-2xs">
-                  VOUCHER
-                </span>
-              ),
             },
             {
               id: 'reports_flash_sales',
@@ -240,11 +214,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsFlashSales',
               defaultLabel: 'Flash Sale & Giờ vàng',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-amber-600 text-white rounded shadow-2xs">
-                  SALE
-                </span>
-              ),
             },
             {
               id: 'reports_customers',
@@ -261,11 +230,30 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.reportsMembershipPoints',
               defaultLabel: 'Hội viên & Điểm',
               permission: 'reports.revenue.view',
-              badge: (
-                <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-emerald-700 text-white rounded shadow-2xs">
-                  POINT
-                </span>
-              ),
+            },
+            {
+              id: 'reports_food_cost',
+              href: '/admin/reports/food-cost',
+              icon: TrendingUp,
+              labelKey: 'nav.reportsFoodCost',
+              defaultLabel: 'Food Cost & Lợi nhuận',
+              permission: 'inventory.reports.view',
+            },
+            {
+              id: 'reports_cancellations_unpaid',
+              href: '/admin/reports/cancellations/unpaid',
+              icon: Ban,
+              labelKey: 'nav.reportsCancellationsUnpaid',
+              defaultLabel: 'Hủy đơn chưa thanh toán',
+              permission: 'orders.view_unpaid_cancellations',
+            },
+            {
+              id: 'reports_cancellations_paid',
+              href: '/admin/reports/cancellations/paid',
+              icon: ShieldAlert,
+              labelKey: 'nav.reportsCancellationsPaid',
+              defaultLabel: 'Hủy hóa đơn đã thanh toán',
+              permission: 'orders.view_paid_cancellations',
             },
           ],
         },
@@ -273,12 +261,115 @@ const NAVIGATION_SECTIONS: NavSection[] = [
     ],
   },
 
-  // 2. NHÂN SỰ & PHÂN QUYỀN
+  // 2. KHO & NGUYÊN LIỆU (PHASE 3)
+  {
+    id: 'inventory_section',
+    titleKey: 'nav.section.inventory',
+    defaultTitle: 'KHO & NGUYÊN LIỆU',
+    entries: [
+      {
+        type: 'accordion',
+        data: {
+          id: 'inventory_group',
+          titleKey: 'nav.inventoryGroup',
+          defaultTitle: 'Quản lý kho hàng',
+          icon: Boxes,
+          items: [
+            {
+              id: 'inventory_dashboard',
+              href: '/admin/inventory',
+              icon: LayoutDashboard,
+              labelKey: 'nav.inventoryDashboard',
+              defaultLabel: 'Tổng quan kho',
+              permission: 'inventory.view',
+            },
+            {
+              id: 'inventory_ingredients',
+              href: '/admin/inventory/ingredients',
+              icon: Package,
+              labelKey: 'nav.inventoryIngredients',
+              defaultLabel: 'Danh mục nguyên liệu',
+              permission: 'inventory.view',
+            },
+            {
+              id: 'inventory_recipes',
+              href: '/admin/inventory/recipes',
+              icon: BookOpen,
+              labelKey: 'nav.inventoryRecipes',
+              defaultLabel: 'Công thức & Định mức',
+              permission: 'recipes.view',
+            },
+            {
+              id: 'inventory_warehouses',
+              href: '/admin/inventory/warehouses',
+              icon: Warehouse,
+              labelKey: 'nav.inventoryWarehouses',
+              defaultLabel: 'Kho hàng & Tồn kho',
+              permission: 'inventory.view',
+            },
+            {
+              id: 'inventory_procurement',
+              href: '/admin/inventory/procurement',
+              icon: Truck,
+              labelKey: 'nav.inventoryProcurement',
+              defaultLabel: 'Mua hàng & Nhập kho',
+              permission: 'goods_receipts.confirm',
+            },
+            {
+              id: 'inventory_transfers',
+              href: '/admin/inventory/transfers',
+              icon: ArrowRightLeft,
+              labelKey: 'nav.inventoryTransfers',
+              defaultLabel: 'Điều chuyển kho',
+              permission: 'inventory.transfer',
+            },
+            {
+              id: 'inventory_stocktakes',
+              href: '/admin/inventory/stocktakes',
+              icon: ClipboardCheck,
+              labelKey: 'nav.inventoryStocktakes',
+              defaultLabel: 'Kiểm kê & Hao hụt',
+              permission: 'inventory.stocktake',
+            },
+            {
+              id: 'inventory_transactions',
+              href: '/admin/inventory/transactions',
+              icon: FileText,
+              labelKey: 'nav.inventoryTransactions',
+              defaultLabel: 'Sổ cái giao dịch kho',
+              permission: 'inventory.view',
+            },
+            {
+              id: 'inventory_monitor',
+              href: '/admin/operations/inventory-monitor',
+              icon: Activity,
+              labelKey: 'nav.inventoryMonitor',
+              defaultLabel: 'Giám sát & Ngoại lệ kho',
+              permission: 'inventory.view',
+            },
+          ],
+        },
+      },
+    ],
+  },
+
+  // 3. NHÂN SỰ & PHÂN QUYỀN
   {
     id: 'people',
     titleKey: 'nav.section.people',
     defaultTitle: 'NHÂN SỰ & CHẤM CÔNG',
     entries: [
+      {
+        type: 'item',
+        data: {
+          id: 'attendance',
+          href: '/admin/attendance',
+          icon: Clock,
+          labelKey: 'nav.attendance',
+          defaultLabel: 'Chấm công & Lịch ca',
+          permission: 'attendance.view',
+        },
+      },
       {
         type: 'item',
         data: {
@@ -299,11 +390,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
           labelKey: 'nav.roles',
           defaultLabel: 'Vai trò & Phân quyền',
           permission: 'roles.view',
-          badge: (
-            <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-indigo-600 text-white rounded shadow-2xs">
-              RBAC
-            </span>
-          ),
         },
       },
     ],
@@ -407,11 +493,6 @@ const NAVIGATION_SECTIONS: NavSection[] = [
           labelKey: 'nav.reviews',
           defaultLabel: 'Đánh giá & Phản hồi',
           permission: 'reviews.view',
-          badge: (
-            <span className="px-1.5 py-0.2 text-[9px] font-extrabold bg-amber-500 text-white rounded shadow-2xs">
-              MỚI
-            </span>
-          ),
         },
       },
       {
