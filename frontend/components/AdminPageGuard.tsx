@@ -35,9 +35,14 @@ export function AdminPageGuard({
   const { loading, can, selectedBranchId, capabilities, role, user } = useAdmin();
   const targetBranch = branchId !== undefined ? branchId : selectedBranchId;
 
-  // Role USER tuyệt đối không được phép xem bất kỳ giao diện hay dữ liệu quản trị nào
-  const isUserRole = user?.role === 'USER' || capabilities?.user?.role === 'USER' || role === 'USER';
-  if (isUserRole) {
+  // CHỈ tài khoản khách hàng thuần túy (USER không có bất kỳ vai trò/quyền nhân sự nào) mới bị chặn 404
+  const isPureCustomer =
+    (user?.role === 'USER' || capabilities?.user?.role === 'USER' || role === 'USER') &&
+    (!capabilities?.assignments || capabilities.assignments.length === 0) &&
+    (!capabilities?.roles || capabilities.roles.length === 0) &&
+    (!capabilities?.effectivePermissions || Object.keys(capabilities.effectivePermissions).length === 0);
+
+  if (isPureCustomer) {
     return <AdminUserForbidden404 />;
   }
 

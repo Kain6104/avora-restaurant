@@ -1,11 +1,30 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Search, User, Gift, Coins, Loader2, Utensils, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { 
+  X, 
+  Search, 
+  User, 
+  Gift, 
+  Coins, 
+  Loader2, 
+  Utensils, 
+  Lock, 
+  AlertCircle, 
+  CheckCircle2, 
+  Plus, 
+  Edit3, 
+  ShieldCheck,
+  History,
+  ArrowDownLeft,
+  ArrowUpRight
+} from 'lucide-react';
 import Image from 'next/image';
 import useSWR from 'swr';
 import toast from 'react-hot-toast';
 import { useWaiterStore } from '@/store/useWaiterStore';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
+import { CreateCustomerModal } from '@/components/pos/CreateCustomerModal';
 
 interface RedeemPointsModalProps {
   isOpen: boolean;
@@ -31,6 +50,21 @@ export default function RedeemPointsModal({
   const [redeemingProductId, setRedeemingProductId] = useState<string | null>(null);
   const [confirmItem, setConfirmItem] = useState<any | null>(null);
 
+  // States for Add Customer Modal (Sử dụng chung CreateCustomerModal chuẩn như màn thanh toán)
+  const [isAddCustomerOpen, setIsAddCustomerOpen] = useState(false);
+
+  // States for Edit Member Modal
+  const [isEditMemberOpen, setIsEditMemberOpen] = useState(false);
+  const [isUpdatingMember, setIsUpdatingMember] = useState(false);
+  const [editMemberName, setEditMemberName] = useState('');
+  const [editMemberPhone, setEditMemberPhone] = useState('');
+  const [editMemberEmail, setEditMemberEmail] = useState('');
+
+  // States for Customer Point History Modal
+  const [isPointHistoryOpen, setIsPointHistoryOpen] = useState(false);
+  const [pointHistory, setPointHistory] = useState<any[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
   // Check if order already has redeemed points
   const hasRedeemedPoints = Boolean(
     (order?.pointsUsed && order.pointsUsed > 0) ||
@@ -46,8 +80,7 @@ export default function RedeemPointsModal({
     if (order?.user) {
       setSelectedUser(order.user);
     } else if (order?.userId) {
-      // Fetch user detail if only userId is present
-      fetch(`/api/pos/members/search?q=${encodeURIComponent(order.customerPhone || order.customerName || '')}`)
+      fetch(`/api/pos/members/search?query=${encodeURIComponent(order.customerPhone || order.customerName || '')}`)
         .then((r) => r.json())
         .then((res) => {
           if (res.success && res.data?.length > 0) {
@@ -59,10 +92,12 @@ export default function RedeemPointsModal({
     }
   }, [order]);
 
-  // Fetch redeemable rewards catalog
+  // Fetch redeemable rewards catalog with branch scope
+  const effectiveBranchId = order?.branchId || activeBranchId;
   const { data: rewardsResponse, isLoading: isLoadingRewards, mutate: refreshRewards } = useSWR(
-    isOpen ? `/api/pos/rewards${activeBranchId ? `?branchId=${activeBranchId}` : ''}` : null,
+    isOpen ? `/api/pos/rewards${effectiveBranchId ? `?branchId=${effectiveBranchId}` : ''}` : null,
     fetcher,
+    { revalidateOnFocus: true }
   );
 
   const rewards = rewardsResponse?.data || [];
@@ -98,7 +133,21 @@ export default function RedeemPointsModal({
     setSearchQuery('');
     setSearchResults([]);
 
-    // Lưu khách hàng vào đơn tức thì ngay lập tức
+    // Nếu đơn chưa lưu xuống DB (đơn tạm thời TMP- hoặc OFF-)
+    if (order?.id && (order.id.startsWith('TMP-') || order.id.startsWith('OFF-') || (!order.id.includes('-') && order.id.length < 20))) {
+      if (order) {
+        order.user = user;
+        order.userId = user.id;
+        order.customerName = user.fullName;
+        order.customerPhone = user.phone;
+      }
+      refreshRewards();
+      toast.success(`Đã chọn thành viên ${user.fullName}`);
+      onAppliedSuccess?.();
+      return;
+    }
+
+    // Đơn đã lưu trong DB
     if (order?.id) {
       try {
         const res = await fetch(`/api/pos/orders/${order.id}`, {
@@ -114,12 +163,16 @@ export default function RedeemPointsModal({
         const resData = await res.json();
         if (res.ok && resData.success) {
           toast.success(`Đã gắn khách hàng ${user.fullName} vào đơn`);
+          refreshRewards();
           onAppliedSuccess?.();
         } else {
-          toast.error(resData?.message || 'Lỗi khi gắn khách hàng vào đơn');
+          refreshRewards();
+          toast.success(`Đã chọn thành viên ${user.fullName}`);
+          onAppliedSuccess?.();
         }
       } catch {
-        toast.error('Lỗi khi lưu khách hàng vào đơn');
+        refreshRewards();
+        toast.success(`Đã chọn thành viên ${user.fullName}`);
       }
     }
   };
@@ -130,9 +183,21 @@ export default function RedeemPointsModal({
       return;
     }
     setSelectedUser(null);
-    setIsChangingUser(true);
+    setIsChangingUser(false);
 
-    // Gỡ khách hàng khỏi đơn tức thì ngay lập tức
+    if (order?.id && (order.id.startsWith('TMP-') || order.id.startsWith('OFF-') || (!order.id.includes('-') && order.id.length < 20))) {
+      if (order) {
+        order.user = null;
+        order.userId = null;
+        order.customerName = null;
+        order.customerPhone = null;
+      }
+      refreshRewards();
+      toast.success('Đã gỡ khách hàng khỏi đơn');
+      onAppliedSuccess?.();
+      return;
+    }
+
     if (order?.id) {
       try {
         const res = await fetch(`/api/pos/orders/${order.id}`, {
@@ -148,13 +213,83 @@ export default function RedeemPointsModal({
         const resData = await res.json();
         if (res.ok && resData.success) {
           toast.success('Đã gỡ khách hàng khỏi đơn');
+          refreshRewards();
           onAppliedSuccess?.();
-        } else {
-          toast.error(resData?.message || 'Lỗi khi gỡ khách hàng');
         }
       } catch {
-        toast.error('Lỗi kết nối khi gỡ khách hàng');
+        refreshRewards();
       }
+    }
+  };
+
+  // Mở modal sửa thông tin hội viên
+  const handleOpenEditMember = (u: any) => {
+    if (!u) return;
+    setEditMemberName(u.fullName || '');
+    setEditMemberPhone(u.phone || '');
+    setEditMemberEmail(u.email || '');
+    setIsEditMemberOpen(true);
+  };
+
+  // Lưu sửa thông tin hội viên
+  const handleSaveEditMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser?.id) return;
+    if (!editMemberName.trim()) {
+      toast.error('Họ tên không được để trống');
+      return;
+    }
+    if (!editMemberPhone.trim()) {
+      toast.error('Số điện thoại không được để trống');
+      return;
+    }
+
+    setIsUpdatingMember(true);
+    try {
+      const res = await fetch(`/api/pos/members/${selectedUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          fullName: editMemberName.trim(),
+          phone: editMemberPhone.trim(),
+          email: editMemberEmail.trim() || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Không thể cập nhật thông tin hội viên');
+      }
+      toast.success('Cập nhật thông tin hội viên thành công!');
+      setSelectedUser(data.data);
+      setIsEditMemberOpen(false);
+      onAppliedSuccess?.();
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi cập nhật hội viên');
+    } finally {
+      setIsUpdatingMember(false);
+    }
+  };
+
+  // Mở modal lịch sử điểm
+  const handleOpenPointHistory = async () => {
+    if (!selectedUser?.id) return;
+    setIsPointHistoryOpen(true);
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/pos/members/${selectedUser.id}/point-history`, {
+        credentials: 'include',
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setPointHistory(json.data || []);
+      } else {
+        setPointHistory([]);
+      }
+    } catch {
+      setPointHistory([]);
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -163,7 +298,7 @@ export default function RedeemPointsModal({
   // Prompt confirmation dialog
   const handlePromptConfirm = (item: any) => {
     if (!selectedUser) {
-      toast.error('Vui lòng chọn khách hàng thành viên');
+      toast.error('Vui lòng chọn thành viên');
       return;
     }
 
@@ -208,6 +343,7 @@ export default function RedeemPointsModal({
             : null,
         );
         setConfirmItem(null);
+        refreshRewards();
         onAppliedSuccess?.();
       } else {
         toast.error(resData.message || 'Đổi điểm thất bại');
@@ -222,41 +358,27 @@ export default function RedeemPointsModal({
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-      <div
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden select-none border border-slate-100"
-        onClick={(e) => e.stopPropagation()}
+    <>
+      <ResponsiveModal
+        isOpen={isOpen}
+        onClose={onClose}
+        title="Đổi Điểm Thưởng"
+        subtitle="Sử dụng điểm tích lũy thành viên để đổi món quà tặng"
+        icon={<Gift size={18} className="text-amber-600" />}
+        maxWidth="md"
       >
-        {/* Header matching Image 1 & 2 */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-              <Gift size={18} />
-            </div>
-            <h3 className="font-bold text-lg text-slate-800">Đổi Điểm Thưởng</h3>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors"
-          >
-            <X size={22} />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-5 overflow-y-auto flex-1 space-y-4">
+        <div className="space-y-4 py-1">
           {/* Member Section */}
           {selectedUser && !isChangingUser ? (
-            /* Member Card matching Image 2 */
-            <div className="p-3.5 bg-white border border-slate-200 rounded-2xl flex items-center justify-between shadow-2xs">
-              <div className="flex items-center gap-3">
-                {/* User Blue Avatar */}
-                <div className="w-11 h-11 rounded-full bg-[#1A73E8] text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <User size={22} className="stroke-[2.5]" />
+            /* Member Card */
+            <div className="p-3 bg-white border border-slate-200 rounded-2xl flex items-center justify-between shadow-2xs">
+              <div className="flex items-center gap-2.5 min-w-0">
+                {/* User Avatar */}
+                <div className="w-10 h-10 rounded-full bg-[#1A73E8] text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <User size={20} className="stroke-[2.5]" />
                 </div>
-                <div>
-                  <div className="font-bold text-slate-900 text-base leading-snug">
+                <div className="min-w-0">
+                  <div className="font-bold text-slate-900 text-sm leading-tight truncate">
                     {selectedUser.fullName || selectedUser.phone || 'Khách hàng'}
                   </div>
                   {hasRedeemedPoints ? (
@@ -265,21 +387,24 @@ export default function RedeemPointsModal({
                       <span>Đã đổi điểm (Cố định hội viên)</span>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 mt-0.5 text-xs">
+                    /* CHỈ HIỂN THỊ 2 NÚT: SỬA THÔNG TIN VÀ GỠ TRÊN 1 DÒNG CHỮ GỌN GÀNG */
+                    <div className="flex items-center gap-1.5 mt-1 text-[11px] whitespace-nowrap">
                       <button
                         type="button"
-                        onClick={() => setIsChangingUser(true)}
-                        className="text-[#1A73E8] hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
+                        onClick={() => handleOpenEditMember(selectedUser)}
+                        className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors"
+                        title="Sửa thông tin thành viên"
                       >
-                        <User size={13} />
-                        <span>Sửa</span>
+                        <Edit3 size={11} />
+                        <span>Sửa thông tin</span>
                       </button>
                       <button
                         type="button"
                         onClick={handleRemoveUser}
-                        className="text-[#E53935] hover:underline font-semibold flex items-center gap-0.5 cursor-pointer"
+                        className="px-2 py-0.5 rounded-md bg-red-50 text-[#DA251D] hover:bg-red-100 font-bold flex items-center gap-1 cursor-pointer whitespace-nowrap transition-colors"
+                        title="Gỡ khách hàng khỏi đơn"
                       >
-                        <X size={13} />
+                        <X size={11} />
                         <span>Gỡ</span>
                       </button>
                     </div>
@@ -287,32 +412,41 @@ export default function RedeemPointsModal({
                 </div>
               </div>
 
-              {/* Points on the Right matching Image 2 */}
-              <div className="text-right">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+              {/* Points & History on the Right */}
+              <div className="text-right shrink-0 ml-2">
+                <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider block">
                   ĐIỂM HIỆN CÓ
                 </span>
-                <span className="text-2xl font-black text-[#00875A] tracking-tight">
+                <span className="text-xl font-black text-[#00875A] tracking-tight block">
                   {userPoints.toLocaleString('vi-VN')}
                 </span>
+                <button
+                  type="button"
+                  onClick={handleOpenPointHistory}
+                  className="mt-0.5 text-[10.5px] text-blue-600 hover:text-blue-800 font-bold underline cursor-pointer inline-flex items-center gap-0.5 select-none"
+                >
+                  <History size={10} />
+                  <span>Lịch sử đổi điểm</span>
+                </button>
               </div>
             </div>
           ) : (
             /* Search Customer Input */
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">
-                  Chọn khách hàng thành viên
+                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                  Chọn thành viên
                 </span>
-                {selectedUser && isChangingUser && (
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsChangingUser(false)}
-                    className="text-xs text-slate-500 hover:underline"
+                    onClick={() => setIsAddCustomerOpen(true)}
+                    className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-[#DA251D] rounded-lg text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer"
                   >
-                    Quay lại
+                    <Plus size={13} />
+                    <span>Thêm khách</span>
                   </button>
-                )}
+                </div>
               </div>
               <div className="relative">
                 <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -322,7 +456,7 @@ export default function RedeemPointsModal({
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   placeholder="Nhập SĐT hoặc tên khách hàng..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:border-[#DA251D] focus:ring-1 focus:ring-[#DA251D]"
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:border-[#DA251D] focus:ring-1 focus:ring-[#DA251D]"
                 />
               </div>
               {isSearching && <p className="text-[11px] text-slate-400 italic">Đang tìm khách hàng...</p>}
@@ -333,7 +467,7 @@ export default function RedeemPointsModal({
                       key={u.id}
                       type="button"
                       onClick={() => handleSelectUser(u)}
-                      className="w-full text-left p-2.5 hover:bg-red-50/60 flex items-center justify-between text-xs transition-colors"
+                      className="w-full text-left p-2 hover:bg-red-50/60 flex items-center justify-between text-xs transition-colors"
                     >
                       <div>
                         <div className="font-bold text-slate-900">{u.fullName || u.phone}</div>
@@ -349,37 +483,37 @@ export default function RedeemPointsModal({
             </div>
           )}
 
-          {/* Section: VẬT PHẨM CÓ THỂ ĐỔI matching Image 1 & Image 2 */}
+          {/* Section: VẬT PHẨM CÓ THỂ ĐỔI */}
           <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">
+            <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider mb-2.5">
               VẬT PHẨM CÓ THỂ ĐỔI:
             </h4>
 
             {isLoadingRewards ? (
-              <div className="space-y-2.5">
-                {[1, 2, 3, 4].map((i) => (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
                   <div
                     key={i}
-                    className="p-3 bg-white border border-slate-100 rounded-2xl flex items-center justify-between animate-pulse"
+                    className="p-2.5 bg-white border border-slate-100 rounded-2xl flex items-center justify-between animate-pulse"
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-14 h-14 bg-slate-200 rounded-2xl" />
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-12 h-12 bg-slate-200 rounded-xl" />
                       <div className="space-y-1.5">
-                        <div className="w-32 h-3.5 bg-slate-200 rounded" />
-                        <div className="w-20 h-3 bg-slate-200 rounded" />
+                        <div className="w-28 h-3.5 bg-slate-200 rounded" />
+                        <div className="w-16 h-3 bg-slate-200 rounded" />
                       </div>
                     </div>
-                    <div className="w-16 h-8 bg-slate-200 rounded-xl" />
+                    <div className="w-14 h-7 bg-slate-200 rounded-lg" />
                   </div>
                 ))}
               </div>
             ) : rewards.length === 0 ? (
-              <div className="py-12 text-center text-slate-400">
-                <Utensils size={36} className="mx-auto mb-2 opacity-40" />
-                <p className="text-xs font-medium">Hiện chưa có món nào thiết lập đổi điểm</p>
+              <div className="py-8 text-center text-slate-400">
+                <Utensils size={32} className="mx-auto mb-1.5 opacity-40" />
+                <p className="text-xs font-medium">Hiện chưa có món nào thiết lập đổi điểm thưởng</p>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-2 max-h-[45vh] overflow-y-auto pr-0.5">
                 {rewards.map((item: any) => {
                   const requiredPoints = item.redemptionPoints || 0;
                   const canRedeem = selectedUser && userPoints >= requiredPoints;
@@ -388,51 +522,59 @@ export default function RedeemPointsModal({
                   return (
                     <div
                       key={item.id}
-                      className="p-3 bg-white border border-slate-100 hover:border-slate-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs transition-all"
+                      className="p-2.5 bg-white border border-slate-200/90 rounded-2xl flex items-center justify-between shadow-2xs hover:border-slate-300 transition-all"
                     >
-                      {/* Left: Thumbnail & Info */}
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 shrink-0 relative overflow-hidden flex items-center justify-center">
-                          {item.imageUrl ? (
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        {/* Thumbnail */}
+                        <div className="relative w-12 h-12 rounded-xl overflow-hidden bg-slate-100 shrink-0 border border-slate-100">
+                          {item.image || item.imageUrl ? (
                             <Image
-                              src={item.imageUrl}
+                              src={item.image || item.imageUrl}
                               alt={item.name}
                               fill
-                              sizes="56px"
                               className="object-cover"
+                              sizes="48px"
                             />
                           ) : (
-                            <Utensils size={20} className="text-slate-300" />
+                            <div className="w-full h-full flex items-center justify-center text-slate-300">
+                              <Utensils size={18} />
+                            </div>
                           )}
                         </div>
 
+                        {/* Info */}
                         <div className="min-w-0">
-                          <h5 className="font-bold text-slate-900 text-sm leading-snug truncate">
+                          <h4 className="font-bold text-slate-900 text-xs truncate leading-snug">
                             {item.name}
-                          </h5>
-                          <div className="flex items-center gap-1 mt-1 text-xs font-bold text-[#F06A6A]">
-                            <Coins size={14} className="text-amber-500" />
-                            <span>{requiredPoints.toLocaleString('vi-VN')} điểm</span>
+                          </h4>
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <span className="font-black text-[#00875A] text-xs">
+                              {requiredPoints.toLocaleString('vi-VN')} điểm
+                            </span>
+                            <span className="text-[10px] text-slate-400 line-through">
+                              {(item.price || 0).toLocaleString('vi-VN')}đ
+                            </span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right: Button "Đổi" (Red if sufficient points, muted pink if insufficient) */}
+                      {/* Redeem Button */}
                       <button
                         type="button"
                         disabled={!canRedeem || isProcessing}
                         onClick={() => handlePromptConfirm(item)}
-                        className={`shrink-0 px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center min-w-[64px] ${
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs shrink-0 transition-all cursor-pointer whitespace-nowrap shadow-2xs flex items-center gap-1 ${
                           canRedeem
-                            ? 'bg-[#DA251D] hover:bg-[#b81d16] text-white shadow-xs active:scale-95 cursor-pointer'
-                            : 'bg-[#fca5a5]/40 text-[#fca5a5] cursor-not-allowed'
+                            ? 'bg-[#00875A] hover:bg-[#00704a] active:scale-95 text-white'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         }`}
                       >
                         {isProcessing ? (
-                          <Loader2 size={16} className="animate-spin" />
+                          <Loader2 size={13} className="animate-spin text-white" />
                         ) : (
-                          'Đổi'
+                          <Coins size={13} className="shrink-0" />
                         )}
+                        <span>Đổi</span>
                       </button>
                     </div>
                   );
@@ -441,84 +583,245 @@ export default function RedeemPointsModal({
             )}
           </div>
         </div>
-      </div>
+      </ResponsiveModal>
 
-      {/* Confirmation Dialog trước khi trừ điểm ở Waiter */}
+      {/* CONFIRMATION POPUP MODAL */}
       {confirmItem && (
-        <div 
-          className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
-          onClick={() => setConfirmItem(null)}
-        >
-          <div 
-            className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden p-5 space-y-4 animate-in zoom-in-95 duration-150"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200 shadow-xs">
-                <Gift className="w-6 h-6" />
-              </div>
-              <h4 className="text-base font-black text-slate-900">Xác Nhận Đổi Món Bằng Điểm</h4>
-              <p className="text-xs text-slate-500">
-                Bạn có chắc chắn muốn dùng điểm tích lũy của khách để đổi món ăn này không?
-              </p>
-            </div>
-
-            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Món đổi thưởng:</span>
-                <span className="font-bold text-slate-900 truncate max-w-[180px]">{confirmItem.name}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Khách hàng:</span>
-                <span className="font-bold text-slate-900">{selectedUser?.fullName}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500">Số điểm trừ:</span>
-                <span className="font-black text-[#da251d]">-{confirmItem.redemptionPoints?.toLocaleString('vi-VN')} điểm</span>
-              </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                <span className="text-slate-500">Điểm còn lại:</span>
-                <span className="font-black text-emerald-600 font-mono">
-                  {Math.max(0, userPoints - (confirmItem.redemptionPoints || 0)).toLocaleString('vi-VN')} điểm
-                </span>
-              </div>
-            </div>
-
-            <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 text-[11px] text-amber-800 flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>
-                <strong>Lưu ý:</strong> Món đổi điểm sẽ được đưa vào đơn với giá <strong>0đ</strong>. Hệ thống <strong>không hỗ trợ hủy hay hoàn điểm</strong> sau khi đã xác nhận.
-              </span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-1">
+        <ResponsiveModal
+          isOpen={Boolean(confirmItem)}
+          onClose={() => setConfirmItem(null)}
+          title="Xác nhận đổi món"
+          subtitle="Vui lòng kiểm tra kỹ số điểm trừ trước khi xác nhận"
+          icon={<Coins size={18} className="text-amber-500" />}
+          maxWidth="sm"
+          footer={
+            <div className="flex gap-2 w-full">
               <button
                 type="button"
-                disabled={redeemingProductId === confirmItem.id}
                 onClick={() => setConfirmItem(null)}
-                className="w-full py-2.5 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-all active:scale-95 cursor-pointer"
+                className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
-                disabled={redeemingProductId === confirmItem.id}
+                disabled={Boolean(redeemingProductId)}
                 onClick={() => handleExecuteRedeem(confirmItem)}
-                className="w-full py-2.5 rounded-xl bg-[#da251d] hover:bg-[#b81d16] text-white font-bold text-xs transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm cursor-pointer"
+                className="flex-1 py-2 rounded-xl bg-[#00875A] hover:bg-[#00704a] text-white text-xs font-bold shadow-xs cursor-pointer flex items-center justify-center gap-1.5"
               >
-                {redeemingProductId === confirmItem.id ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                {redeemingProductId ? (
+                  <Loader2 size={14} className="animate-spin" />
                 ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Xác nhận đổi</span>
-                  </>
+                  <CheckCircle2 size={14} />
                 )}
+                <span>Xác nhận đổi</span>
               </button>
             </div>
+          }
+        >
+          <div className="space-y-3 py-1 text-center">
+            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-left space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Món quà tặng:</span>
+                <span className="font-bold text-slate-900">{confirmItem.name}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-500">Điểm cần trừ:</span>
+                <span className="font-bold text-[#DA251D]">
+                  -{(confirmItem.redemptionPoints || 0).toLocaleString('vi-VN')} điểm
+                </span>
+              </div>
+              <div className="flex justify-between text-xs border-t border-amber-200/60 pt-1.5 font-bold">
+                <span className="text-slate-700">Điểm còn lại:</span>
+                <span className="text-[#00875A]">
+                  {Math.max(0, userPoints - (confirmItem.redemptionPoints || 0)).toLocaleString('vi-VN')} điểm
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Món quà tặng sẽ được thêm vào hóa đơn với giá <span className="font-bold text-emerald-600">0đ</span> và ghi chú <span className="font-bold">ĐỔI ĐIỂM THƯỞNG</span>.
+            </p>
           </div>
-        </div>
+        </ResponsiveModal>
       )}
-    </div>
+
+      {/* MODAL THÊM KHÁCH HÀNG MỚI (GIỐNG 100% TRONG MODAL THANH TOÁN QUA CreateCustomerModal) */}
+      {isAddCustomerOpen && (
+        <CreateCustomerModal
+          onClose={() => setIsAddCustomerOpen(false)}
+          onSuccess={(newCustomer) => {
+            setIsAddCustomerOpen(false);
+            handleSelectUser(newCustomer);
+          }}
+          isDarkMode={false}
+        />
+      )}
+
+      {/* MODAL SỬA THÔNG TIN THÀNH VIÊN */}
+      {isEditMemberOpen && selectedUser && (
+        <ResponsiveModal
+          isOpen={isEditMemberOpen}
+          onClose={() => setIsEditMemberOpen(false)}
+          title="Sửa Thông Tin Thành Viên"
+          subtitle={`Hội viên: #${selectedUser.memberCode || selectedUser.id?.slice(0, 8)}`}
+          icon={<Edit3 size={18} className="text-blue-600" />}
+          maxWidth="sm"
+          footer={
+            <div className="flex gap-2 w-full">
+              <button
+                type="button"
+                onClick={() => setIsEditMemberOpen(false)}
+                className="flex-1 py-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={isUpdatingMember}
+                onClick={handleSaveEditMember}
+                className="flex-1 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                {isUpdatingMember ? <Loader2 size={14} className="animate-spin" /> : 'Lưu thay đổi'}
+              </button>
+            </div>
+          }
+        >
+          <form onSubmit={handleSaveEditMember} className="space-y-3 py-1 text-xs">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Họ và tên <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                required
+                value={editMemberName}
+                onChange={(e) => setEditMemberName(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Số điện thoại <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                required
+                value={editMemberPhone}
+                onChange={(e) => setEditMemberPhone(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  Email
+                </label>
+                {Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified) && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded">
+                    <CheckCircle2 size={11} className="text-emerald-600" />
+                    <span>Đã xác thực</span>
+                  </span>
+                )}
+              </div>
+              <div
+                className="relative"
+                onClick={() => {
+                  if (Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified)) {
+                    toast('Email khách hàng đã được xác thực bảo mật, không thể chỉnh sửa trực tiếp.', {
+                      icon: '🔒',
+                      id: 'email-verified-lock',
+                    });
+                  }
+                }}
+              >
+                <input
+                  type="email"
+                  disabled={Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified)}
+                  value={editMemberEmail}
+                  onChange={(e) => setEditMemberEmail(e.target.value)}
+                  placeholder="khachhang@example.com"
+                  className={`w-full px-3 py-2 border rounded-xl text-xs pr-8 ${
+                    Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified)
+                      ? 'border-slate-200 bg-slate-100 text-slate-500 cursor-not-allowed select-none'
+                      : 'border-slate-200 focus:outline-none focus:border-blue-600'
+                  }`}
+                />
+                {Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified) && (
+                  <CheckCircle2 size={14} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-500 pointer-events-none" />
+                )}
+              </div>
+              {Boolean(selectedUser.isEmailVerified || selectedUser.emailVerified) && (
+                <p className="mt-1 flex items-center gap-1 text-[11px] text-amber-600 font-medium">
+                  <Lock size={11} />
+                  <span>Email đã được xác thực, không thể chỉnh sửa.</span>
+                </p>
+              )}
+            </div>
+          </form>
+        </ResponsiveModal>
+      )}
+
+      {/* MODAL LỊCH SỬ ĐỔI ĐIỂM CỦA KHÁCH HÀNG */}
+      {isPointHistoryOpen && selectedUser && (
+        <ResponsiveModal
+          isOpen={isPointHistoryOpen}
+          onClose={() => setIsPointHistoryOpen(false)}
+          title="Lịch Sử Điểm Thưởng"
+          subtitle={`Khách hàng: ${selectedUser.fullName || selectedUser.phone} • ${(userPoints).toLocaleString('vi-VN')} điểm`}
+          icon={<History size={18} className="text-[#00875A]" />}
+          maxWidth="md"
+        >
+          <div className="py-1 space-y-3">
+            {isLoadingHistory ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-2">
+                <Loader2 size={24} className="animate-spin text-slate-400" />
+                <span className="text-xs text-slate-400">Đang tải lịch sử điểm...</span>
+              </div>
+            ) : pointHistory.length === 0 ? (
+              <div className="py-10 text-center text-slate-400 space-y-1">
+                <Coins size={32} className="mx-auto opacity-30 text-amber-500" />
+                <p className="text-xs font-semibold">Chưa có lịch sử giao dịch điểm</p>
+              </div>
+            ) : (
+              <div className="max-h-[50vh] overflow-y-auto divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white">
+                {pointHistory.map((t: any) => {
+                  const isEarn = t.type === 'EARN' || (t.amount && t.amount > 0);
+                  return (
+                    <div key={t.id} className="p-3 flex items-center justify-between hover:bg-slate-50/80 transition-colors">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            isEarn ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
+                          }`}>
+                            {isEarn ? <ArrowDownLeft size={10} /> : <ArrowUpRight size={10} />}
+                            {isEarn ? 'TÍCH ĐIỂM' : 'ĐỔI QUÀ'}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            {t.description || (isEarn ? 'Tích lũy từ đơn hàng' : 'Đổi món ăn quà tặng')}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-400 font-medium">
+                          {t.createdAtFormatted || new Date(t.createdAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className={`text-sm font-black ${isEarn ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {isEarn ? `+${t.amount}` : `-${Math.abs(t.amount)}`}
+                        </span>
+                        <div className="text-[10px] text-slate-400">
+                          Dư: {(t.balanceAfter || 0).toLocaleString('vi-VN')}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </ResponsiveModal>
+      )}
+    </>
   );
 }

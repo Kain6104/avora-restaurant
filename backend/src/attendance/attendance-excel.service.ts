@@ -218,7 +218,7 @@ export class AttendanceExcelService {
     // Row 2
     const r2 = sheet.getRow(2);
     const now = new Date();
-    r2.getCell(1).value = `Ngày xuất báo cáo: ${now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
+    r2.getCell(1).value = `Ngày xuất báo cáo: ${now.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit' })} ${String(now.getDate()).padStart(2, '0')}/${String(now.getMonth() + 1).padStart(2, '0')}/${now.getFullYear()}`;
     r2.getCell(1).font = { name: 'Calibri', size: 11, bold: true };
 
     // Row 4
@@ -406,10 +406,10 @@ export class AttendanceExcelService {
             const att = dayAtts[r];
             cShift.value = att.shift?.name || 'Ca tự do';
             cIn.value = att.checkInTime
-              ? new Date(att.checkInTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+              ? new Date(att.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
               : '-';
             cOut.value = att.checkOutTime
-              ? new Date(att.checkOutTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+              ? new Date(att.checkOutTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
               : '-';
             cNote.value = att.notes || '';
           } else {

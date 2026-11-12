@@ -140,8 +140,14 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { user, capabilities } = useAdmin();
 
-  const isUserRole = user?.role === 'USER' || capabilities?.user?.role === 'USER';
-  if (isUserRole) {
+  // CHỈ tài khoản khách hàng thuần túy (USER không có bất kỳ vai trò/quyền nhân viên nào) mới bị chặn 404
+  const isPureCustomer =
+    (user?.role === 'USER' || capabilities?.user?.role === 'USER') &&
+    (!capabilities?.assignments || capabilities.assignments.length === 0) &&
+    (!capabilities?.roles || capabilities.roles.length === 0) &&
+    (!capabilities?.effectivePermissions || Object.keys(capabilities.effectivePermissions).length === 0);
+
+  if (isPureCustomer) {
     return <AdminUserForbidden404 />;
   }
 

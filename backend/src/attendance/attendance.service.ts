@@ -182,7 +182,7 @@ export class AttendanceService {
   recalculateAttendanceData(att: any) {
     if (!att.checkInTime) return;
     const inDate = new Date(att.checkInTime);
-    const inTimeStr = inDate.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+    const inTimeStr = inDate.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
 
     if (att.shift) {
       const bestMatchShift = att.shift;
@@ -215,7 +215,7 @@ export class AttendanceService {
 
       if (att.checkOutTime) {
         const outDate = new Date(att.checkOutTime);
-        const outTimeStr = outDate.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        const outTimeStr = outDate.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
         const outMin = this.parseTimeToMinutes(outTimeStr);
 
         let expectedEndStr = bestMatchShift.endTime;
@@ -305,7 +305,7 @@ export class AttendanceService {
       );
 
       const checkInTimeStr = att.checkInTime
-        ? new Date(att.checkInTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+        ? new Date(att.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
         : '08:00';
 
       let bestMatchShift: any = null;
@@ -466,7 +466,7 @@ export class AttendanceService {
 
       // 6. Thực hiện lưu Chấm công
       const now = new Date();
-      const nowTimeStr = now.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+      const nowTimeStr = now.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
       let savedAtt: any = null;
 
       const userRole = employee.roleAssignments?.[0]?.role?.name || employee.role;
@@ -573,7 +573,7 @@ export class AttendanceService {
       // Gửi thông báo đến quản trị viên
       try {
         const actionText = effectiveScanType === 'CHECK_IN' ? 'vào ca (Check-in)' : 'tan ca (Check-out)';
-        const timeFormatted = now.toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' });
+        const timeFormatted = now.toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' });
         await this.notificationService.createNotification({
           userId: employee.id,
           title: 'Thông báo chấm công',
@@ -590,7 +590,7 @@ export class AttendanceService {
         status: isNewDeviceRegistration ? 'SUCCESS_REGISTERED' : 'SUCCESS',
         action: effectiveScanType,
         time: nowTimeStr,
-        workDate: today.toISOString().split('T')[0],
+        workDate: new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(today),
         shiftName: logData.shiftName,
         message: isNewDeviceRegistration
           ? 'Chấm công thành công! THIẾT BỊ NÀY ĐÃ ĐƯỢC ĐĂNG KÝ. Từ nay bạn chỉ được phép dùng điện thoại này để chấm công.'
@@ -630,7 +630,7 @@ export class AttendanceService {
       nextAction,
       currentShift: latest?.shift?.name || (isWorking ? 'Ca tự do' : null),
       checkInTime: latest?.checkInTime
-        ? new Date(latest.checkInTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+        ? new Date(latest.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
         : null,
     };
   }
@@ -662,10 +662,10 @@ export class AttendanceService {
         date: dateFormatted,
         shiftName: a.shift?.name || 'Ca tự do',
         checkIn: a.checkInTime
-          ? new Date(a.checkInTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+          ? new Date(a.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
           : '--:--',
         checkOut: a.checkOutTime
-          ? new Date(a.checkOutTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit' })
+          ? new Date(a.checkOutTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
           : 'Đang làm',
         hours: a.totalWorkHours || 0,
         status: a.status || 'UNKNOWN',
@@ -697,7 +697,7 @@ export class AttendanceService {
       const isCheckOut = !!a.checkOutTime;
       const targetTime = isCheckOut ? a.checkOutTime : a.checkInTime;
       const timeStr = targetTime
-        ? new Date(targetTime).toLocaleTimeString('vi-VN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+        ? new Date(targetTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
         : '';
       return {
         id: a.id,

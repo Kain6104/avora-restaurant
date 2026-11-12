@@ -84,18 +84,6 @@ export class PermissionsGuard implements CanActivate {
       });
     }
 
-    // Role USER (Khách hàng) tuyệt đối không được phép truy cập bất kỳ endpoint quản trị nào
-    if (user.role === 'USER') {
-      throw new ForbiddenException({
-        success: false,
-        statusCode: 403,
-        error: {
-          code: 'USER_ROLE_FORBIDDEN',
-          message: 'Tài khoản khách hàng (USER) không có quyền truy cập khu vực quản trị.',
-        },
-      });
-    }
-
     // 3. Trích xuất branchId mục tiêu và kiểm tra chống IDOR
     let targetBranchId: string | null | undefined = null;
 
@@ -142,6 +130,20 @@ export class PermissionsGuard implements CanActivate {
     );
 
     if (!hasPerm) {
+      const effective = await this.authorizationService.getEffectivePermissions(user.id);
+      const isPureCustomer = !effective.isAdmin && Object.keys(effective.permissions).length === 0;
+
+      if (isPureCustomer) {
+        throw new ForbiddenException({
+          success: false,
+          statusCode: 403,
+          error: {
+            code: 'USER_ROLE_FORBIDDEN',
+            message: 'Tài khoản khách hàng (USER) không có quyền truy cập khu vực quản trị.',
+          },
+        });
+      }
+
       this.logger.warn(
         `User ${user.email} (ID: ${user.id}) bị từ chối quyền '${permissionKey}' tại chi nhánh '${targetBranchId || 'ALL'}'`,
       );

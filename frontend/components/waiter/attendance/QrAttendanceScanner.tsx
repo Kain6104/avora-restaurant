@@ -419,7 +419,7 @@ export default function QrAttendanceScanner({ isOpen, onClose, onSuccess }: QrAt
             type: isCheckIn ? 'VÀO CA (CHECK-IN)' : 'TAN CA (CHECK-OUT)',
             employeeName: d.employeeName || 'Nhân viên',
             branchName: d.branchName || currentBranch?.name || 'Chi nhánh',
-            time: d.time || new Date().toLocaleTimeString('vi-VN'),
+            time: d.time || new Date().toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' }),
             message: d.message || (isCheckIn ? 'Ghi nhận vào ca thành công!' : 'Ghi nhận tan ca thành công!'),
             firstTimeDevice: d.firstTimeDevice,
           });

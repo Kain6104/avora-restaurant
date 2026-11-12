@@ -4405,6 +4405,137 @@ export class PosService {
     return updated;
   }
 
+  async updateMember(
+    userId: string,
+    dto: { fullName?: string; phone?: string; email?: string; companyName?: string; taxCode?: string; taxAddress?: string; invoiceEmail?: string },
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Khách hàng không tồn tại');
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.fullName !== undefined ? { fullName: dto.fullName.trim() } : {}),
+        ...(dto.phone !== undefined ? { phone: dto.phone.trim() } : {}),
+        ...(dto.email !== undefined && !user.isEmailVerified ? { email: dto.email.trim().toLowerCase() } : {}),
+        ...(dto.companyName !== undefined ? { companyName: dto.companyName.trim() } : {}),
+        ...(dto.taxCode !== undefined ? { taxCode: dto.taxCode.trim() } : {}),
+        ...(dto.taxAddress !== undefined ? { taxAddress: dto.taxAddress.trim() } : {}),
+        ...(dto.invoiceEmail !== undefined ? { invoiceEmail: dto.invoiceEmail.trim() } : {}),
+      },
+      include: {
+        membershipTier: true,
+        addresses: { orderBy: { isDefault: 'desc' } },
+      },
+    });
+    return updated;
+  }
+
+  async awaitConfirmationReleaseTable(orderId: string, user?: any) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { table: true },
+    });
+    if (!order) throw new NotFoundException('Đơn hàng không tồn tại');
+
+    if (order.tableSessionId) {
+      await this.prisma.tableSession.update({
+        where: { id: order.tableSessionId },
+        data: { status: TableSessionStatus.CLOSED, closedAt: new Date() },
+      });
+    }
+
+    if (order.tableId) {
+      this.posGateway.emitTableStatusChanged(order.tableId, 'AVAILABLE', order.branchId);
+    }
+
+    return { success: true, message: 'Đã giải phóng bàn chờ xác nhận' };
+  }
+
+  async getDeltaSync(branchId: string, since?: string) {
+    const sinceDate = since ? new Date(since) : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [orders, tables] = await Promise.all([
+      this.prisma.order.findMany({
+        where: {
+          branchId,
+          updatedAt: { gte: sinceDate },
+        },
+        include: {
+          orderItems: { include: { product: true, selectedOptions: true } },
+          table: true,
+        },
+      }),
+      this.prisma.restaurantTable.findMany({
+        where: { branchId },
+      }),
+    ]);
+    return {
+      serverTime: new Date().toISOString(),
+      orders,
+      tables,
+    };
+  }
+
+  async getCustomersSync(since?: string, limit = 100) {
+    const sinceDate = since ? new Date(since) : new Date(0);
+    const customers = await this.prisma.user.findMany({
+      where: {
+        role: RoleType.USER,
+        updatedAt: { gte: sinceDate },
+      },
+      take: Math.min(Number(limit) || 100, 500),
+      orderBy: { updatedAt: 'desc' },
+      select: {
+        id: true,
+        fullName: true,
+        phone: true,
+        email: true,
+        points: true,
+        currentPoints: true,
+        memberCode: true,
+        membershipTier: true,
+        updatedAt: true,
+      },
+    });
+    return {
+      serverTime: new Date().toISOString(),
+      customers,
+    };
+  }
+
+  async getMemberPointHistory(userId: string) {
+    const transactions = await this.prisma.pointTransaction.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: 30,
+      select: {
+        id: true,
+        amount: true,
+        source: true,
+        balanceAfter: true,
+        description: true,
+        createdAt: true,
+        orderId: true,
+      },
+    });
+
+    return transactions.map((t) => ({
+      ...t,
+      type: t.amount >= 0 ? 'EARN' : 'REDEEM',
+      createdAtFormatted: t.createdAt.toLocaleTimeString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+      }) + ' ' + t.createdAt.toLocaleDateString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      }),
+    }));
+  }
+
   // ==========================================
   // SERVICE CHARGES / SURCHARGES (POS)
   // ==========================================

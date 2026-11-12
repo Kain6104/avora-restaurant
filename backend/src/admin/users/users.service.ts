@@ -1,12 +1,18 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { RoleType } from '@prisma/client';
+import { RoleType, BranchScopeType } from '@prisma/client';
+import { AuthorizationService } from '../../common/services/authorization.service';
+import { PosGateway } from '../../pos/pos.gateway';
 import * as bcrypt from 'bcrypt';
 import * as nodemailer from 'nodemailer';
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly authorizationService: AuthorizationService,
+    @Optional() @Inject(forwardRef(() => PosGateway)) private readonly posGateway?: PosGateway,
+  ) {}
 
   async findAll(params: {
     skip?: number;
@@ -136,6 +142,64 @@ export class UsersService {
         branchId: true,
       },
     });
+
+    // Tự động đồng bộ UserRoleAssignment tương ứng
+    let targetRoleCode: string | null = null;
+    if (role === RoleType.ADMIN) targetRoleCode = 'ADMIN';
+    else if (role === RoleType.MANAGER) targetRoleCode = 'BRANCH_MANAGER';
+    else if (role === RoleType.WAITER) targetRoleCode = 'BRANCH_WAITER';
+    else if (role === RoleType.CHEF) targetRoleCode = 'BRANCH_KITCHEN';
+
+    if (targetRoleCode) {
+      try {
+        const accessRole = await this.prisma.accessRole.findUnique({
+          where: { code: targetRoleCode },
+        });
+        if (accessRole) {
+          const assignment = await this.prisma.userRoleAssignment.upsert({
+            where: {
+              userId_roleId: {
+                userId: id,
+                roleId: accessRole.id,
+              },
+            },
+            create: {
+              userId: id,
+              roleId: accessRole.id,
+              branchScope: branchId ? BranchScopeType.SELECTED_BRANCHES : BranchScopeType.ALL_BRANCHES,
+              isPrimary: true,
+              isActive: true,
+            },
+            update: {
+              branchScope: branchId ? BranchScopeType.SELECTED_BRANCHES : BranchScopeType.ALL_BRANCHES,
+              isPrimary: true,
+              isActive: true,
+            },
+          });
+
+          if (branchId) {
+            await this.prisma.userRoleBranch.deleteMany({ where: { assignmentId: assignment.id } });
+            await this.prisma.userRoleBranch.create({
+              data: { assignmentId: assignment.id, branchId },
+            });
+          }
+        }
+      } catch (err) {
+        // Safe fallback
+      }
+    } else if (role === RoleType.USER) {
+      // Đưa về pure USER: hủy kích hoạt các staff assignments
+      await this.prisma.userRoleAssignment.updateMany({
+        where: { userId: id },
+        data: { isActive: false },
+      });
+    }
+
+    // Xóa cache quyền hạn và phát socket real-time ngay tức khắc
+    this.authorizationService.invalidateUser(id);
+    if (this.posGateway) {
+      this.posGateway.emitAuthorizationUpdated(id);
+    }
 
     if (adminId && oldUser) {
       await this.prisma.auditLog.create({

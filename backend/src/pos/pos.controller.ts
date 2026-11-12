@@ -15,6 +15,7 @@ import { PosService } from './pos.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermission } from '../common/decorators/require-permission.decorator';
+import { Throttle } from '@nestjs/throttler';
 import {
   CreatePosOrderDto,
   UpdatePosOrderDto,
@@ -42,6 +43,7 @@ import {
 import { OrderStatus } from '@prisma/client';
 
 @Controller('pos')
+@Throttle({ default: { limit: 300, ttl: 60000 } })
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class PosController {
   constructor(private readonly posService: PosService) {}
@@ -222,6 +224,20 @@ export class PosController {
     return { success: true, data };
   }
 
+  @Post('orders/:id/update')
+  @RequirePermission('pos.order.update', {
+    resourceResolver: async (req, prisma) =>
+      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+  })
+  async updateOrderAliasPost(
+    @Param('id') id: string,
+    @Body() dto: UpdatePosOrderDto,
+    @Req() req?: any,
+  ) {
+    const data = await this.posService.updateOrder(id, dto, req?.user);
+    return { success: true, data };
+  }
+
   @Put('orders/:id/items/:itemId/discount')
   @RequirePermission('pos.order.update', {
     resourceResolver: async (req, prisma) =>
@@ -375,6 +391,19 @@ export class PosController {
     return { success: true, data };
   }
 
+  @Post('orders/:id/await-confirmation-release-table')
+  @RequirePermission('pos.order.update', {
+    resourceResolver: async (req, prisma) =>
+      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+  })
+  async awaitConfirmationReleaseTable(
+    @Param('id') id: string,
+    @Req() req?: any,
+  ) {
+    const data = await this.posService.awaitConfirmationReleaseTable(id, req?.user);
+    return { success: true, data };
+  }
+
   @Get('orders/:id/service-charges')
   @RequirePermission('pos.service_charge.manage', {
     resourceResolver: async (req, prisma) =>
@@ -481,6 +510,26 @@ export class PosController {
   @RequirePermission('pos.access', { branchParam: 'branchId' })
   async getSnapshot(@Query('branchId') branchId: string) {
     const data = await this.posService.getSnapshot(branchId);
+    return { success: true, data };
+  }
+
+  @Get('sync/delta')
+  @RequirePermission('pos.access', { branchParam: 'branchId' })
+  async getDeltaSync(
+    @Query('branchId') branchId: string,
+    @Query('since') since?: string,
+  ) {
+    const data = await this.posService.getDeltaSync(branchId, since);
+    return { success: true, data };
+  }
+
+  @Get('customers/sync')
+  @RequirePermission('customers.view')
+  async getCustomersSync(
+    @Query('since') since?: string,
+    @Query('limit') limit?: number,
+  ) {
+    const data = await this.posService.getCustomersSync(since, limit);
     return { success: true, data };
   }
 
@@ -626,6 +675,19 @@ export class PosController {
     return { success: true, data };
   }
 
+  @Put('members/:id')
+  @RequirePermission('customers.update', {
+    resourceResolver: async (req, prisma) =>
+      (await prisma.user.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+  })
+  async updateMember(
+    @Param('id') id: string,
+    @Body() dto: { fullName?: string; phone?: string; email?: string; companyName?: string; taxCode?: string; taxAddress?: string; invoiceEmail?: string },
+  ) {
+    const data = await this.posService.updateMember(id, dto);
+    return { success: true, data };
+  }
+
   @Put('members/:id/tax-info')
   @RequirePermission('customers.update', {
     resourceResolver: async (req, prisma) =>
@@ -636,6 +698,13 @@ export class PosController {
     @Body() dto: { taxCode?: string; companyName?: string; taxAddress?: string; invoiceEmail?: string },
   ) {
     const data = await this.posService.updateMemberTaxInfo(id, dto);
+    return { success: true, data };
+  }
+
+  @Get('members/:id/point-history')
+  @RequirePermission('customers.view')
+  async getMemberPointHistory(@Param('id') id: string) {
+    const data = await this.posService.getMemberPointHistory(id);
     return { success: true, data };
   }
 

@@ -21,7 +21,7 @@ import {
   SYSTEM_ROLES_DEFINITION,
   DEFAULT_SYSTEM_ROLE_PERMISSIONS,
 } from '../../common/constants/permissions-registry';
-import { BranchScopeType, ScopeType } from '@prisma/client';
+import { BranchScopeType, ScopeType, RoleType } from '@prisma/client';
 
 @Injectable()
 export class RolesService implements OnModuleInit {
@@ -108,13 +108,15 @@ export class RolesService implements OnModuleInit {
           });
         }
 
-        // Xóa các permission thừa của system role không còn trong defaultPermKeys
-        await this.prisma.rolePermission.deleteMany({
-          where: {
-            roleId: role.id,
-            permissionKey: { notIn: defaultPermKeys },
-          },
-        });
+        // Chỉ đối với ADMIN (toàn quyền) mới đảm bảo xóa quyền không hợp lệ, không reset tùy chỉnh của các role khác
+        if (def.code === SYSTEM_ROLE_CODES.ADMIN) {
+          await this.prisma.rolePermission.deleteMany({
+            where: {
+              roleId: role.id,
+              permissionKey: { notIn: defaultPermKeys },
+            },
+          });
+        }
       }
 
       this.authorizationService.invalidateAll();
@@ -585,6 +587,21 @@ export class RolesService implements OnModuleInit {
         });
       }
 
+      // Tự động đồng bộ trường role trong bảng User để đảm bảo tương thích tuyệt đối
+      let mappedRoleType: RoleType | null = null;
+      if (role.code === SYSTEM_ROLE_CODES.ADMIN) mappedRoleType = RoleType.ADMIN;
+      else if (role.code === SYSTEM_ROLE_CODES.BRANCH_MANAGER) mappedRoleType = RoleType.MANAGER;
+      else if (role.code === SYSTEM_ROLE_CODES.BRANCH_WAITER) mappedRoleType = RoleType.WAITER;
+      else if (role.code === SYSTEM_ROLE_CODES.BRANCH_KITCHEN) mappedRoleType = RoleType.CHEF;
+      else if (role.code === SYSTEM_ROLE_CODES.BRANCH_STAFF) mappedRoleType = RoleType.WAITER;
+
+      if (mappedRoleType) {
+        await tx.user.update({
+          where: { id: dto.userId },
+          data: { role: mappedRoleType },
+        });
+      }
+
       // Ghi AuditLog
       await tx.auditLog.create({
         data: {
@@ -639,6 +656,17 @@ export class RolesService implements OnModuleInit {
     await this.prisma.$transaction(async (tx) => {
       await tx.userRoleBranch.deleteMany({ where: { assignmentId: assignment.id } });
       await tx.userRoleAssignment.delete({ where: { id: assignment.id } });
+
+      // Nếu người dùng không còn bất kỳ vai trò nhân viên nào, đưa User.role về USER
+      const remainingAssignments = await tx.userRoleAssignment.count({
+        where: { userId, isActive: true },
+      });
+      if (remainingAssignments === 0) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { role: RoleType.USER },
+        });
+      }
 
       await tx.auditLog.create({
         data: {

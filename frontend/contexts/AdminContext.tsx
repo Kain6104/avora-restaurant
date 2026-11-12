@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
+import toast from 'react-hot-toast';
 import { getAuthToken, getAuthHeaders, clearAuthSession, saveAuthSession, getAuthUser } from '@/lib/auth';
 
 export interface AdminUser {
@@ -403,7 +404,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user?.id) return;
 
-    const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const socketUrl = process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
     const socket = io(`${socketUrl}/pos`, {
       withCredentials: true,
       auth: { userId: user.id },
@@ -415,8 +416,22 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
     socket.on('AUTHORIZATION_UPDATED', async (data: any) => {
       console.log('Realtime AUTHORIZATION_UPDATED received:', data);
-      // Invalidate and refresh capabilities
-      await fetchCapabilities();
+      if (!data?.userId || data.userId === user.id) {
+        await fetchCapabilities();
+        try {
+          const meRes = await fetch('/api/auth/me', { credentials: 'include' });
+          if (meRes.ok) {
+            const meJson = await meRes.json();
+            if (meJson.user) {
+              setUser(meJson.user);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('user', JSON.stringify(meJson.user));
+              }
+            }
+          }
+        } catch {}
+        toast.success('Quyền hạn tài khoản của bạn đã được cập nhật!', { id: 'auth-refresh' });
+      }
     });
 
     return () => {

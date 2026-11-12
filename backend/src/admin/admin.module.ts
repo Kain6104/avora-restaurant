@@ -1,5 +1,6 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { OrderModule } from '../order/order.module';
+import { PosModule } from '../pos/pos.module';
 import { MembershipTiersController } from './membership-tiers/membership-tiers.controller';
 import { MembershipTiersService } from './membership-tiers/membership-tiers.service';
 import { UsersController } from './users/users.controller';
@@ -57,12 +58,16 @@ import { AdminBannerService } from './banner/admin-banner.service';
 
 import { AdminFlashSaleModule } from './flash-sale/admin-flash-sale.module';
 import { FlashSaleCoreModule } from '../flash-sale/flash-sale.module';
+import { OrderCancellationController } from './cancellations/order-cancellation.controller';
+import { OrderCancellationService } from './cancellations/order-cancellation.service';
+import { InventoryModule } from './inventory/inventory.module';
 
 @Module({
   controllers: [
     UsersController,
     BranchesController,
     OrdersController,
+    OrderCancellationController,
     DashboardController,
     ProductsController,
     CategoriesController,
@@ -113,9 +118,12 @@ import { FlashSaleCoreModule } from '../flash-sale/flash-sale.module';
     EndOfDayReportService,
     AuditLogsService,
     MembershipTiersService,
+    OrderCancellationService,
   ],
-  imports: [UploadModule, OrderModule, NotificationModule, FlashSaleCoreModule, AdminFlashSaleModule],
+  imports: [UploadModule, OrderModule, NotificationModule, FlashSaleCoreModule, AdminFlashSaleModule, InventoryModule, forwardRef(() => PosModule)],
   exports: [
+    InventoryModule,
+    OrderCancellationService,
     AuditLogsService,
     AdminBannerService,
     TaxReportsService,
