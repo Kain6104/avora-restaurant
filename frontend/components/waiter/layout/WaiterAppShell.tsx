@@ -8,7 +8,6 @@ import { useWaiterRealtime } from '@/hooks/useWaiterRealtime';
 import { useWaiterStore } from '@/store/useWaiterStore';
 import { useAdmin } from '@/contexts/AdminContext';
 import ConnectionIndicator from '../core/ConnectionIndicator';
-import AttendanceModal from '../attendance/AttendanceModal';
 import QrAttendanceScanner from '../attendance/QrAttendanceScanner';
 import { useWaiterBackHandler } from '@/hooks/useWaiterBackHandler';
 import { syncEngine } from '@/lib/offline/syncEngine';
@@ -64,26 +63,20 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
   // Initialize Android Native Back Handler & Double Back to Exit
   useWaiterBackHandler();
 
-  const isAttendanceModalOpen = useWaiterStore((s) => s.isAttendanceModalOpen);
-  const setAttendanceModalOpen = useWaiterStore((s) => s.setAttendanceModalOpen);
   const isAttendanceScannerOpen = useWaiterStore((s) => s.isAttendanceScannerOpen);
   const setAttendanceScannerOpen = useWaiterStore((s) => s.setAttendanceScannerOpen);
   const registerModalHandler = useWaiterStore((s) => s.registerModalHandler);
 
-  // Register Attendance Modal & Scanner with the back navigation stack
+  // Register Attendance Scanner with the back navigation stack
   useEffect(() => {
     return registerModalHandler('shell-attendance', () => {
       if (isAttendanceScannerOpen) {
         setAttendanceScannerOpen(false);
         return true;
       }
-      if (isAttendanceModalOpen) {
-        setAttendanceModalOpen(false);
-        return true;
-      }
       return false;
     });
-  }, [isAttendanceScannerOpen, isAttendanceModalOpen, setAttendanceScannerOpen, setAttendanceModalOpen, registerModalHandler]);
+  }, [isAttendanceScannerOpen, setAttendanceScannerOpen, registerModalHandler]);
 
   const [mounted, setMounted] = useState(false);
   const theme = useWaiterStore((s) => s.theme);
@@ -213,7 +206,6 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
 
       {!isDrilldown && <WaiterBottomNav />}
       <ConnectionIndicator />
-      <AttendanceModal />
       <QrAttendanceScanner
         isOpen={isAttendanceScannerOpen}
         onClose={() => setAttendanceScannerOpen(false)}
