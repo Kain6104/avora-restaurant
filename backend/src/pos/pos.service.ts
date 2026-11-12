@@ -1871,7 +1871,7 @@ export class PosService {
       }
     }
 
-    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+    const updatedOrder: any = await this.prisma.$transaction(async (tx) => {
       // If items replaced, preserve print and dispatch quantities with accurate id/key matching
       if (validatedItemsData !== null) {
         // Bảo vệ món đổi điểm (Rule: Tránh lạm dụng món đổi điểm - Không được xóa, không được tăng/giảm SL, giá 0đ, chỉ cho phép sửa ghi chú)
@@ -2130,8 +2130,11 @@ export class PosService {
           deliveryAddress: dto.deliveryAddress !== undefined ? dto.deliveryAddress : currentOrder.deliveryAddress,
           orderType: dto.orderType !== undefined ? dto.orderType : currentOrder.orderType,
           guestCount: dto.guestCount !== undefined ? dto.guestCount : currentOrder.guestCount,
-          customerName: dto.customerName !== undefined ? dto.customerName : currentOrder.customerName,
-          customerPhone: dto.customerPhone !== undefined ? dto.customerPhone : currentOrder.customerPhone,
+          customerName:
+            dto.customerName !== undefined && dto.customerName !== null && String(dto.customerName).trim() !== ''
+              ? String(dto.customerName).trim()
+              : (currentOrder.customerName || 'Khách lẻ'),
+          customerPhone: dto.customerPhone !== undefined ? (dto.customerPhone || '') : currentOrder.customerPhone,
           userId: dto.userId !== undefined ? dto.userId : currentOrder.userId,
           note: dto.note !== undefined ? dto.note : currentOrder.note,
           isInvoiceRequested: dto.isInvoiceRequested !== undefined ? Boolean(dto.isInvoiceRequested) : currentOrder.isInvoiceRequested,
@@ -6282,7 +6285,7 @@ export class PosService {
       if (staff?.fullName) staffName = staff.fullName;
     }
 
-    const updatedOrder = await this.prisma.$transaction(async (tx) => {
+    const updatedOrder: any = await this.prisma.$transaction(async (tx) => {
       // 1. Trừ điểm hội viên
       await tx.user.update({
         where: { id: user.id },

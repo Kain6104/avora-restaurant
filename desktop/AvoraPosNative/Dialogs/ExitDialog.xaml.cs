@@ -9,6 +9,7 @@ namespace AvoraPosNative.Dialogs
         public ExitDialog(bool hasPendingTasks = false)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             if (hasPendingTasks)
             {
                 pnlUnsafeWarning.Visibility = Visibility.Visible;

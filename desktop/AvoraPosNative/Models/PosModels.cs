@@ -1,4 +1,5 @@
-using System;
+using System.ComponentModel;
+﻿using System;
 using System.Collections.Generic;
 
 namespace AvoraPosNative.Models
@@ -76,6 +77,21 @@ namespace AvoraPosNative.Models
         public string Code => ItemCode;
         public string PriceText => $"{Price:N0}đ";
         public bool IsOutOfStock => !Available;
+        public bool HasImage => !string.IsNullOrWhiteSpace(ImageUrl);
+        public string? FullImageUrl
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(ImageUrl)) return null;
+                if (ImageUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || ImageUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return ImageUrl;
+                }
+                string baseDomain = "https://avorafnb.com";
+                return ImageUrl.StartsWith("/") ? baseDomain + ImageUrl : baseDomain + "/" + ImageUrl;
+            }
+        }
+        public bool HasOptions => OptionGroups != null && OptionGroups.Count > 0;
     }
 
     public class PosProductOptionItem
@@ -85,18 +101,117 @@ namespace AvoraPosNative.Models
         public decimal Price { get; set; }
     }
 
-    public class PosOrderItem
+    public class PosOrderItem : INotifyPropertyChanged
     {
         public string Id { get; set; } = Guid.NewGuid().ToString();
         public string ProductId { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
-        public int Quantity { get; set; } = 1;
-        public decimal Price { get; set; }
-        public decimal LineTotal { get; set; }
+
+        private int _quantity = 1;
+        public int Quantity
+        {
+            get => _quantity;
+            set
+            {
+                if (_quantity != value)
+                {
+                    _quantity = value;
+                    OnPropertyChanged(nameof(Quantity));
+                    LineTotal = _quantity * _price;
+                }
+            }
+        }
+
+        private decimal _price;
+        public decimal Price
+        {
+            get => _price;
+            set
+            {
+                if (_price != value)
+                {
+                    _price = value;
+                    OnPropertyChanged(nameof(Price));
+                    LineTotal = _quantity * _price;
+                }
+            }
+        }
+
+        private decimal _lineTotal;
+        public decimal LineTotal
+        {
+            get => _lineTotal;
+            set
+            {
+                if (_lineTotal != value)
+                {
+                    _lineTotal = value;
+                    OnPropertyChanged(nameof(LineTotal));
+                }
+            }
+        }
+
         public string? OptionsText { get; set; }
         public List<string> SelectedOptionIds { get; set; } = new();
         public string? Note { get; set; }
-        public string Status { get; set; } = "NEW"; // NEW, SENT_KITCHEN, SERVED, CANCELLED
+
+        private string _status = "NEW";
+        public string Status
+        {
+            get => _status;
+            set
+            {
+                if (_status != value)
+                {
+                    _status = value;
+                    OnPropertyChanged(nameof(Status));
+                }
+            }
+        }
+
+        private string _pricingMode = "REGULAR";
+        public string PricingMode
+        {
+            get => _pricingMode;
+            set
+            {
+                if (_pricingMode != value)
+                {
+                    _pricingMode = value;
+                    OnPropertyChanged(nameof(PricingMode));
+                }
+            }
+        }
+
+        public event PropertyChangedEventHandler? PropertyChanged;
+        protected void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+    }
+
+    public class PosBuffetTicket
+    {
+        public string Id { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
+        public PosProduct? Product { get; set; }
+    }
+
+    public class PosBuffetPackageItem
+    {
+        public string Id { get; set; } = string.Empty;
+        public string ProductId { get; set; } = string.Empty;
+        public PosProduct? Product { get; set; }
+    }
+
+    public class PosBuffetPackage
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public bool Active { get; set; } = true;
+        public List<PosBuffetTicket> Tickets { get; set; } = new();
+        public List<PosBuffetPackageItem> Items { get; set; } = new();
     }
 
     public class PosCartItemOption
@@ -137,6 +252,7 @@ namespace AvoraPosNative.Models
     public class PosTable
     {
         public string Id { get; set; } = string.Empty;
+        public string? BranchId { get; set; }
         public string TableCode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public int Capacity { get; set; } = 4;
@@ -149,6 +265,15 @@ namespace AvoraPosNative.Models
 
         public string Status => VisualStatus;
         public int GuestCount => ActiveSession?.GuestCount ?? 0;
+        public string DisplayNumber
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(Name)) return TableCode;
+                string cleaned = System.Text.RegularExpressions.Regex.Replace(Name, @"^bàn\s*", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
+                return string.IsNullOrEmpty(cleaned) ? Name : cleaned;
+            }
+        }
         public string StatusText => VisualStatus switch
         {
             "VACANT" => "Bàn trống",
@@ -173,6 +298,7 @@ namespace AvoraPosNative.Models
     {
         public string Id { get; set; } = string.Empty;
         public string OrderCode { get; set; } = string.Empty;
+        public string? TemporaryOrderCode { get; set; }
         public int GuestCount { get; set; }
         public decimal SubTotal { get; set; }
         public decimal TotalAmount { get; set; }
@@ -217,7 +343,90 @@ namespace AvoraPosNative.Models
         public string? InvoiceAddress { get; set; }
         public string? InvoiceEmail { get; set; }
         public List<PosCartItem> OrderItems { get; set; } = new();
+        public string? OrderSource { get; set; } = "POS";
+        public int ItemCount { get; set; }
         public List<PosOrderItem> Items { get; set; } = new();
+        public string? BuffetPackageId { get; set; }
+        public string? BuffetPackageName { get; set; }
+        public DateTime? BuffetStartedAt { get; set; }
+        public int BuffetDurationMinutes { get; set; } = 120;
+        public bool HasActiveBuffet => !string.IsNullOrEmpty(BuffetPackageId);
+
+        public bool IsPersistedOnServer =>
+            (!string.IsNullOrEmpty(OrderCode) && !OrderCode.StartsWith("OFF-")) ||
+            (!string.IsNullOrEmpty(TemporaryOrderCode) && !TemporaryOrderCode.StartsWith("OFF-"));
+
+        public string DisplayCode => !string.IsNullOrEmpty(OrderCode)
+            ? OrderCode!
+            : (!string.IsNullOrEmpty(TemporaryOrderCode)
+                ? TemporaryOrderCode!
+                : (Id.Length > 8 ? Id.Substring(0, 8).ToUpperInvariant() : Id));
+
+        public string DisplayTableOrType => !string.IsNullOrEmpty(TableName)
+            ? TableName!
+            : (!string.IsNullOrEmpty(Table?.Name)
+                ? Table!.Name
+                : (OrderType == "TAKEAWAY" ? "Mang đi" : OrderType == "DELIVERY" ? "Giao hàng" : "Tại bàn"));
+
+        public string CardHeaderType => OrderType switch
+        {
+            "TAKEAWAY" => "Mang đi",
+            "DELIVERY" => "Giao hàng",
+            _ => "Bàn"
+        };
+
+        public string CardHeaderIcon => OrderType switch
+        {
+            "TAKEAWAY" => "👝",
+            "DELIVERY" => "🚚",
+            _ => "🍽️"
+        };
+
+        public string CardHeaderBg => OrderType switch
+        {
+            "TAKEAWAY" => "#EA580C",
+            "DELIVERY" => "#7C3AED",
+            _ => "#2563EB"
+        };
+
+        public string CardHeaderLightBg => OrderType switch
+        {
+            "TAKEAWAY" => "#FFF7ED",
+            "DELIVERY" => "#F5F3FF",
+            _ => "#EFF6FF"
+        };
+
+        public string CardTitle => OrderType == "DINE_IN" && (!string.IsNullOrEmpty(TableName) || !string.IsNullOrEmpty(Table?.Name))
+            ? (!string.IsNullOrEmpty(TableName) ? TableName! : Table!.Name)
+            : DisplayCode;
+
+        public string ElapsedTimeText
+        {
+            get
+            {
+                var diff = DateTime.Now - CreatedAt;
+                if (diff.TotalSeconds < 0) return "00:00:00";
+                return $"{(int)diff.TotalHours:D2}:{diff.Minutes:D2}:{diff.Seconds:D2}";
+            }
+        }
+
+        public string StatusText => Status switch
+        {
+            "PENDING" => "Chờ xác nhận",
+            "CONFIRMED" => "Đang phục vụ",
+            "PREPARING" => "Đang chế biến",
+            "HELD" => "Chờ thanh toán",
+            "DELIVERING" => "Đang giao",
+            "COMPLETED" => "Đã hoàn tất",
+            "CANCELLED" => "Đã hủy",
+            _ => "Đơn nháp"
+        };
+
+        public int TotalItemsCount => ItemCount > 0
+            ? ItemCount
+            : (OrderItems != null && OrderItems.Count > 0
+                ? System.Linq.Enumerable.Sum(OrderItems, i => i.Quantity)
+                : (Items != null && Items.Count > 0 ? System.Linq.Enumerable.Sum(Items, i => i.Quantity) : 0));
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     }
 
@@ -279,6 +488,26 @@ namespace AvoraPosNative.Models
             : "Chưa xếp bàn";
 
         public string DateTimeDisplay => $"{ReservationTime} {ReservationDate:dd/MM/yyyy}".Trim();
+        public string StatusDisplayText => (Status ?? string.Empty).ToUpperInvariant() switch
+        {
+            "CONFIRMED" => "Đã xác nhận",
+            "PENDING" => "Chờ xác nhận",
+            "CHECKED_IN" or "SEATED" => "Đang dùng bữa",
+            "COMPLETED" => "Hoàn tất",
+            "CANCELLED" => "Đã hủy",
+            "NO_SHOW" => "Không đến",
+            _ => Status ?? string.Empty
+        };
+        public bool CanCheckIn => string.Equals(Status, "CONFIRMED", StringComparison.OrdinalIgnoreCase)
+                                  || string.Equals(Status, "PENDING", StringComparison.OrdinalIgnoreCase);
+        public string StatusFooterNote => (Status ?? string.Empty).ToUpperInvariant() switch
+        {
+            "CHECKED_IN" or "SEATED" => "Khách đang dùng bữa tại bàn",
+            "COMPLETED" => "Đã hoàn tất thanh toán",
+            "CANCELLED" => "Đơn đặt bàn đã hủy",
+            "NO_SHOW" => "Khách không đến (No-show)",
+            _ => string.Empty
+        };
     }
 
     public class PosKitchenItem
@@ -357,12 +586,43 @@ namespace AvoraPosNative.Models
     public class PosQrOrder
     {
         public string Id { get; set; } = string.Empty;
+        public string OrderId { get; set; } = string.Empty;
         public string OrderCode { get; set; } = string.Empty;
         public string TableId { get; set; } = string.Empty;
         public string TableName { get; set; } = string.Empty;
-        public int RoundNumber { get; set; }
+        public string GuestName { get; set; } = "Khách QR";
+        public int RoundNumber { get; set; } = 1;
         public string Status { get; set; } = "PENDING";
-        public DateTime RequestedAt { get; set; }
+        public DateTime RequestedAt { get; set; } = DateTime.UtcNow;
         public List<PosCartItem> Items { get; set; } = new();
+
+        public int TotalItemCount
+        {
+            get
+            {
+                int count = 0;
+                foreach (var item in Items) count += item.Quantity;
+                return count;
+            }
+        }
+
+        public decimal TotalAmount
+        {
+            get
+            {
+                decimal sum = 0;
+                foreach (var item in Items) sum += item.LineTotal;
+                return sum;
+            }
+        }
+
+        public string TimeElapsedText
+        {
+            get
+            {
+                int mins = Math.Max(0, (int)(DateTime.UtcNow - RequestedAt).TotalMinutes);
+                return mins < 60 ? $"{mins} phút trước" : $"{mins / 60} giờ trước";
+            }
+        }
     }
 }

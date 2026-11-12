@@ -18,6 +18,7 @@ namespace AvoraPos.NativePrint
 
         private readonly ConcurrentDictionary<string, Channel<PrintJobRecord>> _printerChannels = new ConcurrentDictionary<string, Channel<PrintJobRecord>>();
         private readonly ConcurrentDictionary<string, Task> _printerWorkers = new ConcurrentDictionary<string, Task>();
+        private static readonly ConcurrentDictionary<string, DateTime> _lastVirtualJobTime = new ConcurrentDictionary<string, DateTime>();
         private readonly CancellationTokenSource _cts = new CancellationTokenSource();
 
         public PersistentPrintQueueManager()
@@ -68,6 +69,18 @@ namespace AvoraPos.NativePrint
             // 1. Persist to SQLite BEFORE dispatch (Directive 9)
             LocalDatabase.Instance.EnqueuePrintJob(jobId, printerId, jobType, payloadJson, bytesBase64, idempotencyKey);
 
+            bool isVirtual = WinSpoolNative.IsGdiOrOfficePrinter(printerId);
+            if (isVirtual)
+            {
+                string normPrinter = printerId.ToLowerInvariant().Trim();
+                var now = DateTime.UtcNow;
+                if (_lastVirtualJobTime.TryGetValue(normPrinter, out var lastTime) && (now - lastTime).TotalSeconds < 5)
+                {
+                    return (true, null); // Chặn duplicate spam lên máy in ảo trong vòng 5 giây
+                }
+                _lastVirtualJobTime[normPrinter] = now;
+            }
+
             var record = new PrintJobRecord
             {
                 Id = jobId,
@@ -77,7 +90,7 @@ namespace AvoraPos.NativePrint
                 RawBytesBase64 = bytesBase64,
                 Status = "PENDING",
                 AttemptCount = 0,
-                MaxAttempts = 3,
+                MaxAttempts = isVirtual ? 1 : 3,
                 IdempotencyKey = idempotencyKey,
                 CreatedAt = DateTime.UtcNow
             };
@@ -115,8 +128,9 @@ namespace AvoraPos.NativePrint
                         else
                         {
                             LocalDatabase.Instance.MarkJobFailed(job.Id, result.Error ?? "Lỗi không xác định");
-                            // If attempts < max, retry with a brief backoff
-                            if (job.AttemptCount + 1 < job.MaxAttempts)
+                            // If attempts < max and NOT a virtual printer (PDF, XPS, etc.), retry with a brief backoff
+                            bool isVirtualJob = WinSpoolNative.IsGdiOrOfficePrinter(job.PrinterId);
+                            if (!isVirtualJob && job.AttemptCount + 1 < job.MaxAttempts)
                             {
                                 job.AttemptCount++;
                                 await Task.Delay(1500, ct);
@@ -284,6 +298,12 @@ namespace AvoraPos.NativePrint
                 var unfinished = LocalDatabase.Instance.GetUnfinishedPrintJobs();
                 foreach (var job in unfinished)
                 {
+                    // Lệnh in ảo (PDF, XPS, Fax...) yêu cầu người dùng chọn file lưu thủ công, tuyệt đối không phục hồi tự động khi mở app
+                    if (WinSpoolNative.IsGdiOrOfficePrinter(job.PrinterId))
+                    {
+                        LocalDatabase.Instance.MarkJobFailed(job.Id, "Bỏ qua lệnh in ảo chưa hoàn tất khi khởi động lại");
+                        continue;
+                    }
                     var channel = GetOrCreatePrinterChannel(job.PrinterId);
                     channel.Writer.TryWrite(job);
                 }

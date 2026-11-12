@@ -14,6 +14,7 @@ export interface PosRedeemPointsModalProps {
   currentBranch: PosBranch | null;
   selectedMember?: any | null;
   onAppliedSuccess?: () => void;
+  isDarkMode?: boolean;
 }
 
 const fetcher = (url: string) => fetch(url, { credentials: 'include' }).then((r) => r.json());
@@ -25,6 +26,7 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
   currentBranch,
   selectedMember,
   onAppliedSuccess,
+  isDarkMode = false,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -209,26 +211,35 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
   if (!isOpen || !order) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
       <div
-        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden select-none border border-slate-100"
+        className={`w-full max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl flex flex-col max-h-[92dvh] sm:max-h-[90vh] overflow-hidden select-none border animate-in slide-in-from-bottom duration-200 sm:animate-in sm:zoom-in-95 ${
+          isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-100 text-slate-900'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Mobile Drag Handle */}
+        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto my-2 sm:hidden shrink-0" />
+
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
+        <div className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${
+          isDarkMode ? 'border-slate-800' : 'border-slate-100'
+        }`}>
           <div className="flex items-center gap-2.5">
             <div className="w-9 h-9 rounded-xl bg-red-50 text-[#da251d] flex items-center justify-center shrink-0">
               <Gift size={20} />
             </div>
             <div>
-              <h3 className="font-black text-lg text-slate-900 leading-tight">Đổi Điểm Thưởng Lấy Món</h3>
-              <p className="text-[11px] text-slate-500">Quy đổi điểm tích lũy của hội viên lấy món ăn 0đ</p>
+              <h3 className={`font-black text-lg leading-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Đổi Điểm Thưởng Lấy Món</h3>
+              <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Quy đổi điểm tích lũy của hội viên lấy món ăn 0đ</p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+            className={`p-1.5 rounded-full transition-colors cursor-pointer ${
+              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+            }`}
           >
             <X size={20} />
           </button>
@@ -238,8 +249,10 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
         <div className="p-5 overflow-y-auto flex-1 space-y-4">
           {/* Lock notice banner if points already redeemed */}
           {hasRedeemedPoints && (
-            <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-center gap-2.5 text-xs text-amber-800">
-              <Lock size={16} className="text-amber-600 shrink-0" />
+            <div className={`p-3 rounded-2xl flex items-center gap-2.5 text-xs border ${
+              isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              <Lock size={16} className="text-amber-500 shrink-0" />
               <span>
                 Đơn hàng đã có món đổi điểm thưởng. Tài khoản hội viên được <strong>cố định</strong> để đảm bảo đối soát.
               </span>
@@ -248,16 +261,18 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
 
           {/* Member Card */}
           {activeUser && !isChangingUser ? (
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between shadow-2xs">
+            <div className={`p-3.5 rounded-2xl flex items-center justify-between shadow-2xs border ${
+              isDarkMode ? 'bg-slate-800/70 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'
+            }`}>
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-full bg-[#1A73E8] text-white flex items-center justify-center shrink-0 shadow-xs font-bold text-sm">
                   {activeUser.fullName ? activeUser.fullName.charAt(0).toUpperCase() : <User size={20} />}
                 </div>
                 <div>
-                  <div className="font-bold text-slate-900 text-sm leading-snug">
+                  <div className={`font-bold text-sm leading-snug ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     {activeUser.fullName || activeUser.phone || 'Hội viên'}
                   </div>
-                  <div className="text-[11px] text-slate-500 font-mono">
+                  <div className={`text-[11px] font-mono ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     {activeUser.phone || 'Chưa SĐT'} {activeUser.memberCode ? `• ${activeUser.memberCode}` : ''}
                   </div>
                   {!hasRedeemedPoints ? (
@@ -280,7 +295,7 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1 mt-1 text-[11px] text-amber-700 font-semibold">
+                    <div className={`flex items-center gap-1 mt-1 text-[11px] font-semibold ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>
                       <Lock size={11} />
                       <span>Đã liên kết đơn hàng</span>
                     </div>
@@ -300,9 +315,11 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
             </div>
           ) : (
             /* Search Customer Input */
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5">
+            <div className={`p-4 rounded-2xl space-y-2.5 border ${
+              isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-slate-50 border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                   <User size={14} className="text-[#da251d]" />
                   <span>Chọn hội viên tích điểm</span>
                 </span>
@@ -310,7 +327,7 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                   <button
                     type="button"
                     onClick={() => setIsChangingUser(false)}
-                    className="text-xs text-slate-500 hover:underline cursor-pointer"
+                    className="text-xs text-slate-400 hover:underline cursor-pointer"
                   >
                     Hủy thay đổi
                   </button>
@@ -324,24 +341,32 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                   value={searchQuery}
                   onChange={(e) => handleSearch(e.target.value)}
                   placeholder="Nhập số điện thoại hoặc họ tên hội viên..."
-                  className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs outline-none focus:border-[#DA251D] focus:ring-1 focus:ring-[#DA251D] transition-all"
+                  className={`w-full pl-9 pr-4 py-2.5 rounded-xl text-xs outline-none transition-all border ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500 focus:border-[#DA251D]'
+                      : 'bg-white border-slate-300 text-slate-900 placeholder-slate-400 focus:border-[#DA251D] focus:ring-1 focus:ring-[#DA251D]'
+                  }`}
                 />
               </div>
               {isSearching && <p className="text-[11px] text-slate-400 italic">Đang tìm kiếm hội viên...</p>}
               {searchResults.length > 0 && (
-                <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white shadow-xs">
+                <div className={`max-h-48 overflow-y-auto divide-y rounded-xl shadow-xs border ${
+                  isDarkMode ? 'divide-slate-700 border-slate-700 bg-slate-800 text-white' : 'divide-slate-100 border-slate-200 bg-white'
+                }`}>
                   {searchResults.map((u: any) => (
                     <button
                       key={u.id}
                       type="button"
                       onClick={() => handleSelectUser(u)}
-                      className="w-full text-left p-2.5 hover:bg-red-50/60 flex items-center justify-between text-xs transition-colors cursor-pointer"
+                      className={`w-full text-left p-2.5 flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                        isDarkMode ? 'hover:bg-slate-700 text-white' : 'hover:bg-red-50/60'
+                      }`}
                     >
                       <div>
-                        <div className="font-bold text-slate-900">{u.fullName || u.phone}</div>
+                        <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{u.fullName || u.phone}</div>
                         <div className="text-slate-400 text-[11px]">{u.phone}</div>
                       </div>
-                      <span className="font-black text-[#00875A] bg-emerald-50 px-2 py-0.5 rounded text-xs">
+                      <span className="font-black text-[#00875A] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded text-xs">
                         {(u.points ?? u.currentPoints ?? 0).toLocaleString('vi-VN')} điểm
                       </span>
                     </button>
@@ -398,11 +423,17 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className="p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-2xl flex items-center justify-between gap-3 shadow-2xs transition-all"
+                      className={`p-3 rounded-2xl flex items-center justify-between gap-3 shadow-2xs transition-all border ${
+                        isDarkMode
+                          ? 'bg-slate-800/60 border-slate-700 hover:border-slate-600'
+                          : 'bg-white border-slate-200 hover:border-slate-300'
+                      }`}
                     >
                       {/* Left: Thumbnail & Info */}
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 shrink-0 relative overflow-hidden flex items-center justify-center">
+                        <div className={`w-14 h-14 rounded-2xl shrink-0 relative overflow-hidden flex items-center justify-center border ${
+                          isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-100'
+                        }`}>
                           {item.imageUrl ? (
                             <Image
                               src={item.imageUrl}
@@ -412,15 +443,15 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                               className="object-cover"
                             />
                           ) : (
-                            <Utensils size={20} className="text-slate-300" />
+                            <Utensils size={20} className="text-slate-400" />
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <h5 className="font-bold text-slate-900 text-sm leading-snug truncate">
+                          <h5 className={`font-bold text-sm leading-snug truncate ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                             {item.name}
                           </h5>
-                          <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-amber-600">
+                          <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-amber-500">
                             <Coins size={14} className="text-amber-500" />
                             <span>{requiredPoints.toLocaleString('vi-VN')} điểm</span>
                           </div>
@@ -435,6 +466,8 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                         className={`shrink-0 px-5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center min-w-[70px] ${
                           canRedeem
                             ? 'bg-[#DA251D] hover:bg-[#b81d16] text-white shadow-xs active:scale-95 cursor-pointer'
+                            : isDarkMode
+                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
                             : 'bg-slate-100 text-slate-400 cursor-not-allowed'
                         }`}
                         title={
@@ -467,35 +500,39 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
           onClick={() => setConfirmItem(null)}
         >
           <div 
-            className="w-full max-w-sm bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden p-5 space-y-4 animate-in zoom-in-95 duration-150"
+            className={`w-full max-w-sm rounded-3xl shadow-2xl border overflow-hidden p-5 space-y-4 animate-in zoom-in-95 duration-150 ${
+              isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-center space-y-2">
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200 shadow-xs">
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto border border-amber-500/30 shadow-xs">
                 <Gift className="w-6 h-6" />
               </div>
-              <h4 className="text-base font-black text-slate-900">Xác Nhận Đổi Món Bằng Điểm</h4>
-              <p className="text-xs text-slate-500">
+              <h4 className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Xác Nhận Đổi Món Bằng Điểm</h4>
+              <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 Bạn có chắc chắn muốn dùng điểm tích lũy của khách để đổi món ăn này không?
               </p>
             </div>
 
-            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5 text-xs">
+            <div className={`p-3.5 rounded-2xl border space-y-2.5 text-xs ${
+              isDarkMode ? 'bg-slate-800/70 border-slate-700' : 'bg-slate-50 border-slate-200'
+            }`}>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Món đổi thưởng:</span>
-                <span className="font-bold text-slate-900 truncate max-w-[180px]">{confirmItem.name}</span>
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Món đổi thưởng:</span>
+                <span className={`font-bold truncate max-w-[180px] ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{confirmItem.name}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Khách hàng:</span>
-                <span className="font-bold text-slate-900">{activeUser?.fullName}</span>
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Khách hàng:</span>
+                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{activeUser?.fullName}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-slate-500">Số điểm trừ:</span>
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Số điểm trừ:</span>
                 <span className="font-black text-[#da251d]">-{confirmItem.redemptionPoints?.toLocaleString('vi-VN')} điểm</span>
               </div>
-              <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-                <span className="text-slate-500">Điểm còn lại:</span>
-                <span className="font-black text-emerald-600 font-mono">
+              <div className={`flex items-center justify-between pt-2 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Điểm còn lại:</span>
+                <span className="font-black text-emerald-500 font-mono">
                   {Math.max(0, userPoints - (confirmItem.redemptionPoints || 0)).toLocaleString('vi-VN')} điểm
                 </span>
               </div>

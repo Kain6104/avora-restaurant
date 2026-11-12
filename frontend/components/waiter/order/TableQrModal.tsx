@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  X,
   QrCode,
   Copy,
   ExternalLink,
@@ -12,9 +11,11 @@ import {
   CheckCircle2,
   Sparkles,
   Loader2,
+  Download,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import toast from 'react-hot-toast';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 
 interface TableQrModalProps {
   isOpen: boolean;
@@ -92,8 +93,7 @@ export default function TableQrModal({
     }
   }, [isOpen, tableId, branchId, orderId]);
 
-  if (!isOpen) return null;
-
+  // URL QR tự động resolve theo public origin hiện tại
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
   const qrUrl = qrToken && origin ? `${origin}/qr/${qrToken}` : '';
 
@@ -119,12 +119,36 @@ export default function TableQrModal({
     window.print();
   };
 
+  const handleDownloadQr = () => {
+    const svg = document.getElementById('table-qr-svg');
+    if (!svg) {
+      toast.error('Không tìm thấy ảnh mã QR để tải');
+      return;
+    }
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new Image();
+    img.onload = () => {
+      canvas.width = img.width;
+      canvas.height = img.height;
+      ctx?.drawImage(img, 0, 0);
+      const pngFile = canvas.toDataURL('image/png');
+      const downloadLink = document.createElement('a');
+      downloadLink.download = `QR-${tableName || 'Table'}.png`;
+      downloadLink.href = pngFile;
+      downloadLink.click();
+      toast.success('Đã tải hình mã QR!');
+    };
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)));
+  };
+
   const handleRegenerate = async () => {
     if (!orderId) {
       toast.error('Không tìm thấy mã đơn hàng để tạo lại');
       return;
     }
-    if (!confirm('Tạo lại mã QR sẽ lập tức vô hiệu hóa mã QR cũ. Khách đang quét mã cũ sẽ không gửi món được nữa. Tiếp tục?')) {
+    if (!confirm('Tạo lại mã QR sẽ vô hiệu hóa mã cũ. Tiếp tục?')) {
       return;
     }
     setActionLoading(true);
@@ -181,192 +205,184 @@ export default function TableQrModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-start justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 select-none overflow-y-auto">
-      <div
-        className="w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col my-auto"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-5 py-4 bg-gradient-to-r from-red-50 to-orange-50/60 border-b border-red-100 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-[#DA251D] text-white flex items-center justify-center shadow-xs">
-              <QrCode size={20} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">
-                QR Gọi Món – {tableName}
-              </h3>
-              <p className="text-xs text-slate-500 font-medium">
-                Khách quét QR để xem thực đơn & gọi món
-              </p>
-            </div>
-          </div>
+    <ResponsiveModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`QR Gọi Món – ${tableName}`}
+      subtitle={tableCode ? `Mã bàn: ${tableCode}` : 'Khách quét QR để xem thực đơn & gửi món'}
+      icon={<QrCode size={18} className="text-[#DA251D]" />}
+      maxWidth="md"
+      footer={
+        <div className="flex items-center justify-between w-full text-xs">
+          <span className="font-bold text-slate-500">
+            {tableCode ? `${tableName} (${tableCode})` : tableName}
+          </span>
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="p-5 space-y-4 max-h-[80vh] overflow-y-auto">
-          {/* Status chips */}
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-                Mã đơn
-              </span>
-              <span className="font-mono font-bold text-slate-800 truncate block">
-                {orderCode || (orderId ? `TMP-${orderId.slice(0, 8).toUpperCase()}` : 'Đang mở')}
-              </span>
-            </div>
-
-            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100">
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
-                Trạng thái QR
-              </span>
-              <span
-                className={`font-black inline-flex items-center gap-1 ${
-                  qrStatus === 'ACTIVE'
-                    ? 'text-emerald-600'
-                    : qrStatus === 'DISABLED'
-                    ? 'text-rose-600'
-                    : 'text-slate-500'
-                }`}
-              >
-                {qrStatus === 'ACTIVE' ? (
-                  <>
-                    <CheckCircle2 size={13} /> HOẠT ĐỘNG
-                  </>
-                ) : qrStatus === 'DISABLED' ? (
-                  <>
-                    <Ban size={13} /> TẠM KHÓA
-                  </>
-                ) : (
-                  'ĐÃ ĐÓNG'
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* Active Buffet Session Banner */}
-          {buffetPackageName && (
-            <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center gap-2 text-xs">
-              <Sparkles size={16} className="text-amber-600 shrink-0" />
-              <div className="truncate">
-                <span className="text-amber-800 font-bold">Gói Buffet: </span>
-                <span className="text-amber-950 font-black">{buffetPackageName}</span>
-              </div>
-            </div>
-          )}
-
-          {/* QR Box Canvas */}
-          <div className="bg-slate-50/60 border-2 border-dashed border-slate-200 rounded-2xl p-5 flex flex-col items-center justify-center text-center">
-            {loading ? (
-              <div className="h-44 flex flex-col items-center justify-center gap-2 text-xs text-slate-500 font-medium">
-                <Loader2 size={24} className="animate-spin text-[#DA251D]" />
-                <span>Đang tải mã QR gọi món...</span>
-              </div>
-            ) : qrUrl ? (
-              <>
-                <div className="p-3 bg-white rounded-2xl shadow-md border border-slate-100 mb-2.5">
-                  <QRCodeSVG
-                    value={qrUrl}
-                    size={190}
-                    level="H"
-                    includeMargin
-                    imageSettings={{
-                      src: '/avora_logo_ngang.png',
-                      height: 32,
-                      width: 32,
-                      excavate: true,
-                    }}
-                  />
-                </div>
-                <div className="text-[11px] text-slate-500 font-mono font-medium max-w-xs truncate select-all">
-                  {qrUrl}
-                </div>
-              </>
-            ) : (
-              <div className="h-44 flex flex-col items-center justify-center text-xs text-rose-600 font-semibold">
-                <span>Chưa thể tải mã QR cho bàn này</span>
-                <span className="text-[11px] text-slate-400 font-normal mt-1">
-                  Đảm bảo bàn đã có đơn hàng mở
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Primary Action Button: Mở trang gọi món QR */}
-          {qrUrl && (
-            <button
-              type="button"
-              onClick={handleOpenCustomerPage}
-              className="w-full py-3 px-4 bg-[#DA251D] hover:bg-[#b81d16] active:scale-[0.99] text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 shadow-sm transition-all cursor-pointer"
-            >
-              <ExternalLink size={17} />
-              <span>Mở trang gọi món QR (Xem giao diện khách)</span>
-            </button>
-          )}
-
-          {/* Action grid */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              disabled={!qrUrl}
-              className="py-2.5 px-3 bg-white hover:bg-slate-50 active:scale-95 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-            >
-              <Copy size={14} />
-              <span>Sao chép liên kết</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrint}
-              disabled={!qrUrl}
-              className="py-2.5 px-3 bg-white hover:bg-slate-50 active:scale-95 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-            >
-              <Printer size={14} />
-              <span>In mã QR</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleRegenerate}
-              disabled={actionLoading || !orderId}
-              className="py-2.5 px-3 bg-amber-50/70 hover:bg-amber-100 active:scale-95 border border-amber-200 text-amber-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-            >
-              <RotateCcw size={14} />
-              <span>Tạo lại QR mới</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDisable}
-              disabled={actionLoading || !orderId || qrStatus === 'DISABLED'}
-              className="py-2.5 px-3 bg-rose-50/70 hover:bg-rose-100 active:scale-95 border border-rose-200 text-rose-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
-            >
-              <Ban size={14} />
-              <span>Vô hiệu hóa QR</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>Bàn: {tableCode || tableName}</span>
-          <button
-            type="button"
-            onClick={onClose}
-            className="text-slate-600 hover:text-slate-900 font-bold cursor-pointer"
+            className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold transition-colors cursor-pointer"
           >
             Đóng
           </button>
         </div>
+      }
+    >
+      <div className="space-y-3 py-1">
+        {/* Status chips */}
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider block">
+              Mã đơn hàng
+            </span>
+            <span className="font-mono font-bold text-slate-800 truncate block text-xs">
+              {orderCode || (orderId ? `TMP-${orderId.slice(0, 8).toUpperCase()}` : 'Đang mở')}
+            </span>
+          </div>
+
+          <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
+            <span className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider block">
+              Trạng thái QR
+            </span>
+            <span
+              className={`font-black text-xs inline-flex items-center gap-1 ${
+                qrStatus === 'ACTIVE'
+                  ? 'text-emerald-600'
+                  : qrStatus === 'DISABLED'
+                  ? 'text-rose-600'
+                  : 'text-slate-500'
+              }`}
+            >
+              {qrStatus === 'ACTIVE' ? (
+                <>
+                  <CheckCircle2 size={13} /> Hoạt động
+                </>
+              ) : qrStatus === 'DISABLED' ? (
+                <>
+                  <Ban size={13} /> Tạm khóa
+                </>
+              ) : (
+                'Đã đóng'
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Active Buffet Session Banner */}
+        {buffetPackageName && (
+          <div className="p-2 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-xs">
+            <Sparkles size={14} className="text-amber-600 shrink-0" />
+            <div className="truncate">
+              <span className="text-amber-800 font-bold">Gói Buffet: </span>
+              <span className="text-amber-950 font-black">{buffetPackageName}</span>
+            </div>
+          </div>
+        )}
+
+        {/* QR Box Canvas */}
+        <div className="bg-slate-50/70 border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center text-center">
+          {loading ? (
+            <div className="h-40 flex flex-col items-center justify-center gap-2 text-xs text-slate-500 font-medium">
+              <Loader2 size={24} className="animate-spin text-[#DA251D]" />
+              <span>Đang tạo mã QR gọi món...</span>
+            </div>
+          ) : qrUrl ? (
+            <>
+              <div className="p-2.5 bg-white rounded-2xl shadow-sm border border-slate-100 mb-2">
+                <QRCodeSVG
+                  id="table-qr-svg"
+                  value={qrUrl}
+                  size={170}
+                  level="H"
+                  includeMargin
+                  imageSettings={{
+                    src: '/avora_logo_ngang.png',
+                    height: 28,
+                    width: 28,
+                    excavate: true,
+                  }}
+                />
+              </div>
+              <div className="text-[11px] text-slate-500 font-mono font-medium max-w-full truncate px-2 select-all">
+                {qrUrl}
+              </div>
+            </>
+          ) : (
+            <div className="h-40 flex flex-col items-center justify-center text-xs text-rose-600 font-semibold">
+              <span>Chưa thể tải mã QR cho bàn này</span>
+              <span className="text-[10px] text-slate-400 font-normal mt-1">
+                Đảm bảo bàn đã có đơn hàng mở
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Primary Action Button: Mở trang gọi món QR */}
+        {qrUrl && (
+          <button
+            type="button"
+            onClick={handleOpenCustomerPage}
+            className="w-full py-2.5 px-3 bg-[#DA251D] hover:bg-[#b81d16] active:scale-[0.98] text-white font-bold rounded-xl text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+          >
+            <ExternalLink size={15} />
+            <span>Mở trang gọi món (Tab mới)</span>
+          </button>
+        )}
+
+        {/* Action Buttons Grid */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={handleCopyLink}
+            disabled={!qrUrl}
+            className="py-2 px-2.5 bg-white hover:bg-slate-50 active:scale-95 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <Copy size={13} />
+            <span>Sao chép link</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleDownloadQr}
+            disabled={!qrUrl}
+            className="py-2 px-2.5 bg-white hover:bg-slate-50 active:scale-95 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <Download size={13} />
+            <span>Tải ảnh QR</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrint}
+            disabled={!qrUrl}
+            className="py-2 px-2.5 bg-white hover:bg-slate-50 active:scale-95 border border-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <Printer size={13} />
+            <span>In phiếu QR</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleRegenerate}
+            disabled={actionLoading || !orderId}
+            className="py-2 px-2.5 bg-amber-50 hover:bg-amber-100 active:scale-95 border border-amber-200 text-amber-800 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer disabled:opacity-50"
+          >
+            <RotateCcw size={13} />
+            <span>Tạo lại QR</span>
+          </button>
+        </div>
+
+        {/* Disable Button */}
+        {orderId && qrStatus === 'ACTIVE' && (
+          <button
+            type="button"
+            onClick={handleDisable}
+            disabled={actionLoading}
+            className="w-full py-1.5 text-center text-rose-600 hover:text-rose-700 hover:bg-rose-50 text-[11px] font-bold rounded-lg transition-colors cursor-pointer"
+          >
+            Tạm khóa mã QR này
+          </button>
+        )}
       </div>
-    </div>
+    </ResponsiveModal>
   );
 }

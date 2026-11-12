@@ -22,6 +22,11 @@ object BankGatewaySocketManager {
         scope.launch {
             try {
                 val db = AppDatabase.getInstance(context)
+                val isPaired = db.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+                if (!isPaired) {
+                    Log.w(TAG, "Thiết bị chưa ghép nối hoặc đã bị thu hồi, không mở kết nối Socket.")
+                    return@launch
+                }
                 val deviceId = db.configDao().get("device_id") ?: "android-gateway"
                 val serverUrl = db.configDao().get("server_url") ?: "https://avorafnb.com"
 
@@ -50,6 +55,33 @@ object BankGatewaySocketManager {
                     Log.w(TAG, "[!] Mất kết nối Socket với VPS AVORA")
                 }
 
+                // Thu hồi thiết bị thời gian thực từ Web Admin (/admin/bank-connect)
+                socket?.on("bank.device.revoked") { args ->
+                    try {
+                        val data = args.getOrNull(0) as? JSONObject
+                        val revokedId = data?.optString("deviceId").orEmpty()
+                        val reason = data?.optString("reason")?.ifBlank {
+                            "Thiết bị đã bị Quản trị viên thu hồi liên kết trên /admin/bank-connect"
+                        } ?: "Thiết bị đã bị Quản trị viên thu hồi liên kết trên /admin/bank-connect"
+
+                        if (revokedId.isBlank() || revokedId == deviceId) {
+                            Log.w(TAG, "[REVOKED] Nhận lệnh thu hồi thiết bị thời gian thực từ Web Admin: $revokedId")
+                            scope.launch {
+                                BankNotificationListenerService.handleDeviceRevokedOrUnpaired(context, reason)
+                                kotlinx.coroutines.withContext(Dispatchers.Main) {
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "Thiết bị này đã bị thu hồi liên kết trên /admin/bank-connect!",
+                                        android.widget.Toast.LENGTH_LONG
+                                    ).show()
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Lỗi khi xử lý sự kiện bank.device.revoked: ${e.message}")
+                    }
+                }
+
                 // Feature 2: Anti-Fake Bill Verifier - Khi thu ngân POS bấm "Chưa thấy tiền? Bấm kiểm tra nóng"
                 socket?.on("TRIGGER_NOTIFICATION_SCAN") { args ->
                     try {
@@ -71,13 +103,25 @@ object BankGatewaySocketManager {
                     try {
                         val data = args.getOrNull(0) as? JSONObject
                         val downloadUrl = data?.optString("downloadUrl") ?: "https://avorafnb.com/api/bank-connect/v1/app/download-latest"
-                        val versionName = data?.optString("versionName") ?: "1.0.1"
-                        Log.i(TAG, "[🚀] NHẬN LỆNH CẬP NHẬT TỰ ĐỘNG OTA! Phiên bản mới: $versionName")
+                        val versionName = data?.optString("versionName") ?: "1.0.4"
+                        val remoteVersionCode = data?.optInt("versionCode", 0) ?: 0
+                        val installed = vn.avora.bankconnect.core.update.OtaUpdateManager.getInstalledAppInfo(context)
+
+                        if (remoteVersionCode > 0 && remoteVersionCode.toLong() <= installed.versionCode) {
+                            Log.i(
+                                TAG,
+                                "[OTA] Bỏ qua PUSH_APP_UPDATE vì máy đang ở bản mới nhất v${installed.versionName} (Build ${installed.versionCode} >= Server Build $remoteVersionCode)"
+                            )
+                            return@on
+                        }
+
+                        Log.i(TAG, "[🚀] NHẬN LỆNH CẬP NHẬT TỰ ĐỘNG OTA! Phiên bản mới: v$versionName (Build $remoteVersionCode)")
 
                         scope.launch {
                             vn.avora.bankconnect.core.update.OtaUpdateManager.downloadAndInstall(
                                 context = context,
                                 downloadUrl = downloadUrl,
+                                allowReinstallSameVersion = false,
                                 onProgress = { progress ->
                                     Log.d(TAG, "[OTA] Tiến độ tải bản cập nhật: $progress%")
                                 },

@@ -118,6 +118,14 @@ export interface FinancialOrderInput {
   orderItems?: FinancialOrderItemInput[];
   payments?: FinancialOrderPaymentInput[];
   serviceCharges?: FinancialServiceChargeInput[];
+  cancellation?: {
+    id: string;
+    cancellationType: string;
+    status: string;
+    requestedRefundAmount: number;
+    totalRefunded: number;
+    retainedAmount: number;
+  } | null;
 }
 
 export interface FinancialOrderItemInput {
@@ -245,6 +253,13 @@ export interface CalculatedOrderFinancials {
   refundedAmount: number;
   netCollected: number;
 
+  // Cancellation & Refund Classification
+  isUnpaidCancelled: boolean;
+  unpaidCancelledValue: number;
+  isPaidCancelled: boolean;
+  paidCancelledValue: number;
+  refundPendingAmount: number;
+
   // Reconciliation Details
   reconciliation: OrderReconciliationResult;
   items: CalculatedOrderItemFinancials[];
@@ -314,6 +329,14 @@ export interface FinancialKPIsSummary {
   totalOutstandingRevenue: number;
   totalRefundedAmount: number;
   netCollectedRevenue: number;
+
+  // Cancellation & Reversal Breakdown (Enterprise Engine)
+  unpaidCancelledOrderCount: number;
+  unpaidCancelledOrderValue: number;
+  paidCancelledInvoiceCount: number;
+  paidCancelledInvoiceValue: number;
+  refundPendingAmount: number;
+  refundFailedAmount: number;
 
   // AOV
   averageOrderValue: number;
@@ -416,7 +439,10 @@ export class FinancialReportCalculationService {
     let sumEligibleBase = 0;
 
     items.forEach((item, idx) => {
-      const qty = Math.max(1, Math.floor(Number(item.quantity || 1)));
+      const parsedQty = Number(item.quantity);
+      const qty = Number.isFinite(parsedQty) && parsedQty > 0
+        ? Math.max(0.001, Math.round(parsedQty * 1000) / 1000)
+        : 1;
       const unitPrice = Math.max(0, Math.round(Number(item.priceAtSale || 0)));
       const unitDirectDiscount = Math.max(0, Math.round(Number(item.discountAmount || 0)));
       const lineGross = Math.round(qty * unitPrice);
@@ -506,7 +532,10 @@ export class FinancialReportCalculationService {
     const order = item.order;
     const product = item.product;
 
-    const quantity = Math.max(1, Math.floor(Number(item.quantity || 1)));
+    const parsedQty = Number(item.quantity);
+    const quantity = Number.isFinite(parsedQty) && parsedQty > 0
+      ? Math.max(0.001, Math.round(parsedQty * 1000) / 1000)
+      : 1;
     const unitPriceAtSale = Math.max(0, Math.round(Number(item.priceAtSale || 0)));
     const originalPriceAtSale = Math.max(
       0,
@@ -861,6 +890,35 @@ export class FinancialReportCalculationService {
       refundedAmount,
       netCollected,
 
+      isUnpaidCancelled:
+        (order.status || '').toUpperCase() === 'CANCELLED' &&
+        (order.cancellation?.cancellationType === 'UNPAID_ORDER_CANCELLATION' ||
+          (!order.cancellation && collectedRevenue === 0)),
+      unpaidCancelledValue:
+        (order.status || '').toUpperCase() === 'CANCELLED' &&
+        (order.cancellation?.cancellationType === 'UNPAID_ORDER_CANCELLATION' ||
+          (!order.cancellation && collectedRevenue === 0))
+          ? storedTotalAmount
+          : 0,
+      isPaidCancelled:
+        (order.status || '').toUpperCase() === 'CANCELLED' &&
+        (order.cancellation?.cancellationType === 'PAID_INVOICE_CANCELLATION' ||
+          (!order.cancellation && collectedRevenue > 0)),
+      paidCancelledValue:
+        (order.status || '').toUpperCase() === 'CANCELLED' &&
+        (order.cancellation?.cancellationType === 'PAID_INVOICE_CANCELLATION' ||
+          (!order.cancellation && collectedRevenue > 0))
+          ? storedTotalAmount
+          : 0,
+      refundPendingAmount:
+        order.cancellation &&
+        ['REFUND_PENDING', 'REFUND_PROCESSING', 'PENDING_APPROVAL'].includes(order.cancellation.status)
+          ? Math.max(
+              0,
+              (order.cancellation.requestedRefundAmount || 0) - (order.cancellation.totalRefunded || 0),
+            )
+          : 0,
+
       reconciliation,
       items: calculatedItems,
     };
@@ -1019,6 +1077,13 @@ export class FinancialReportCalculationService {
     let totalDiscrepancyAmount = 0;
     let unreconciledOrdersCount = 0;
 
+    let unpaidCancelledOrderCount = 0;
+    let unpaidCancelledOrderValue = 0;
+    let paidCancelledInvoiceCount = 0;
+    let paidCancelledInvoiceValue = 0;
+    let refundPendingAmount = 0;
+    let refundFailedAmount = 0;
+
     const seenCustomers = new Set<string>();
     const branchMap = new Map<string, BranchFinancialSummary>();
     const paymentMap = new Map<string, { collected: number; refunded: number; count: number }>();
@@ -1034,6 +1099,16 @@ export class FinancialReportCalculationService {
       if (isCompleted) completedOrderCount++;
       if (isCancelled) cancelledOrderCount++;
       if (isRefunded) refundedOrderCount++;
+
+      if (o.isUnpaidCancelled) {
+        unpaidCancelledOrderCount++;
+        unpaidCancelledOrderValue += o.unpaidCancelledValue;
+      }
+      if (o.isPaidCancelled) {
+        paidCancelledInvoiceCount++;
+        paidCancelledInvoiceValue += o.paidCancelledValue;
+      }
+      refundPendingAmount += o.refundPendingAmount;
 
       if (o.customerPhone) {
         seenCustomers.add(o.customerPhone);
@@ -1288,6 +1363,13 @@ export class FinancialReportCalculationService {
         totalOutstandingRevenue,
         totalRefundedAmount,
         netCollectedRevenue,
+
+        unpaidCancelledOrderCount,
+        unpaidCancelledOrderValue,
+        paidCancelledInvoiceCount,
+        paidCancelledInvoiceValue,
+        refundPendingAmount,
+        refundFailedAmount,
 
         averageOrderValue,
 

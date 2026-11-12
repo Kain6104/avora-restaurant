@@ -10,6 +10,7 @@ namespace AvoraPosNative.Dialogs
         public CancelItemDialog(string title = "Hủy Món Ăn", string? subtitle = null)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             txtDialogTitle.Text = title;
             if (!string.IsNullOrEmpty(subtitle))
             {

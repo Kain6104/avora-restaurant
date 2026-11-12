@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using System.Windows;
 using AvoraPosNative.IPC;
+using AvoraPosNative.Services;
 using AvoraPosNative.Storage;
 using Microsoft.Win32;
 
@@ -99,6 +100,10 @@ namespace AvoraPosNative
             LocalDatabase.Initialize();
             TraceLog("LocalDatabase initialized");
 
+            // 4.1 Start Background Sync Worker (Durability & Offline Sync)
+            BackgroundSyncWorker.Instance.Start();
+            TraceLog("BackgroundSyncWorker started");
+
             // 5. Start Named Pipe Server for deep links and activation
             _pipeServer = new SingleInstancePipe();
             _pipeServer.DeepLinkReceived += (msg) =>
@@ -115,7 +120,8 @@ namespace AvoraPosNative
                         _mainWindow.Activate();
                         _mainWindow.Focus();
 
-                        if (msg.StartsWith("avora-pos-native://", StringComparison.OrdinalIgnoreCase))
+                        if (msg.StartsWith("avora-pos-native://", StringComparison.OrdinalIgnoreCase) ||
+                            msg.StartsWith("avora-pos://", StringComparison.OrdinalIgnoreCase))
                         {
                             _mainWindow.HandleDeepLink(msg);
                         }
@@ -132,7 +138,9 @@ namespace AvoraPosNative
             TraceLog("MainWindow shown");
 
             // Check if launched with deep link in startup arguments
-            if (e.Args.Length > 0 && e.Args[0].StartsWith("avora-pos-native://", StringComparison.OrdinalIgnoreCase))
+            if (e.Args.Length > 0 && 
+                (e.Args[0].StartsWith("avora-pos-native://", StringComparison.OrdinalIgnoreCase) ||
+                 e.Args[0].StartsWith("avora-pos://", StringComparison.OrdinalIgnoreCase)))
             {
                 _mainWindow.HandleDeepLink(e.Args[0]);
             }
@@ -143,19 +151,28 @@ namespace AvoraPosNative
             try
             {
                 string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "AvoraPosNative.exe");
-                using var key = Registry.CurrentUser.CreateSubKey(@"Software\Classes\avora-pos-native");
-                key.SetValue(string.Empty, "URL:AVORA POS Native Protocol");
-                key.SetValue("URL Protocol", string.Empty);
-
-                using var defaultIcon = key.CreateSubKey("DefaultIcon");
-                defaultIcon.SetValue(string.Empty, $"\"{exePath}\",0");
-
-                using var commandKey = key.CreateSubKey(@"shell\open\command");
-                commandKey.SetValue(string.Empty, $"\"{exePath}\" \"%1\"");
+                RegisterScheme("avora-pos-native", "URL:AVORA POS Native Protocol", exePath);
+                RegisterScheme("avora-pos", "URL:AVORA POS Protocol", exePath);
             }
             catch (Exception ex)
             {
                 System.Diagnostics.Debug.WriteLine($"[URI REG] Failed to register URI scheme: {ex.Message}");
+            }
+        }
+
+        private static void RegisterScheme(string scheme, string description, string exePath)
+        {
+            using var key = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{scheme}");
+            if (key != null)
+            {
+                key.SetValue(string.Empty, description);
+                key.SetValue("URL Protocol", string.Empty);
+
+                using var defaultIcon = key.CreateSubKey("DefaultIcon");
+                defaultIcon?.SetValue(string.Empty, $"\"{exePath}\",0");
+
+                using var commandKey = key.CreateSubKey(@"shell\open\command");
+                commandKey?.SetValue(string.Empty, $"\"{exePath}\" \"%1\"");
             }
         }
 
@@ -174,6 +191,12 @@ namespace AvoraPosNative
         protected override void OnExit(ExitEventArgs e)
         {
             TraceLog($"OnExit called. ExitCode={e.ApplicationExitCode}");
+            try
+            {
+                BackgroundSyncWorker.Instance.Dispose();
+            }
+            catch { }
+
             try
             {
                 _pipeServer?.Stop();

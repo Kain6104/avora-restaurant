@@ -13,17 +13,16 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { LocateFixed, Loader2, X, AlertCircle } from 'lucide-react';
 
+import {
+  MAP_TILE_URL,
+  MAP_TILE_SUBDOMAINS,
+  MAP_TILE_ATTRIBUTION,
+  MAP_MAX_ZOOM,
+  setupLeafletDefaultIcons,
+} from '@/lib/map-config';
+
 // ── Fix Leaflet default icon paths in Next.js ────────────────────────────────
-// This MUST run before any L.Icon is created
-if (typeof window !== 'undefined') {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  delete (L.Icon.Default.prototype as any)._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-  });
-}
+setupLeafletDefaultIcons(L);
 
 // ── Types ────────────────────────────────────────────────────────────────────
 export interface Branch {
@@ -278,10 +277,10 @@ export default function RestaurantsMap({
         className="w-full h-full"
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
+          attribution={MAP_TILE_ATTRIBUTION}
+          url={MAP_TILE_URL}
+          subdomains={MAP_TILE_SUBDOMAINS}
+          maxZoom={MAP_MAX_ZOOM}
         />
 
         <ZoomControl position="bottomright" />

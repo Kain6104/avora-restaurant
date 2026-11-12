@@ -218,11 +218,12 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   // ==========================================
   {
     name: 'findApplicableVouchers',
-    description: 'Tìm kiếm tất cả các mã giảm giá (voucher món ăn và voucher freeship) hợp lệ cho đơn hàng hiện tại dựa trên giá trị giỏ hàng và hạng thành viên của khách.',
+    description: 'Tìm kiếm tất cả các mã giảm giá (voucher món ăn và voucher freeship) hợp lệ cho đơn hàng hiện tại dựa trên giá trị giỏ hàng/đơn hàng, chi nhánh và hạng thành viên của khách.',
     parameters: {
       type: SchemaType.OBJECT,
       properties: {
-        branchId: { type: SchemaType.STRING, description: 'ID chi nhánh' }
+        branchId: { type: SchemaType.STRING, description: 'ID hoặc tên chi nhánh (VD: Avora Landmark 81)' },
+        orderValue: { type: SchemaType.NUMBER, description: 'Giá trị đơn hàng hoặc số tiền giỏ hàng tính bằng VNĐ (VD: 435000)' }
       }
     }
   },
@@ -437,6 +438,19 @@ export const ALL_CHATBOT_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         reason: { type: SchemaType.STRING, description: 'Lý do chuyển nhân viên hỗ trợ' }
       },
       required: ['reason']
+    }
+  },
+  {
+    name: 'getRestaurantInfo',
+    description: 'Tra cứu thông tin tổng quan, tiện ích, dịch vụ, chính sách nhà hàng Avora (giờ mở cửa, bãi đỗ xe ô tô/xe máy, phòng VIP riêng tư, ghế trẻ em, trang trí sinh nhật, xuất hóa đơn đỏ VAT, quy định mang đồ ăn/thức uống, hạng thẻ thành viên & tích điểm) hoặc giới thiệu đầy đủ các khả năng của trợ lý AvoBOT.',
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: {
+        topic: {
+          type: SchemaType.STRING,
+          description: 'Chủ đề khách hỏi: CAPABILITIES (khả năng của bot), PARKING (đỗ xe), VIP_ROOM (phòng riêng/sinh nhật), VAT_INVOICE (hóa đơn đỏ), OPENING_HOURS (giờ mở cửa), AMENITIES (ghế trẻ em, wifi, thú cưng), LOYALTY_POLICY (tích điểm/hạng thẻ), GENERAL (tổng hợp)'
+        }
+      }
     }
   }
 ];

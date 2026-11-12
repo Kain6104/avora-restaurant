@@ -32,6 +32,8 @@ import {
   Power,
   FileText,
   Receipt,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import { platformBridge } from '@/lib/platform/platform-bridge';
 import { PosBranch, PosActiveTab, PosOrder, PosTable, PosUserData } from './pos-types';
@@ -75,6 +77,8 @@ interface PosHeaderProps {
   onOpenQrManagement?: () => void;
   onOpenDesktopLaunch?: () => void;
   onOpenEndOfDayReport?: () => void;
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export const PosHeader: React.FC<PosHeaderProps> = ({
@@ -108,6 +112,8 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
   onOpenQrManagement,
   onOpenDesktopLaunch,
   onOpenEndOfDayReport,
+  isDarkMode = false,
+  onToggleDarkMode,
 }) => {
   const [timeStr, setTimeStr] = useState('');
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -365,7 +371,9 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
   // 2. STANDARD FULL POS HEADER
   // -------------------------------------------------------------
   return (
-    <header className="h-12 sm:h-14 px-2.5 sm:px-4 bg-white border-b border-slate-200 flex items-center justify-between gap-1.5 sm:gap-3 shadow-xs shrink-0 z-30 select-none">
+    <header className={`h-12 sm:h-14 px-2.5 sm:px-4 flex items-center justify-between gap-1.5 sm:gap-3 shadow-xs shrink-0 z-30 select-none transition-colors ${
+      isDarkMode ? 'bg-slate-900 border-b border-slate-800 text-slate-100' : 'bg-white border-b border-slate-200 text-slate-800'
+    }`}>
       {/* 1. Left: Hamburger 3-gạch + Brand Logo */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {/* Menu / Cài đặt POS Button: 3 gạch nằm ngoài cùng bên trái cạnh logo */}
@@ -373,10 +381,14 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
           <button
             type="button"
             onClick={onOpenSettingsDrawer}
-            className="w-8 sm:w-9 h-8 sm:h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-slate-300 hover:text-[#da251d] active:scale-95 text-slate-700 flex items-center justify-center shadow-2xs transition-all cursor-pointer"
+            className={`w-8 sm:w-9 h-8 sm:h-9 rounded-xl border flex items-center justify-center shadow-2xs transition-all cursor-pointer active:scale-95 ${
+              isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white'
+                : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:text-[#da251d]'
+            }`}
             title="Menu POS / Cài đặt hệ thống (Toàn màn hình)"
           >
-            <Menu className="w-4 sm:w-5 h-4 sm:h-5 text-slate-700 hover:text-[#da251d]" />
+            <Menu className="w-4 sm:w-5 h-4 sm:h-5" />
           </button>
         )}
 
@@ -390,15 +402,17 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
       </div>
 
       {/* 2. Center: Functional Tabs (F1, F3, F9, Bàn, Đặt bàn, QR) */}
-      <nav className="flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl overflow-x-auto no-scrollbar max-w-full">
+      <nav className={`flex items-center gap-1 p-1 rounded-xl overflow-x-auto no-scrollbar max-w-full ${
+        isDarkMode ? 'bg-slate-800/90' : 'bg-slate-100/90'
+      }`}>
         {/* F3: Bán hàng / Sơ đồ bàn */}
         <button
           type="button"
           onClick={() => onSelectTab('SALE')}
           className={`flex items-center gap-1 px-2.5 sm:px-3 h-8 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'SALE'
-              ? 'bg-white text-[#da251d] shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? isDarkMode ? 'bg-slate-700 text-red-400 shadow-2xs' : 'bg-white text-[#da251d] shadow-2xs'
+              : isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700/60' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
           title="Bán hàng & Thực đơn món (F3)"
         >
@@ -413,8 +427,8 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
           onClick={() => onSelectTab('TABLES')}
           className={`flex items-center gap-1 px-2.5 sm:px-3 h-8 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'TABLES'
-              ? 'bg-white text-[#da251d] shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? isDarkMode ? 'bg-slate-700 text-red-400 shadow-2xs' : 'bg-white text-[#da251d] shadow-2xs'
+              : isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700/60' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
           title="Sơ đồ bàn phòng"
         >
@@ -428,8 +442,8 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
           onClick={() => onSelectTab('ORDERS')}
           className={`flex items-center gap-1 px-2 sm:px-2.5 h-8 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'ORDERS'
-              ? 'bg-white text-[#da251d] shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? isDarkMode ? 'bg-slate-700 text-red-400 shadow-2xs' : 'bg-white text-[#da251d] shadow-2xs'
+              : isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700/60' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
           title="Tất cả đơn hàng (F9)"
         >
@@ -448,8 +462,8 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
           onClick={() => onSelectTab('RESERVATIONS')}
           className={`flex items-center gap-1 px-2 sm:px-2.5 h-8 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'RESERVATIONS'
-              ? 'bg-white text-[#da251d] shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? isDarkMode ? 'bg-slate-700 text-red-400 shadow-2xs' : 'bg-white text-[#da251d] shadow-2xs'
+              : isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700/60' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
           title="Quản lý đặt bàn"
         >
@@ -468,8 +482,8 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
           onClick={() => onSelectTab('QR_ORDERS')}
           className={`flex items-center gap-1 px-2 sm:px-2.5 h-8 rounded-lg text-xs font-bold transition-all shrink-0 cursor-pointer ${
             activeTab === 'QR_ORDERS'
-              ? 'bg-white text-[#da251d] shadow-2xs'
-              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+              ? isDarkMode ? 'bg-slate-700 text-red-400 shadow-2xs' : 'bg-white text-[#da251d] shadow-2xs'
+              : isDarkMode ? 'text-slate-300 hover:text-white hover:bg-slate-700/60' : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
           }`}
           title="Đơn đặt qua mã QR bàn"
         >
@@ -522,7 +536,9 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
         <button
           type="button"
           onClick={openDrawer}
-          className="relative w-8 h-8 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+          className={`relative w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
+            isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+          }`}
           title="Thông báo hệ thống POS"
           aria-label="Thông báo hệ thống POS"
         >
@@ -533,6 +549,23 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
             </span>
           )}
         </button>
+
+        {/* Dark Mode Toggle Button */}
+        {onToggleDarkMode && (
+          <button
+            type="button"
+            onClick={onToggleDarkMode}
+            className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'text-amber-400 hover:bg-slate-800'
+                : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100'
+            }`}
+            title={isDarkMode ? 'Chuyển sang nền Sáng' : 'Chuyển sang chế độ Nền Tối (Dark Mode)'}
+            aria-label="Chuyển chế độ nền Tối/Sáng"
+          >
+            {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+        )}
 
         {/* Quick Launch Desktop App Button (Only visible on Web) */}
         {!platformBridge.isDesktop && onOpenDesktopLaunch && (
@@ -694,6 +727,7 @@ export const PosHeader: React.FC<PosHeaderProps> = ({
       {/* Modal xác nhận đóng ứng dụng AVORA POS */}
       <PosExitConfirmModal
         isOpen={isExitConfirmOpen}
+        isDarkMode={isDarkMode}
         onClose={() => setIsExitConfirmOpen(false)}
         onConfirm={async () => {
           setIsExitConfirmOpen(false);

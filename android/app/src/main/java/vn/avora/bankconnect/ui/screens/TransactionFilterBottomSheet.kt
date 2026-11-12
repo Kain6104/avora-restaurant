@@ -225,15 +225,15 @@ fun TransactionFilterBottomSheet(
                                     .height(38.dp)
                                     .clickable { state = state.copy(direction = code) },
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) AvoraRedPrimary else Slate100,
-                                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, Slate200)
+                                color = if (isSelected) AvoraRedPrimary else Color.White,
+                                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
                                     Text(
                                         text = label,
                                         fontSize = 12.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else Slate700
+                                        color = if (isSelected) Color.White else TextPrimary
                                     )
                                 }
                             }
@@ -247,7 +247,7 @@ fun TransactionFilterBottomSheet(
                         text = "TRẠNG THÁI ĐỐI SOÁT",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Slate500,
+                        color = TextSecondary,
                         letterSpacing = 0.5.sp
                     )
                     Spacer(modifier = Modifier.height(6.dp))
@@ -270,8 +270,15 @@ fun TransactionFilterBottomSheet(
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = AvoraRedPrimary,
                                     selectedLabelColor = Color.White,
-                                    containerColor = Slate100,
-                                    labelColor = Slate700
+                                    containerColor = Color.White,
+                                    labelColor = TextPrimary
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = if (isSelected) AvoraRedPrimary else BorderLight,
+                                    selectedBorderColor = AvoraRedPrimary,
+                                    borderWidth = 1.dp
                                 )
                             )
                         }
@@ -284,7 +291,7 @@ fun TransactionFilterBottomSheet(
                         text = "KHOẢNG THỜI GIAN",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Slate500,
+                        color = TextSecondary,
                         letterSpacing = 0.5.sp
                     )
                     Spacer(modifier = Modifier.height(6.dp))
@@ -306,8 +313,15 @@ fun TransactionFilterBottomSheet(
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = AvoraRedPrimary,
                                     selectedLabelColor = Color.White,
-                                    containerColor = Slate100,
-                                    labelColor = Slate700
+                                    containerColor = Color.White,
+                                    labelColor = TextPrimary
+                                ),
+                                border = FilterChipDefaults.filterChipBorder(
+                                    enabled = true,
+                                    selected = isSelected,
+                                    borderColor = if (isSelected) AvoraRedPrimary else BorderLight,
+                                    selectedBorderColor = AvoraRedPrimary,
+                                    borderWidth = 1.dp
                                 )
                             )
                         }

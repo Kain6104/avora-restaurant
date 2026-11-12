@@ -69,19 +69,28 @@ export default function AddToCartButton({ item, className }: { item: any, classN
   const renderContent = () => {
     if (mounted && cartQuantity > 0) {
       return (
-        <div className="flex items-center bg-red-50 rounded-full border border-red-100 p-0.5 shadow-sm" onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
+        <div 
+          className="flex items-center bg-red-50/90 rounded-full border border-red-200/80 p-0.5 shadow-xs shrink-0 max-w-fit" 
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+        >
           <button 
+            type="button"
             onClick={handleDecreaseClick}
-            className="w-7 h-7 flex items-center justify-center text-red-600 hover:bg-white rounded-full transition-colors shrink-0"
+            className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 flex items-center justify-center text-red-600 hover:bg-white rounded-full transition-colors shrink-0 active:scale-90"
+            title="Giảm số lượng"
           >
-            <Minus className="w-3.5 h-3.5" />
+            <Minus className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 stroke-[2.5]" />
           </button>
-          <span className="w-6 text-center text-xs font-bold text-red-600 shrink-0">{cartQuantity}</span>
+          <span className="min-w-[15px] sm:min-w-[18px] md:min-w-[20px] text-center text-[10.5px] sm:text-xs font-black text-red-600 shrink-0 px-0.5">
+            {cartQuantity}
+          </span>
           <button 
+            type="button"
             onClick={handleAddClick}
-            className="w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-sm shrink-0"
+            className="w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-xs shrink-0 active:scale-90"
+            title="Tăng số lượng"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3.5 md:h-3.5 stroke-[2.5]" />
           </button>
         </div>
       );
@@ -89,10 +98,12 @@ export default function AddToCartButton({ item, className }: { item: any, classN
 
     return (
       <button 
+        type="button"
         onClick={handleAddClick}
-        className={className || "w-7 h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md shrink-0"}
+        className={className || "w-6 h-6 sm:w-7 sm:h-7 bg-red-600 hover:bg-red-700 text-white rounded-full flex items-center justify-center transition-colors shadow-md shrink-0 active:scale-95"}
+        title="Thêm vào giỏ hàng"
       >
-        <Plus className="w-4 h-4" />
+        <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[2.5]" />
       </button>
     );
   };

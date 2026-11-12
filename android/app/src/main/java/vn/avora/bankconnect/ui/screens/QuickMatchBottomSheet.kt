@@ -119,7 +119,9 @@ fun QuickMatchBottomSheet(
             // Transaction Summary Card
             Card(
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = Slate100),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
@@ -223,12 +225,11 @@ fun QuickMatchBottomSheet(
                                 showConfirmDialog = true
                             },
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isExactAmount) Color(0xFFF0FDF4) else Color(0xFFFAFAFA)
-                            ),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                             border = androidx.compose.foundation.BorderStroke(
                                 1.dp,
-                                if (isExactAmount) Emerald600 else Slate200
+                                if (isExactAmount) Emerald600 else BorderLight
                             ),
                             modifier = Modifier.fillMaxWidth()
                         ) {

@@ -187,6 +187,8 @@ namespace AvoraPos.NativePrint
             return false;
         }
 
+        private static readonly System.Threading.SemaphoreSlim _virtualPrinterLock = new System.Threading.SemaphoreSlim(1, 1);
+
         public static (bool Success, string? Error) PrintBitmapViaGdi(string printerName, Bitmap bitmap, string docName = "AVORA POS")
         {
             if (string.IsNullOrWhiteSpace(printerName))
@@ -197,6 +199,16 @@ namespace AvoraPos.NativePrint
             if (bitmap == null)
             {
                 return (false, "Bitmap in rỗng");
+            }
+
+            bool isVirtual = IsGdiOrOfficePrinter(printerName);
+            if (isVirtual)
+            {
+                // Nếu một hộp thoại Lưu file PDF đang mở, chờ tối đa 50ms rồi bỏ qua các lệnh in ảo phụ cùng lúc để không bị đè 3 hộp thoại Save File As
+                if (!_virtualPrinterLock.Wait(50))
+                {
+                    return (true, null); // Nuốt lệnh in ảo phụ (kitchen/bar/duplicate)
+                }
             }
 
             try
@@ -229,6 +241,13 @@ namespace AvoraPos.NativePrint
             catch (Exception ex)
             {
                 return (false, $"Lỗi in qua Windows driver máy in '{printerName}': {ex.Message}");
+            }
+            finally
+            {
+                if (isVirtual)
+                {
+                    _virtualPrinterLock.Release();
+                }
             }
         }
     }

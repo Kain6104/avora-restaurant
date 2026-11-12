@@ -3,6 +3,7 @@ import { ChatbotController } from './chatbot.controller';
 import { ChatbotService } from './chatbot.service';
 import { ChatbotGateway } from './chatbot.gateway';
 import { ChatbotToolEngineService } from './chatbot-tool-engine.service';
+import { MenuGroundingService } from './menu-grounding.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { JwtModule } from '@nestjs/jwt';
 import { ReservationModule } from '../reservation/reservation.module';
@@ -26,7 +27,7 @@ import { PaymentMethodModule } from '../payment-method/payment-method.module';
     PaymentMethodModule,
   ],
   controllers: [ChatbotController],
-  providers: [ChatbotService, ChatbotGateway, ChatbotToolEngineService],
-  exports: [ChatbotService, ChatbotToolEngineService],
+  providers: [ChatbotService, ChatbotGateway, ChatbotToolEngineService, MenuGroundingService],
+  exports: [ChatbotService, ChatbotToolEngineService, MenuGroundingService],
 })
 export class ChatbotModule {}

@@ -1,19 +1,14 @@
 package vn.avora.bankconnect.ui.screens
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.os.PowerManager
-import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -25,6 +20,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -33,6 +30,7 @@ import vn.avora.bankconnect.core.crypto.KeyStoreManager
 import vn.avora.bankconnect.core.database.AppDatabase
 import vn.avora.bankconnect.core.database.entity.ConfigEntity
 import vn.avora.bankconnect.core.database.entity.TransactionEntity
+import vn.avora.bankconnect.core.network.AppVersionData
 import vn.avora.bankconnect.core.network.NetworkClient
 import vn.avora.bankconnect.core.network.PairRequest
 import vn.avora.bankconnect.core.update.OtaUpdateManager
@@ -55,11 +53,11 @@ fun DeviceSettingsScreen(
     val scope = rememberCoroutineScope()
     val authManager = remember { AuthManager.getInstance(context) }
     val currentUser = remember { authManager.getUser() }
+    val installedAppInfo = remember { OtaUpdateManager.getInstalledAppInfo(context) }
 
     val isPairedStr by db.configDao().getFlow("is_paired").collectAsState(initial = "false")
     val voiceEnabledStr by db.configDao().getFlow("voice_announcement_enabled").collectAsState(initial = "true")
     val bankModeStr by db.configDao().getFlow("bank_monitoring_mode").collectAsState(initial = "ALL")
-    val enabledBanksStr by db.configDao().getFlow("enabled_banks").collectAsState(initial = "VCB,MB,TCB,ACB,BIDV,CTG")
     val deviceIdStr by db.configDao().getFlow("device_id").collectAsState(initial = "and-gateway")
 
     val isPaired = isPairedStr?.toBooleanStrictOrNull() ?: false
@@ -77,18 +75,24 @@ fun DeviceSettingsScreen(
 
     // OTA states
     var isOtaDownloading by remember { mutableStateOf(false) }
+    var isCheckingOtaMeta by remember { mutableStateOf(false) }
     var otaProgress by remember { mutableStateOf(0) }
+    var otaStatusText by remember { mutableStateOf("") }
+    var remoteVersionMeta by remember { mutableStateOf<AppVersionData?>(null) }
 
     // Sync from server state
     var isSyncingHistory by remember { mutableStateOf(false) }
 
-    // Ensure device ID exists
+    // Ensure device ID exists & check latest OTA metadata
     LaunchedEffect(Unit) {
         val existingId = db.configDao().get("device_id")
         if (existingId.isNullOrBlank()) {
             val newId = "and-${UUID.randomUUID().toString().take(18)}"
             db.configDao().set(ConfigEntity("device_id", newId))
         }
+        isCheckingOtaMeta = true
+        remoteVersionMeta = OtaUpdateManager.fetchLatestVersionMetadata(context)
+        isCheckingOtaMeta = false
     }
 
     fun handlePair() {
@@ -109,14 +113,16 @@ fun DeviceSettingsScreen(
                     pairingCode = pairingCodeInput.trim().uppercase(),
                     deviceId = deviceId,
                     deviceName = deviceName,
-                    appVersion = "1.0.4",
+                    appVersion = installedAppInfo.versionName,
                     publicKeyPem = publicKeyPem
                 )
 
                 val res = api.pairDevice(req)
                 if (res.isSuccessful && res.body()?.success == true) {
                     db.configDao().set(ConfigEntity("is_paired", "true"))
+                    db.configDao().set(ConfigEntity("revoked_reason", ""))
                     db.configDao().set(ConfigEntity("paired_at", res.body()!!.pairedAt))
+                    vn.avora.bankconnect.core.service.BankGatewaySocketManager.initialize(context)
                     Toast.makeText(context, "Ghép nối với VPS AVORA thành công!", Toast.LENGTH_LONG).show()
                     pairingCodeInput = ""
                     showPairingDialog = false
@@ -134,8 +140,10 @@ fun DeviceSettingsScreen(
 
     fun handleRevoke() {
         scope.launch {
-            db.configDao().set(ConfigEntity("is_paired", "false"))
-            KeyStoreManager.deleteKey()
+            vn.avora.bankconnect.core.service.BankNotificationListenerService.handleDeviceRevokedOrUnpaired(
+                context,
+                "Thiết bị đã được thu hồi liên kết thủ công. Vui lòng ghép nối lại trên /admin/bank-connect."
+            )
             Toast.makeText(context, "Đã thu hồi liên kết và xóa khóa bảo mật", Toast.LENGTH_SHORT).show()
             showPairingDialog = false
         }
@@ -147,6 +155,7 @@ fun DeviceSettingsScreen(
             Toast.makeText(context, "Vui lòng đăng nhập quyền Quản trị viên", Toast.LENGTH_SHORT).show()
             return
         }
+        if (isSyncingHistory) return
         isSyncingHistory = true
         scope.launch {
             try {
@@ -185,7 +194,7 @@ fun DeviceSettingsScreen(
                             )
                         }
                         db.transactionDao().upsertAll(entities)
-                        Toast.makeText(context, "Đã đồng bộ ${entities.size} biến động từ máy chủ về máy thành công!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Đã đồng bộ ${entities.size} biến động từ máy chủ thành công!", Toast.LENGTH_LONG).show()
                     } else {
                         Toast.makeText(context, "Máy chủ chưa có giao dịch nào", Toast.LENGTH_SHORT).show()
                     }
@@ -220,301 +229,416 @@ fun DeviceSettingsScreen(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(Color.White)
                     .padding(24.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Card(
-                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .wrapContentHeight(),
+                    shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFCA5A5))
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                    border = BorderStroke(1.dp, BorderLight)
                 ) {
                     Column(
                         modifier = Modifier.padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(44.dp))
-                        Spacer(modifier = Modifier.height(14.dp))
-                        Text("QUYỀN TRUY CẬP BỊ GIỚI HẠN", fontWeight = FontWeight.Black, fontSize = 15.sp, color = Color(0xFFDC2626))
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Icon(
+                            Icons.Default.Lock,
+                            contentDescription = null,
+                            tint = AvoraRedPrimary,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            "QUYỀN TRUY CẬP BỊ GIỚI HẠN",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = TextPrimary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             "Chỉ tài khoản Quản trị viên (Admin) mới có quyền truy cập và thay đổi cài đặt của ứng dụng Gateway.",
                             fontSize = 13.sp,
-                            color = Slate600,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            color = TextSecondary,
+                            textAlign = TextAlign.Center,
                             lineHeight = 18.sp
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = { handleLogoutClick() },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
-                            shape = RoundedCornerShape(12.dp)
+                            colors = ButtonDefaults.buttonColors(containerColor = AvoraRedPrimary),
+                            shape = RoundedCornerShape(10.dp)
                         ) {
-                            Text("Đăng xuất / Đổi tài khoản", fontWeight = FontWeight.Bold)
+                            Text("Đăng xuất / Đổi tài khoản", fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     }
                 }
             }
         } else {
-            Column(
+            LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .background(Color.White),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 // 1. Enterprise Admin Profile Card
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200)
-                ) {
-                    Column(modifier = Modifier.padding(14.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        border = BorderStroke(1.dp, BorderLight)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                                .padding(horizontal = 16.dp, vertical = 12.dp)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Surface(
-                                    modifier = Modifier.size(38.dp),
-                                    shape = CircleShape,
-                                    color = Color(0xFFFFEBEE)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.AdminPanelSettings,
-                                            contentDescription = null,
-                                            tint = AvoraRedPrimary,
-                                            modifier = Modifier.size(22.dp)
+                                    Surface(
+                                        modifier = Modifier.size(36.dp),
+                                        shape = CircleShape,
+                                        color = Color(0xFFFEF2F2)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.Default.AdminPanelSettings,
+                                                contentDescription = null,
+                                                tint = AvoraRedPrimary,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = currentUser?.fullName ?: "Quản trị viên AVORA",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TextPrimary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = currentUser?.email ?: "admin@avorafnb.com",
+                                            fontSize = 12.sp,
+                                            color = TextSecondary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
+
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color(0xFFFEF2F2),
+                                    border = BorderStroke(1.dp, Color(0xFFFECACA))
+                                ) {
                                     Text(
-                                        text = currentUser?.fullName ?: "Quản trị viên AVORA",
-                                        fontSize = 13.5.sp,
+                                        text = currentUser?.role ?: "ADMIN",
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = Slate900
-                                    )
-                                    Text(
-                                        text = currentUser?.email ?: "admin@avorafnb.com",
-                                        fontSize = 11.5.sp,
-                                        color = Slate500
+                                        color = AvoraRedPrimary
                                     )
                                 }
                             }
 
-                            Surface(
-                                shape = RoundedCornerShape(6.dp),
-                                color = Color(0xFFFFEBEE)
+                            Spacer(modifier = Modifier.height(10.dp))
+                            HorizontalDivider(color = BorderLight, thickness = 0.8.dp)
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            // Biometric Quick Lock Row
+                            var isBiometricSettingEnabled by remember { mutableStateOf(authManager.isBiometricEnabled) }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text(
-                                    text = currentUser?.role ?: "ADMIN",
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = AvoraRedPrimary
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Fingerprint,
+                                        contentDescription = null,
+                                        tint = if (isBiometricSettingEnabled) Emerald600 else TextSecondary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = "Khóa ứng dụng bằng Vân tay / PIN",
+                                        fontSize = 12.5.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = TextPrimary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Switch(
+                                    checked = isBiometricSettingEnabled,
+                                    onCheckedChange = { checked ->
+                                        isBiometricSettingEnabled = checked
+                                        authManager.isBiometricEnabled = checked
+                                        Toast.makeText(
+                                            context,
+                                            if (checked) "Đã bật khóa sinh trắc học" else "Đã tắt khóa sinh trắc học",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
+                                    colors = SwitchDefaults.colors(
+                                        checkedThumbColor = Color.White,
+                                        checkedTrackColor = Emerald600,
+                                        uncheckedThumbColor = Color.White,
+                                        uncheckedTrackColor = BorderLight,
+                                        uncheckedBorderColor = BorderLight
+                                    )
                                 )
                             }
-                        }
-
-                        Spacer(modifier = Modifier.height(10.dp))
-                        HorizontalDivider(color = Color(0xFFF1F5F9))
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Biometric Quick Lock Row
-                        var isBiometricSettingEnabled by remember { mutableStateOf(authManager.isBiometricEnabled) }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.Fingerprint,
-                                    contentDescription = null,
-                                    tint = if (isBiometricSettingEnabled) Color(0xFF0F766E) else Slate400,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "Khóa ứng dụng bằng Vân tay / PIN",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Slate700
-                                )
-                            }
-                            Switch(
-                                checked = isBiometricSettingEnabled,
-                                onCheckedChange = { checked ->
-                                    isBiometricSettingEnabled = checked
-                                    authManager.isBiometricEnabled = checked
-                                    Toast.makeText(
-                                        context,
-                                        if (checked) "Đã bật khóa sinh trắc học" else "Đã tắt khóa sinh trắc học",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedThumbColor = Color.White,
-                                    checkedTrackColor = Color(0xFF0F766E)
-                                )
-                            )
                         }
                     }
                 }
 
                 // NHÓM 1: KẾT NỐI & GHÉP NỐI POS
-                SettingsCategoryHeader(title = "KẾT NỐI & GHÉP NỐI POS")
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
-                ) {
-                    Column {
-                        CompactSettingRow(
-                            icon = Icons.Default.WifiTethering,
-                            iconTint = Color(0xFF0284C7),
-                            iconBg = Color(0xFFF0F9FF),
-                            title = "Trung tâm Kết nối & Giám sát Gateway",
-                            subtitle = "Kiểm tra socket realtime, test ping, nhật ký kết nối",
-                            badgeText = if (isPaired) "ONLINE" else "CẦN KẾT NỐI",
-                            badgeColor = if (isPaired) Emerald600 else Rose600,
-                            onClick = onNavigateToConnection
-                        )
-                        HorizontalDivider(color = Color(0xFFF8FAFC), thickness = 1.dp)
-                        CompactSettingRow(
-                            icon = Icons.Default.QrCodeScanner,
-                            iconTint = AvoraRedPrimary,
-                            iconBg = Color(0xFFFFEBEE),
-                            title = "Quét mã QR ghép nối nhanh POS",
-                            subtitle = "Mở camera quét mã QR trên màn hình POS để liên kết",
-                            onClick = onNavigateToQrScanner
-                        )
-                        HorizontalDivider(color = Color(0xFFF8FAFC), thickness = 1.dp)
-                        CompactSettingRow(
-                            icon = Icons.Default.Link,
-                            iconTint = Color(0xFF7C3AED),
-                            iconBg = Color(0xFFF5F3FF),
-                            title = "Ghép nối thủ công (Mã Pairing 6 số)",
-                            subtitle = if (isPaired) "Đã ghép nối an toàn với avorafnb.com (EC P-256)" else "Chưa ghép nối - Chạm để nhập mã kết nối",
-                            badgeText = if (isPaired) "ĐÃ KẾT NỐI" else null,
-                            badgeColor = Emerald600,
-                            onClick = { showPairingDialog = true }
-                        )
+                item {
+                    SettingsCategoryHeader(title = "KẾT NỐI & GHÉP NỐI POS")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, BorderLight),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                        ) {
+                            CompactSettingRow(
+                                icon = Icons.Default.WifiTethering,
+                                iconTint = AvoraRedPrimary,
+                                iconBg = Color(0xFFFEF2F2),
+                                title = "Trung tâm Kết nối & Giám sát",
+                                subtitle = "Kiểm tra socket realtime, test ping, nhật ký kết nối",
+                                badgeText = if (isPaired) "ONLINE" else "CHƯA GHÉP",
+                                badgeColor = if (isPaired) Emerald600 else Amber600,
+                                onClick = onNavigateToConnection
+                            )
+                            HorizontalDivider(
+                                color = BorderLight,
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            CompactSettingRow(
+                                icon = Icons.Default.QrCodeScanner,
+                                iconTint = AvoraRedPrimary,
+                                iconBg = Color(0xFFFEF2F2),
+                                title = "Quét mã QR ghép nối nhanh POS",
+                                subtitle = "Mở camera quét mã QR trên màn hình POS để liên kết",
+                                onClick = onNavigateToQrScanner
+                            )
+                            HorizontalDivider(
+                                color = BorderLight,
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            CompactSettingRow(
+                                icon = Icons.Default.Link,
+                                iconTint = TextPrimary,
+                                iconBg = Color(0xFFF3F4F6),
+                                title = "Ghép nối thủ công (Mã Pairing 6 số)",
+                                subtitle = if (isPaired) "Đã ghép nối an toàn với avorafnb.com (EC P-256)" else "Chưa ghép nối • Chạm để nhập mã 6 số",
+                                badgeText = if (isPaired) "ĐÃ KẾT NỐI" else null,
+                                badgeColor = Emerald600,
+                                onClick = { showPairingDialog = true }
+                            )
+                        }
                     }
                 }
 
-                // NHÓM 2: CẤU HÌNH NGÂN HÀNG & DỮ LIỆU
-                SettingsCategoryHeader(title = "CẤU HÌNH NGÂN HÀNG & GIỌNG ĐỌC")
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
-                ) {
-                    Column {
-                        CompactSettingRow(
-                            icon = Icons.Default.AccountBalance,
-                            iconTint = Color(0xFF16A34A),
-                            iconBg = Color(0xFFF0FDF4),
-                            title = "Cấu hình 20 Ngân hàng & Giọng nói",
-                            subtitle = if (bankMode == "ALL") "Đang theo dõi 20 ngân hàng • Giọng nói ${if (voiceEnabled) "Bật" else "Tắt"}" else "Lọc ngân hàng chọn • Giọng nói ${if (voiceEnabled) "Bật" else "Tắt"}",
-                            badgeText = "2 TABS",
-                            badgeColor = Color(0xFF16A34A),
-                            onClick = onNavigateToBankVoiceConfig
-                        )
-                        HorizontalDivider(color = Color(0xFFF8FAFC), thickness = 1.dp)
-                        CompactSettingRow(
-                            icon = Icons.Default.Sync,
-                            iconTint = Color(0xFF0D9488),
-                            iconBg = Color(0xFFF0FDFA),
-                            title = "Đồng bộ toàn bộ lịch sử từ VPS",
-                            subtitle = if (isSyncingHistory) "Đang kéo dữ liệu từ máy chủ..." else "Khôi phục toàn bộ lịch sử giao dịch từ cơ sở dữ liệu",
-                            onClick = { syncAllHistoryFromServer() }
-                        )
+                // NHÓM 2: CẤU HÌNH NGÂN HÀNG & GIỌNG ĐỌC
+                item {
+                    SettingsCategoryHeader(title = "CẤU HÌNH NGÂN HÀNG & GIỌNG ĐỌC")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, BorderLight),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                        ) {
+                            CompactSettingRow(
+                                icon = Icons.Default.AccountBalance,
+                                iconTint = Emerald600,
+                                iconBg = Color(0xFFF0FDF4),
+                                title = "Cấu hình 20 Ngân hàng & Giọng nói",
+                                subtitle = if (bankMode == "ALL") "Theo dõi 20 ngân hàng • Giọng đọc: ${if (voiceEnabled) "Bật" else "Tắt"}" else "Lọc ngân hàng chọn • Giọng đọc: ${if (voiceEnabled) "Bật" else "Tắt"}",
+                                badgeText = if (voiceEnabled) "LOA BẬT" else "LOA TẮT",
+                                badgeColor = if (voiceEnabled) Emerald600 else TextSecondary,
+                                onClick = onNavigateToBankVoiceConfig
+                            )
+                            HorizontalDivider(
+                                color = BorderLight,
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            CompactSettingRow(
+                                icon = Icons.Default.Sync,
+                                iconTint = Emerald600,
+                                iconBg = Color(0xFFF0FDF4),
+                                title = "Đồng bộ toàn bộ lịch sử từ VPS",
+                                subtitle = if (isSyncingHistory) "Đang đồng bộ dữ liệu từ máy chủ..." else "Khôi phục lịch sử giao dịch từ cơ sở dữ liệu máy chủ",
+                                onClick = { syncAllHistoryFromServer() }
+                            )
+                        }
                     }
                 }
 
-                // NHÓM 3: CẬP NHẬT ỨNG DỤNG & BẢO TRÌ
-                SettingsCategoryHeader(title = "CẬP NHẬT & BẢO TRÌ")
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
-                ) {
-                    Column {
-                        CompactSettingRow(
-                            icon = Icons.Default.SystemUpdate,
-                            iconTint = Color(0xFF2563EB),
-                            iconBg = Color(0xFFEFF6FF),
-                            title = "Cập nhật ứng dụng tự động (OTA 1-Chạm)",
-                            subtitle = "Phiên bản hiện tại: v1.0.4 (Build 5) • Tải đè qua HTTPS",
-                            badgeText = "OTA MỚI",
-                            badgeColor = Color(0xFF2563EB),
-                            onClick = { showOtaDialog = true }
-                        )
-                        HorizontalDivider(color = Color(0xFFF8FAFC), thickness = 1.dp)
-                        CompactSettingRow(
-                            icon = Icons.Default.Speed,
-                            iconTint = Color(0xFF4F46E5),
-                            iconBg = Color(0xFFEEF2FF),
-                            title = "Chẩn đoán hệ thống & Quyền truy cập",
-                            subtitle = "Kiểm tra quyền thông báo, tối ưu pin chạy ngầm 24/7",
-                            onClick = onNavigateToDiagnostic
-                        )
+                // NHÓM 3: CẬP NHẬT & BẢO TRÌ
+                item {
+                    val hasNewerUpdate = (remoteVersionMeta?.versionCode ?: 0) > installedAppInfo.versionCode.toInt()
+                    SettingsCategoryHeader(title = "CẬP NHẬT & BẢO TRÌ")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, BorderLight),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                        ) {
+                            CompactSettingRow(
+                                icon = Icons.Default.SystemUpdate,
+                                iconTint = AvoraRedPrimary,
+                                iconBg = Color(0xFFFEF2F2),
+                                title = "Cập nhật ứng dụng tự động (OTA)",
+                                subtitle = if (hasNewerUpdate) {
+                                    "Có bản mới v${remoteVersionMeta?.versionName} (Build ${remoteVersionMeta?.versionCode}) • Bấm để cập nhật"
+                                } else {
+                                    "Đang ở bản mới nhất: v${installedAppInfo.versionName} (Build ${installedAppInfo.versionCode})"
+                                },
+                                badgeText = if (hasNewerUpdate) "CÓ BẢN MỚI" else "MỚI NHẤT",
+                                badgeColor = if (hasNewerUpdate) AvoraRedPrimary else Emerald600,
+                                onClick = {
+                                    showOtaDialog = true
+                                    scope.launch {
+                                        isCheckingOtaMeta = true
+                                        remoteVersionMeta = OtaUpdateManager.fetchLatestVersionMetadata(context)
+                                        isCheckingOtaMeta = false
+                                    }
+                                }
+                            )
+                            HorizontalDivider(
+                                color = BorderLight,
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            CompactSettingRow(
+                                icon = Icons.Default.Speed,
+                                iconTint = Amber600,
+                                iconBg = Color(0xFFFFFBEB),
+                                title = "Chẩn đoán hệ thống & Quyền truy cập",
+                                subtitle = "Kiểm tra quyền đọc thông báo và tối ưu pin chạy ngầm 24/7",
+                                onClick = onNavigateToDiagnostic
+                            )
+                        }
                     }
                 }
 
-                // NHÓM 4: BẢO MẬT & ĐĂNG XUẤT
-                SettingsCategoryHeader(title = "BẢO MẬT & HỆ THỐNG")
-                Card(
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp)
-                ) {
-                    Column {
-                        CompactSettingRow(
-                            icon = Icons.Default.Lock,
-                            iconTint = Slate700,
-                            iconBg = Slate100,
-                            title = "Khóa ứng dụng an toàn ngay",
-                            subtitle = "Yêu cầu vân tay hoặc mã PIN máy khi quay lại",
-                            onClick = {
-                                authManager.lockApp()
-                                Toast.makeText(context, "Ứng dụng đã được khóa an toàn", Toast.LENGTH_SHORT).show()
-                                onLogout()
-                            }
-                        )
-                        HorizontalDivider(color = Color(0xFFF8FAFC), thickness = 1.dp)
-                        CompactSettingRow(
-                            icon = Icons.Default.Logout,
-                            iconTint = Color(0xFFDC2626),
-                            iconBg = Color(0xFFFEF2F2),
-                            title = "Đăng xuất Quản trị viên",
-                            subtitle = "Xóa phiên đăng nhập an toàn khỏi thiết bị",
-                            onClick = { showLogoutConfirmDialog = true }
-                        )
+                // NHÓM 4: BẢO MẬT & HỆ THỐNG
+                item {
+                    SettingsCategoryHeader(title = "BẢO MẬT & HỆ THỐNG")
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .wrapContentHeight(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        border = BorderStroke(1.dp, BorderLight),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .wrapContentHeight()
+                        ) {
+                            CompactSettingRow(
+                                icon = Icons.Default.Lock,
+                                iconTint = TextPrimary,
+                                iconBg = Color(0xFFF3F4F6),
+                                title = "Khóa ứng dụng an toàn ngay",
+                                subtitle = "Yêu cầu vân tay hoặc mã PIN máy khi mở lại ứng dụng",
+                                onClick = {
+                                    authManager.lockApp()
+                                    Toast.makeText(context, "Ứng dụng đã được khóa an toàn", Toast.LENGTH_SHORT).show()
+                                    onLogout()
+                                }
+                            )
+                            HorizontalDivider(
+                                color = BorderLight,
+                                thickness = 0.8.dp,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                            CompactSettingRow(
+                                icon = Icons.Default.Logout,
+                                iconTint = AvoraRedPrimary,
+                                iconBg = Color(0xFFFEF2F2),
+                                title = "Đăng xuất Quản trị viên",
+                                subtitle = "Xóa phiên đăng nhập quản trị khỏi thiết bị này",
+                                onClick = { showLogoutConfirmDialog = true }
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Text(
-                    text = "AVORA Bank Connect v1.0.4 • Mã thiết bị: $deviceIdStr\nMáy chủ: https://avorafnb.com",
-                    fontSize = 10.5.sp,
-                    color = Slate400,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                    lineHeight = 15.sp
-                )
-
-                Spacer(modifier = Modifier.height(20.dp))
+                item {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "AVORA Bank Connect v${installedAppInfo.versionName} (Build ${installedAppInfo.versionCode}) • Thiết bị: $deviceIdStr\nMáy chủ: https://avorafnb.com",
+                        fontSize = 11.sp,
+                        color = TextSecondary,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp),
+                        lineHeight = 16.sp
+                    )
+                }
             }
         }
     }
@@ -524,16 +648,16 @@ fun DeviceSettingsScreen(
         AlertDialog(
             onDismissRequest = { showPairingDialog = false },
             containerColor = Color.White,
-            titleContentColor = Slate900,
-            textContentColor = Slate700,
-            shape = RoundedCornerShape(16.dp),
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            shape = RoundedCornerShape(14.dp),
             tonalElevation = 0.dp,
             title = {
                 Text(
-                    text = if (isPaired) "TRẠNG THÁI GHÉP NỐI GATEWAY" else "GHÉP NỐI VỚI AVORA WEB",
+                    text = if (isPaired) "TRẠNG THÁI GHÉP NỐI GATEWAY" else "GHÉP NỐI VỚI AVORA POS",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = Slate900
+                    color = TextPrimary
                 )
             },
             text = {
@@ -541,33 +665,61 @@ fun DeviceSettingsScreen(
                     if (isPaired) {
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = Emerald50,
+                            color = Color.White,
+                            border = BorderStroke(1.dp, Emerald600),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600)
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Column {
-                                    Text("Đã ghép nối an toàn với máy chủ", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Emerald600)
-                                    Text("Khóa bảo mật EC P-256 đang hoạt động 24/7", fontSize = 11.sp, color = Slate600)
+                                    Text(
+                                        "Đã ghép nối an toàn với máy chủ",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.5.sp,
+                                        color = Emerald600
+                                    )
+                                    Text(
+                                        "Khóa bảo mật EC P-256 đang hoạt động 24/7",
+                                        fontSize = 11.5.sp,
+                                        color = TextSecondary
+                                    )
                                 }
                             }
                         }
-                        Text("Bạn có thể thu hồi ghép nối nếu muốn đổi máy chủ hoặc hủy cấp quyền thiết bị này.", fontSize = 12.sp, color = Slate600)
+                        Text(
+                            "Bạn có thể thu hồi ghép nối nếu muốn đổi máy chủ hoặc hủy cấp quyền thiết bị này.",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
                     } else {
-                        Text("Nhập mã Pairing gồm 6 ký tự được tạo từ Web Admin (Menu Cài đặt -> Bank Connect) để liên kết thiết bị:", fontSize = 12.sp, color = Slate600)
+                        Text(
+                            "Nhập mã Pairing gồm 6 ký tự được tạo từ Web Admin (Menu Cài đặt -> Bank Connect) để liên kết thiết bị:",
+                            fontSize = 12.sp,
+                            color = TextSecondary
+                        )
                         OutlinedTextField(
                             value = pairingCodeInput,
                             onValueChange = { pairingCodeInput = it.uppercase() },
-                            placeholder = { Text("VD: K9W4M2") },
+                            placeholder = { Text("VD: K9W4M2", color = TextSecondary) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
                             textStyle = MaterialTheme.typography.titleLarge.copy(
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 2.sp,
-                                fontFamily = FontFamily.Monospace
+                                fontFamily = FontFamily.Monospace,
+                                color = TextPrimary
                             ),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = Color.White,
+                                unfocusedContainerColor = Color.White,
+                                focusedBorderColor = AvoraRedPrimary,
+                                unfocusedBorderColor = BorderLight
+                            )
                         )
                     }
                 }
@@ -576,10 +728,10 @@ fun DeviceSettingsScreen(
                 if (isPaired) {
                     Button(
                         onClick = { handleRevoke() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Rose600),
+                        colors = ButtonDefaults.buttonColors(containerColor = AvoraRedPrimary),
                         shape = RoundedCornerShape(8.dp)
                     ) {
-                        Text("Thu hồi liên kết", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                        Text("Thu hồi liên kết", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color.White)
                     }
                 } else {
                     Button(
@@ -591,7 +743,7 @@ fun DeviceSettingsScreen(
                         if (isPairingLoading) {
                             CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                         } else {
-                            Text("Xác nhận ghép nối", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                            Text("Xác nhận ghép nối", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color.White)
                         }
                     }
                 }
@@ -600,80 +752,180 @@ fun DeviceSettingsScreen(
                 OutlinedButton(
                     onClick = { showPairingDialog = false },
                     shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate300)
+                    border = BorderStroke(1.dp, BorderLight)
                 ) {
-                    Text("Đóng", color = Slate700)
+                    Text("Đóng", color = TextPrimary)
                 }
             }
         )
     }
 
-    // DIALOG 2: CẬP NHẬT ỨNG DỤNG OTA
+    // DIALOG 2: CẬP NHẬT ỨNG DỤNG OTA CHUẨN XÁC THỰC SHA-256
     if (showOtaDialog) {
+        val serverVerName = remoteVersionMeta?.versionName ?: installedAppInfo.versionName
+        val serverVerCode = remoteVersionMeta?.versionCode ?: installedAppInfo.versionCode.toInt()
+        val hasNewUpdate = !isCheckingOtaMeta && remoteVersionMeta != null && serverVerCode > installedAppInfo.versionCode.toInt()
+        val serverSizeMb = if ((remoteVersionMeta?.fileSize ?: 0L) > 0L) {
+            String.format(Locale.US, "%.2f MB", remoteVersionMeta!!.fileSize / (1024.0 * 1024.0))
+        } else {
+            "~14.5 MB"
+        }
+        val shortSha = remoteVersionMeta?.sha256?.take(16)?.ifBlank { "Đang kiểm tra..." } ?: "Đang kiểm tra..."
+
         AlertDialog(
             onDismissRequest = { if (!isOtaDownloading) showOtaDialog = false },
             containerColor = Color.White,
-            titleContentColor = Slate900,
-            textContentColor = Slate700,
-            shape = RoundedCornerShape(16.dp),
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            shape = RoundedCornerShape(14.dp),
             tonalElevation = 0.dp,
             title = {
-                Text(text = "CẬP NHẬT ỨNG DỤNG (OTA 1-CHẠM)", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Slate900)
+                Text(
+                    text = if (hasNewUpdate) "CÓ BẢN CẬP NHẬT MỚI (OTA)" else "KIỂM TRA CẬP NHẬT (OTA)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = TextPrimary
+                )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Ứng dụng sẽ tự động tải file APK phiên bản mới nhất từ https://avorafnb.com/downloads/avora-bank-connect.apk và cài đặt trực tiếp không làm mất dữ liệu.",
-                        fontSize = 12.sp,
-                        color = Slate600,
-                        lineHeight = 17.sp
-                    )
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Phiên bản đang cài: v${installedAppInfo.versionName} (Build ${installedAppInfo.versionCode})",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                            Text(
+                                text = "Phiên bản máy chủ: v$serverVerName (Build $serverVerCode)",
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "Dung lượng: $serverSizeMb • SHA-256: $shortSha...",
+                                fontSize = 11.sp,
+                                color = TextSecondary,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    }
+
+                    if (isCheckingOtaMeta) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = AvoraRedPrimary
+                            )
+                            Text(
+                                text = "Đang kiểm tra phiên bản mới nhất từ máy chủ...",
+                                fontSize = 12.sp,
+                                color = TextSecondary
+                            )
+                        }
+                    } else if (!hasNewUpdate) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = Color(0xFFF0FDF4),
+                            border = BorderStroke(1.dp, Emerald600),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Emerald600,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    text = "Ứng dụng của bạn đang ở phiên bản mới nhất v${installedAppInfo.versionName} (Build ${installedAppInfo.versionCode}). Không cần tải & cài đặt thêm.",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Emerald600,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = remoteVersionMeta?.releaseNotes
+                                ?: "Tải bản phát hành chính thức từ máy chủ AVORA, tự động đối chiếu VersionCode, chữ ký số và mã băm SHA-256 trước khi mở bộ cài đặt hệ thống Android (giữ nguyên 100% dữ liệu ghép nối).",
+                            fontSize = 12.sp,
+                            color = TextSecondary,
+                            lineHeight = 17.sp
+                        )
+                    }
 
                     if (isOtaDownloading) {
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         LinearProgressIndicator(
-                            progress = otaProgress / 100f,
+                            progress = { otaProgress / 100f },
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(6.dp),
-                            color = Color(0xFF2563EB),
-                            trackColor = Color(0xFFE2E8F0)
+                            color = AvoraRedPrimary,
+                            trackColor = BorderLight
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Đang tải bản cập nhật: $otaProgress%...",
-                            fontSize = 11.sp,
-                            color = Color(0xFF2563EB),
-                            fontWeight = FontWeight.Bold
+                            text = if (otaStatusText.isNotBlank()) "$otaStatusText ($otaProgress%)" else "Đang tải bản cập nhật: $otaProgress%...",
+                            fontSize = 11.5.sp,
+                            color = AvoraRedPrimary,
+                            fontWeight = FontWeight.SemiBold
                         )
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        isOtaDownloading = true
-                        otaProgress = 0
-                        scope.launch {
-                            OtaUpdateManager.downloadAndInstall(
-                                context = context,
-                                onProgress = { otaProgress = it },
-                                onError = {
-                                    isOtaDownloading = false
-                                    Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                if (hasNewUpdate) {
+                    Button(
+                        onClick = {
+                            isOtaDownloading = true
+                            otaProgress = 0
+                            otaStatusText = "Đang kiểm tra metadata..."
+                            scope.launch {
+                                val ok = OtaUpdateManager.downloadAndInstall(
+                                    context = context,
+                                    allowReinstallSameVersion = false,
+                                    onProgress = { otaProgress = it },
+                                    onStatusText = { otaStatusText = it },
+                                    onError = {
+                                        isOtaDownloading = false
+                                        otaStatusText = ""
+                                        Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+                                    }
+                                )
+                                isOtaDownloading = false
+                                if (ok) {
+                                    showOtaDialog = false
                                 }
-                            )
-                            isOtaDownloading = false
+                            }
+                        },
+                        enabled = !isOtaDownloading,
+                        colors = ButtonDefaults.buttonColors(containerColor = AvoraRedPrimary),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        if (isOtaDownloading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Tải & Cài đặt ngay", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color.White)
                         }
-                    },
-                    enabled = !isOtaDownloading,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2563EB)),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    if (isOtaDownloading) {
-                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                    } else {
-                        Text("Tải & Cài đặt ngay", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
                     }
                 }
             },
@@ -682,9 +934,9 @@ fun DeviceSettingsScreen(
                     OutlinedButton(
                         onClick = { showOtaDialog = false },
                         shape = RoundedCornerShape(8.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Slate300)
+                        border = BorderStroke(1.dp, BorderLight)
                     ) {
-                        Text("Hủy", color = Slate700)
+                        Text("Đóng", color = TextPrimary)
                     }
                 }
             }
@@ -696,18 +948,19 @@ fun DeviceSettingsScreen(
         AlertDialog(
             onDismissRequest = { showLogoutConfirmDialog = false },
             containerColor = Color.White,
-            titleContentColor = Slate900,
-            textContentColor = Slate700,
-            shape = RoundedCornerShape(16.dp),
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            shape = RoundedCornerShape(14.dp),
             tonalElevation = 0.dp,
             title = {
-                Text(text = "XÁC NHẬN ĐĂNG XUẤT", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Slate900)
+                Text(text = "XÁC NHẬN ĐĂNG XUẤT", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = TextPrimary)
             },
             text = {
                 Text(
-                    text = "Bạn có chắc chắn muốn đăng xuất khỏi tài khoản Quản trị viên? Để đăng nhập lại bạn sẽ cần nhập mật khẩu hoặc quét vân tay.",
+                    text = "Bạn có chắc chắn muốn đăng xuất khỏi tài khoản Quản trị viên? Dữ liệu ghép nối POS và lịch sử giao dịch vẫn được giữ nguyên an toàn.",
                     fontSize = 12.5.sp,
-                    color = Slate600
+                    color = TextSecondary,
+                    lineHeight = 18.sp
                 )
             },
             confirmButton = {
@@ -716,19 +969,19 @@ fun DeviceSettingsScreen(
                         showLogoutConfirmDialog = false
                         handleLogoutClick()
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    colors = ButtonDefaults.buttonColors(containerColor = AvoraRedPrimary),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Đăng xuất", fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    Text("Đăng xuất", fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = Color.White)
                 }
             },
             dismissButton = {
                 OutlinedButton(
                     onClick = { showLogoutConfirmDialog = false },
                     shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate300)
+                    border = BorderStroke(1.dp, BorderLight)
                 ) {
-                    Text("Hủy", color = Slate700)
+                    Text("Hủy", color = TextPrimary)
                 }
             }
         )
@@ -743,71 +996,82 @@ fun CompactSettingRow(
     title: String,
     subtitle: String,
     badgeText: String? = null,
-    badgeColor: Color = Color(0xFFEF4444),
+    badgeColor: Color = AvoraRedPrimary,
     onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .wrapContentHeight()
             .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+            .padding(horizontal = 16.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.weight(1f)
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = iconBg,
+            modifier = Modifier.size(34.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = iconBg,
-                modifier = Modifier.size(34.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(icon, contentDescription = null, tint = iconTint, modifier = Modifier.size(18.dp))
-                }
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = title,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF0F172A),
-                        maxLines = 1
-                    )
-                    if (badgeText != null) {
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = badgeColor.copy(alpha = 0.12f)
-                        ) {
-                            Text(
-                                text = badgeText,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = badgeColor,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                            )
-                        }
-                    }
-                }
-                Spacer(modifier = Modifier.height(1.5.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = Color(0xFF64748B),
-                    maxLines = 1
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = iconTint,
+                    modifier = Modifier.size(18.dp)
                 )
             }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .wrapContentHeight()
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 13.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false)
+                )
+                if (badgeText != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = badgeColor.copy(alpha = 0.12f)
+                    ) {
+                        Text(
+                            text = badgeText,
+                            fontSize = 9.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = badgeColor,
+                            maxLines = 1,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = subtitle,
+                fontSize = 11.5.sp,
+                color = TextSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
         Spacer(modifier = Modifier.width(8.dp))
         Icon(
             imageVector = Icons.Default.ChevronRight,
             contentDescription = null,
-            tint = Color(0xFF94A3B8),
-            modifier = Modifier.size(16.dp)
+            tint = TextSecondary,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
@@ -818,8 +1082,8 @@ fun SettingsCategoryHeader(title: String) {
         text = title,
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
-        color = Color(0xFF64748B),
-        letterSpacing = 0.8.sp,
-        modifier = Modifier.padding(start = 4.dp, top = 2.dp, bottom = 2.dp)
+        color = TextSecondary,
+        letterSpacing = 0.6.sp,
+        modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 2.dp)
     )
 }

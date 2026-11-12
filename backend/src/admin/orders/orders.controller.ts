@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Body, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Patch, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../../auth/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -105,6 +105,85 @@ export class OrdersController {
   async findOne(@Param('id') id: string, @BranchScope() branchIdScope?: string) {
     const data = await this.ordersService.findOne(id, branchIdScope);
     return { data };
+  }
+
+  @Get(':id/timeline')
+  @RequirePermission('orders.view_audit', {
+    resourceResolver: async (req, prisma) => {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        select: { branchId: true },
+      });
+      return order?.branchId;
+    },
+  })
+  async getTimeline(
+    @Param('id') id: string,
+    @Query('category') category?: string,
+    @BranchScope() branchIdScope?: string,
+  ) {
+    const data = await this.ordersService.getTimeline(id, branchIdScope, category);
+    return { success: true, data };
+  }
+
+  @Post(':id/cancel')
+  @RequirePermission('orders.cancel', {
+    resourceResolver: async (req, prisma) => {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        select: { branchId: true },
+      });
+      return order?.branchId;
+    },
+  })
+  async cancel(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Req() req: any,
+    @BranchScope() branchIdScope?: string,
+  ) {
+    const data = await this.ordersService.cancelOrder(id, reason, req.user, branchIdScope);
+    return { success: true, data, message: 'Đã hủy đơn hàng thành công' };
+  }
+
+  @Delete(':id/permanent')
+  @RequirePermission('orders.delete', {
+    resourceResolver: async (req, prisma) => {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        select: { branchId: true },
+      });
+      return order?.branchId;
+    },
+  })
+  async deletePermanently(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Body('confirmOrderCode') confirmOrderCode: string,
+    @Req() req: any,
+    @BranchScope() branchIdScope?: string,
+  ) {
+    const data = await this.ordersService.deletePermanently(id, reason, confirmOrderCode, req.user, branchIdScope);
+    return { success: true, data, message: 'Đã lưu trữ / xóa vĩnh viễn đơn hàng thành công' };
+  }
+
+  @Post(':id/restore')
+  @RequirePermission('orders.restore', {
+    resourceResolver: async (req, prisma) => {
+      const order = await prisma.order.findUnique({
+        where: { id: req.params.id },
+        select: { branchId: true },
+      });
+      return order?.branchId;
+    },
+  })
+  async restoreOrder(
+    @Param('id') id: string,
+    @Req() req: any,
+    @BranchScope() branchIdScope?: string,
+  ) {
+    const data = await this.ordersService.restoreOrder(id, req.user, branchIdScope);
+    return { success: true, data, message: 'Đã khôi phục đơn hàng thành công' };
   }
 
   @Patch(':id/status')

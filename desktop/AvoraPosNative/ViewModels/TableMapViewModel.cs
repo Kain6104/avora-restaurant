@@ -12,7 +12,10 @@ namespace AvoraPosNative.ViewModels
     public class TableMapViewModel : ViewModelBase
     {
         private readonly PosApiService _api;
+        private string? _branchId;
         private string _selectedAreaId = "ALL";
+        private string _statusFilter = "ALL";
+        private string _searchQuery = string.Empty;
         private PosTable? _selectedTable;
         private bool _isLoading = false;
 
@@ -27,6 +30,7 @@ namespace AvoraPosNative.ViewModels
         public ObservableCollection<PosArea> Areas { get; } = new();
         public ObservableCollection<PosTable> FilteredTables { get; } = new();
         private List<PosTable> _allTables = new();
+        public List<PosTable> AllTables => _allTables.ToList();
 
         public int TotalTablesCount => _allTables.Count;
         public int VacantCount => _allTables.Count(t => t.VisualStatus == "VACANT");
@@ -40,6 +44,30 @@ namespace AvoraPosNative.ViewModels
             set
             {
                 if (SetProperty(ref _selectedAreaId, value))
+                {
+                    ApplyFilter();
+                }
+            }
+        }
+
+        public string StatusFilter
+        {
+            get => _statusFilter;
+            set
+            {
+                if (SetProperty(ref _statusFilter, value))
+                {
+                    ApplyFilter();
+                }
+            }
+        }
+
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set
+            {
+                if (SetProperty(ref _searchQuery, value))
                 {
                     ApplyFilter();
                 }
@@ -65,6 +93,7 @@ namespace AvoraPosNative.ViewModels
         public ICommand MergeTableCommand { get; }
         public ICommand SplitTableCommand { get; }
         public ICommand SelectAreaCommand { get; }
+        public ICommand SetStatusFilterCommand { get; }
 
         public TableMapViewModel(PosApiService api)
         {
@@ -75,6 +104,7 @@ namespace AvoraPosNative.ViewModels
                 {
                     SelectedTable = table;
                     TableSelected?.Invoke(table);
+                    TableOpenRequested?.Invoke(table);
                 }
             });
 
@@ -126,20 +156,29 @@ namespace AvoraPosNative.ViewModels
                 else if (param is string s) SelectedAreaId = s;
             });
 
+            SetStatusFilterCommand = new RelayCommand(param =>
+            {
+                if (param is string st) StatusFilter = st;
+            });
+
             RefreshCommand = new RelayCommand(async () => await LoadTablesAsync());
         }
 
         public async Task LoadTablesAsync(string? branchId = null)
         {
-            if (string.IsNullOrEmpty(branchId))
+            if (!string.IsNullOrEmpty(branchId) && branchId != "DEFAULT")
             {
-                branchId = Security.SecureSessionManager.LoadSession()?.BranchId ?? "DEFAULT";
+                _branchId = branchId;
+            }
+            if (string.IsNullOrEmpty(_branchId))
+            {
+                _branchId = Security.SecureSessionManager.LoadSession()?.BranchId ?? "DEFAULT";
             }
             IsLoading = true;
             try
             {
-                var tables = await _api.GetTablesAsync(branchId);
-                _allTables = tables;
+                var tables = await _api.GetTablesAsync(_branchId);
+                _allTables = tables.Where(t => string.IsNullOrEmpty(t.BranchId) || t.BranchId == _branchId).ToList();
 
                 // Extract areas
                 var distinctAreas = tables
@@ -184,9 +223,26 @@ namespace AvoraPosNative.ViewModels
             void doFilter()
             {
                 FilteredTables.Clear();
-                var list = _selectedAreaId == "ALL"
-                    ? _allTables
-                    : _allTables.Where(t => t.AreaId == _selectedAreaId);
+                IEnumerable<PosTable> list = _allTables;
+
+                if (_selectedAreaId != "ALL")
+                {
+                    list = list.Where(t => t.AreaId == _selectedAreaId);
+                }
+
+                if (_statusFilter != "ALL")
+                {
+                    list = list.Where(t => string.Equals(t.VisualStatus, _statusFilter, StringComparison.OrdinalIgnoreCase));
+                }
+
+                if (!string.IsNullOrWhiteSpace(_searchQuery))
+                {
+                    string q = _searchQuery.Trim().ToLowerInvariant();
+                    list = list.Where(t =>
+                        (t.Name != null && t.Name.ToLowerInvariant().Contains(q)) ||
+                        (t.TableCode != null && t.TableCode.ToLowerInvariant().Contains(q)) ||
+                        (t.AreaName != null && t.AreaName.ToLowerInvariant().Contains(q)));
+                }
 
                 foreach (var t in list)
                 {

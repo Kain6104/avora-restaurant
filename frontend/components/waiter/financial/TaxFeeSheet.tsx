@@ -15,6 +15,7 @@ import {
   Loader2 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 
 interface TaxFeeSheetProps {
   isOpen: boolean;
@@ -76,9 +77,13 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
   ]);
 
   // Chi tiết thuế GTGT phân rã từng món như POS
+  const isVatIncluded = React.useMemo(() => {
+    if (!order?.vatPriceModeSnapshot) return true;
+    return order.vatPriceModeSnapshot === 'VAT_INCLUDED' || order.vatPriceModeSnapshot === 'INCLUDED';
+  }, [order?.vatPriceModeSnapshot]);
+
   const taxBreakdown = React.useMemo(() => {
     if (!order?.orderItems || !Array.isArray(order.orderItems)) return [];
-    const isVatIncluded = order.vatPriceModeSnapshot === 'VAT_INCLUDED';
     const map = new Map<number, { rate: number; taxableAmount: number; taxAmount: number; items: any[] }>();
 
     order.orderItems.forEach((it: any) => {
@@ -117,7 +122,7 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
       });
     });
     return Array.from(map.values()).sort((a, b) => a.rate - b.rate);
-  }, [order?.orderItems, order?.vatPriceModeSnapshot]);
+  }, [order?.orderItems, isVatIncluded]);
 
   if (!isOpen || !order) return null;
 
@@ -261,30 +266,35 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end justify-center bg-black/50 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div 
-        className="fixed inset-0" 
-        onClick={onClose} 
-      />
-      
-      <div 
-        className="relative w-full max-w-lg bg-slate-50 rounded-t-3xl shadow-2xl flex flex-col z-[105] max-h-[92vh] overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between p-4 bg-white rounded-t-3xl border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <FileText size={20} className="text-[#DA251D]" />
-            <h2 className="font-bold text-base text-slate-800">Chi tiết Thuế VAT & Phí dịch vụ</h2>
-          </div>
-          <button 
-            onClick={onClose} 
-            className="p-1.5 bg-slate-100 rounded-full text-slate-500 active:bg-slate-200 cursor-pointer"
+    <ResponsiveModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Chi tiết Thuế VAT & Phí dịch vụ"
+      subtitle={order?.orderCode ? `Đơn hàng: ${order.orderCode}` : undefined}
+      icon={<FileText size={18} className="text-[#DA251D]" />}
+      maxWidth="lg"
+      footer={
+        <div className="flex justify-end gap-2 w-full">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-50 cursor-pointer"
           >
-            <X size={18} />
+            Đóng
+          </button>
+          <button
+            type="button"
+            disabled={isSavingInvoice}
+            onClick={handleSaveInvoice}
+            className="px-5 py-2.5 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-95 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+          >
+            <Check size={14} />
+            {isSavingInvoice ? 'Đang lưu...' : 'Lưu thông tin'}
           </button>
         </div>
-
-        <div className="p-4 space-y-4 overflow-y-auto pb-6">
+      }
+    >
+      <div className="space-y-4 py-1">
           {/* Financial Breakdown Card */}
           <div className="bg-white rounded-2xl p-4 shadow-xs border border-slate-200/80 space-y-3">
             <div className="flex justify-between items-center text-sm">
@@ -310,7 +320,7 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
               <div className="flex items-center gap-1.5 text-slate-600">
                 <span>Thuế GTGT (VAT)</span>
                 <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 font-bold">
-                  {order.vatPriceModeSnapshot === 'VAT_INCLUDED' ? 'Đã gồm VAT' : 'Chưa gồm VAT'}
+                  {isVatIncluded ? 'Đã gồm VAT' : 'Chưa gồm VAT'}
                 </span>
                 <button
                   type="button"
@@ -333,7 +343,7 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
                     <span>Chi tiết thuế suất GTGT từng món</span>
                   </span>
                   <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.5 rounded font-bold">
-                    {order.vatPriceModeSnapshot === 'VAT_INCLUDED' ? 'Giá đã gồm VAT' : 'Tính thêm VAT'}
+                    {isVatIncluded ? 'Giá đã gồm VAT' : 'Tính thêm VAT'}
                   </span>
                 </div>
 
@@ -554,10 +564,10 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
                     type="button"
                     disabled={isLookingUpTax}
                     onClick={handleLookupTax}
-                    className="px-3 py-2.5 bg-red-50 text-[#DA251D] font-bold rounded-xl text-xs flex items-center gap-1 shrink-0 active:scale-95 cursor-pointer"
+                    className="px-3 py-2.5 bg-red-50 text-[#DA251D] font-bold rounded-xl text-xs flex items-center justify-center shrink-0 active:scale-95 cursor-pointer min-w-[36px]"
+                    title="Tra cứu MST"
                   >
-                    <Search size={14} />
-                    {isLookingUpTax ? 'Tìm...' : 'Tra cứu'}
+                    {isLookingUpTax ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
                   </button>
                 </div>
 
@@ -569,12 +579,12 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
                   className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-[#DA251D]"
                 />
 
-                <input
-                  type="text"
+                <textarea
+                  rows={3}
                   value={taxAddress}
                   onChange={(e) => setTaxAddress(e.target.value)}
                   placeholder="Địa chỉ trụ sở công ty..."
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-[#DA251D]"
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs outline-none focus:border-[#DA251D] resize-y leading-relaxed"
                 />
 
                 <input
@@ -588,27 +598,6 @@ export default function TaxFeeSheet({ isOpen, onClose, order, onSuccess }: TaxFe
             )}
           </div>
         </div>
-
-        {/* Footer actions */}
-        <div className="p-4 border-t border-slate-100 bg-white flex justify-end gap-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-semibold hover:bg-slate-50 cursor-pointer"
-          >
-            Đóng
-          </button>
-          <button
-            type="button"
-            disabled={isSavingInvoice}
-            onClick={handleSaveInvoice}
-            className="px-5 py-2.5 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-95 text-white text-sm font-semibold shadow-sm flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            <Check size={16} />
-            {isSavingInvoice ? 'Đang lưu...' : 'Lưu thông tin'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+      </ResponsiveModal>
+    );
+  }

@@ -21,6 +21,7 @@ describe('OrderService - Dual Voucher System & Concurrency Testing', () => {
     id: 'prod-1',
     name: 'Cơm Chiên Hải Sản',
     price: 100000,
+    available: true,
   };
 
   const mockSettings = [
@@ -867,5 +868,62 @@ describe('OrderService - Dual Voucher System & Concurrency Testing', () => {
       where: { id: 'v-ship', usedCount: { gt: 0 } },
       data: { usedCount: { decrement: 1 } },
     });
+  });
+
+  // 22. Phase 3.3 Strategy A: Promotional Combo expansion across all 4 active combos (zero rounding drift)
+  it('22. test_combo_expansion_strategy_a: expands all combo components with exact price sum & quantities', () => {
+    const combos = [
+      {
+        id: 'combo-sum-vay', name: 'Combo Tiệc Sum Vầy', price: 899000, items: [
+          { productId: 'PRD-079', quantity: 1, product: { id: 'PRD-079', name: 'Salad Da Cá Hồi', price: 110000, taxPercentage: 8 } },
+          { productId: 'PRD-100', quantity: 2, product: { id: 'PRD-100', name: 'Nước Ép Cam', price: 45000, taxPercentage: 8 } },
+          { productId: 'PRD-110', quantity: 1, product: { id: 'PRD-110', name: 'Salad thanh cua', price: 65000, taxPercentage: 8 } },
+          { productId: 'PRD-003', quantity: 1, product: { id: 'PRD-003', name: 'Lươn Nhật Nướng', price: 185000, taxPercentage: 8 } },
+          { productId: 'PRD-017', quantity: 1, product: { id: 'PRD-017', name: 'Cơm Cá Hồi Sốt Tery', price: 145000, taxPercentage: 8 } },
+        ],
+      },
+      {
+        id: 'combo-sashimi', name: 'Combo Sashimi Thượng Hạng', price: 580000, items: [
+          { productId: 'PRD-076', quantity: 2, product: { id: 'PRD-076', name: 'Set Sashimi Cá Trích', price: 180000, taxPercentage: 8 } },
+          { productId: 'PRD-110', quantity: 1, product: { id: 'PRD-110', name: 'Salad thanh cua', price: 65000, taxPercentage: 8 } },
+          { productId: 'PRD-017', quantity: 1, product: { id: 'PRD-017', name: 'Cơm Cá Hồi Sốt Tery', price: 145000, taxPercentage: 8 } },
+        ],
+      },
+      {
+        id: 'combo-hoang-gia', name: 'Combo Hoàng Gia', price: 499000, items: [
+          { productId: 'PRD-076', quantity: 1, product: { id: 'PRD-076', name: 'Set Sashimi Cá Trích', price: 180000, taxPercentage: 8 } },
+          { productId: 'PRD-017', quantity: 1, product: { id: 'PRD-017', name: 'Cơm Cá Hồi Sốt Tery', price: 145000, taxPercentage: 8 } },
+          { productId: 'PRD-100', quantity: 1, product: { id: 'PRD-100', name: 'Nước Ép Cam', price: 45000, taxPercentage: 8 } },
+          { productId: 'PRD-066', quantity: 2, product: { id: 'PRD-066', name: 'Cuốn Rainbow', price: 150000, taxPercentage: 8 } },
+        ],
+      },
+      {
+        id: 'combo-couple', name: 'Combo Couple Sweet Date', price: 399000, items: [
+          { productId: 'PRD-100', quantity: 1, product: { id: 'PRD-100', name: 'Nước Ép Cam', price: 45000, taxPercentage: 8 } },
+          { productId: 'PRD-066', quantity: 2, product: { id: 'PRD-066', name: 'Cuốn Rainbow', price: 150000, taxPercentage: 8 } },
+          { productId: 'PRD-003', quantity: 1, product: { id: 'PRD-003', name: 'Lươn Nhật Nướng', price: 185000, taxPercentage: 8 } },
+        ],
+      },
+    ];
+
+    for (const combo of combos) {
+      const productMap = new Map();
+      const comboQty = 2;
+      const comboLineTotal = combo.price * comboQty;
+      const expanded = (service as any).expandComboToOrderItems(combo, comboQty, comboLineTotal, 'Ít đá', productMap);
+
+      const allocatedSum = expanded.reduce((acc: number, row: any) => acc + row.priceAtSale * row.quantity, 0);
+      expect(allocatedSum).toBe(comboLineTotal);
+
+      for (const comp of combo.items) {
+        const compQty = expanded
+          .filter((r: any) => r.productId === comp.productId)
+          .reduce((acc: number, r: any) => acc + r.quantity, 0);
+        expect(compQty).toBe(comp.quantity * comboQty);
+        expect(productMap.get(comp.productId)).toBeDefined();
+      }
+      expect(expanded.every((r: any) => r.promotionSource === `COMBO:${combo.id}`)).toBe(true);
+      expect(expanded.every((r: any) => Number.isInteger(r.priceAtSale))).toBe(true);
+    }
   });
 });

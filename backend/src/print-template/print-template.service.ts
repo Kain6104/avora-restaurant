@@ -510,11 +510,22 @@ export class PrintTemplateService {
         options: it.optionsText ? [it.optionsText] : [],
       })),
       subTotal: context.subTotal,
+      serviceChargeTotal: context.serviceChargeTotal || 0,
+      serviceCharges: context.serviceChargeDetails || [],
+      taxAmount: context.vatAmount || 0,
+      orderDiscountAmount: context.discountAmount || 0,
+      discountDetails: context.discountDetails || [],
+      shippingFee: context.shippingFee || 0,
       totalAmount: context.totalAmount,
+      amountReceived: (context as any).cashReceived ?? (context as any).amountReceived ?? (type === PrintTemplateType.RECEIPT ? context.totalAmount : 0),
+      changeAmount: (context as any).cashChange ?? (context as any).changeAmount ?? 0,
+      guestCount: context.guestCount || 1,
       itemDiscountTotal: context.discountAmount || 0,
       paymentMethod: context.paymentMethodStr || 'CASH',
       qrData: context.paymentQrPayload,
       isProForma: type === PrintTemplateType.TEMP_BILL,
+      templateId: template?.id || null,
+      templateVersion: template?.version || 1,
     };
 
     return { html, paperSize, receiptPayload };
@@ -999,7 +1010,7 @@ export class PrintTemplateService {
       orderTypeStr: order.orderType === 'DELIVERY' ? 'Giao hàng' : order.orderType === 'TAKEAWAY' ? 'Mang đi' : 'Tại bàn',
       orderStatusStr: order.status,
       orderNote: order.note || '',
-      cashierName: 'Thu ngân',
+      cashierName: order.cashierName || 'Thu ngân',
       guestCount: order.guestCount || 1,
 
       customerName: customerNameDisplay,

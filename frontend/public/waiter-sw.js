@@ -1,17 +1,38 @@
-const CACHE_NAME = 'avora-waiter-cache-v1';
-const OFFLINE_URL = '/admin/pos/waiter';
+/**
+ * AVORA Waiter POS - Offline-First Service Worker v3
+ * Chiến lược:
+ * 1. Navigation: Network-First với Cache-Fallback vào App Shell (/admin/pos/waiter)
+ * 2. Next.js Static Chunks (_next/static): Cache-First / Stale-While-Revalidate
+ * 3. Static Assets (hình ảnh, biểu tượng, fonts): Cache-First
+ * 4. API & WebSocket (/api/*, socket.io): Network-Only (dữ liệu nghiệp vụ quản lý qua IndexedDB)
+ * 5. Push Notifications & Safe Invalidation
+ */
 
-const STATIC_ASSETS = [
-  '/',
-  '/admin/pos/waiter',
-  '/avora_logo_ngang.png',
-  '/avora_logo.png'
+const CACHE_VERSION = 'v3';
+const CACHE_SHELL = `avora-waiter-shell-${CACHE_VERSION}`;
+const CACHE_STATIC = `avora-waiter-static-${CACHE_VERSION}`;
+const CURRENT_CACHES = [CACHE_SHELL, CACHE_STATIC];
+
+const SHELL_URL = '/admin/pos/waiter';
+
+const PRECACHE_ASSETS = [
+  SHELL_URL,
+  '/waiter-manifest.json',
+  '/avora_logo.png',
+  '/avora_logo_ngang.png'
 ];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS);
+    caches.open(CACHE_SHELL).then(async (cache) => {
+      // Precache app shell and critical branding
+      for (const asset of PRECACHE_ASSETS) {
+        try {
+          await cache.add(asset);
+        } catch (err) {
+          console.warn(`[Waiter SW] Precache failed for ${asset}:`, err);
+        }
+      }
     })
   );
   self.skipWaiting();
@@ -19,44 +40,126 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
+    caches.keys().then((keys) => {
       return Promise.all(
-        cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
-            return caches.delete(cacheName);
+        keys.map((key) => {
+          if (key.startsWith('avora-waiter-') && !CURRENT_CACHES.includes(key)) {
+            console.log(`[Waiter SW] Deleting obsolete cache: ${key}`);
+            return caches.delete(key);
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
   const request = event.request;
   const url = new URL(request.url);
 
-  // Bỏ qua các API call không thuộc GET
+  // Chỉ xử lý phương thức GET cùng origin
   if (request.method !== 'GET') {
     return;
   }
 
-  // Bỏ qua các API tài chính / realtime
-  if (url.pathname.startsWith('/api/pos') || url.pathname.includes('socket.io')) {
+  // 1. Tuyệt đối không can thiệp API calls, WebSocket, SSR RSC data
+  if (
+    url.pathname.startsWith('/api/') ||
+    url.pathname.includes('socket.io') ||
+    url.searchParams.has('_rsc')
+  ) {
     return;
   }
 
-  // Trả về từ cache trước, fallback network cho các tài nguyên tĩnh
-  event.respondWith(
-    caches.match(request).then((response) => {
-      return response || fetch(request).catch(() => {
-        // Fallback offline cho route waiter
-        if (request.mode === 'navigate' && url.pathname.startsWith('/admin/pos/waiter')) {
-          return caches.match(OFFLINE_URL);
+  // 2. Navigation Request: Network-First với fallback sang App Shell
+  if (request.mode === 'navigate' || request.destination === 'document') {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_SHELL).then((cache) => {
+              cache.put(SHELL_URL, copy);
+            });
+          }
+          return networkResponse;
+        })
+        .catch(async () => {
+          console.log('[Waiter SW] Network down during navigation, serving cached App Shell');
+          const cachedShell = await caches.match(SHELL_URL);
+          if (cachedShell) {
+            return cachedShell;
+          }
+          // Fallback nếu không có exact match
+          return caches.match('/');
+        })
+    );
+    return;
+  }
+
+  // 3. Next.js Static Bundles (_next/static/...)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) {
+          // Trả về ngay lập tức, tải nền để cập nhật nếu có
+          fetch(request).then((netRes) => {
+            if (netRes && netRes.status === 200) {
+              caches.open(CACHE_STATIC).then((cache) => cache.put(request, netRes));
+            }
+          }).catch(() => {});
+          return cachedResponse;
         }
-      });
-    })
-  );
+
+        return fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_STATIC).then((cache) => cache.put(request, copy));
+          }
+          return networkResponse;
+        });
+      })
+    );
+    return;
+  }
+
+  // 4. Static Media (Images, Fonts, Audio, Icons)
+  const isStaticAsset =
+    url.pathname.endsWith('.png') ||
+    url.pathname.endsWith('.jpg') ||
+    url.pathname.endsWith('.jpeg') ||
+    url.pathname.endsWith('.webp') ||
+    url.pathname.endsWith('.svg') ||
+    url.pathname.endsWith('.ico') ||
+    url.pathname.endsWith('.woff') ||
+    url.pathname.endsWith('.woff2') ||
+    url.pathname.endsWith('.mp3');
+
+  if (isStaticAsset) {
+    event.respondWith(
+      caches.match(request).then((cachedResponse) => {
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+        return fetch(request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200) {
+            const copy = networkResponse.clone();
+            caches.open(CACHE_STATIC).then((cache) => cache.put(request, copy));
+          }
+          return networkResponse;
+        }).catch(() => {
+          return new Response('', { status: 408, statusText: 'Resource unavailable offline' });
+        });
+      })
+    );
+    return;
+  }
 });
 
 self.addEventListener('push', (event) => {
@@ -78,7 +181,7 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     clients.matchAll({ type: 'window' }).then((clientList) => {
       for (const client of clientList) {
-        if (client.url === '/' && 'focus' in client) {
+        if (client.url && client.url.includes('/admin/pos/waiter') && 'focus' in client) {
           return client.focus();
         }
       }

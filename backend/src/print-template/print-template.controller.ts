@@ -102,7 +102,7 @@ export class PrintTemplateController {
     @Query('type') type?: PrintTemplateType,
     @Req() req?: any,
   ) {
-    const effectiveBranchId = req.user?.branchId || branchId;
+    const effectiveBranchId = branchId || req.user?.branchId;
     const templates = await this.printTemplateService.findByBranch(effectiveBranchId, type);
     return {
       success: true,
@@ -169,7 +169,7 @@ export class PrintTemplateController {
   }
 
   /**
-   * Đặt mẫu in làm mặc định cho loại
+   * Đặt mẫu in làm mặc định cho loại (Hỗ trợ cả PATCH và POST)
    */
   @Patch(':id/default')
   @RequirePermission('print_templates.update')
@@ -178,7 +178,18 @@ export class PrintTemplateController {
     return {
       success: true,
       data: template,
-      message: 'Đã đặt làm mẫu in mặc định',
+      message: 'Đã đặt mẫu in làm mặc định thành công',
+    };
+  }
+
+  @Post(':id/default')
+  @RequirePermission('print_templates.update')
+  async setDefaultPost(@Param('id') id: string, @Req() req: any) {
+    const template = await this.printTemplateService.setDefault(id, req.user);
+    return {
+      success: true,
+      data: template,
+      message: 'Đã đặt mẫu in làm mặc định thành công',
     };
   }
 

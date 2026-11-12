@@ -131,12 +131,54 @@ export class OrderPricingService {
   }
 
   /**
+   * Lấy cấu hình VAT chuyên biệt cho 2 siêu tính năng: AI Meal Architect™ & Auto-Pantry Subscription™
+   */
+  async getFeatureVatSettings(): Promise<{
+    architectMode: 'SYSTEM' | 'VAT_INCLUDED' | 'VAT_EXCLUDED';
+    architectRate: number;
+    subscriptionMode: 'SYSTEM' | 'VAT_INCLUDED' | 'VAT_EXCLUDED';
+    subscriptionRate: number;
+  }> {
+    try {
+      const [archModeSetting, archRateSetting, subModeSetting, subRateSetting] = await Promise.all([
+        this.prisma.systemSetting.findUnique({ where: { key: 'vat_architect_mode' } }),
+        this.prisma.systemSetting.findUnique({ where: { key: 'vat_architect_rate' } }),
+        this.prisma.systemSetting.findUnique({ where: { key: 'vat_subscription_mode' } }),
+        this.prisma.systemSetting.findUnique({ where: { key: 'vat_subscription_rate' } }),
+      ]);
+
+      const parseMode = (v?: string): 'SYSTEM' | 'VAT_INCLUDED' | 'VAT_EXCLUDED' => {
+        if (!v) return 'SYSTEM';
+        const up = v.toUpperCase();
+        if (up.includes('EXCLUDE')) return 'VAT_EXCLUDED';
+        if (up.includes('INCLUDE')) return 'VAT_INCLUDED';
+        return 'SYSTEM';
+      };
+
+      return {
+        architectMode: parseMode(archModeSetting?.value),
+        architectRate: !isNaN(Number(archRateSetting?.value)) ? Number(archRateSetting?.value) : 8,
+        subscriptionMode: parseMode(subModeSetting?.value),
+        subscriptionRate: !isNaN(Number(subRateSetting?.value)) ? Number(subRateSetting?.value) : 8,
+      };
+    } catch {
+      return {
+        architectMode: 'SYSTEM',
+        architectRate: 8,
+        subscriptionMode: 'SYSTEM',
+        subscriptionRate: 8,
+      };
+    }
+  }
+
+  /**
    * Tính toán toàn bộ tài chính đơn hàng (Single Source of Truth cho Online & POS)
    */
   async calculatePricing(params: CalculateOrderPricingParams): Promise<OrderPricingBreakdown> {
-    const [vatPriceMode, freeShippingSettings] = await Promise.all([
+    const [vatPriceMode, freeShippingSettings, featureVatSettings] = await Promise.all([
       this.getGlobalVatPriceMode(),
       this.getFreeShippingSettings(),
+      this.getFeatureVatSettings(),
     ]);
 
     return this.calculatePricingWithMode(
@@ -144,6 +186,7 @@ export class OrderPricingService {
       vatPriceMode,
       freeShippingSettings.threshold,
       freeShippingSettings.enabled,
+      featureVatSettings,
     );
   }
 
@@ -155,6 +198,12 @@ export class OrderPricingService {
     vatPriceMode: 'VAT_INCLUDED' | 'VAT_EXCLUDED',
     freeShippingThreshold: number = 500000,
     freeShippingEnabled: boolean = true,
+    featureVatSettings?: {
+      architectMode: 'SYSTEM' | 'VAT_INCLUDED' | 'VAT_EXCLUDED';
+      architectRate: number;
+      subscriptionMode: 'SYSTEM' | 'VAT_INCLUDED' | 'VAT_EXCLUDED';
+      subscriptionRate: number;
+    },
   ): OrderPricingBreakdown {
     const {
       items = [],
@@ -174,9 +223,42 @@ export class OrderPricingService {
     let subTotal = 0;
     const rawLines = items.map((item, idx) => {
       const unitPrice = Math.max(0, Math.round(Number(item.priceAtSale || 0)));
-      const qty = Math.max(1, Math.floor(Number(item.quantity || 1)));
+      // Hỗ trợ số lượng thập phân cho món tính theo Kg (ví dụ 0.2 kg, 1.5 kg)
+      const parsedQty = Number(item.quantity);
+      const qty = Number.isFinite(parsedQty) && parsedQty > 0
+        ? Math.max(0.001, Math.round(parsedQty * 1000) / 1000)
+        : 1;
       const grossLineTotal = Math.round(unitPrice * qty);
       subTotal += grossLineTotal;
+
+      const isArch =
+        Boolean((item as any).isCustomRecipe) ||
+        (typeof item.name === 'string' && (item.name.includes('AI Architect') || item.name.includes('Đĩa Cơm') || item.name.includes('Đĩa Ăn'))) ||
+        item.productId === 'prod-ai-meal-architect' ||
+        item.productId === 'ai-meal-architect';
+
+      const isSub =
+        Boolean((item as any).isSubscription) ||
+        (typeof item.name === 'string' && (item.name.includes('Thuê Bao') || item.name.includes('Auto-Pantry') || item.name.includes('Fit & Healthy')));
+
+      let lineTaxRate = Math.max(0, Number(item.taxPercentage || 0));
+      let lineVatMode = vatPriceMode;
+
+      if (isArch && featureVatSettings) {
+        if (featureVatSettings.architectMode !== 'SYSTEM') {
+          lineVatMode = featureVatSettings.architectMode;
+        }
+        if (featureVatSettings.architectRate >= 0) {
+          lineTaxRate = featureVatSettings.architectRate;
+        }
+      } else if (isSub && featureVatSettings) {
+        if (featureVatSettings.subscriptionMode !== 'SYSTEM') {
+          lineVatMode = featureVatSettings.subscriptionMode;
+        }
+        if (featureVatSettings.subscriptionRate >= 0) {
+          lineTaxRate = featureVatSettings.subscriptionRate;
+        }
+      }
 
       return {
         idx,
@@ -185,30 +267,37 @@ export class OrderPricingService {
         quantity: qty,
         priceAtSale: unitPrice,
         grossLineTotal,
-        taxPercentage: Math.max(0, Number(item.taxPercentage || 0)),
+        taxPercentage: lineTaxRate,
+        lineVatMode,
       };
     });
 
     subTotal = Math.round(subTotal);
     const normalizedOrderDiscount = Math.min(subTotal, Math.max(0, Math.round(Number(orderDiscountAmount || 0))));
+    const normalizedPointsDiscount = Math.min(
+      Math.max(0, subTotal - normalizedOrderDiscount),
+      Math.max(0, Math.round(Number(pointsDiscount || 0))),
+    );
+    // Tổng chiết khấu thương mại thực tế phân bổ vào giá tính thuế (Voucher + Điểm tích lũy)
+    const totalCommercialDiscount = normalizedOrderDiscount + normalizedPointsDiscount;
 
-    // 2. Phân bổ Voucher Discount vào từng dòng theo tỷ trọng (Rule #12)
-    let remainingDiscountToAllocate = normalizedOrderDiscount;
+    // 2. Phân bổ tổng giảm giá (Voucher + Điểm) vào từng dòng theo tỷ trọng giá trị (Chuẩn kế toán & HĐĐT Việt Nam)
+    let remainingDiscountToAllocate = totalCommercialDiscount;
     const allocatedDiscounts: number[] = new Array(rawLines.length).fill(0);
 
-    if (subTotal > 0 && normalizedOrderDiscount > 0) {
+    if (subTotal > 0 && totalCommercialDiscount > 0) {
       rawLines.forEach((line, i) => {
         if (i === rawLines.length - 1) {
           allocatedDiscounts[i] = remainingDiscountToAllocate;
         } else {
-          const share = Math.round((normalizedOrderDiscount * line.grossLineTotal) / subTotal);
+          const share = Math.round((totalCommercialDiscount * line.grossLineTotal) / subTotal);
           allocatedDiscounts[i] = Math.min(share, remainingDiscountToAllocate);
           remainingDiscountToAllocate -= allocatedDiscounts[i];
         }
       });
     }
 
-    // 3. Tính thuế VAT từng dòng sản phẩm (Rule #5, #6, #7, #8)
+    // 3. Tính thuế VAT từng dòng sản phẩm
     const itemTaxDetails: ItemTaxDetail[] = [];
     const taxGroupMap = new Map<number, { taxableAmount: number; taxAmount: number; items: TaxGroupItem[] }>();
 
@@ -218,12 +307,13 @@ export class OrderPricingService {
       const lineDiscount = allocatedDiscounts[i] || 0;
       const netTaxableAmount = Math.max(0, line.grossLineTotal - lineDiscount);
       const taxRate = line.taxPercentage;
+      const currentLineVatMode = line.lineVatMode;
 
       let taxVal = 0;
       let baseVal = netTaxableAmount;
 
       if (taxRate > 0 && netTaxableAmount > 0) {
-        if (vatPriceMode === 'VAT_INCLUDED') {
+        if (currentLineVatMode === 'VAT_INCLUDED') {
           // Công thức INCLUDED: Tax = Gross * Rate / (100 + Rate)
           taxVal = Math.round((netTaxableAmount * taxRate) / (100 + taxRate));
           baseVal = netTaxableAmount - taxVal;
@@ -246,8 +336,8 @@ export class OrderPricingService {
         netTaxableAmount: baseVal,
         taxPercentage: taxRate,
         taxAmount: taxVal,
-        vatPriceMode,
-        isVatInclusive: vatPriceMode === 'VAT_INCLUDED',
+        vatPriceMode: currentLineVatMode,
+        isVatInclusive: currentLineVatMode === 'VAT_INCLUDED',
       });
 
       // Nhóm theo thuế suất
@@ -348,8 +438,8 @@ export class OrderPricingService {
 
     const payableShipping = Math.max(0, normalizedShippingFee - finalShippingDiscount);
 
-    // 6. Điểm thưởng loyalty
-    const normalizedPointsDiscount = Math.max(0, Math.round(Number(pointsDiscount || 0)));
+    // 6. Điểm thưởng loyalty (đã được chuẩn hóa ở bước phân bổ thuế)
+    // normalizedPointsDiscount đã sẵn sàng
 
     // 7. Tổng thanh toán thực tế (Grand Total)
     let totalAmount = 0;

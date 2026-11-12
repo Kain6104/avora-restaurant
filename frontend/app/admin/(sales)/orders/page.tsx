@@ -319,7 +319,7 @@ export default function AdminOrdersPage() {
           <div>
             <div className="flex items-center gap-1.5">
               <span className="font-mono font-bold text-slate-900 block text-xs sm:text-sm">
-                #{order.orderCode}
+                #{order.orderCode || (order as any).temporaryOrderCode || order.id?.slice(0, 8)}
               </span>
               {order.orderSource === 'POS' ? (
                 <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-700 border border-orange-200">
@@ -723,7 +723,7 @@ export default function AdminOrdersPage() {
             title={
               <div className="flex items-center gap-1.5">
                 <span className="font-mono font-bold text-xs bg-slate-100 px-2 py-0.5 rounded">
-                  #{order.orderCode}
+                  #{order.orderCode || (order as any).temporaryOrderCode || order.id?.slice(0, 8)}
                 </span>
                 {order.orderSource === 'POS' ? (
                   <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-orange-100 text-orange-700 border border-orange-200">

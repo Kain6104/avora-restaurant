@@ -24,6 +24,7 @@ import {
   RESTAURANT_TIMEZONE,
 } from './utils/reservation-time.util';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { UpdatePreOrderedItemsDto } from './dto/update-preorder.dto';
 import {
   UpdateReservationCustomerDto,
   AdminUpdateReservationDto,
@@ -587,6 +588,68 @@ export class ReservationService {
         const reservationCode = generateReservationCode(startAt);
         const checkInToken = generateCheckInToken();
 
+        // 5b. Validate & Calculate Pre-ordered Dine-in Items (nếu có)
+        const validatedPreOrderedItems: any[] = [];
+        let calculatedPreOrderTotal = 0;
+
+        if (Array.isArray(dto.preOrderedItems) && dto.preOrderedItems.length > 0) {
+          for (const item of dto.preOrderedItems) {
+            const pId = item.productId || item.id;
+            if (!pId) continue;
+            const product = await tx.product.findUnique({
+              where: { id: pId },
+              include: { optionGroups: { include: { optionItems: true } } },
+            });
+            if (!product || !product.available) {
+              throw new ReservationBusinessException(
+                'ITEM_UNAVAILABLE',
+                `Món "${item.name || pId}" không còn khả dụng để đặt trước.`,
+              );
+            }
+
+            // Kiểm tra Kênh bán hàng BẮT BUỘC có DINE_IN
+            const channels = Array.isArray(product.salesChannels) ? product.salesChannels : [];
+            const hasDineIn = channels.some(
+              (c: string) =>
+                typeof c === 'string' &&
+                (c.toUpperCase() === 'DINE_IN' || c.toUpperCase() === 'DINE-IN'),
+            );
+            if (!hasDineIn) {
+              throw new ReservationBusinessException(
+                'CHANNEL_NOT_ALLOWED',
+                `Món "${product.name}" không áp dụng đặt trước dùng tại quán (Dine-in).`,
+              );
+            }
+
+            let itemPrice = Number(product.price);
+            const selectedOptions = Array.isArray(item.selectedOptions) ? item.selectedOptions : [];
+            for (const opt of selectedOptions) {
+              for (const og of product.optionGroups) { const optItem = og.optionItems.find((i: any) => i.id === opt.optionItemId);
+                if (optItem) {
+                  itemPrice += Number(optItem.priceAdjustment || 0);
+                  break;
+                }
+              }
+            }
+
+            const quantity = Math.max(1, Number(item.quantity) || 1);
+            const lineTotal = itemPrice * quantity;
+            calculatedPreOrderTotal += lineTotal;
+
+            validatedPreOrderedItems.push({
+              productId: product.id,
+              name: product.name,
+              image: product.imageUrl,
+              price: itemPrice,
+              quantity,
+              lineTotal,
+              selectedOptions,
+              optionsTextSnapshot: item.optionsTextSnapshot || '',
+              note: item.note || '',
+            });
+          }
+        }
+
         // 6. Create Reservation
         const reservation = await tx.reservation.create({
           data: {
@@ -598,8 +661,8 @@ export class ReservationService {
             customerEmail: dto.customerEmail?.trim() || null,
             startAt,
             endAt,
-            // Legacy sync
-            reservationDate: new Date(`${reservationDate}T00:00:00+07:00`),
+            // Sử dụng UTC 12:00:00 để tránh bị lệch lùi ngày khi lưu vào MySQL @db.Date
+            reservationDate: new Date(`${reservationDate}T12:00:00.000Z`),
             reservationTime,
             partySize,
             tablePreference: dto.seatingPreference || null,
@@ -610,6 +673,8 @@ export class ReservationService {
             status: ReservationStatus.CONFIRMED, // Standard web bookings auto-confirm if slot available
             checkInToken,
             idempotencyKey: dto.idempotencyKey || null,
+            preOrderedItems: validatedPreOrderedItems.length > 0 ? (validatedPreOrderedItems as any) : null,
+            preOrderTotal: calculatedPreOrderTotal > 0 ? calculatedPreOrderTotal : 0,
           },
         });
 
@@ -749,7 +814,7 @@ export class ReservationService {
         customerPhone: dto.customerPhone ? normalizePhone(dto.customerPhone) : '0000000000',
         startAt,
         endAt,
-        reservationDate: new Date(`${dateStr}T00:00:00+07:00`),
+        reservationDate: new Date(`${dateStr}T12:00:00.000Z`),
         reservationTime: timeStr,
         partySize: dto.partySize,
         source: ReservationSource.WALK_IN,
@@ -1460,5 +1525,200 @@ export class ReservationService {
       sourceBreakdown,
       peakHours,
     };
+  }
+
+  /**
+   * Danh sách thực đơn phục vụ ăn tại quán (Dine-in) có thể đặt trước
+   */
+  async getDineInMenu(branchId?: string) {
+    const products = await this.prisma.product.findMany({
+      where: {
+        available: true,
+        ...(branchId
+          ? {
+              OR: [
+                { branches: { none: {} } },
+                { branches: { some: { id: branchId } } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        category: true,
+        optionGroups: {
+          include: { optionItems: true },
+        },
+      },
+      orderBy: [{ categoryId: 'asc' }, { name: 'asc' }],
+    });
+
+    // Chỉ lọc các món có kênh bán DINE_IN
+    const dineInProducts = products.filter((p) => {
+      const channels = Array.isArray(p.salesChannels) ? p.salesChannels : [];
+      return channels.some(
+        (c: string) =>
+          typeof c === 'string' &&
+          (c.toUpperCase() === 'DINE_IN' || c.toUpperCase() === 'DINE-IN'),
+      );
+    });
+
+    return dineInProducts;
+  }
+
+  /**
+   * Cập nhật món đặt trước (Thêm, Xóa, Sửa món)
+   * Yêu cầu: Cách giờ hẹn ít nhất 30 phút. Món phải thuộc kênh bán DINE_IN.
+   */
+  async updatePreOrderedItems(
+    idOrCode: string,
+    dto: UpdatePreOrderedItemsDto,
+    userId?: string,
+    userRole?: string,
+  ) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: {
+        OR: [
+          { id: idOrCode },
+          { reservationCode: idOrCode },
+        ],
+      },
+      include: {
+        branch: true,
+      },
+    });
+
+    if (!reservation) {
+      throw new ReservationBusinessException(
+        RESERVATION_ERRORS.NOT_FOUND,
+        'Không tìm thấy thông tin đặt bàn',
+      );
+    }
+
+    // Kiểm tra quyền hạn
+    const isStaff = userRole === 'ADMIN' || userRole === 'STAFF' || userRole === 'SUPER_ADMIN';
+    if (!isStaff) {
+      if (userId && reservation.userId && reservation.userId !== userId) {
+        throw new ReservationBusinessException(
+          RESERVATION_ERRORS.UNAUTHORIZED,
+          'Bạn không có quyền sửa đổi đặt bàn này',
+        );
+      }
+      if (!userId && dto.phone) {
+        if (normalizePhone(dto.phone) !== normalizePhone(reservation.customerPhone)) {
+          throw new ReservationBusinessException(
+            RESERVATION_ERRORS.UNAUTHORIZED,
+            'Số điện thoại xác thực không khớp với thông tin đặt bàn',
+          );
+        }
+      }
+    }
+
+    if (
+      reservation.status === ReservationStatus.CANCELLED ||
+      reservation.status === ReservationStatus.COMPLETED ||
+      reservation.status === ReservationStatus.NO_SHOW
+    ) {
+      throw new ReservationBusinessException(
+        RESERVATION_ERRORS.INVALID_STATUS_TRANSITION,
+        `Không thể thay đổi món cho đặt bàn có trạng thái ${reservation.status}`,
+      );
+    }
+
+    // QUY TẮC BẮT BUỘC: Kiểm tra hạn 30 phút
+    const now = Date.now();
+    const startAtMs = reservation.startAt ? new Date(reservation.startAt).getTime() : Date.now();
+    const diffMinutes = (startAtMs - now) / (1000 * 60);
+
+    if (diffMinutes <= 30 && !isStaff) {
+      const hotline = reservation.branch?.phone || '1900 6868';
+      throw new ReservationBusinessException(
+        RESERVATION_ERRORS.MODIFY_CUTOFF,
+        `Đã sát giờ hẹn dùng bữa (còn dưới 30 phút). Để thêm, xóa hoặc thay đổi món đặt trước, quý khách vui lòng liên hệ trực tiếp hotline chi nhánh (${hotline}) để được hỗ trợ kịp thời.`,
+      );
+    }
+
+    // Validate danh sách món mới
+    const validatedItems: any[] = [];
+    let calculatedPreOrderTotal = 0;
+
+    if (Array.isArray(dto.items) && dto.items.length > 0) {
+      for (const item of dto.items) {
+        const pId = item.productId || item.id;
+        if (!pId) continue;
+        const product = await this.prisma.product.findUnique({
+          where: { id: pId },
+          include: {
+            optionGroups: {
+              include: { optionItems: true },
+            },
+            branches: true,
+          },
+        });
+
+        if (!product || !product.available) {
+          throw new ReservationBusinessException(
+            'ITEM_UNAVAILABLE',
+            `Món "${item.name || pId}" hiện không còn khả dụng để phục vụ.`,
+          );
+        }
+
+        // Kiểm tra Kênh bán hàng DINE_IN
+        const channels = Array.isArray(product.salesChannels) ? product.salesChannels : [];
+        const hasDineIn = channels.some(
+          (c: string) =>
+            typeof c === 'string' &&
+            (c.toUpperCase() === 'DINE_IN' || c.toUpperCase() === 'DINE-IN'),
+        );
+        if (!hasDineIn) {
+          throw new ReservationBusinessException(
+            'CHANNEL_NOT_ALLOWED',
+            `Món "${product.name}" không hỗ trợ dùng tại quán (Dine-in).`,
+          );
+        }
+
+        let itemPrice = Number(product.price);
+        const selectedOptions = Array.isArray(item.selectedOptions) ? item.selectedOptions : [];
+        for (const opt of selectedOptions) {
+          for (const og of product.optionGroups) { const optItem = og.optionItems.find((i: any) => i.id === opt.optionItemId);
+            if (optItem) {
+              itemPrice += Number(optItem.priceAdjustment || 0);
+              break;
+            }
+          }
+        }
+
+        const quantity = Math.max(1, Number(item.quantity) || 1);
+        const lineTotal = itemPrice * quantity;
+        calculatedPreOrderTotal += lineTotal;
+
+        validatedItems.push({
+          productId: product.id,
+          name: product.name,
+          image: product.imageUrl,
+          price: itemPrice,
+          quantity,
+          lineTotal,
+          selectedOptions,
+          optionsTextSnapshot: item.optionsTextSnapshot || '',
+          note: item.note || '',
+        });
+      }
+    }
+
+    const updated = await this.prisma.reservation.update({
+      where: { id: reservation.id },
+      data: {
+        preOrderedItems: validatedItems.length > 0 ? (validatedItems as any) : null,
+        preOrderTotal: calculatedPreOrderTotal > 0 ? calculatedPreOrderTotal : 0,
+      },
+      include: {
+        branch: true,
+        tables: {
+          include: { table: true },
+        },
+      },
+    });
+
+    return updated;
   }
 }

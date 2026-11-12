@@ -9,6 +9,7 @@ interface TouchCategorySidebarProps {
   selectedCategoryId: string;
   onSelectCategory: (id: string) => void;
   className?: string;
+  isDarkMode?: boolean;
 }
 
 export const TouchCategorySidebar: React.FC<TouchCategorySidebarProps> = ({
@@ -16,6 +17,7 @@ export const TouchCategorySidebar: React.FC<TouchCategorySidebarProps> = ({
   selectedCategoryId,
   onSelectCategory,
   className = '',
+  isDarkMode = false,
 }) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
@@ -27,41 +29,59 @@ export const TouchCategorySidebar: React.FC<TouchCategorySidebarProps> = ({
 
   return (
     <div
-      className={`w-[105px] sm:w-[115px] bg-white border-r border-slate-200 flex flex-col shrink-0 select-none h-full z-10 ${className}`}
+      className={`w-[145px] sm:w-[160px] md:w-[175px] border-r flex flex-col shrink-0 select-none h-full z-10 transition-colors ${
+        isDarkMode
+          ? 'bg-slate-900 border-slate-800 text-slate-100'
+          : 'bg-white border-slate-200 text-slate-800 shadow-2xs'
+      } ${className}`}
     >
       {/* 1. Category Scroll Controls at Top */}
-      <div className="grid grid-cols-2 border-b border-slate-200 shrink-0 bg-slate-50">
+      <div className={`grid grid-cols-2 border-b shrink-0 ${
+        isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'
+      }`}>
         <button
           type="button"
-          onClick={() => handleScroll(-140)}
-          className="h-10 flex items-center justify-center border-r border-slate-200 hover:bg-slate-200/80 active:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
+          onClick={() => handleScroll(-160)}
+          className={`h-12 flex items-center justify-center border-r transition-colors cursor-pointer ${
+            isDarkMode
+              ? 'border-slate-700 hover:bg-slate-700 active:bg-slate-600 text-slate-200'
+              : 'border-slate-200 hover:bg-slate-100 active:bg-slate-200 text-slate-700'
+          }`}
           title="Cuộn lên"
         >
-          <ChevronUp className="w-5 h-5 text-slate-700 stroke-[2.5]" />
+          <ChevronUp className="w-5 h-5 stroke-[2.5]" />
         </button>
         <button
           type="button"
-          onClick={() => handleScroll(140)}
-          className="h-10 flex items-center justify-center hover:bg-slate-200/80 active:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
+          onClick={() => handleScroll(160)}
+          className={`h-12 flex items-center justify-center transition-colors cursor-pointer ${
+            isDarkMode
+              ? 'hover:bg-slate-700 active:bg-slate-600 text-slate-200'
+              : 'hover:bg-slate-100 active:bg-slate-200 text-slate-700'
+          }`}
           title="Cuộn xuống"
         >
-          <ChevronDown className="w-5 h-5 text-slate-700 stroke-[2.5]" />
+          <ChevronDown className="w-5 h-5 stroke-[2.5]" />
         </button>
       </div>
 
       {/* 2. Vertical Category Buttons List */}
       <div
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto no-scrollbar flex flex-col divide-y divide-slate-200 min-h-0"
+        className={`flex-1 overflow-y-auto no-scrollbar flex flex-col divide-y min-h-0 ${
+          isDarkMode ? 'divide-slate-800' : 'divide-slate-200'
+        }`}
       >
         {/* 'ALL' Category Button */}
         <button
           type="button"
           onClick={() => onSelectCategory('ALL')}
-          className={`min-h-[54px] px-2 py-2 text-center flex items-center justify-center text-xs font-black uppercase tracking-tight transition-all cursor-pointer ${
+          className={`min-h-[64px] sm:min-h-[70px] px-3 py-2.5 text-center flex items-center justify-center text-xs sm:text-sm font-black uppercase tracking-tight transition-all cursor-pointer ${
             selectedCategoryId === 'ALL'
               ? 'bg-[#da251d] text-white shadow-inner font-black'
-              : 'bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100'
+              : isDarkMode
+              ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 active:bg-slate-700'
+              : 'bg-white text-slate-700 hover:bg-red-50/50 hover:text-[#da251d] active:bg-slate-100'
           }`}
         >
           TẤT CẢ
@@ -75,10 +95,12 @@ export const TouchCategorySidebar: React.FC<TouchCategorySidebarProps> = ({
               key={cat.id}
               type="button"
               onClick={() => onSelectCategory(cat.id)}
-              className={`min-h-[56px] px-2 py-2 text-center flex items-center justify-center text-[11px] sm:text-xs font-black uppercase tracking-tight leading-tight transition-all cursor-pointer break-words ${
+              className={`min-h-[64px] sm:min-h-[70px] px-3 py-2.5 text-center flex items-center justify-center text-xs sm:text-sm font-black uppercase tracking-tight leading-snug transition-all cursor-pointer break-words ${
                 isSelected
                   ? 'bg-[#da251d] text-white shadow-inner font-black'
-                  : 'bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100'
+                  : isDarkMode
+                  ? 'bg-slate-900 text-slate-300 hover:bg-slate-800 active:bg-slate-700'
+                  : 'bg-white text-slate-700 hover:bg-red-50/50 hover:text-[#da251d] active:bg-slate-100'
               }`}
             >
               {cat.name}

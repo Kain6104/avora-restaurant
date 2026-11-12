@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useRef } from "r
 import { X, AlertCircle, Check, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import AddToCartForm from "../components/AddToCartForm";
+import BranchSwitchModal from "../components/cart/BranchSwitchModal";
 import { getAuthToken, clearAuthSession, getAuthHeaders, getApiBaseUrl } from "@/lib/auth";
 
 export interface CartItemOption {
@@ -32,6 +33,10 @@ export interface CartItem {
   comboId?: string;
   comboItemsSnapshot?: any[];
   note?: string;
+  isCustomRecipe?: boolean;
+  customRecipeData?: any;
+  isAvailableAtBranch?: boolean;
+  unavailabilityMessage?: string;
 }
 
 export interface ServerCartItem {
@@ -86,7 +91,7 @@ interface CartContextType {
   updateQuantity: (id: string, quantity: number) => void;
   updateCartItem: (id: string, updatedItem: CartItem) => void;
   clearCart: () => void;
-  replaceFromServerCart: (snapshot: ServerCartSnapshot) => boolean;
+  replaceFromServerCart: (snapshot: ServerCartSnapshot, force?: boolean) => boolean;
   changeBranch: (newBranchId: string) => void;
   setVouchers: (discountVoucher: any | null, shippingVoucher: any | null) => void;
   setDiscountVoucher: (voucher: any | null) => void;
@@ -105,14 +110,111 @@ interface CartContextType {
   setConfirmDialog: (dialog: { message: string; onConfirm: () => void } | null) => void;
   optionsModalProduct: any | null;
   setOptionsModalProduct: (product: any | null) => void;
+  selectedItemIds: string[];
+  toggleSelectItem: (id: string) => void;
+  selectAllItems: (select: boolean) => void;
+  syncCartWithServer: (overrideBranchId?: string) => Promise<void>;
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
+// Helper làm sạch Product ID để luôn đồng nhất định danh
+export const extractCleanProductId = (rawId?: string): string => {
+  if (!rawId) return '';
+  let s = String(rawId).trim();
+  if (s.includes('|')) {
+    s = s.split('|')[0];
+  }
+  s = s.replace(/^(cart|line|combo|prod)[-_]/gi, '');
+  s = s.replace(/[-_](base|normal|fs|default)$/gi, '');
+  s = s.replace(/-\d{10,}$/, '');
+  return s.trim();
+};
+
+// Helper tính khóa định danh duy nhất của dòng sản phẩm trong giỏ hàng (Line Identity Key)
+export const getCartItemKey = (item: {
+  productId?: string;
+  name?: string;
+  id?: string;
+  comboId?: string;
+  isCombo?: boolean;
+  selectedOptions?: Array<{ optionItemId?: string; id?: string; priceAdjustmentAtSale?: number; priceAdjustment?: number; nameAtSale?: string; name?: string }>;
+  note?: string;
+  isFlashSaleItem?: boolean;
+}): string => {
+  const cleanProdId = extractCleanProductId(item.productId || item.id);
+  const cleanName = String(item.name || '')
+    .replace(/\s*\(Giá khuyến mãi\)/gi, '')
+    .replace(/\s*\(Giá thường\)/gi, '')
+    .trim()
+    .toLowerCase();
+
+  // Khóa định danh: ưu tiên cleanName để gộp triệt để cùng 1 món bất kể nguồn thêm
+  const baseIdentity = item.isCombo
+    ? `combo_${item.comboId || cleanProdId || cleanName}`
+    : (cleanName ? `prod_${cleanName}` : `id_${cleanProdId || 'unknown'}`);
+
+  // Chỉ tính các option thực sự có phụ thu tiền hoặc có id rõ ràng khác biệt
+  const opts = (item.selectedOptions || [])
+    .filter((o: any) => {
+      const extra = Number(o.priceAdjustmentAtSale ?? o.priceAdjustment ?? o.extraPrice ?? 0);
+      const optName = String(o.nameAtSale || o.name || '').toLowerCase();
+      // Bỏ qua các option mặc định không tính tiền như 'cơm vừa', 'bình thường'
+      if (extra === 0 && (optName.includes('vừa') || optName.includes('bình thường') || optName.includes('tiêu chuẩn'))) {
+        return false;
+      }
+      return true;
+    })
+    .map((o) => (o as any).optionItemId || (o as any).id || (o as any).nameAtSale || (o as any).name)
+    .filter(Boolean)
+    .sort()
+    .join('_');
+
+  const note = (item.note || '').trim().toLowerCase();
+  const fs = item.isFlashSaleItem ? 'fs' : 'normal';
+  return `${baseIdentity}|${opts}|${note}|${fs}`;
+};
+
+// Helper gộp các dòng trùng lặp trong danh sách giỏ hàng
+export const consolidateCartList = (items: CartItem[]): CartItem[] => {
+  if (!Array.isArray(items) || items.length === 0) return [];
+  const map = new Map<string, CartItem>();
+  for (const it of items) {
+    if (!it) continue;
+    const key = getCartItemKey(it);
+    const existing = map.get(key);
+    const qty = Math.max(1, Number(it.quantity) || 1);
+    if (existing) {
+      existing.quantity += qty;
+    } else {
+      const cleanProdId = extractCleanProductId(it.productId || it.id);
+      map.set(key, {
+        ...it,
+        id: it.id || `cart-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+        productId: cleanProdId || it.productId || it.id,
+        quantity: qty,
+      });
+    }
+  }
+  return Array.from(map.values());
+};
+
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const cartItemsRef = useRef<CartItem[]>([]);
+  cartItemsRef.current = cartItems;
   const [cartVersion, setCartVersion] = useState(0);
   const cartVersionRef = useRef(0);
+  const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitializedFromServerRef = useRef(false);
+
+  const applyCartState = (nextItems: CartItem[]) => {
+    cartItemsRef.current = nextItems;
+    setCartItems(nextItems);
+    if (typeof window !== 'undefined' && hasInitializedFromServerRef.current) {
+      localStorage.setItem("cartItems", JSON.stringify(nextItems));
+    }
+  };
   const [currentBranchId, setCurrentBranchId] = useState<string>("");
   const [isLoaded, setIsLoaded] = useState(false);
   const [appliedDiscountVoucher, setAppliedDiscountVoucher] = useState<any | null>(null);
@@ -211,6 +313,140 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [isBranchModalOpen, setIsBranchModalOpen] = useState(false);
   const [branchModalProduct, setBranchModalProduct] = useState<any | null>(null);
   const [optionsModalProduct, setOptionsModalProduct] = useState<any | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+  const [isBranchSwitchModalOpen, setIsBranchSwitchModalOpen] = useState(false);
+  const [branchSwitchTarget, setBranchSwitchTarget] = useState<any>(null);
+  const [branchSwitchUnavailable, setBranchSwitchUnavailable] = useState<any[]>([]);
+
+  const toggleSelectItem = (id: string) => {
+    setSelectedItemIds((prev) =>
+      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllItems = (select: boolean) => {
+    if (select) {
+      const avail = cartItems.filter((i) => i.isAvailableAtBranch !== false).map((i) => i.id);
+      setSelectedItemIds(avail);
+    } else {
+      setSelectedItemIds([]);
+    }
+  };
+
+  const pushCartToServer = async (items: CartItem[], branchId?: string) => {
+    // Ngăn chặn tuyệt đối việc xóa sạch giỏ hàng khi client chưa nạp xong Persistent Cart từ Database
+    if (!hasInitializedFromServerRef.current) {
+      return;
+    }
+
+    try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      await fetch('/api/cart/sync', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        keepalive: items.length <= 20,
+        body: JSON.stringify({
+          branchId: (branchId || currentBranchId) || undefined,
+          items: items.map((i) => ({
+            id: i.id,
+            productId: extractCleanProductId(i.productId || i.id),
+            quantity: i.quantity,
+            priceAtSale: i.priceAtSale,
+            originalPriceAtSale: i.originalPriceAtSale,
+            selectedOptions: i.selectedOptions?.map((so) => ({
+              optionItemId: so.optionItemId,
+              nameAtSale: so.nameAtSale,
+              priceAdjustmentAtSale: so.priceAdjustmentAtSale,
+            })),
+            optionsTextSnapshot: i.optionsTextSnapshot,
+            note: i.note,
+            isFlashSaleItem: i.isFlashSaleItem,
+            flashSaleId: i.flashSaleId,
+            isCombo: i.isCombo,
+            comboId: i.comboId,
+            isCustomRecipe: i.isCustomRecipe,
+            customRecipeData: i.customRecipeData,
+          })),
+        }),
+      });
+    } catch (err) {
+      console.warn('Failed to push cart to server database:', err);
+    }
+  };
+
+  const syncCartWithServer = async (overrideBranchId?: string) => {
+    const branchToUse = overrideBranchId || currentBranchId;
+    const versionAtStart = cartVersionRef.current;
+    try {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {
+        'ngrok-skip-browser-warning': 'true',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch(`/api/cart${branchToUse ? `?branchId=${branchToUse}` : ''}`, {
+        credentials: 'include',
+        headers,
+      });
+      const data = await res.json();
+      if (cartVersionRef.current !== versionAtStart) {
+        return;
+      }
+      if (res.ok && data.success && data.data) {
+        const serverItems = (data.data.items || []).map((si: any) => ({
+          id: si.id,
+          productId: si.productId,
+          name: si.name,
+          priceAtSale: Number(si.priceAtSale ?? 0),
+          originalPriceAtSale: Number(si.originalPriceAtSale ?? si.priceAtSale ?? 0),
+          quantity: Math.max(1, Number(si.quantity) || 1),
+          imageUrl: si.image || si.imageUrl || '',
+          optionsTextSnapshot: si.optionsTextSnapshot || '',
+          selectedOptions: si.selectedOptions || [],
+          note: si.note || '',
+          isFlashSaleItem: Boolean(si.isFlashSaleItem),
+          flashSaleId: si.flashSaleId || undefined,
+          isCombo: Boolean(si.isCombo),
+          comboId: si.comboId || undefined,
+          isCustomRecipe: Boolean(si.isCustomRecipe),
+          customRecipeData: si.customRecipeData || undefined,
+          isAvailableAtBranch: si.isAvailableAtBranch !== false,
+          unavailabilityReason: si.unavailabilityReason,
+          unavailabilityMessage: si.unavailabilityMessage,
+        }));
+
+        if (serverItems.length > 0) {
+          const consolidated = consolidateCartList(serverItems);
+          applyCartState(consolidated);
+          localStorage.setItem("cartItems", JSON.stringify(consolidated));
+          if (data.data.branchId) {
+            setCurrentBranchId(data.data.branchId);
+            localStorage.setItem("currentBranchId", data.data.branchId);
+            localStorage.setItem("selectedBranchId", data.data.branchId);
+          }
+          // Mặc định chọn hết tất cả món khả dụng khi đồng bộ từ database
+          const availIds = consolidated.filter((i: any) => i.isAvailableAtBranch !== false).map((i: any) => i.id);
+          setSelectedItemIds(availIds);
+        } else if (cartItemsRef.current.length > 0 && hasInitializedFromServerRef.current) {
+          pushCartToServer(cartItemsRef.current, branchToUse);
+        }
+      }
+    } catch (e) {
+      console.warn('Sync cart with server paused:', e);
+    }
+  };
+
 
   const [flashSaleQuotas, setFlashSaleQuotas] = useState<Record<string, number>>({});
 
@@ -225,8 +461,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const url = typeof input === 'string'
         ? input
         : input instanceof URL
-        ? input.href
-        : (input as Request)?.url || '';
+          ? input.href
+          : (input as Request)?.url || '';
 
       const isInternalApi =
         url.startsWith('/api/') ||
@@ -302,7 +538,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
               method: 'POST',
               credentials: 'include',
               headers: { 'ngrok-skip-browser-warning': 'true' }
-            }).catch(() => {});
+            }).catch(() => { });
           }
         }
         return response;
@@ -381,6 +617,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshQuotasAndSyncCart = async (currentCart: CartItem[]) => {
+    const versionAtStart = cartVersionRef.current;
     try {
       let quotas: Record<string, number> = {};
       let quotaExceededMessage = "";
@@ -405,7 +642,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (user?.id) {
         const res = await fetch(`${baseUrl}/api/promotions/flash-sale/quota`, {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
             'ngrok-skip-browser-warning': 'true'
           },
@@ -423,23 +660,23 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const productIds = Array.from(new Set(currentCart.map(i => i.productId)));
       const prodRes = await fetch(`${baseUrl}/api/products/bulk`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'ngrok-skip-browser-warning': 'true'
         },
         body: JSON.stringify({ ids: productIds })
       });
-      
+
       if (!prodRes.ok) return;
       const latestProducts = await prodRes.json();
 
       const baseItemsMap = new Map<string, { baseItem: CartItem, existingFlashQty: number }>();
       for (const item of currentCart) {
-        const baseId = item.id.replace('-normal', '');
-        if (!baseItemsMap.has(baseId)) {
-          baseItemsMap.set(baseId, { baseItem: { ...item, id: baseId, quantity: 0 }, existingFlashQty: 0 });
+        const groupKey = getCartItemKey({ ...item, isFlashSaleItem: false });
+        if (!baseItemsMap.has(groupKey)) {
+          baseItemsMap.set(groupKey, { baseItem: { ...item, quantity: 0 }, existingFlashQty: 0 });
         }
-        const data = baseItemsMap.get(baseId)!;
+        const data = baseItemsMap.get(groupKey)!;
         data.baseItem.quantity += item.quantity;
         if (item.isFlashSaleItem) {
           data.existingFlashQty += item.quantity;
@@ -448,12 +685,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       }
 
       let newCartItems: CartItem[] = [];
+      let hasRemovedDeadItems = false;
       for (const data of baseItemsMap.values()) {
         const baseItem = data.baseItem;
         const existingFlashQty = data.existingFlashQty;
         const product = latestProducts.find((p: any) => p.id === baseItem.productId);
+
+        // Tự động loại bỏ hoàn toàn các món ma không còn tồn tại trong DB để tránh crash Checkout
         if (!product) {
-          newCartItems.push(baseItem); // Product not found, keep as is
+          hasRemovedDeadItems = true;
           continue;
         }
 
@@ -464,39 +704,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         const isFlash = !!product.flashSalePrice;
         const quota = quotas[product.id] ?? product.maxQuantityPerUser ?? Infinity;
         const availableStock = isFlash ? Math.max(0, product.flashSaleStock - product.flashSaleSold) : 0;
-        
+
         if (isFlash && quota > 0 && availableStock > 0) {
           const availableQuota = Math.min(quota, availableStock);
           const flashQty = Math.min(baseItem.quantity, availableQuota);
           const normalQty = baseItem.quantity - flashQty;
-          
+
           if (flashQty > 0) {
-             newCartItems.push({
-                ...baseItem,
-                isFlashSaleItem: true,
-                priceAtSale: newFlashPrice!,
-                originalPriceAtSale: newOriginalPrice,
-                name: `${product.name} (Giá khuyến mãi)`,
-                quantity: flashQty,
-                flashSaleId: product.flashSaleId,
-                flashSaleStock: product.flashSaleStock,
-                flashSaleSold: product.flashSaleSold,
-                maxQuantityPerUser: product.maxQuantityPerUser
-             });
+            newCartItems.push({
+              ...baseItem,
+              isFlashSaleItem: true,
+              priceAtSale: newFlashPrice!,
+              originalPriceAtSale: newOriginalPrice,
+              name: `${product.name} (Giá khuyến mãi)`,
+              quantity: flashQty,
+              flashSaleId: product.flashSaleId,
+              flashSaleStock: product.flashSaleStock,
+              flashSaleSold: product.flashSaleSold,
+              maxQuantityPerUser: product.maxQuantityPerUser
+            });
           }
           if (normalQty > 0) {
-             if (existingFlashQty > flashQty) {
-               quotaExceededMessage = "Một số sản phẩm đã tự động chuyển về giá gốc do bạn đã thêm vượt quá lượt mua Flash Sale.";
-             }
-             newCartItems.push({
-                ...baseItem,
-                id: `${baseItem.id}-normal`,
-                isFlashSaleItem: false,
-                priceAtSale: newOriginalPrice,
-                originalPriceAtSale: newOriginalPrice,
-                name: `${product.name} (Giá thường)`,
-                quantity: normalQty
-             });
+            if (existingFlashQty > flashQty) {
+              quotaExceededMessage = "Một số sản phẩm đã tự động chuyển về giá gốc do bạn đã thêm vượt quá lượt mua Flash Sale.";
+            }
+            newCartItems.push({
+              ...baseItem,
+              id: `${baseItem.id}-normal`,
+              isFlashSaleItem: false,
+              priceAtSale: newOriginalPrice,
+              originalPriceAtSale: newOriginalPrice,
+              name: `${product.name} (Giá thường)`,
+              quantity: normalQty
+            });
           }
         } else {
           if (existingFlashQty > 0) {
@@ -509,20 +749,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             }
           }
           newCartItems.push({
-              ...baseItem,
-              isFlashSaleItem: false,
-              priceAtSale: newOriginalPrice,
-              originalPriceAtSale: newOriginalPrice,
-              name: product.name,
-              quantity: baseItem.quantity
+            ...baseItem,
+            isFlashSaleItem: false,
+            priceAtSale: newOriginalPrice,
+            originalPriceAtSale: newOriginalPrice,
+            name: product.name,
+            quantity: baseItem.quantity
           });
         }
       }
-      
-      setCartItems(newCartItems);
+
+      if (cartVersionRef.current !== versionAtStart) {
+        return;
+      }
+
+      applyCartState(newCartItems);
 
       if (quotaExceededMessage) {
         showToast(quotaExceededMessage);
+      }
+      if (hasRemovedDeadItems) {
+        showToast('Một số món không còn kinh doanh đã được tự động bỏ khỏi giỏ hàng.');
       }
 
     } catch (err) {
@@ -531,52 +778,177 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const refreshQuotas = () => {
-    refreshQuotasAndSyncCart(cartItems);
+    refreshQuotasAndSyncCart(cartItemsRef.current);
   };
 
-  // Load from localStorage on mount
+  // Load persistent cart from Database / localStorage on mount
   useEffect(() => {
-    try {
-      let loadedCart = [];
-      const savedCart = localStorage.getItem("cartItems");
-      if (savedCart) {
-        const parsed = JSON.parse(savedCart);
-        if (Array.isArray(parsed)) {
-          loadedCart = parsed.map((it: any) => ({
-            ...it,
-            productId: it.productId || it.id,
-            priceAtSale: Number(it.priceAtSale ?? it.price ?? 0),
-            originalPriceAtSale: Number(it.originalPriceAtSale ?? it.priceAtSale ?? it.price ?? 0),
-            imageUrl: it.imageUrl || it.image || '',
-            quantity: Math.max(1, Number(it.quantity) || 1),
-          }));
-        }
-        setCartItems(loadedCart);
-      }
+    let isCancelled = false;
 
-      const savedBranchId = localStorage.getItem("currentBranchId") || localStorage.getItem("selectedBranchId");
-      if (savedBranchId) setCurrentBranchId(savedBranchId);
-      const savedCartVersion = Number(localStorage.getItem("chatbotCartVersion") || 0);
-      if (Number.isSafeInteger(savedCartVersion) && savedCartVersion >= 0) {
-        cartVersionRef.current = savedCartVersion;
-        setCartVersion(savedCartVersion);
+    const initializeCart = async () => {
+      try {
+        let loadedCart: CartItem[] = [];
+        const savedCart = localStorage.getItem("cartItems");
+        if (savedCart) {
+          try {
+            const parsed = JSON.parse(savedCart);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              const consolidatedMap = new Map<string, CartItem>();
+              for (const it of parsed) {
+                let cleanProdId = String(it.productId || it.id || '');
+                if (cleanProdId.startsWith('cart-')) {
+                  cleanProdId = cleanProdId.replace(/^cart-/, '').replace(/-\d{10,}$/, '');
+                }
+                const normalized: CartItem = {
+                  ...it,
+                  id: it.id || (it.isCombo ? `combo-${it.comboId || cleanProdId}` : `cart-${cleanProdId}`),
+                  productId: cleanProdId,
+                  priceAtSale: Number(it.priceAtSale ?? it.price ?? 0),
+                  originalPriceAtSale: Number(it.originalPriceAtSale ?? it.priceAtSale ?? it.price ?? 0),
+                  imageUrl: it.imageUrl || it.image || '',
+                  quantity: Math.max(1, Number(it.quantity) || 1),
+                };
+                const key = getCartItemKey(normalized);
+                const existing = consolidatedMap.get(key);
+                if (existing) {
+                  existing.quantity += normalized.quantity;
+                } else {
+                  consolidatedMap.set(key, normalized);
+                }
+              }
+              loadedCart = consolidateCartList(Array.from(consolidatedMap.values()));
+              if (!isCancelled) {
+                applyCartState(loadedCart);
+                const initialAvail = loadedCart.filter((i) => i.isAvailableAtBranch !== false).map((i) => i.id);
+                setSelectedItemIds(initialAvail);
+              }
+            }
+          } catch {}
+        }
+
+        const savedBranchId = localStorage.getItem("currentBranchId") || localStorage.getItem("selectedBranchId");
+        if (savedBranchId && !isCancelled) setCurrentBranchId(savedBranchId);
+        const savedCartVersion = Number(localStorage.getItem("chatbotCartVersion") || 0);
+        if (Number.isSafeInteger(savedCartVersion) && savedCartVersion >= 0 && !isCancelled) {
+          cartVersionRef.current = savedCartVersion;
+          setCartVersion(savedCartVersion);
+        }
+        const versionAtServerFetch = cartVersionRef.current;
+
+        // Tải Persistent Cart từ Database MySQL (xác thực bằng Bearer token hoặc Guest Cookie)
+        const token = getAuthToken();
+        const headers: Record<string, string> = {
+          'ngrok-skip-browser-warning': 'true',
+        };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        const branchQuery = savedBranchId ? `?branchId=${savedBranchId}` : '';
+        const res = await fetch(`/api/cart${branchQuery}`, {
+          credentials: 'include',
+          headers,
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const serverItems = data?.data?.items;
+          const serverBranchId = data?.data?.branchId;
+
+          if (Array.isArray(serverItems) && serverItems.length > 0) {
+            const mappedServerItems: CartItem[] = serverItems.map((si: any) => ({
+              id: si.id,
+              productId: si.productId,
+              name: si.name,
+              priceAtSale: Number(si.priceAtSale ?? 0),
+              originalPriceAtSale: Number(si.originalPriceAtSale ?? si.priceAtSale ?? 0),
+              quantity: Math.max(1, Number(si.quantity) || 1),
+              imageUrl: si.image || si.imageUrl || '',
+              optionsTextSnapshot: si.optionsTextSnapshot || '',
+              selectedOptions: si.selectedOptions || [],
+              note: si.note || '',
+              isFlashSaleItem: Boolean(si.isFlashSaleItem),
+              flashSaleId: si.flashSaleId || undefined,
+              isCombo: Boolean(si.isCombo),
+              comboId: si.comboId || undefined,
+              isCustomRecipe: Boolean(si.isCustomRecipe),
+              customRecipeData: si.customRecipeData || undefined,
+              isAvailableAtBranch: si.isAvailableAtBranch !== false,
+              unavailabilityReason: si.unavailabilityReason,
+              unavailabilityMessage: si.unavailabilityMessage,
+            }));
+
+            const consolidatedServerCart = consolidateCartList(mappedServerItems);
+            if (!isCancelled && cartVersionRef.current === versionAtServerFetch) {
+              applyCartState(consolidatedServerCart);
+              localStorage.setItem("cartItems", JSON.stringify(consolidatedServerCart));
+              if (serverBranchId) {
+                setCurrentBranchId(serverBranchId);
+                localStorage.setItem("currentBranchId", serverBranchId);
+                localStorage.setItem("selectedBranchId", serverBranchId);
+              }
+              // Mặc định chọn hết tất cả món khả dụng khi nạp từ Database
+              const availIds = consolidatedServerCart.filter((i) => i.isAvailableAtBranch !== false).map((i) => i.id);
+              setSelectedItemIds(availIds);
+            }
+          } else if (loadedCart.length > 0 && cartVersionRef.current === versionAtServerFetch) {
+            // LocalStorage có nhưng Server trống -> Lưu LocalStorage vào Database
+            hasInitializedFromServerRef.current = true;
+            await pushCartToServer(loadedCart, savedBranchId || undefined);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load cart from database / localStorage", e);
+      } finally {
+        if (!isCancelled) {
+          hasInitializedFromServerRef.current = true;
+          setIsLoaded(true);
+        }
       }
-      
-      refreshQuotasAndSyncCart(loadedCart);
-    } catch (e) {
-      console.error("Failed to load cart from localStorage", e);
-    } finally {
-      setIsLoaded(true);
-    }
+    };
+
+    initializeCart();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
-  // Save to localStorage when changed
+  // Lắng nghe sự kiện đăng nhập hoặc thay đổi session để đồng bộ ngay lập tức
+  useEffect(() => {
+    const handleAuthEvent = () => {
+      syncCartWithServer();
+    };
+    window.addEventListener('storage', handleAuthEvent);
+    window.addEventListener('user-updated', handleAuthEvent);
+    return () => {
+      window.removeEventListener('storage', handleAuthEvent);
+      window.removeEventListener('user-updated', handleAuthEvent);
+    };
+  }, [currentBranchId]);
+
+    // Save to localStorage and auto-sync to server Database when changed
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem("cartItems", JSON.stringify(cartItems));
       localStorage.setItem("chatbotCartVersion", String(cartVersion));
+
+      if (syncTimerRef.current) {
+        clearTimeout(syncTimerRef.current);
+      }
+
+      // Debounce sync to MySQL database
+      syncTimerRef.current = setTimeout(() => {
+        pushCartToServer(cartItemsRef.current, currentBranchId);
+      }, 350);
+      return () => {
+        if (syncTimerRef.current) {
+          clearTimeout(syncTimerRef.current);
+          syncTimerRef.current = null;
+        }
+      };
     }
-  }, [cartItems, cartVersion, isLoaded]);
+  }, [cartItems, cartVersion, currentBranchId, isLoaded]);
 
   useEffect(() => {
     if (isLoaded && currentBranchId) {
@@ -585,45 +957,94 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentBranchId, isLoaded]);
 
-  const replaceFromServerCart = (snapshot: ServerCartSnapshot): boolean => {
-    if (!Number.isSafeInteger(snapshot.cartVersion) || snapshot.cartVersion < cartVersionRef.current) {
+  const replaceFromServerCart = (snapshot: ServerCartSnapshot, force = false): boolean => {
+    if (!snapshot || !Array.isArray(snapshot.items)) {
       return false;
     }
 
-    const nextItems: CartItem[] = snapshot.items.map((item) => ({
-      id: item.lineId,
-      productId: item.productId,
-      name: item.productName,
-      originalPriceAtSale: item.basePrice,
-      priceAtSale: item.priceAtSale,
-      quantity: item.quantity,
-      imageUrl: item.imageUrl,
-      optionsTextSnapshot: item.selectedOptions.map((option) => option.optionItemName).join(', '),
-      selectedOptions: item.selectedOptions.map((option) => ({
-        optionItemId: option.optionItemId,
-        nameAtSale: option.optionItemName,
-        priceAdjustmentAtSale: option.priceAdjustment,
-      })),
-      isFlashSaleItem: item.isFlashSale,
-      flashSaleId: item.flashSaleId,
-      note: item.note,
-    }));
+    if (!force && Number.isSafeInteger(snapshot.cartVersion) && Number.isSafeInteger(cartVersionRef.current) && snapshot.cartVersion > 0 && snapshot.cartVersion < cartVersionRef.current && cartItems.length > 0) {
+      return false;
+    }
 
-    cartVersionRef.current = snapshot.cartVersion;
-    setCartVersion(snapshot.cartVersion);
+    // Tự động gom nhóm các món ăn trùng lặp cùng options và ghi chú (Deduplicate / Merge quantities)
+    const groupedItemsMap = new Map<string, CartItem>();
+    for (const rawItem of snapshot.items) {
+      const itemAny = rawItem as any;
+      const cleanProdId = String(itemAny.productId || itemAny.id || '').replace(/^cart-/, '').replace(/^line-/, '').replace(/-\d{10,}$/, '').trim();
+      const selectedOpts = (itemAny.selectedOptions || []).map((option: any) => ({
+        optionItemId: option.optionItemId || option.id || '',
+        nameAtSale: option.optionItemName || option.name || option.nameAtSale || '',
+        priceAdjustmentAtSale: Number(option.priceAdjustment ?? option.priceAdjustmentAtSale ?? option.extraPrice ?? 0),
+      }));
+
+      const key = getCartItemKey({
+        productId: cleanProdId,
+        isCombo: Boolean(itemAny.isCombo),
+        comboId: itemAny.comboId,
+        selectedOptions: selectedOpts,
+        note: itemAny.note || '',
+        isFlashSaleItem: Boolean(itemAny.isFlashSale ?? itemAny.isFlashSaleItem),
+      });
+
+      const qty = Math.max(1, Number(itemAny.quantity) || 1);
+      const existing = groupedItemsMap.get(key);
+      if (existing) {
+        existing.quantity += qty;
+      } else {
+        const canonicalId = `cart-${key.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        groupedItemsMap.set(key, {
+          id: canonicalId,
+          productId: cleanProdId,
+          name: itemAny.productName || itemAny.name || 'Món ăn',
+          originalPriceAtSale: Number(itemAny.basePrice ?? itemAny.originalPriceAtSale ?? itemAny.priceAtSale ?? itemAny.price ?? 0),
+          priceAtSale: Number(itemAny.priceAtSale ?? itemAny.price ?? 0),
+          quantity: qty,
+          imageUrl: itemAny.imageUrl || itemAny.image || itemAny.images?.[0]?.url || '',
+          optionsTextSnapshot: selectedOpts.map((o: any) => o.nameAtSale).filter(Boolean).join(', '),
+          selectedOptions: selectedOpts,
+          isFlashSaleItem: Boolean(itemAny.isFlashSale ?? itemAny.isFlashSaleItem),
+          flashSaleId: itemAny.flashSaleId,
+          note: itemAny.note || '',
+        });
+      }
+    }
+
+    const nextItems: CartItem[] = consolidateCartList(Array.from(groupedItemsMap.values()));
+
+    const newVersion = Number.isSafeInteger(snapshot.cartVersion) && snapshot.cartVersion > 0 ? snapshot.cartVersion : (cartVersionRef.current + 1);
+    cartVersionRef.current = newVersion;
+    setCartVersion(newVersion);
     setCartItems(nextItems);
-    setCurrentBranchId(snapshot.currentBranchId || '');
+    if (snapshot.currentBranchId) {
+      setCurrentBranchId(snapshot.currentBranchId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem("currentBranchId", snapshot.currentBranchId);
+        localStorage.setItem("selectedBranchId", snapshot.currentBranchId);
+      }
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem("cartItems", JSON.stringify(nextItems));
+      localStorage.setItem("chatbotCartVersion", String(newVersion));
+    }
     return true;
   };
 
   const addToCart = (item: CartItem, branchId: string, silent?: boolean): boolean => {
     if (!item) return false;
+    let cleanProdId = String(item.productId || item.id || '');
+    if (cleanProdId.startsWith('cart-')) {
+      cleanProdId = cleanProdId.replace(/^cart-/, '').replace(/-\d{10,}$/, '');
+    }
     const price = Number(item.priceAtSale ?? (item as any).price ?? 0);
     const origPrice = Number(item.originalPriceAtSale ?? price);
+    const canonicalId = item.isCombo
+      ? (item.id || `combo-${item.comboId || cleanProdId}`)
+      : (item.id && !item.id.match(/-\d{10,}$/) ? item.id : `cart-${cleanProdId}`);
+
     const normalizedItem: CartItem = {
       ...item,
-      id: item.id || (item as any).productId || String(Date.now()),
-      productId: item.productId || item.id,
+      id: canonicalId,
+      productId: cleanProdId,
       name: item.name || 'Món ăn',
       priceAtSale: price,
       originalPriceAtSale: origPrice,
@@ -632,7 +1053,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     };
     item = normalizedItem;
 
-    if (item.rawProduct?.optionGroups && item.rawProduct.optionGroups.length > 0 && !item.selectedOptions) {
+    if (item.rawProduct?.optionGroups && item.rawProduct.optionGroups.length > 0 && (!item.selectedOptions || item.selectedOptions.length === 0)) {
       setOptionsModalProduct(item.rawProduct);
       return false;
     }
@@ -642,7 +1063,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setConfirmDialog({
         message: "Món ăn này thuộc chi nhánh khác. Nếu tiếp tục, giỏ hàng hiện tại sẽ bị xóa. Bạn có đồng ý?",
         onConfirm: () => {
-          const newItems = [{...item}];
+          const newItems = [{ ...item }];
           setCartItems(newItems);
           setCurrentBranchId(branchId);
           setConfirmDialog(null);
@@ -653,21 +1074,25 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       });
       return false;
     }
-    
+
     // If cart is empty, set current branch
     if (cartItems.length === 0) {
       setCurrentBranchId(branchId);
     }
 
+    const targetKey = getCartItemKey(item);
+
     if (item.isFlashSaleItem && item.flashSaleStock !== undefined && item.flashSaleSold !== undefined) {
       const availableStock = Math.max(0, item.flashSaleStock - item.flashSaleSold);
-      
-      const existingFlashQuantity = cartItems.find(i => i.id === item.id)?.quantity || 0;
-      const existingNormalQuantity = cartItems.find(i => i.id === `${item.id}-normal`)?.quantity || 0;
-      
+
+      const existingFlashItem = cartItems.find(i => i.id === item.id || getCartItemKey(i) === targetKey);
+      const existingFlashQuantity = existingFlashItem?.quantity || 0;
+      const existingNormalItem = cartItems.find(i => i.id === `${item.id}-normal` || getCartItemKey({ ...i, isFlashSaleItem: false }) === targetKey);
+      const existingNormalQuantity = existingNormalItem?.quantity || 0;
+
       if (existingFlashQuantity + existingNormalQuantity + item.quantity > availableStock) {
-         showToast(`Sản phẩm này chỉ còn ${availableStock} phần trong kho!`);
-         return false; // Do not add
+        showToast(`Sản phẩm này chỉ còn ${availableStock} phần trong kho!`);
+        return false; // Do not add
       }
 
       const userQuota = flashSaleQuotas[item.productId] ?? item.maxQuantityPerUser ?? Infinity;
@@ -687,7 +1112,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setCartItems((prev) => {
         let newItems = [...prev];
         if (flashQtyToAdd > 0) {
-          const existingIndex = newItems.findIndex((i) => i.id === item.id);
+          const existingIndex = newItems.findIndex((i) => i.id === item.id || (i.isFlashSaleItem && getCartItemKey(i) === targetKey));
           if (existingIndex >= 0) {
             newItems[existingIndex] = { ...newItems[existingIndex], quantity: newItems[existingIndex].quantity + flashQtyToAdd };
           } else {
@@ -696,17 +1121,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         }
         if (normalQtyToAdd > 0) {
           const normalId = `${item.id}-normal`;
-          const existingIndex = newItems.findIndex((i) => i.id === normalId);
+          const normalTargetKey = getCartItemKey({ ...item, isFlashSaleItem: false });
+          const existingIndex = newItems.findIndex((i) => i.id === normalId || (!i.isFlashSaleItem && getCartItemKey(i) === normalTargetKey));
           if (existingIndex >= 0) {
             newItems[existingIndex] = { ...newItems[existingIndex], quantity: newItems[existingIndex].quantity + normalQtyToAdd };
           } else {
-            newItems.push({ 
-              ...item, 
-              id: normalId, 
-              quantity: normalQtyToAdd, 
-              isFlashSaleItem: false, 
+            newItems.push({
+              ...item,
+              id: normalId,
+              quantity: normalQtyToAdd,
+              isFlashSaleItem: false,
               priceAtSale: item.originalPriceAtSale,
-              name: `${item.name} (Giá thường)` 
+              name: `${item.name} (Giá thường)`
             });
           }
         }
@@ -721,14 +1147,27 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
     let nextCart: CartItem[] = [];
     setCartItems((prev) => {
-      const existing = prev.find((i) => i.id === item.id);
-      if (existing) {
-        nextCart = prev.map((i) => (i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i));
+      const targetCleanName = String(item.name || '').replace(/\s*\(Giá khuyến mãi\)/gi, '').replace(/\s*\(Giá thường\)/gi, '').trim().toLowerCase();
+      const existingIndex = prev.findIndex((i) => {
+        if (i.id === item.id) return true;
+        const iKey = getCartItemKey(i);
+        if (iKey === targetKey) return true;
+        const iCleanId = extractCleanProductId(i.productId || i.id);
+        if (cleanProdId && iCleanId === cleanProdId) return true;
+        const iCleanName = String(i.name || '').replace(/\s*\(Giá khuyến mãi\)/gi, '').replace(/\s*\(Giá thường\)/gi, '').trim().toLowerCase();
+        return Boolean(targetCleanName && iCleanName === targetCleanName);
+      });
+      let updated: CartItem[];
+      if (existingIndex >= 0) {
+        updated = prev.map((i, idx) => (idx === existingIndex ? { ...i, quantity: i.quantity + item.quantity } : i));
       } else {
-        nextCart = [...prev, item];
+        updated = [...prev, item];
       }
+      nextCart = consolidateCartList(updated);
       return nextCart;
     });
+
+    setSelectedItemIds((prev) => Array.from(new Set([...prev, canonicalId])));
 
     if (!silent) {
       showCartAddToast(item.name, nextCart);
@@ -825,50 +1264,73 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeFromCart = (id: string) => {
-    setCartItems((prev) => prev.filter((i) => i.id !== id));
+    cartVersionRef.current += 1;
+    setCartVersion(cartVersionRef.current);
+    hasInitializedFromServerRef.current = true;
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+
+    const prev = cartItemsRef.current;
+    const targetItem = prev.find((i) => i.id === id);
+    const targetKey = targetItem ? getCartItemKey(targetItem) : null;
+    const removedIds = new Set(
+      prev
+        .filter((i) => i.id === id || (Boolean(targetKey) && getCartItemKey(i) === targetKey))
+        .map((i) => i.id),
+    );
+    removedIds.add(id);
+
+    const nextItems = prev.filter((i) => !removedIds.has(i.id));
+    applyCartState(nextItems);
+    setSelectedItemIds((curr) => curr.filter((sid) => !removedIds.has(sid)));
+    void pushCartToServer(nextItems, currentBranchId);
   };
 
   const updateQuantity = (id: string, quantity: number) => {
+    cartVersionRef.current += 1;
+    setCartVersion(cartVersionRef.current);
     if (quantity <= 0) {
       removeFromCart(id);
       return;
     }
-    
+
     const existing = cartItems.find((i) => i.id === id);
     if (existing && existing.isFlashSaleItem && existing.flashSaleStock !== undefined && existing.flashSaleSold !== undefined) {
       const availableStock = Math.max(0, existing.flashSaleStock - existing.flashSaleSold);
       const userQuota = flashSaleQuotas[existing.productId] ?? existing.maxQuantityPerUser ?? Infinity;
-      
+
       const maxAllowed = Math.min(availableStock, userQuota);
-      
+
       if (quantity > maxAllowed) {
-         const excess = quantity - maxAllowed;
-         const normalId = `${id}-normal`;
-         
-         setCartItems((prev) => {
-            let newItems = [...prev];
-            const flashIndex = newItems.findIndex(i => i.id === id);
-            if (flashIndex >= 0) {
-               newItems[flashIndex] = { ...newItems[flashIndex], quantity: maxAllowed };
-            }
-            
-            const normalIndex = newItems.findIndex(i => i.id === normalId);
-            if (normalIndex >= 0) {
-               newItems[normalIndex] = { ...newItems[normalIndex], quantity: newItems[normalIndex].quantity + excess };
-            } else {
-               newItems.push({
-                  ...existing,
-                  id: normalId,
-                  quantity: excess,
-                  isFlashSaleItem: false,
-                  priceAtSale: existing.originalPriceAtSale,
-                  name: `${existing.name.replace(' (Giá khuyến mãi)', '')} (Giá thường)`
-               });
-            }
-            return newItems;
-         });
-         showToast(`Đã thêm ${excess} phần vào nhóm Giá thường do giới hạn khuyến mãi.`);
-         return;
+        const excess = quantity - maxAllowed;
+        const normalId = `${id}-normal`;
+
+        setCartItems((prev) => {
+          let newItems = [...prev];
+          const flashIndex = newItems.findIndex(i => i.id === id);
+          if (flashIndex >= 0) {
+            newItems[flashIndex] = { ...newItems[flashIndex], quantity: maxAllowed };
+          }
+
+          const normalIndex = newItems.findIndex(i => i.id === normalId);
+          if (normalIndex >= 0) {
+            newItems[normalIndex] = { ...newItems[normalIndex], quantity: newItems[normalIndex].quantity + excess };
+          } else {
+            newItems.push({
+              ...existing,
+              id: normalId,
+              quantity: excess,
+              isFlashSaleItem: false,
+              priceAtSale: existing.originalPriceAtSale,
+              name: `${existing.name.replace(' (Giá khuyến mãi)', '')} (Giá thường)`
+            });
+          }
+          return newItems;
+        });
+        showToast(`Đã thêm ${excess} phần vào nhóm Giá thường do giới hạn khuyến mãi.`);
+        return;
       }
     }
 
@@ -876,31 +1338,28 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateCartItem = (id: string, updatedItem: CartItem) => {
+    cartVersionRef.current += 1;
+    setCartVersion(cartVersionRef.current);
     setCartItems((prev) => prev.map((i) => (i.id === id ? updatedItem : i)));
   };
 
   const clearCart = () => {
-    setCartItems([]);
-    refreshQuotasAndSyncCart([]);
+    cartVersionRef.current += 1;
+    setCartVersion(cartVersionRef.current);
+    hasInitializedFromServerRef.current = true;
+    if (syncTimerRef.current) {
+      clearTimeout(syncTimerRef.current);
+      syncTimerRef.current = null;
+    }
+    applyCartState([]);
+    setSelectedItemIds([]);
+    void pushCartToServer([], currentBranchId);
   };
 
-  const changeBranch = (newBranchId: string) => {
-    if (newBranchId !== currentBranchId && cartItems.length > 0) {
-      setConfirmDialog({
-        message: "Việc đổi chi nhánh sẽ làm mới giỏ hàng hiện tại để đảm bảo tính sẵn có của món ăn. Bạn có chắc chắn muốn đổi không?",
-        onConfirm: () => {
-          clearCart();
-          setCurrentBranchId(newBranchId);
-          localStorage.setItem("currentBranchId", newBranchId);
-          localStorage.setItem("selectedBranchId", newBranchId);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent("branch-changed", { detail: { branchId: newBranchId } }));
-          }
-          setConfirmDialog(null);
-          showToast("Đã đổi chi nhánh thành công!");
-        }
-      });
-    } else {
+  const changeBranch = async (newBranchId: string) => {
+    if (newBranchId === currentBranchId) return;
+
+    if (cartItems.length === 0) {
       setCurrentBranchId(newBranchId);
       localStorage.setItem("currentBranchId", newBranchId);
       localStorage.setItem("selectedBranchId", newBranchId);
@@ -908,7 +1367,62 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         window.dispatchEvent(new CustomEvent("branch-changed", { detail: { branchId: newBranchId } }));
       }
       showToast("Đã đổi chi nhánh thành công!");
+      return;
     }
+
+    try {
+      const res = await fetch(`/api/cart/validate-switch?targetBranchId=${newBranchId}`, {
+        credentials: 'include',
+        headers: { 'ngrok-skip-browser-warning': 'true' },
+      });
+      const data = await res.json();
+      if (res.ok && data.success && data.data) {
+        if (!data.data.canSwitchDirectly && data.data.unavailableItems.length > 0) {
+          setBranchSwitchTarget(data.data.targetBranch);
+          setBranchSwitchUnavailable(data.data.unavailableItems);
+          setIsBranchSwitchModalOpen(true);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Validate branch switch check fallback:', e);
+    }
+
+    await executeBranchSwitch(newBranchId, true);
+  };
+
+  const handleConfirmBranchSwitch = async (keepUnavailable: boolean) => {
+    if (!branchSwitchTarget) return;
+    await executeBranchSwitch(branchSwitchTarget.id, keepUnavailable);
+    setIsBranchSwitchModalOpen(false);
+    setBranchSwitchTarget(null);
+    setBranchSwitchUnavailable([]);
+  };
+
+  const cancelBranchSwitch = () => {
+    setIsBranchSwitchModalOpen(false);
+    setBranchSwitchTarget(null);
+    setBranchSwitchUnavailable([]);
+  };
+
+  const executeBranchSwitch = async (newBranchId: string, keepUnavailable: boolean) => {
+    try {
+      await fetch('/api/cart/confirm-switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ branchId: newBranchId, keepUnavailable }),
+      });
+    } catch (e) {}
+
+    setCurrentBranchId(newBranchId);
+    localStorage.setItem("currentBranchId", newBranchId);
+    localStorage.setItem("selectedBranchId", newBranchId);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent("branch-changed", { detail: { branchId: newBranchId } }));
+    }
+    await syncCartWithServer(newBranchId);
+    showToast("Đã chuyển đổi chi nhánh thành công!");
   };
 
   const setVouchers = (discountVoucher: any | null, shippingVoucher: any | null) => {
@@ -1004,7 +1518,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const priceAtSale = (item.flashSalePrice || item.discountedPrice || item.price || item.salePrice) + addonsTotal;
     const originalPriceAtSale = item.price + addonsTotal;
     const optionsTextSnapshot = optionNames.length > 0 ? optionNames.join(', ') : undefined;
-    
+
     // Sort option item IDs to generate a deterministic hash, so same options get grouped together
     const optionsHash = selectedCartItemOptions.map(o => o.optionItemId).sort().join('-');
 
@@ -1026,18 +1540,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       rawProduct: item,
       note
     };
-    
+
     let branch = currentBranchId;
     if (!branch && typeof window !== 'undefined') {
       branch = localStorage.getItem('selectedBranchId') || 'AVO-Q1';
     }
-    
+
     addToCart(cartItem, branch || 'AVO-Q1');
     setOptionsModalProduct(null);
   };
 
   return (
-    <CartContext.Provider value={{ 
+    <CartContext.Provider value={{
       cartItems, cartVersion, currentBranchId, isLoaded,
       appliedVoucher, appliedDiscountVoucher, appliedShippingVoucher,
       discountAmount, shippingDiscountAmount, isRevalidatingVouchers,
@@ -1046,19 +1560,20 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       setVouchers, setDiscountVoucher, setShippingVoucher, removeDiscountVoucher, removeShippingVoucher,
       setVoucher, removeVoucher, getCartItemTotal, flashSaleQuotas, refreshQuotas,
       isBranchModalOpen, setIsBranchModalOpen, branchModalProduct, setBranchModalProduct,
-      setConfirmDialog, optionsModalProduct, setOptionsModalProduct
+      setConfirmDialog, optionsModalProduct, setOptionsModalProduct,
+      selectedItemIds, toggleSelectItem, selectAllItems, syncCartWithServer
     }}>
       {children}
 
       {/* Toast Notification (Sleek, professional floating card matching reference) */}
       {cartToast && (
-        <div 
+        <div
           className="fixed bottom-20 sm:bottom-24 left-1/2 -translate-x-1/2 z-[9999] w-[calc(100%-2rem)] max-w-[390px] sm:max-w-[420px] animate-in fade-in slide-in-from-bottom-5 duration-300 pointer-events-auto"
           role="status"
           aria-live="polite"
         >
           <div className="relative overflow-hidden bg-[#222226]/95 backdrop-blur-md text-white rounded-2xl p-3 sm:p-3.5 shadow-[0_12px_36px_rgba(0,0,0,0.55)] border border-white/10 flex items-start sm:items-center gap-3 transition-all">
-            
+
             {/* Left Icon Badge */}
             {cartToast.type === 'cart-add' || cartToast.type === 'success' ? (
               <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-[#10b981] text-white flex items-center justify-center shrink-0 shadow-sm shadow-emerald-600/30 mt-0.5 sm:mt-0">
@@ -1107,7 +1622,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Close Button */}
-            <button 
+            <button
               type="button"
               onClick={() => setCartToast(null)}
               className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors shrink-0 -mr-1 -mt-1 sm:mt-0"
@@ -1128,13 +1643,13 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             <h3 className="text-xl font-black text-slate-900 mb-3">Xác nhận</h3>
             <p className="text-slate-600 mb-6 font-medium">{confirmDialog.message}</p>
             <div className="flex gap-3">
-              <button 
+              <button
                 onClick={() => setConfirmDialog(null)}
                 className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors"
               >
                 Hủy bỏ
               </button>
-              <button 
+              <button
                 onClick={confirmDialog.onConfirm}
                 className="flex-1 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-lg shadow-red-600/30 transition-colors"
               >
@@ -1148,27 +1663,35 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       {/* Options Modal */}
       {optionsModalProduct && (
         <div className="fixed inset-0 z-[10005] flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={(e) => { e.stopPropagation(); setOptionsModalProduct(null); }}></div>
-          <div className="relative z-10 w-full sm:w-[500px] bg-white rounded-t-2xl sm:rounded-3xl shadow-2xl overflow-hidden max-h-[85vh] sm:max-h-[90vh] h-auto flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-8 duration-300" onClick={e => e.stopPropagation()}>
-            <div className="p-3 sm:p-4 border-b border-slate-100 flex items-start justify-between shrink-0">
-              <div className="flex gap-3 sm:gap-4">
-                <img src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'} className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl object-cover shadow-sm" />
-                <div>
-                  <h2 className="font-bold text-sm sm:text-lg text-slate-900 leading-tight mb-0.5 sm:mb-1">{optionsModalProduct.name}</h2>
-                  <div className="text-red-600 font-bold text-sm sm:text-base">{(optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0).toLocaleString('vi-VN')}đ</div>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-xs transition-opacity" onClick={(e) => { e.stopPropagation(); setOptionsModalProduct(null); }}></div>
+          <div className="relative z-10 w-full sm:max-w-[440px] bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] sm:max-h-[88vh] h-auto flex flex-col animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+            <div className="px-4 py-3 sm:px-5 sm:py-3.5 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/60">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={optionsModalProduct.imageUrl || optionsModalProduct.image || optionsModalProduct.images?.[0]?.url || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200'}
+                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl object-cover shadow-2xs border border-slate-200/60 shrink-0"
+                  alt={optionsModalProduct.name}
+                />
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-bold text-xs sm:text-sm text-slate-900 leading-snug truncate">{optionsModalProduct.name}</h2>
+                  <div className="text-red-600 font-black text-xs sm:text-sm font-mono mt-0.5">{(optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0).toLocaleString('vi-VN')}đ</div>
                 </div>
               </div>
-              <button onClick={() => setOptionsModalProduct(null)} className="p-1.5 sm:p-2 text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 rounded-full transition-colors mt-1 sm:mt-0">
-                <X size={18} className="sm:w-5 sm:h-5" />
+              <button
+                type="button"
+                onClick={() => setOptionsModalProduct(null)}
+                className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-slate-700 bg-white hover:bg-slate-100 rounded-full transition-colors border border-slate-200/60 shadow-2xs shrink-0 ml-2"
+              >
+                <X size={15} />
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-3 sm:p-4">
-              <AddToCartForm 
-                basePrice={optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0} 
-                optionGroups={optionsModalProduct.optionGroups || []} 
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-5">
+              <AddToCartForm
+                basePrice={optionsModalProduct.flashSalePrice || optionsModalProduct.discountedPrice || optionsModalProduct.price || optionsModalProduct.salePrice || 0}
+                optionGroups={optionsModalProduct.optionGroups || []}
                 onAddToCart={(qty, selectedOpts, totalAddons, note) => {
                   handleOptionsConfirm(qty, selectedOpts, totalAddons, note);
-                }} 
+                }}
               />
             </div>
           </div>
@@ -1187,7 +1710,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
             <p className="text-slate-500 mb-8 font-medium leading-relaxed">
               Phiên đăng nhập của bạn không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.
             </p>
-            <button 
+            <button
               onClick={() => {
                 setShowInvalidTokenModal(false);
                 router.push('/login');
@@ -1236,6 +1759,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       )}
+      {/* Branch Switch Warning Modal */}
+      <BranchSwitchModal
+        isOpen={isBranchSwitchModalOpen}
+        onClose={cancelBranchSwitch}
+        targetBranch={branchSwitchTarget}
+        unavailableItems={branchSwitchUnavailable}
+        onConfirmKeep={() => handleConfirmBranchSwitch(true)}
+        onConfirmRemove={() => handleConfirmBranchSwitch(false)}
+      />
     </CartContext.Provider>
   );
 }

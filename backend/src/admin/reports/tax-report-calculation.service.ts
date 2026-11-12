@@ -434,7 +434,10 @@ export class TaxReportCalculationService {
     }
 
     items.forEach((item, idx) => {
-      const qty = Math.max(1, Math.floor(Number(item.quantity || 1)));
+      const parsedQty = Number(item.quantity);
+      const qty = Number.isFinite(parsedQty) && parsedQty > 0
+        ? Math.max(0.001, Math.round(parsedQty * 1000) / 1000)
+        : 1;
       const unitPrice = Math.max(0, Math.round(Number(item.priceAtSale || 0)));
       const directDiscUnit = Math.max(0, Math.round(Number(item.discountAmount || 0)));
       const lineGross = Math.round(qty * unitPrice);
@@ -509,7 +512,10 @@ export class TaxReportCalculationService {
     const order = item.order;
     const product = item.product;
 
-    const quantity = Math.max(1, Math.floor(Number(item.quantity || 1)));
+    const parsedQty = Number(item.quantity);
+    const quantity = Number.isFinite(parsedQty) && parsedQty > 0
+      ? Math.max(0.001, Math.round(parsedQty * 1000) / 1000)
+      : 1;
     const unitPriceAtSale = Math.max(0, Math.round(Number(item.priceAtSale || 0)));
     const originalPriceAtSale = Math.max(
       0,

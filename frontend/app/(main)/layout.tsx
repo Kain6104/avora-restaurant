@@ -19,7 +19,7 @@ export default async function MainLayout({ children }: { children: React.ReactNo
   return (
     <>
       <Header initialCategories={categories} initialBranches={branches} initialSettings={settings} />
-      <main className="flex-1 pb-16 md:pb-0">{children}</main>
+      <main className="flex-1">{children}</main>
       <Footer />
       <BottomNav />
     </>

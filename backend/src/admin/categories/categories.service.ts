@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as ExcelJS from 'exceljs';
+import { invalidateChatbotCaches } from '../../chatbot/chatbot-cache.registry';
 
 export interface CategoryImportSummary {
   totalProcessed: number;
@@ -103,7 +104,7 @@ export class CategoriesService {
   async create(data: any) {
     const { name, slug, description, displayOrder, image } = data;
     const finalSlug = slug ? this.cleanSlug(slug) : await this.generateUniqueCategorySlug(name);
-    return this.prisma.category.create({
+    const created = await this.prisma.category.create({
       data: {
         name,
         slug: finalSlug,
@@ -112,6 +113,8 @@ export class CategoriesService {
         image,
       }
     });
+    invalidateChatbotCaches('CATEGORY', created.id);
+    return created;
   }
 
   async update(id: string, data: any) {
@@ -123,16 +126,20 @@ export class CategoriesService {
     if (displayOrder !== undefined) updateData.displayOrder = Number(displayOrder);
     if (image !== undefined) updateData.image = image;
 
-    return this.prisma.category.update({
+    const updated = await this.prisma.category.update({
       where: { id },
       data: updateData
     });
+    invalidateChatbotCaches('CATEGORY', id);
+    return updated;
   }
 
   async remove(id: string) {
-    return this.prisma.category.delete({
+    const removed = await this.prisma.category.delete({
       where: { id }
     });
+    invalidateChatbotCaches('CATEGORY', id);
+    return removed;
   }
 
   // ══════════════════════════════════════════════════════════════

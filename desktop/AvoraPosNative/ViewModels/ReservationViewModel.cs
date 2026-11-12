@@ -17,6 +17,7 @@ namespace AvoraPosNative.ViewModels
         private string? _branchId;
         private bool _isLoading;
         private string _selectedFilter = "ALL";
+        private string _searchQuery = string.Empty;
         private List<PosReservation> _allReservations = new();
 
         public ObservableCollection<PosReservation> FilteredReservations { get; } = new();
@@ -39,7 +40,22 @@ namespace AvoraPosNative.ViewModels
             }
         }
 
+        public string SearchQuery
+        {
+            get => _searchQuery;
+            set
+            {
+                if (SetProperty(ref _searchQuery, value))
+                {
+                    ApplyFilter();
+                }
+            }
+        }
+
         public int ReservationCount => FilteredReservations.Count;
+        public int ActiveReservationCount => _allReservations.Count(r => r.CanCheckIn);
+        public event Action? ReservationsUpdated;
+        public event Action<PosReservation, string>? ReservationSeated;
 
         public ICommand RefreshCommand { get; }
         public ICommand SelectFilterCommand { get; }
@@ -106,23 +122,40 @@ namespace AvoraPosNative.ViewModels
         private void ApplyFilter()
         {
             FilteredReservations.Clear();
-            var list = _selectedFilter == "ALL"
-                ? _allReservations
-                : _allReservations.Where(r => r.Status == _selectedFilter).ToList();
+            IEnumerable<PosReservation> list = _allReservations;
+
+            if (_selectedFilter != "ALL")
+            {
+                list = list.Where(r => string.Equals(r.Status, _selectedFilter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(_searchQuery))
+            {
+                string q = _searchQuery.Trim().ToLowerInvariant();
+                list = list.Where(r =>
+                    (r.CustomerName != null && r.CustomerName.ToLowerInvariant().Contains(q)) ||
+                    (r.CustomerPhone != null && r.CustomerPhone.ToLowerInvariant().Contains(q)) ||
+                    (r.ReservationCode != null && r.ReservationCode.ToLowerInvariant().Contains(q)));
+            }
 
             foreach (var r in list)
             {
                 FilteredReservations.Add(r);
             }
             OnPropertyChanged(nameof(ReservationCount));
+            OnPropertyChanged(nameof(ActiveReservationCount));
+            ReservationsUpdated?.Invoke();
         }
 
         private async Task CheckInReservationAsync(PosReservation resv)
         {
+            if (!resv.CanCheckIn) return;
+
             string? targetTableId = resv.AssignedTables?.FirstOrDefault()?.Id;
             if (string.IsNullOrEmpty(targetTableId))
             {
-                MessageBox.Show("Đặt bàn này chưa được gán bàn trong sơ đồ. Vui lòng chọn bàn trên sơ đồ để nhận khách.", "Nhận bàn", MessageBoxButton.OK, MessageBoxImage.Information);
+                Dialogs.AvoraMessageDialog.Info("Đặt bàn này chưa được gán bàn trước. Hệ thống sẽ mở Sơ đồ bàn để bạn chọn bàn trống cho khách.", "Chọn bàn phục vụ");
+                ReservationSeated?.Invoke(resv, string.Empty);
                 return;
             }
 
@@ -131,17 +164,17 @@ namespace AvoraPosNative.ViewModels
                 var res = await _apiService.CheckInReservationAsync(resv.Id, targetTableId);
                 if (res.Success)
                 {
-                    MessageBox.Show($"Đã nhận khách thành công cho bàn {resv.AssignedTableNames}!", "Nhận bàn", MessageBoxButton.OK, MessageBoxImage.Information);
                     await LoadReservationsAsync();
+                    ReservationSeated?.Invoke(resv, targetTableId);
                 }
                 else
                 {
-                    MessageBox.Show($"Không thể nhận bàn: {res.Error}", "Nhận bàn", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Dialogs.AvoraMessageDialog.Warning($"Không thể nhận bàn: {res.Error}", "Nhận bàn");
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Lỗi: {ex.Message}", "Nhận bàn", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dialogs.AvoraMessageDialog.Error($"Lỗi: {ex.Message}", "Nhận bàn");
             }
         }
     }

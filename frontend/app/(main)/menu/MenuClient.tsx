@@ -28,6 +28,7 @@ import {
   ShoppingBag as CartIcon
 } from 'lucide-react';
 import AddToCartButton from '@/components/AddToCartButton';
+import { getProductSoldCount } from '@/lib/utils/product-utils';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { toast } from 'react-hot-toast';
@@ -166,8 +167,8 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
         prods.sort((a: any, b: any) => {
           const priceA = a.flashSalePrice || a.price || 0;
           const priceB = b.flashSalePrice || b.price || 0;
-          const soldA = (a.name.length * 17) % 500 + 100;
-          const soldB = (b.name.length * 17) % 500 + 100;
+          const soldA = getProductSoldCount(a);
+          const soldB = getProductSoldCount(b);
 
           switch (sortBy) {
             case 'PRICE_ASC':
@@ -734,7 +735,7 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                                       <Zap className="w-2.5 h-2.5 text-yellow-200 fill-yellow-200" />
                                       Flash Sale
                                     </span>
-                                  ) : item.badge ? (
+                                  ) : item.badge && isNaN(Number(item.badge)) ? (
                                     <span className="bg-[#da251d] text-white text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-xs">
                                       {item.badge}
                                     </span>
@@ -779,7 +780,7 @@ export default function MenuClient({ initialCategories }: MenuClientProps) {
                                   <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                                   <span className="text-slate-300">•</span>
                                   <span className="text-slate-400">
-                                    Đã bán {(item.name.length * 17) % 500 + 100}
+                                    Đã bán {getProductSoldCount(item)}
                                   </span>
                                 </div>
                               </div>

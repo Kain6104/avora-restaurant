@@ -138,12 +138,12 @@ namespace AvoraPosNative.ViewModels
                 }
                 else
                 {
-                    MessageBox.Show($"Không thể cập nhật trạng thái món: {res.Error}", "Bếp KDS", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Dialogs.AvoraMessageDialog.Warning($"Không thể cập nhật trạng thái món: {res.Error}", "Bếp KDS");
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Lỗi: {ex.Message}", "Bếp KDS", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dialogs.AvoraMessageDialog.Error($"Lỗi: {ex.Message}", "Bếp KDS");
             }
         }
 
@@ -162,7 +162,7 @@ namespace AvoraPosNative.ViewModels
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Lỗi: {ex.Message}", "Bếp KDS", MessageBoxButton.OK, MessageBoxImage.Error);
+                Dialogs.AvoraMessageDialog.Error($"Lỗi: {ex.Message}", "Bếp KDS");
             }
         }
     }

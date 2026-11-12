@@ -70,34 +70,51 @@ export default function AddToCartForm({ basePrice, optionGroups, initialNote, on
   const totalPrice = (basePrice + addonsTotal) * quantity;
 
   return (
-    <div className="mt-2 sm:mt-6 flex flex-col flex-1">
-      
+    <div className="flex flex-col flex-1">
       {/* Option Groups */}
-      <div className="flex-1 overflow-y-auto mb-3 sm:mb-6 pr-2 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto mb-3 pr-1 custom-scrollbar space-y-3.5">
         {optionGroups?.map(group => (
-          <div key={group.id} className="mb-4 sm:mb-6">
-            <div className="flex items-center gap-2 mb-2 sm:mb-3">
-              <h3 className="font-bold text-slate-800 text-sm sm:text-lg">{group.name}</h3>
-              {group.isRequired && <span className="bg-red-50 text-red-600 text-[9px] sm:text-[10px] uppercase font-bold px-1.5 sm:px-2 py-0.5 rounded">Bắt buộc</span>}
-              {group.multipleChoice && <span className="bg-slate-100 text-slate-500 text-[9px] sm:text-[10px] uppercase font-bold px-1.5 sm:px-2 py-0.5 rounded">Chọn nhiều</span>}
+          <div key={group.id} className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <h3 className="font-bold text-slate-800 text-xs sm:text-[13px] tracking-tight">{group.name}</h3>
+                {group.isRequired && (
+                  <span className="bg-red-50 text-red-600 text-[9px] uppercase font-bold px-1.5 py-0.2 rounded border border-red-200/50">
+                    Bắt buộc
+                  </span>
+                )}
+              </div>
+              <span className="text-[10px] text-slate-400 font-medium">
+                {group.multipleChoice ? 'Chọn nhiều' : 'Chọn 1'}
+              </span>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+
+            <div className="grid grid-cols-2 gap-2">
               {group.optionItems.map(item => {
                 const isSelected = (selectedOptions[group.id] || []).includes(item.id);
                 return (
                   <button
                     key={item.id}
+                    type="button"
                     onClick={() => handleOptionToggle(group.id, item.id, group.multipleChoice)}
-                    className={`relative p-2 sm:p-3 rounded-xl border-2 text-left transition-all ${
-                      isSelected ? 'border-red-600 bg-red-50' : 'border-slate-200 hover:border-red-300 bg-white'
+                    className={`relative px-2.5 py-2 rounded-xl text-left transition-all border flex items-center justify-between gap-1.5 cursor-pointer ${
+                      isSelected 
+                        ? 'border-red-500 bg-red-50/70 text-red-700 shadow-2xs font-semibold' 
+                        : 'border-slate-200 hover:border-slate-300 bg-white text-slate-700 hover:bg-slate-50/50'
                     }`}
                   >
-                    <div className="flex justify-between items-center mb-0.5 sm:mb-1">
-                      <span className={`font-medium text-xs sm:text-base ${isSelected ? 'text-red-700' : 'text-slate-700'}`}>{item.name}</span>
-                      {isSelected && <Check className="w-3 h-3 sm:w-4 sm:h-4 text-red-600" />}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs truncate leading-snug">{item.name}</p>
+                      {item.priceAdjustment > 0 && (
+                        <p className={`text-[10px] font-mono ${isSelected ? 'text-red-600 font-bold' : 'text-slate-400'}`}>
+                          +{item.priceAdjustment.toLocaleString('vi-VN')}đ
+                        </p>
+                      )}
                     </div>
-                    {item.priceAdjustment > 0 && (
-                      <span className="text-[11px] sm:text-sm font-bold text-slate-500">+{item.priceAdjustment.toLocaleString('vi-VN')}đ</span>
+                    {isSelected && (
+                      <div className="w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center shrink-0">
+                        <Check className="w-2.5 h-2.5 stroke-[3]" />
+                      </div>
                     )}
                   </button>
                 );
@@ -107,35 +124,39 @@ export default function AddToCartForm({ basePrice, optionGroups, initialNote, on
         ))}
       </div>
 
-      <div className="mt-auto border-t border-slate-100 pt-3 sm:pt-6">
-        <div className="flex items-end justify-between mb-3 sm:mb-6">
-          <span className="text-slate-500 font-medium text-sm sm:text-base">Tạm tính:</span>
-          <span className="text-2xl sm:text-4xl font-black text-red-600">{totalPrice.toLocaleString('vi-VN')}đ</span>
+      {/* Footer cố định siêu gọn */}
+      <div className="mt-auto border-t border-slate-100 pt-3">
+        <div className="flex items-center justify-between mb-3 px-0.5">
+          <span className="text-slate-500 font-medium text-xs">Tạm tính:</span>
+          <span className="text-lg sm:text-xl font-black text-red-600 font-mono">{totalPrice.toLocaleString('vi-VN')}đ</span>
         </div>
 
         {/* Quantity & Actions */}
-        <div className="flex flex-row items-center gap-2 sm:gap-4">
-          <div className="flex items-center bg-slate-100 rounded-xl sm:rounded-2xl p-1 border border-slate-200 h-10 sm:h-14 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 border border-slate-200 h-9 sm:h-10 shrink-0">
             <button 
+              type="button"
               onClick={() => setQuantity(Math.max(1, quantity - 1))}
-              className="w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-lg sm:rounded-xl text-slate-600 shadow-sm hover:text-red-600 transition-colors"
+              className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 shadow-2xs hover:text-red-600 transition-colors"
             >
-              <Minus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Minus className="w-3.5 h-3.5 stroke-[2.5]" />
             </button>
-            <span className="w-8 sm:w-12 text-center font-bold text-slate-900 text-base sm:text-xl">{quantity}</span>
+            <span className="w-7 sm:w-8 text-center font-black text-slate-900 text-xs sm:text-sm font-mono">{quantity}</span>
             <button 
+              type="button"
               onClick={() => setQuantity(quantity + 1)}
-              className="w-8 h-8 sm:w-12 sm:h-12 flex items-center justify-center bg-white rounded-lg sm:rounded-xl text-slate-600 shadow-sm hover:text-red-600 transition-colors"
+              className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center bg-white rounded-lg text-slate-600 shadow-2xs hover:text-red-600 transition-colors"
             >
-              <Plus className="w-4 h-4 sm:w-5 sm:h-5" />
+              <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
             </button>
           </div>
 
           <button 
+            type="button"
             onClick={() => onAddToCart && onAddToCart(quantity, selectedOptions, addonsTotal, note)}
-            className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl sm:rounded-2xl font-bold h-10 sm:h-14 flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-red-600/30 transition-all hover:-translate-y-1 text-sm sm:text-base"
+            className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded-xl font-bold h-9 sm:h-10 flex items-center justify-center gap-1.5 shadow-md shadow-red-600/20 transition-all active:scale-[0.99] text-xs sm:text-sm cursor-pointer"
           >
-            <ShoppingCart className="w-4 h-4 sm:w-6 sm:h-6" /> Thêm vào giỏ
+            <ShoppingCart className="w-4 h-4" /> Thêm vào giỏ
           </button>
         </div>
       </div>

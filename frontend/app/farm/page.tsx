@@ -3,11 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import AvoraUnityFarmEmbed from './components/unity/AvoraUnityFarmEmbed';
 import FarmClientRoot from './FarmClientRoot';
 
 export default function FarmPage() {
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [useUnityMode, setUseUnityMode] = useState<boolean>(true);
 
   useEffect(() => {
     async function checkAuth() {
@@ -20,7 +22,7 @@ export default function FarmPage() {
         }
         setIsAuthenticated(true);
       } catch (e) {
-        setIsAuthenticated(true); // Cho phép fallback nếu offline hoặc có token cookie
+        setIsAuthenticated(true); // Cho phép fallback nếu offline
       }
     }
 
@@ -40,11 +42,44 @@ export default function FarmPage() {
           AVORA ENCHANTED GARDEN
         </h2>
         <p className="text-xs text-slate-400 mt-2 font-medium">
-          Đang kết nối tới hòn đảo nổi thần tiên...
+          Đang kết nối tới thế giới nông trại trên mây...
         </p>
       </div>
     );
   }
 
-  return <FarmClientRoot />;
+  return (
+    <div className="relative w-full h-full min-h-[100dvh] bg-[#0c120f]">
+      {/* Nút chuyển đổi nhanh chế độ Unity 6 / Web Canvas cổ điển */}
+      <div className="absolute top-3 right-3 z-50 flex items-center gap-2 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-full border border-amber-500/30 text-xs">
+        <span className="text-slate-300 font-medium">Chế độ:</span>
+        <button
+          onClick={() => setUseUnityMode(true)}
+          className={`px-2.5 py-1 rounded-full font-bold transition-all ${
+            useUnityMode
+              ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Unity 6 (URP 2.5D)
+        </button>
+        <button
+          onClick={() => setUseUnityMode(false)}
+          className={`px-2.5 py-1 rounded-full font-bold transition-all ${
+            !useUnityMode
+              ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/30'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Bản Web 2D
+        </button>
+      </div>
+
+      {useUnityMode ? (
+        <AvoraUnityFarmEmbed />
+      ) : (
+        <FarmClientRoot />
+      )}
+    </div>
+  );
 }

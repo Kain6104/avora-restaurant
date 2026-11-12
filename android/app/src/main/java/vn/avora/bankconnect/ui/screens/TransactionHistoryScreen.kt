@@ -56,7 +56,15 @@ fun TransactionHistoryScreen(
     var isReMatching by remember { mutableStateOf(false) }
     var isRefunding by remember { mutableStateOf(false) }
     var isSyncingFromServer by remember { mutableStateOf(false) }
+    var isCleaningUp by remember { mutableStateOf(false) }
     var showDeleteAllConfirmDialog by remember { mutableStateOf(false) }
+
+    val eligibleUnmatchedCount = remember(transactions) {
+        transactions.count { tx ->
+            tx.matchedOrderId.isNullOrBlank() &&
+                (tx.matchedStatus == null || tx.matchedStatus in listOf("UNMATCHED", "IGNORED", "DUPLICATE"))
+        }
+    }
 
     fun syncTransactionsFromServer(showFeedbackToast: Boolean = false) {
         val authHeader = authManager.getAuthHeader()
@@ -129,48 +137,110 @@ fun TransactionHistoryScreen(
     }
 
     fun handleDeleteSingleTx(tx: TransactionEntity) {
-        if (!tx.matchedOrderId.isNullOrBlank() || tx.matchedStatus == "MATCHED") {
-            Toast.makeText(context, "Không thể xóa giao dịch đã đối soát thành công với đơn hàng!", Toast.LENGTH_SHORT).show()
+        val protectedStatuses = listOf("MATCHED", "MANUALLY_MATCHED", "OVERPAID_DUPLICATE", "REVIEW_REQUIRED")
+        if (!tx.matchedOrderId.isNullOrBlank() || tx.matchedStatus in protectedStatuses) {
+            Toast.makeText(
+                context,
+                "Không thể dọn dẹp giao dịch đã khớp đơn hàng hoặc đang cần kiểm tra đối soát!",
+                Toast.LENGTH_LONG
+            ).show()
             return
         }
+        val authHeader = authManager.getAuthHeader()
+        if (authHeader == null || !authManager.isAdmin()) {
+            Toast.makeText(
+                context,
+                "Vui lòng đăng nhập quyền Quản trị viên (Admin) để thực hiện thao tác này",
+                Toast.LENGTH_SHORT
+            ).show()
+            return
+        }
+        if (isCleaningUp) return
+        isCleaningUp = true
         coroutineScope.launch {
             try {
-                val authHeader = authManager.getAuthHeader()
-                if (authHeader != null) {
-                    try {
-                        val api = NetworkClient.getApiService(context)
-                        api.deleteUnmatchedTransaction(authHeader, tx.eventId)
-                    } catch (e: Exception) {
-                        android.util.Log.w("DeleteTx", "VPS error: ${e.message}")
-                    }
+                val api = NetworkClient.getApiService(context)
+                val resp = api.deleteUnmatchedTransaction(authHeader, tx.eventId)
+                if (resp.isSuccessful && resp.body()?.success == true) {
+                    db.transactionDao().deleteSingleUnmatched(tx.eventId)
+                    selectedTx = null
+                    Toast.makeText(
+                        context,
+                        resp.body()?.message ?: "Đã dọn dẹp giao dịch chưa khớp an toàn",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else if (resp.code() == 404) {
+                    // Bản ghi chỉ có ở local cache, chưa có trên máy chủ -> dọn dẹp local an toàn
+                    db.transactionDao().deleteSingleUnmatched(tx.eventId)
+                    selectedTx = null
+                    Toast.makeText(context, "Đã dọn dẹp giao dịch chưa khớp khỏi thiết bị", Toast.LENGTH_SHORT).show()
+                } else {
+                    val errMsg = resp.errorBody()?.string()?.take(120) ?: "HTTP ${resp.code()}"
+                    Toast.makeText(context, "Từ chối dọn dẹp: $errMsg", Toast.LENGTH_LONG).show()
                 }
-                db.transactionDao().deleteSingleUnmatched(tx.eventId)
-                selectedTx = null
-                Toast.makeText(context, "Đã xóa giao dịch thành công (Đồng bộ VPS)", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                Toast.makeText(context, "Lỗi khi xóa giao dịch: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Lỗi kết nối máy chủ: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isCleaningUp = false
             }
         }
     }
 
     fun handleDeleteAllUnmatched() {
+        val authHeader = authManager.getAuthHeader()
+        if (authHeader == null || !authManager.isAdmin()) {
+            Toast.makeText(
+                context,
+                "Vui lòng đăng nhập tài khoản Quản trị viên (Admin) để dọn dẹp giao dịch chưa khớp",
+                Toast.LENGTH_LONG
+            ).show()
+            showDeleteAllConfirmDialog = false
+            return
+        }
+        if (isCleaningUp) return
+        isCleaningUp = true
         coroutineScope.launch {
             try {
-                val authHeader = authManager.getAuthHeader()
-                if (authHeader != null) {
-                    try {
-                        val api = NetworkClient.getApiService(context)
-                        api.deleteAllUnmatchedTransactions(authHeader)
-                    } catch (e: Exception) {
-                        android.util.Log.w("DeleteAllTx", "VPS batch error: ${e.message}")
+                val api = NetworkClient.getApiService(context)
+                val resp = api.deleteAllUnmatchedTransactions(authHeader)
+                if (!resp.isSuccessful || resp.body()?.success != true) {
+                    val errText = when (resp.code()) {
+                        401 -> "Phiên đăng nhập Admin đã hết hạn, vui lòng đăng nhập lại"
+                        403 -> "Tài khoản không có quyền Quản trị viên (Admin)"
+                        else -> "Lỗi máy chủ khi dọn dẹp (HTTP ${resp.code()})"
                     }
+                    Toast.makeText(context, errText, Toast.LENGTH_LONG).show()
+                    return@launch
                 }
-                val count = db.transactionDao().deleteAllUnmatched()
+
+                val body = resp.body()!!
+                if (body.archivedEventIds.isNotEmpty()) {
+                    db.transactionDao().deleteByEventIds(body.archivedEventIds)
+                }
+                val localRemoved = db.transactionDao().deleteAllUnmatched()
+                val totalCleaned = maxOf(body.count, localRemoved)
+
                 selectedTx = null
                 showDeleteAllConfirmDialog = false
-                Toast.makeText(context, "Đã dọn dẹp $count giao dịch chưa gắn đơn trên cả App và Web", Toast.LENGTH_SHORT).show()
+                syncTransactionsFromServer(showFeedbackToast = false)
+
+                if (totalCleaned > 0) {
+                    Toast.makeText(
+                        context,
+                        "Đã dọn dẹp an toàn $totalCleaned giao dịch chưa khớp (giữ nguyên các giao dịch đã khớp & cần kiểm tra)",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        context,
+                        "Không có giao dịch chưa khớp nào đủ điều kiện dọn dẹp",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
             } catch (e: Exception) {
-                Toast.makeText(context, "Lỗi dọn dẹp: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Lỗi kết nối khi dọn dẹp: ${e.message}", Toast.LENGTH_LONG).show()
+            } finally {
+                isCleaningUp = false
             }
         }
     }
@@ -314,7 +384,7 @@ fun TransactionHistoryScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Slate50)
+            .background(Color.White)
     ) {
         // 1. Enterprise Top Header
         AvoraTopHeader(
@@ -324,6 +394,7 @@ fun TransactionHistoryScreen(
                 // Nút Đồng bộ dữ liệu từ VPS
                 IconButton(
                     onClick = { syncTransactionsFromServer(showFeedbackToast = true) },
+                    enabled = !isSyncingFromServer,
                     modifier = Modifier.size(38.dp)
                 ) {
                     if (isSyncingFromServer) {
@@ -336,23 +407,49 @@ fun TransactionHistoryScreen(
                         Icon(
                             imageVector = Icons.Default.Refresh,
                             contentDescription = "Đồng bộ từ máy chủ",
-                            tint = Slate700,
-                            modifier = Modifier.size(22.dp)
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
 
-                // Nút Dọn dẹp giao dịch không gắn đơn
+                // Nút Dọn dẹp giao dịch chưa khớp
                 IconButton(
                     onClick = { showDeleteAllConfirmDialog = true },
+                    enabled = !isCleaningUp,
                     modifier = Modifier.size(38.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.DeleteSweep,
-                        contentDescription = "Dọn dẹp giao dịch chưa khớp",
-                        tint = Slate600,
-                        modifier = Modifier.size(22.dp)
-                    )
+                    if (isCleaningUp) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = AvoraRedPrimary
+                        )
+                    } else {
+                        BadgedBox(
+                            badge = {
+                                if (eligibleUnmatchedCount > 0) {
+                                    Badge(
+                                        containerColor = AvoraRedPrimary,
+                                        contentColor = Color.White
+                                    ) {
+                                        Text(
+                                            text = eligibleUnmatchedCount.toString(),
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DeleteSweep,
+                                contentDescription = "Dọn dẹp giao dịch chưa khớp",
+                                tint = if (eligibleUnmatchedCount > 0) AvoraRedPrimary else TextSecondary,
+                                modifier = Modifier.size(21.dp)
+                            )
+                        }
+                    }
                 }
 
                 // Nút Bộ Lọc Nâng Cao có Badge số lượng
@@ -474,8 +571,8 @@ fun TransactionHistoryScreen(
                             .clickable { selectedTx = tx },
                         shape = RoundedCornerShape(12.dp),
                         colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 0.5.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Slate200)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                     ) {
                         Row(
                             modifier = Modifier
@@ -622,28 +719,89 @@ fun TransactionHistoryScreen(
     // Dialog xác nhận dọn dẹp toàn bộ giao dịch chưa khớp
     if (showDeleteAllConfirmDialog) {
         AlertDialog(
-            onDismissRequest = { showDeleteAllConfirmDialog = false },
+            onDismissRequest = { if (!isCleaningUp) showDeleteAllConfirmDialog = false },
             containerColor = Color.White,
-            titleContentColor = Slate900,
-            textContentColor = Slate700,
-            shape = RoundedCornerShape(16.dp),
+            titleContentColor = TextPrimary,
+            textContentColor = TextSecondary,
+            shape = RoundedCornerShape(14.dp),
             tonalElevation = 0.dp,
-            title = { Text("Dọn dẹp giao dịch chưa khớp?", fontWeight = FontWeight.Bold) },
-            text = { Text("Hành động này sẽ xóa toàn bộ các bản ghi biến động số dư chưa được khớp với bất kỳ đơn hàng nào (bao gồm giao dịch bỏ qua, trùng lặp hoặc chưa đối soát). Bạn có chắc chắn muốn xóa?") },
+            title = {
+                Text(
+                    "Dọn dẹp giao dịch chưa khớp?",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.5.sp,
+                    color = TextPrimary
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Thao tác này sẽ lưu trữ/ẩn an toàn các giao dịch chưa gắn đơn hàng (UNMATCHED, IGNORED, DUPLICATE) khỏi danh sách hiển thị:",
+                        fontSize = 12.5.sp,
+                        color = TextSecondary,
+                        lineHeight = 18.sp
+                    )
+                    Surface(
+                        color = Color.White,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "• Số giao dịch đủ điều kiện trên máy: $eligibleUnmatchedCount",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                            Text(
+                                text = "• Giữ nguyên 100% giao dịch đã khớp đơn (MATCHED) và giao dịch cần kiểm tra đối soát (REVIEW_REQUIRED).",
+                                fontSize = 11.5.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                            Text(
+                                text = "• Không xóa dữ liệu tài chính gốc hay lịch sử thanh toán đơn hàng.",
+                                fontSize = 11.5.sp,
+                                color = TextSecondary,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 Button(
-                    onClick = {
-                        showDeleteAllConfirmDialog = false
-                        handleDeleteAllUnmatched()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626))
+                    onClick = { handleDeleteAllUnmatched() },
+                    enabled = !isCleaningUp,
+                    colors = ButtonDefaults.buttonColors(containerColor = AvoraRedPrimary),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Xác nhận xóa", color = Color.White)
+                    if (isCleaningUp) {
+                        CircularProgressIndicator(
+                            color = Color.White,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Đang dọn dẹp...", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    } else {
+                        Text("Xác nhận dọn dẹp", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showDeleteAllConfirmDialog = false }) {
-                    Text("Hủy", color = Slate700)
+                if (!isCleaningUp) {
+                    OutlinedButton(
+                        onClick = { showDeleteAllConfirmDialog = false },
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
+                    ) {
+                        Text("Hủy", color = TextPrimary)
+                    }
                 }
             }
         )
@@ -670,10 +828,10 @@ fun TransactionHistoryScreen(
                 ) {
                     Text(
                         text = "Chi tiết biến động số dư",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Slate900)
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextPrimary)
                     )
                     IconButton(onClick = { selectedTx = null }) {
-                        Icon(Icons.Default.Close, contentDescription = "Đóng", tint = Slate500)
+                        Icon(Icons.Default.Close, contentDescription = "Đóng", tint = TextSecondary)
                     }
                 }
                 Spacer(modifier = Modifier.height(8.dp))
@@ -694,14 +852,14 @@ fun TransactionHistoryScreen(
                     text = "RAW NOTIFICATION TEXT",
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Slate500,
+                    color = TextSecondary,
                     letterSpacing = 0.5.sp
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Surface(
-                    color = Slate50,
+                    color = Color.White,
                     shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight),
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable { copyToClipboard(tx.rawText ?: "", "Raw Notification") }
@@ -711,7 +869,7 @@ fun TransactionHistoryScreen(
                         modifier = Modifier.padding(8.dp),
                         fontSize = 11.sp,
                         fontFamily = FontFamily.Monospace,
-                        color = Slate700
+                        color = TextPrimary
                     )
                 }
 

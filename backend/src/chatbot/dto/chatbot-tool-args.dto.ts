@@ -110,6 +110,11 @@ export class ProductLookupArgsDto {
   @MinLength(2)
   @MaxLength(160)
   productName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  branchId?: string;
 }
 
 export class AddToCartArgsDto extends ProductLookupArgsDto {
@@ -259,6 +264,12 @@ export class OptionalBranchArgsDto {
   @IsString()
   @MaxLength(100)
   branchId?: string;
+
+  @IsOptional()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  @Min(0)
+  @Max(100_000_000)
+  orderValue?: number;
 }
 
 export class ApplyVoucherArgsDto {
@@ -473,10 +484,18 @@ export class HandoffToHumanArgsDto {
   reason!: string;
 }
 
+export class GetRestaurantInfoArgsDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  topic?: string;
+}
+
 export const CHATBOT_TOOL_DTO_BY_NAME = {
   listBranches: ListBranchesArgsDto,
   getBranchDetail: BranchLookupArgsDto,
   findNearestBranch: FindNearestBranchArgsDto,
+  getRestaurantInfo: GetRestaurantInfoArgsDto,
   searchMenu: SearchMenuArgsDto,
   getProductDetail: ProductLookupArgsDto,
   listCategories: EmptyToolArgsDto,

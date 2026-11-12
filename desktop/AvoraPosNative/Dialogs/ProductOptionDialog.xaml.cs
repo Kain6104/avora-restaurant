@@ -21,6 +21,7 @@ namespace AvoraPosNative.Dialogs
         public ProductOptionDialog(PosProduct product, string? existingNote = null)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             _product = product;
             FinalUnitPrice = product.EffectivePrice;
 
@@ -197,7 +198,7 @@ namespace AvoraPosNative.Dialogs
 
                     if (!selected)
                     {
-                        MessageBox.Show($"Vui lòng chọn tùy chọn cho nhóm: {group.Name}", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        AvoraMessageDialog.Warning($"Vui lòng chọn tùy chọn cho nhóm: {group.Name}", "Thông báo");
                         return;
                     }
                 }

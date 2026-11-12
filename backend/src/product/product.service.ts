@@ -9,7 +9,11 @@ export class ProductService {
   async getSearchSuggestions() {
     // Top searches: using top sold items' names as a proxy for top searches
     const topProducts = await this.prisma.product.findMany({
-      where: { available: true },
+      where: { 
+        available: true,
+        id: { notIn: ['prod-ai-meal-architect'] },
+        slug: { notIn: ['ai-meal-architect', 'sys-ai-meal-architect-hidden'] }
+      },
       orderBy: { soldQuantity: 'desc' },
       take: 7,
       select: { name: true }
@@ -22,6 +26,7 @@ export class ProductService {
     const hotDealCandidates = await this.prisma.product.findMany({
       where: { 
         available: true,
+        id: { notIn: ['prod-ai-meal-architect'] },
         oldPrice: { gt: this.prisma.product.fields.price } // valid if using Prisma 5.2+ field ref, but safer to do a raw query or just fetch those with oldPrice not null
       },
       include: {
@@ -52,7 +57,7 @@ export class ProductService {
     }));
 
     const products = await this.prisma.product.findMany({
-      where: { available: true, AND: searchConditions },
+      where: { available: true, id: { notIn: ['prod-ai-meal-architect'] }, AND: searchConditions },
       include: { 
         branches: { select: { id: true, name: true } }, 
         category: true,
@@ -86,7 +91,12 @@ export class ProductService {
     limit: string = '20',
     branchId?: string
   ) {
-    let whereClause: any = { available: true };
+    let whereClause: any = { 
+      available: true,
+      id: { notIn: ['prod-ai-meal-architect'] },
+      slug: { notIn: ['ai-meal-architect', 'sys-ai-meal-architect-hidden'] },
+      category: { slug: { not: 'system-hidden' } },
+    };
     
     if (query) {
       const searchTerms = query.trim().split(/\s+/);
@@ -155,7 +165,12 @@ export class ProductService {
       }));
 
       const allMatchingProducts = await this.prisma.product.findMany({
-        where: { available: true, AND: searchConditions },
+        where: { 
+          available: true, 
+          id: { notIn: ['prod-ai-meal-architect'] },
+          slug: { notIn: ['ai-meal-architect', 'sys-ai-meal-architect-hidden'] },
+          AND: searchConditions 
+        },
         select: { categoryId: true },
         distinct: ['categoryId']
       });
@@ -178,24 +193,39 @@ export class ProductService {
   }
 
   async getProductById(id: string, branchId?: string) {
-    let whereClause: any = { id };
-    if (branchId) {
-      whereClause.branches = { some: { id: branchId } };
-    }
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const identifierCondition = isUuid ? { OR: [{ id }, { slug: id }] } : { slug: id };
 
-    const product = await this.prisma.product.findFirst({
-      where: whereClause,
+    let product = await this.prisma.product.findFirst({
+      where: {
+        ...identifierCondition,
+        ...(branchId ? { branches: { some: { id: branchId } } } : {}),
+      },
       include: {
         optionGroups: {
           include: {
-            optionItems: true
-          }
-        }
-      }
+            optionItems: true,
+          },
+        },
+      },
     });
 
     if (!product) {
-      throw new NotFoundException(branchId ? `Sản phẩm không có sẵn ở chi nhánh này` : `Product with id ${id} not found`);
+      // Fallback: nếu chi nhánh cụ thể không map trực tiếp thì nạp theo mã món hoặc slug
+      product = await this.prisma.product.findFirst({
+        where: identifierCondition,
+        include: {
+          optionGroups: {
+            include: {
+              optionItems: true,
+            },
+          },
+        },
+      });
+    }
+
+    if (!product) {
+      throw new NotFoundException(`Product with id or slug ${id} not found`);
     }
 
     const [enrichedProduct] = await this.promotionService.enrichProductsWithFlashSale([product]);
@@ -221,6 +251,9 @@ export class ProductService {
   }
 
   async getProductDetails(categorySlug: string, productSlug: string, branchId?: string) {
+    if (productSlug === 'ai-meal-architect' || productSlug === 'prod-ai-meal-architect') {
+      throw new NotFoundException('Món ăn tùy chỉnh vui lòng truy cập tại /meal-architect');
+    }
     let category = await this.prisma.category.findUnique({
       where: { slug: categorySlug }
     });
@@ -247,8 +280,6 @@ export class ProductService {
 
       if (product && product.category) {
         category = product.category;
-      } else if (!product) {
-        throw new NotFoundException(`Product with slug or id "${productSlug}" not found`);
       }
     } else {
       product = await this.prisma.product.findFirst({
@@ -290,13 +321,69 @@ export class ProductService {
     }
 
     if (!product) {
+      // Tertiary fallback: check if productSlug has pattern 'san-pham-100-xyz' or 'PRD-100'
+      const spMatch = productSlug.match(/san-pham-(\d+)/i);
+      if (spMatch) {
+        const itemNum = parseInt(spMatch[1], 10);
+        const itemCodePadded = `PRD-${itemNum.toString().padStart(3, '0')}`;
+        const itemCodeRaw = `PRD-${itemNum}`;
+
+        product = await this.prisma.product.findFirst({
+          where: {
+            OR: [
+              { itemCode: itemCodePadded },
+              { itemCode: itemCodeRaw },
+              { slug: { contains: `san-pham-${itemNum}` } }
+            ],
+            available: true
+          },
+          include: {
+            category: true,
+            branches: { select: { id: true } },
+            optionGroups: {
+              include: {
+                optionItems: true
+              }
+            }
+          }
+        });
+
+        if (product && product.category) {
+          category = product.category;
+        }
+      }
+    }
+
+    if (!product) {
+      // Quaternary fallback: strip trailing hash from productSlug (e.g. slug-8r7hbq -> slug)
+      const cleanSlug = productSlug.replace(/-[a-z0-9]{5,8}$/i, '');
+      if (cleanSlug && cleanSlug !== productSlug) {
+        product = await this.prisma.product.findFirst({
+          where: { slug: cleanSlug, available: true },
+          include: {
+            category: true,
+            branches: { select: { id: true } },
+            optionGroups: {
+              include: {
+                optionItems: true
+              }
+            }
+          }
+        });
+        if (product && product.category) {
+          category = product.category;
+        }
+      }
+    }
+
+    if (!product || product.id === 'prod-ai-meal-architect' || product.slug === 'ai-meal-architect' || product.slug === 'sys-ai-meal-architect-hidden') {
       throw new NotFoundException(`Product with slug ${productSlug} not found`);
     }
 
     const targetCategoryId = category?.id || product.categoryId;
     const relatedWhere: any = {
       categoryId: targetCategoryId,
-      id: { not: product.id },
+      id: { notIn: [product.id, 'prod-ai-meal-architect'] },
       available: true
     };
     
@@ -316,9 +403,53 @@ export class ProductService {
     const [enrichedProduct] = await this.promotionService.enrichProductsWithFlashSale([product]);
     const enrichedRelatedDishes = await this.promotionService.enrichProductsWithFlashSale(relatedDishes);
 
+    // Lấy danh sách bài viết nhắc đến món ăn này
+    let relatedArticles = await this.prisma.article.findMany({
+      where: {
+        status: 'PUBLISHED',
+        OR: [
+          { products: { some: { productId: product.id } } },
+          { title: { contains: product.name } },
+          { excerpt: { contains: product.name } },
+        ],
+      },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        thumbnailUrl: true,
+        excerpt: true,
+        articleType: true,
+        publishedAt: true,
+        viewCount: true,
+      },
+      take: 4,
+      orderBy: { publishedAt: 'desc' },
+    });
+
+    // Fallback: nếu món ăn chưa có bài viết riêng thì lấy 3 bài viết cẩm nang ẩm thực mới nhất
+    if (!relatedArticles || relatedArticles.length === 0) {
+      relatedArticles = await this.prisma.article.findMany({
+        where: { status: 'PUBLISHED' },
+        select: {
+          id: true,
+          title: true,
+          slug: true,
+          thumbnailUrl: true,
+          excerpt: true,
+          articleType: true,
+          publishedAt: true,
+          viewCount: true,
+        },
+        take: 3,
+        orderBy: { publishedAt: 'desc' },
+      });
+    }
+
     return {
       product: enrichedProduct,
-      relatedDishes: enrichedRelatedDishes
+      relatedDishes: enrichedRelatedDishes,
+      relatedArticles,
     };
   }
 }

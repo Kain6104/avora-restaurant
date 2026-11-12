@@ -15,6 +15,7 @@ import { SubmitQrRoundDto } from './dto/submit-qr-round.dto';
 import { CreateServiceRequestDto } from './dto/service-request.dto';
 import { MemberLookupDto, MemberVerifyDto, RedeemRewardDto } from './dto/member-actions.dto';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
+import { Throttle } from '@nestjs/throttler';
 
 @Controller('qr-order')
 export class QrOrderController {
@@ -53,11 +54,13 @@ export class QrOrderController {
   }
 
   @Post(':token/member/lookup')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   async lookupMember(@Body() dto: MemberLookupDto) {
     return this.qrOrderService.lookupMember(dto);
   }
 
   @Post(':token/member/verify')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
   async verifyMember(
     @Param('token') token: string,
     @Body() dto: MemberVerifyDto,
@@ -76,6 +79,7 @@ export class QrOrderController {
   }
 
   @Post(':token/rounds')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
   async submitRound(
     @Param('token') token: string,
     @Body() dto: SubmitQrRoundDto,
@@ -84,6 +88,7 @@ export class QrOrderController {
   }
 
   @Post(':token/service-requests')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async createServiceRequest(
     @Param('token') token: string,
     @Body() dto: CreateServiceRequestDto,

@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Body,
   Query,
   Param,
@@ -15,6 +16,7 @@ import { ReservationService } from './reservation.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { UpdatePreOrderedItemsDto } from './dto/update-preorder.dto';
 import {
   UpdateReservationCustomerDto,
   CancelReservationDto,
@@ -165,4 +167,42 @@ export class ReservationController {
       data,
     };
   }
+
+  /**
+   * Lấy thực đơn các món ăn phục vụ dùng tại quán (DINE_IN) để đặt trước
+   */
+  @Get('dine-in-menu')
+  async getDineInMenu(@Query('branchId') branchId?: string) {
+    const data = await this.reservationService.getDineInMenu(branchId);
+    return {
+      success: true,
+      data,
+    };
+  }
+
+  /**
+   * Cập nhật món đặt trước cho bàn (Thêm, Xóa, Sửa món trước giờ hẹn ít nhất 30 phút)
+   */
+  @UseGuards(OptionalJwtAuthGuard)
+  @Patch(':id/pre-order-items')
+  async updatePreOrderedItems(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: UpdatePreOrderedItemsDto,
+  ) {
+    const userId = req.user?.id;
+    const userRole = req.user?.role?.name || req.user?.role;
+    const data = await this.reservationService.updatePreOrderedItems(
+      id,
+      dto,
+      userId,
+      userRole,
+    );
+    return {
+      success: true,
+      message: 'Cập nhật món đặt trước thành công',
+      data,
+    };
+  }
+
 }

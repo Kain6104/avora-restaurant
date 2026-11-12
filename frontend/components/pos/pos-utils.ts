@@ -134,6 +134,31 @@ export function getCartLineIdentity(item: {
 }
 
 /**
+ * Kiểm tra xem đơn vị tính có phải dạng cân nặng (Kg) cho phép nhập số thập phân hay không
+ */
+export function isWeightUnit(unit?: string | null): boolean {
+  const norm = (unit || '').trim().toLowerCase();
+  return norm === 'kg' || norm === 'kilogram' || norm === 'kilôgam' || norm === 'ký' || norm === 'kí';
+}
+
+/**
+ * Chuẩn hóa số lượng POS tới tối đa 3 chữ số thập phân (tránh lỗi sai số dấu phẩy động)
+ */
+export function normalizePosQty(qty: number): number {
+  const num = Number(qty);
+  if (!Number.isFinite(num) || num <= 0) return 0;
+  return Math.round(num * 1000) / 1000;
+}
+
+/**
+ * Định dạng hiển thị số lượng trên POS gọn sạch (VD: 0.3 -> "0.3", 2.000 -> "2")
+ */
+export function formatPosQty(qty: number): string {
+  const normalized = normalizePosQty(qty);
+  return String(normalized);
+}
+
+/**
  * Kiểm tra xem đơn hàng có phải đơn trực tuyến (Web, Online, Chatbot, Voice) không
  */
 export function isOnlineOrder(

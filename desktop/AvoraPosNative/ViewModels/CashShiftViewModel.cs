@@ -92,16 +92,16 @@ namespace AvoraPosNative.ViewModels
                     if (res.Success && res.Shift != null)
                     {
                         CurrentShift = res.Shift;
-                        MessageBox.Show($"Mở ca làm việc thành công! Số tiền đầu ca: {res.Shift.OpeningBalance:N0}đ", "Mở ca", MessageBoxButton.OK, MessageBoxImage.Information);
+                        Dialogs.AvoraMessageDialog.Success($"Mở ca làm việc thành công! Số tiền đầu ca: {res.Shift.OpeningBalance:N0}đ", "Mở ca");
                     }
                     else
                     {
-                        MessageBox.Show($"Không thể mở ca: {res.Error}", "Mở ca", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        Dialogs.AvoraMessageDialog.Warning($"Không thể mở ca: {res.Error}", "Mở ca");
                     }
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Lỗi: {ex.Message}", "Mở ca", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Dialogs.AvoraMessageDialog.Error($"Lỗi: {ex.Message}", "Mở ca");
                 }
             });
 
@@ -116,30 +116,30 @@ namespace AvoraPosNative.ViewModels
                     decimal diff = actualCash - expected;
 
                     string diffText = diff >= 0 ? $"+{diff:N0}đ (Dư)" : $"{diff:N0}đ (Thiếu)";
-                    var confirm = MessageBox.Show(
+                    var confirm = Dialogs.AvoraMessageDialog.Confirm(
                         $"Tổng kiểm đếm: {actualCash:N0}đ\nTiền dự kiến: {expected:N0}đ\nChênh lệch: {diffText}\n\nXác nhận đóng ca và in phiếu kiểm kê?",
                         "Xác nhận đóng ca",
-                        MessageBoxButton.YesNo,
-                        MessageBoxImage.Question);
+                        "Đóng ca",
+                        "Bỏ qua");
 
-                    if (confirm == MessageBoxResult.Yes)
+                    if (confirm)
                     {
                         try
                         {
                             var res = await _apiService.CloseShiftAsync(CurrentShift.Id, actualCash, $"Kiểm đếm két: {diffText}");
                             if (res.Success)
                             {
-                                MessageBox.Show("Đã đóng ca làm việc thành công!", "Đóng ca", MessageBoxButton.OK, MessageBoxImage.Information);
+                                Dialogs.AvoraMessageDialog.Success("Đã đóng ca làm việc thành công!", "Đóng ca");
                                 await LoadShiftAsync();
                             }
                             else
                             {
-                                MessageBox.Show($"Không thể đóng ca: {res.Error}", "Đóng ca", MessageBoxButton.OK, MessageBoxImage.Warning);
+                                Dialogs.AvoraMessageDialog.Warning($"Không thể đóng ca: {res.Error}", "Đóng ca");
                             }
                         }
                         catch (Exception ex)
                         {
-                            MessageBox.Show($"Lỗi: {ex.Message}", "Đóng ca", MessageBoxButton.OK, MessageBoxImage.Error);
+                            Dialogs.AvoraMessageDialog.Error($"Lỗi: {ex.Message}", "Đóng ca");
                         }
                     }
                 }
@@ -163,11 +163,11 @@ namespace AvoraPosNative.ViewModels
                         await _apiService.OpenCashDrawerAsync(_branchId, "Thu ngân yêu cầu mở két tiền qua POS Native");
                     }
 
-                    MessageBox.Show("Đã gửi lệnh bật két tiền thành công!", "Két tiền", MessageBoxButton.OK, MessageBoxImage.Information);
+                    Dialogs.AvoraMessageDialog.Success("Đã gửi lệnh bật két tiền thành công!", "Két tiền");
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"Lỗi mở két: {ex.Message}", "Két tiền", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Dialogs.AvoraMessageDialog.Error($"Lỗi mở két: {ex.Message}", "Két tiền");
                 }
             });
         }

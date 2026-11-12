@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsInt, Min, Max, IsOptional, IsEmail, Matches, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsInt, Min, Max, IsOptional, IsEmail, Matches, IsEnum, IsArray, IsNumber } from 'class-validator';
 import { ReservationSource } from '@prisma/client';
 
 export class CreateReservationDto {
@@ -51,4 +51,12 @@ export class CreateReservationDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+
+  @IsOptional()
+  @IsArray()
+  preOrderedItems?: any[];
+
+  @IsOptional()
+  @IsNumber()
+  preOrderTotal?: number;
 }

@@ -16,11 +16,12 @@ import {
 } from './pos-types';
 import { usePosSocket } from './usePosSocket';
 import { usePosShortcuts } from './usePosShortcuts';
-import { removeVietnameseTones, getCartLineIdentity, isOnlineOrder } from './pos-utils';
+import { removeVietnameseTones, getCartLineIdentity, isOnlineOrder, isWeightUnit, normalizePosQty } from './pos-utils';
 import { PosSettingsDrawer } from './PosSettingsDrawer';
 import { EndOfDayReportModal } from './EndOfDayReportModal';
 import { PosUpdateModal } from './PosUpdateModal';
 import { platformBridge, UpdateManifestInfo } from '@/lib/platform/platform-bridge';
+import { clearAuthSession } from '@/lib/auth';
 import { NumericKeypadModal } from './NumericKeypadModal';
 import { GuestCountModal } from './GuestCountModal';
 import { ItemDetailModal } from './ItemDetailModal';
@@ -30,6 +31,7 @@ import { ProductGrid } from './ProductGrid';
 import { ProductOptionModal } from './ProductOptionModal';
 import { OrderCart } from './OrderCart';
 import { PaymentModal } from './PaymentModal';
+import { SepaySuccessModal, SepaySuccessModalData } from './SepaySuccessModal';
 import { TableMap } from './TableMap';
 import { OrdersListPanel } from './OrdersListPanel';
 import { ReservationPanel } from './ReservationPanel';
@@ -79,6 +81,7 @@ import {
   UserCheck,
   ListCollapse,
   Tag,
+  Clock,
 } from 'lucide-react';
 import { printAgent } from '@/lib/print-agent';
 import { ReprintLabelsModal } from './ReprintLabelsModal';
@@ -87,6 +90,116 @@ import { PosMobileNoticeModal } from './PosMobileNoticeModal';
 import { PosDesktopLaunchModal } from './PosDesktopLaunchModal';
 import { PosWebBlocker } from './PosWebBlocker';
 import { useDesktopUx } from './useDesktopUx';
+
+/**
+ * Ánh xạ và cố định thứ tự món trong giỏ hàng POS:
+ * 1. Giữ nguyên 100% vị trí các món đã có từ previousCart (món 1 luôn ở vị trí 1, món 2 ở vị trí 2...)
+ * 2. Đối với món mới thêm hoặc đơn hàng tải lần đầu từ CSDL, sắp xếp ổn định tăng dần theo createdAt
+ */
+function mapAndSortOrderItemsToCart(rawOrderItems: any[], previousCart: PosCartItem[] = []): PosCartItem[] {
+  if (!rawOrderItems || !Array.isArray(rawOrderItems) || rawOrderItems.length === 0) {
+    return [];
+  }
+
+  const mapped: PosCartItem[] = rawOrderItems.map((oi: any) => {
+    const isSent =
+      oi.kitchenStatus === 'SENT' ||
+      oi.kitchenStatus === 'ACKNOWLEDGED' ||
+      oi.kitchenStatus === 'PREPARING' ||
+      oi.kitchenStatus === 'READY' ||
+      oi.kitchenStatus === 'SERVED';
+    const sentQty = oi.sentQuantity !== undefined ? Number(oi.sentQuantity) : isSent ? Number(oi.quantity) : 0;
+    const printedQty = oi.printedQuantity !== undefined ? Number(oi.printedQuantity) : sentQty;
+
+    const optionsAdj = (oi.selectedOptions || []).reduce(
+      (s: number, so: any) => s + Number(so.priceAdjustmentAtSale || 0),
+      0,
+    );
+    const derivedCustomPrice = oi.product?.allowOpenPriceOnPos
+      ? Math.max(0, Number(oi.priceAtSale) - optionsAdj)
+      : undefined;
+
+    return {
+      id: oi.id,
+      productId: oi.productId,
+      product: oi.product,
+      quantity: normalizePosQty(Number(oi.quantity)) || Number(oi.quantity),
+      priceAtSale: oi.priceAtSale,
+      originalPriceAtSale: oi.originalPriceAtSale,
+      customPrice: derivedCustomPrice,
+      discountAmount: oi.discountAmount || 0,
+      discountReason: oi.discountReason || undefined,
+      note: oi.note || undefined,
+      optionsTextSnapshot: oi.optionsTextSnapshot || undefined,
+      selectedOptions: (oi.selectedOptions || []).map((so: any) => ({
+        optionItemId: so.optionItemId,
+        nameAtSale: so.nameAtSale,
+        priceAdjustmentAtSale: so.priceAdjustmentAtSale,
+      })),
+      stationId: oi.stationId || undefined,
+      kitchenStatus: oi.kitchenStatus as any,
+      sentToKitchenAt: oi.sentToKitchenAt,
+      sentQuantity: sentQty,
+      savedQuantity: Number(oi.quantity),
+      printedQuantity: printedQty,
+      orderedById: (oi as any).orderedById || undefined,
+      orderedByName: (oi as any).orderedByName || undefined,
+      createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : undefined,
+      pricingMode: oi.pricingMode || 'REGULAR',
+      buffetSessionId: oi.buffetSessionId || null,
+      buffetPackageId: oi.buffetPackageId || null,
+      buffetPackageNameSnapshot: oi.buffetPackageNameSnapshot || null,
+      buffetReferencePriceSnapshot: oi.buffetReferencePriceSnapshot || undefined,
+      source: oi.source || 'POS',
+    };
+  });
+
+  // Bảo toàn thứ tự danh sách món:
+  if (previousCart && previousCart.length > 0) {
+    const prevOrderMap = new Map<string, number>();
+    previousCart.forEach((item, idx) => {
+      if (item.id) {
+        prevOrderMap.set(item.id, idx);
+      }
+      const lineKey = `${item.productId}::${(item.selectedOptions || []).map((o) => o.optionItemId).sort().join('|')}::${(item.note || '').trim().toLowerCase()}`;
+      if (!prevOrderMap.has(lineKey)) {
+        prevOrderMap.set(lineKey, idx);
+      }
+    });
+
+    mapped.sort((a, b) => {
+      const aKey = `${a.productId}::${(a.selectedOptions || []).map((o) => o.optionItemId).sort().join('|')}::${(a.note || '').trim().toLowerCase()}`;
+      const bKey = `${b.productId}::${(b.selectedOptions || []).map((o) => o.optionItemId).sort().join('|')}::${(b.note || '').trim().toLowerCase()}`;
+
+      const aPos = (a.id && prevOrderMap.has(a.id)) ? prevOrderMap.get(a.id)! : (prevOrderMap.has(aKey) ? prevOrderMap.get(aKey)! : -1);
+      const bPos = (b.id && prevOrderMap.has(b.id)) ? prevOrderMap.get(b.id)! : (prevOrderMap.has(bKey) ? prevOrderMap.get(bKey)! : -1);
+
+      if (aPos >= 0 && bPos >= 0) {
+        return aPos - bPos;
+      }
+      if (aPos >= 0) return -1;
+      if (bPos >= 0) return 1;
+
+      // Món mới phát sinh chưa có trong previousCart sẽ xếp theo thời gian tạo createdAt
+      const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      if (timeA !== timeB) return timeA - timeB;
+      return (a.id || '').localeCompare(b.id || '');
+    });
+
+    return mapped;
+  }
+
+  // Tải lần đầu từ database: Xếp tăng dần theo createdAt (món thêm trước ở trên đầu #1)
+  mapped.sort((a, b) => {
+    const timeA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const timeB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    if (timeA !== timeB) return timeA - timeB;
+    return (a.id || '').localeCompare(b.id || '');
+  });
+
+  return mapped;
+}
 
 export const PosShell: React.FC = () => {
   const router = useRouter();
@@ -119,9 +232,55 @@ export const PosShell: React.FC = () => {
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [isLoadingTables, setIsLoadingTables] = useState(false);
 
+  // Tab memory: return to the originating tab when exiting an order
+  const originTabRef = useRef<PosActiveTab>('TABLES');
+  const loadOrderIntoPosRef = useRef<(order: PosOrder | null, tableFallback?: PosTable | null) => void>(() => {});
+
+  useEffect(() => {
+    if (activeTab !== 'SALE') {
+      originTabRef.current = activeTab;
+    }
+  }, [activeTab]);
+
+  const returnToOriginTab = useCallback(() => {
+    loadOrderIntoPosRef.current(null);
+    const dest = originTabRef.current || 'TABLES';
+    setActiveTab(dest === 'SALE' ? 'TABLES' : dest);
+  }, []);
+
   // View Mode: 'grid' (Visual Grid) | 'fast' (Fast POS Buttons)
   const [viewMode, setViewMode] = useState<'grid' | 'fast'>('grid');
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Dark Mode State with local storage persistence
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedDark = localStorage.getItem('avora_pos_dark_mode');
+      if (savedDark === 'true') {
+        setIsDarkMode(true);
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  }, []);
+
+  const handleToggleDarkMode = () => {
+    setIsDarkMode((prev) => {
+      const next = !prev;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('avora_pos_dark_mode', String(next));
+        if (next) {
+          document.documentElement.classList.add('dark');
+        } else {
+          document.documentElement.classList.remove('dark');
+        }
+      }
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -219,6 +378,8 @@ export const PosShell: React.FC = () => {
   // Modals
   const [selectedOptionProduct, setSelectedOptionProduct] = useState<PosProduct | null>(null);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [sepaySuccessData, setSepaySuccessData] = useState<SepaySuccessModalData | null>(null);
+  const [isSepaySuccessModalOpen, setIsSepaySuccessModalOpen] = useState(false);
   const [isCancelOrderModalOpen, setIsCancelOrderModalOpen] = useState(false);
   const [isCancellingOrder, setIsCancellingOrder] = useState(false);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -262,6 +423,12 @@ export const PosShell: React.FC = () => {
 
   const [lastSyncedAt, setLastSyncedAt] = useState<Date>(new Date());
   const [keypadItem, setKeypadItem] = useState<PosCartItem | null>(null);
+  const [keypadAddContext, setKeypadAddContext] = useState<{
+    product: PosProduct;
+    pricingMode: 'REGULAR' | 'BUFFET_TICKET' | 'BUFFET_INCLUDED';
+    buffetSessionId?: string | null;
+    buffetPackageId?: string | null;
+  } | null>(null);
 
   // Key Guard: Block F12 & DevTools (Ctrl + Zoom is explicitly allowed per user request)
   useEffect(() => {
@@ -333,6 +500,18 @@ export const PosShell: React.FC = () => {
           (it.discountReason?.includes('đổi điểm') || it.discountReason?.includes('Đổi điểm')),
       ),
   );
+
+  // BANK GATEWAY TELEMETRY & OVERPAID ALERTS (Feature 3 & 5)
+  const [bankGatewayBatteryAlert, setBankGatewayBatteryAlert] = useState<{
+    batteryLevel: number;
+    message: string;
+  } | null>(null);
+  const [overpaidDuplicateAlert, setOverpaidDuplicateAlert] = useState<{
+    orderCode: string;
+    tableName?: string;
+    overpaidAmount: number;
+    message: string;
+  } | null>(null);
 
   // -------------------------------------------------------------------------
   // CONCURRENCY & MULTI-TAB LOCK (Chỉ 1 tab POS hoạt động)
@@ -453,6 +632,7 @@ export const PosShell: React.FC = () => {
     } catch {
       // Ignore network errors on logout
     }
+    clearAuthSession();
     setCurrentUser(null);
     if (!platformBridge.isDesktop) {
       toast.success('Đã kết thúc phiên làm việc POS');
@@ -841,12 +1021,37 @@ export const PosShell: React.FC = () => {
   const fetchReservationsCount = useCallback(
     async (branchId: string) => {
       try {
-        const res = await fetch(`${baseUrl}/api/pos/reservations?branchId=${branchId}`, {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const res = await fetch(`${baseUrl}/api/pos/reservations?branchId=${branchId}&date=${todayStr}`, {
           credentials: 'include',
         });
         const json = await res.json();
         if (json.success && Array.isArray(json.data)) {
-          setReservationsCount(json.data.length);
+          const now = new Date();
+          const currentHours = now.getHours();
+          const currentMinutes = now.getMinutes();
+          const currentMinutesTotal = currentHours * 60 + currentMinutes;
+
+          const upcomingReservations = json.data.filter((r: any) => {
+            // Không tính các đặt bàn đã huỷ, đã ngồi bàn, đã hoàn thành hoặc khách không đến
+            if (['CANCELLED', 'SEATED', 'COMPLETED', 'NO_SHOW'].includes(r.status)) return false;
+
+            const rDate = new Date(r.reservationDate);
+            const todayMidnight = new Date();
+            todayMidnight.setHours(0, 0, 0, 0);
+            const rDateMidnight = new Date(rDate);
+            rDateMidnight.setHours(0, 0, 0, 0);
+
+            if (rDateMidnight.getTime() > todayMidnight.getTime()) return true;
+            if (rDateMidnight.getTime() < todayMidnight.getTime()) return false;
+
+            // Cùng ngày hôm nay: chỉ đếm các đặt bàn từ giờ hiện tại trở về sau
+            const timeParts = String(r.reservationTime || '').split(':');
+            const resMinutes = (parseInt(timeParts[0], 10) || 0) * 60 + (parseInt(timeParts[1], 10) || 0);
+            return resMinutes >= currentMinutesTotal;
+          });
+
+          setReservationsCount(upcomingReservations.length);
         }
       } catch (e) {
         console.error('Failed to fetch reservations count:', e);
@@ -1036,10 +1241,25 @@ export const PosShell: React.FC = () => {
       }
 
       const { orderId, tableName, printPayloads, sender } = payload;
+
+      // Không in lặp nếu chính client POS này đã gửi lệnh qua HTTP
+      if (sender?.userId && currentUser?.id && sender.userId === currentUser.id) {
+        return;
+      }
+
       let printedSuccess = 0;
+      const seenVirtualPrinters = new Set<string>();
 
       for (const p of printPayloads) {
         if (!p.printerName || !p.htmlContent) continue;
+
+        // Chống spam mở đồng thời nhiều hộp thoại Save As trên máy in ảo
+        const isVirtual = /(pdf|onenote|xps|fax|print to)/i.test(p.printerName);
+        if (isVirtual) {
+          const lowerName = p.printerName.toLowerCase();
+          if (seenVirtualPrinters.has(lowerName)) continue;
+          seenVirtualPrinters.add(lowerName);
+        }
         const jobIds = p.printJobIds || (p.printJobId ? [p.printJobId] : []);
         const printKey = p.idempotencyKey || (jobIds.length > 0 ? jobIds.join('_') : `${p.printerName}_${p.purpose}_${p.htmlContent?.substring(0, 50)}`);
         if (!shouldProcessPrintKey(printKey)) {
@@ -1126,6 +1346,8 @@ export const PosShell: React.FC = () => {
     [baseUrl, currentBranch, fetchKitchenTickets, isTabLocked],
   );
 
+  const handleOrderPaymentSucceededRef = useRef<(payload: any) => void>(() => {});
+
   const { connectionStatus, emitHealthStatus } = usePosSocket({
     branchId: currentBranch?.id,
     cashierId: currentUser?.id,
@@ -1136,6 +1358,12 @@ export const PosShell: React.FC = () => {
     onTableStatusChanged: handleSocketTableStatusChanged,
     onKitchenTicketNew: handleSocketKitchenTicket,
     onProductAvailabilityChanged: handleSocketProductAvailability,
+    onPaymentCompleted: (payload) => {
+      handleOrderPaymentSucceededRef.current(payload);
+    },
+    onOrderPaid: (payload) => {
+      handleOrderPaymentSucceededRef.current(payload);
+    },
     onAccessRevoked: (payload) => {
       if (!payload?.userId || payload.userId === currentUser?.id) {
         setAccessDeniedModal({
@@ -1151,6 +1379,26 @@ export const PosShell: React.FC = () => {
           title: 'Buộc đăng xuất từ xa',
           message: payload?.reason || 'Phiên làm việc POS của bạn đã bị ngắt kết nối từ xa bởi quản trị viên.',
           countdown: 5,
+        });
+      }
+    },
+    onBankDeviceHealthUpdate: (payload) => {
+      if (payload && typeof payload.batteryLevel === 'number') {
+        if (payload.batteryLevel <= 20 && !payload.isCharging) {
+          setBankGatewayBatteryAlert({
+            batteryLevel: payload.batteryLevel,
+            message: `🔌 Điện thoại trạm thu Ngân hàng đang yếu pin (${payload.batteryLevel}%), vui lòng cắm sạc ngay để không gián đoạn quét QR!`,
+          });
+        } else {
+          setBankGatewayBatteryAlert(null);
+        }
+      }
+    },
+    onOverpaidDuplicateAlert: (payload) => {
+      if (payload) {
+        setOverpaidDuplicateAlert(payload);
+        toast.error(`⚠️ ${payload.message || `Khách chuyển trùng tiền đơn #${payload.orderCode}!`}`, {
+          duration: 10000,
         });
       }
     },
@@ -1199,14 +1447,31 @@ export const PosShell: React.FC = () => {
     buffetSessionId?: string | null,
     buffetPackageId?: string | null,
     source: 'POS' | 'WAITER' | 'QR_ORDER' = 'POS',
+    customUnitPrice?: number,
   ) => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online chỉ được phép xem, không được thêm món!');
       return;
     }
+    if (currentOrder?.paymentStatus === 'AWAITING_PAYMENT') {
+      toast.error('Đơn hàng đang chờ xác nhận chuyển khoản (đã giải phóng bàn), không thể thêm món mới!');
+      return;
+    }
+    const safeQty = normalizePosQty(quantity) || 1;
     const extraPrice = selectedOptions.reduce((sum, o) => sum + o.priceAdjustmentAtSale, 0);
-    // Base product is 0đ for BUFFET_INCLUDED, but option surcharges are preserved
-    const basePrice = pricingMode === 'BUFFET_INCLUDED' ? 0 : product.effectivePrice;
+    // Base product is 0đ for BUFFET_INCLUDED, or customUnitPrice if open-price enabled on POS
+    const hasCustomBasePrice =
+      pricingMode !== 'BUFFET_INCLUDED' &&
+      Boolean(product.allowOpenPriceOnPos) &&
+      customUnitPrice !== undefined &&
+      Number.isFinite(customUnitPrice) &&
+      customUnitPrice >= 0;
+    const basePrice =
+      pricingMode === 'BUFFET_INCLUDED'
+        ? 0
+        : hasCustomBasePrice
+          ? Math.round(customUnitPrice!)
+          : product.effectivePrice;
     const finalPrice = basePrice + extraPrice;
     const cleanNote = note?.trim() || undefined;
 
@@ -1234,7 +1499,7 @@ export const PosShell: React.FC = () => {
 
       if (targetIdx >= 0) {
         return prevItems.map((it, idx) =>
-          idx === targetIdx ? { ...it, quantity: it.quantity + quantity } : it,
+          idx === targetIdx ? { ...it, quantity: normalizePosQty(it.quantity + safeQty) } : it,
         );
       }
 
@@ -1243,9 +1508,10 @@ export const PosShell: React.FC = () => {
         id: `item-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         productId: product.id,
         product,
-        quantity,
+        quantity: safeQty,
         priceAtSale: finalPrice,
         originalPriceAtSale: product.price + extraPrice,
+        customPrice: hasCustomBasePrice ? Math.round(customUnitPrice!) : undefined,
         taxPercentageAtSale:
           (product as any).taxPercentage !== undefined && (product as any).taxPercentage !== null
             ? Number((product as any).taxPercentage)
@@ -1293,6 +1559,10 @@ export const PosShell: React.FC = () => {
       toast.error('Đơn hàng Online chỉ được phép xem, không được thêm món!');
       return;
     }
+    if (currentOrder?.paymentStatus === 'AWAITING_PAYMENT') {
+      toast.error('Đơn hàng đang chờ xác nhận chuyển khoản (đã giải phóng bàn), không thể thêm món mới!');
+      return;
+    }
 
     // 1. Check if selected product is a Buffet Ticket
     if (product.isBuffetTicket) {
@@ -1325,6 +1595,10 @@ export const PosShell: React.FC = () => {
     if (product.optionGroups && product.optionGroups.length > 0) {
       setPendingPricingMode('REGULAR');
       setSelectedOptionProduct(product);
+    } else if (isWeightUnit(product.unit) || product.allowOpenPriceOnPos) {
+      setKeypadItem(null);
+      setKeypadAddContext({ product, pricingMode: 'REGULAR' });
+      setIsKeypadOpen(true);
     } else {
       addItemToCart(product, 1, [], undefined, 'REGULAR');
       focusAndSelectSearch();
@@ -1343,6 +1617,15 @@ export const PosShell: React.FC = () => {
     if (product.optionGroups && product.optionGroups.length > 0) {
       setPendingPricingMode(mode);
       setSelectedOptionProduct(product);
+    } else if (mode !== 'BUFFET_INCLUDED' && (isWeightUnit(product.unit) || product.allowOpenPriceOnPos)) {
+      setKeypadItem(null);
+      setKeypadAddContext({
+        product,
+        pricingMode: mode,
+        buffetSessionId: null,
+        buffetPackageId: null,
+      });
+      setIsKeypadOpen(true);
     } else {
       addItemToCart(
         product,
@@ -1367,9 +1650,14 @@ export const PosShell: React.FC = () => {
       priceAdjustmentAtSale: number;
     }[],
     note?: string,
+    customUnitPrice?: number,
   ) => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online chỉ được phép xem, không được thêm món!');
+      return;
+    }
+    if (currentOrder?.paymentStatus === 'AWAITING_PAYMENT') {
+      toast.error('Đơn hàng đang chờ xác nhận chuyển khoản (đã giải phóng bàn), không thể thêm món mới!');
       return;
     }
     const activeBuffet =
@@ -1387,6 +1675,7 @@ export const PosShell: React.FC = () => {
       isBuffet ? activeBuffet?.id : null,
       isBuffet ? activeBuffet?.buffetPackageId : null,
       'POS',
+      customUnitPrice,
     );
     setSelectedOptionProduct(null);
     setPendingPricingMode('REGULAR');
@@ -1419,7 +1708,8 @@ export const PosShell: React.FC = () => {
       !isCancelOrderModalOpen &&
       !isGuestCountModalOpen &&
       !isReprintLabelsModalOpen &&
-      !isSettingsDrawerOpen
+      !isSettingsDrawerOpen &&
+      !isKeypadOpen
     ) {
       const timer = setTimeout(() => {
         const active = document.activeElement;
@@ -1444,6 +1734,7 @@ export const PosShell: React.FC = () => {
     isGuestCountModalOpen,
     isReprintLabelsModalOpen,
     isSettingsDrawerOpen,
+    isKeypadOpen,
   ]);
 
   // Khi chuyển vào tab SALE (vào bất kỳ đơn hàng nào) hoặc đổi đơn hàng / đổi bàn, tự động làm mới & xóa sạch ô tìm kiếm
@@ -1471,7 +1762,7 @@ export const PosShell: React.FC = () => {
     prevTableIdRef.current = selectedTable?.id || null;
   }, [currentOrder?.id, selectedTable?.id]);
 
-  const handleUpdateItemQuantity = (id: string, qty: number) => {
+  const handleUpdateItemQuantity = (id: string, qty: number, customUnitPrice?: number) => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online chỉ được phép xem, không được sửa món!');
       return;
@@ -1479,7 +1770,8 @@ export const PosShell: React.FC = () => {
     const item = cartItems.find((it) => it.id === id);
     if (!item) return;
 
-    if (qty <= 0) {
+    const cleanQty = normalizePosQty(qty);
+    if (cleanQty <= 0) {
       handleRemoveCartItem(id);
       return;
     }
@@ -1487,12 +1779,25 @@ export const PosShell: React.FC = () => {
     setCartItems((prev) =>
       prev.map((it) => {
         if (it.id !== id) return it;
-        // Cho phép giảm/tăng số lượng tự do, cập nhật lại sentQuantity/printedQuantity tương ứng
-        const newSent = it.sentQuantity !== undefined ? Math.min(it.sentQuantity, qty) : undefined;
-        const newPrinted = it.printedQuantity !== undefined ? Math.min(it.printedQuantity, qty) : undefined;
+        const newSent = it.sentQuantity !== undefined ? Math.min(it.sentQuantity, cleanQty) : undefined;
+        const newPrinted = it.printedQuantity !== undefined ? Math.min(it.printedQuantity, cleanQty) : undefined;
+        const optAdj = (it.selectedOptions || []).reduce(
+          (s, o) => s + Number(o.priceAdjustmentAtSale || 0),
+          0,
+        );
+        const canOverridePrice =
+          Boolean(it.product?.allowOpenPriceOnPos) &&
+          it.pricingMode !== 'BUFFET_INCLUDED' &&
+          customUnitPrice !== undefined &&
+          Number.isFinite(customUnitPrice) &&
+          customUnitPrice >= 0;
+        const nextCustomPrice = canOverridePrice ? Math.round(customUnitPrice!) : it.customPrice;
+        const nextPriceAtSale = canOverridePrice ? nextCustomPrice! + optAdj : it.priceAtSale;
         return {
           ...it,
-          quantity: qty,
+          quantity: cleanQty,
+          customPrice: nextCustomPrice,
+          priceAtSale: nextPriceAtSale,
           sentQuantity: newSent,
           printedQuantity: newPrinted,
         };
@@ -1605,44 +1910,12 @@ export const PosShell: React.FC = () => {
       setOrderDiscount(null);
     }
 
-    setCartItems(
-      (order.orderItems || []).map((oi: any) => {
-        const isSent = oi.kitchenStatus === 'SENT' || oi.kitchenStatus === 'ACKNOWLEDGED' || oi.kitchenStatus === 'PREPARING' || oi.kitchenStatus === 'READY' || oi.kitchenStatus === 'SERVED';
-        const sentQty = oi.sentQuantity !== undefined ? Number(oi.sentQuantity) : isSent ? Number(oi.quantity) : 0;
-        const printedQty = oi.printedQuantity !== undefined ? Number(oi.printedQuantity) : sentQty;
-
-        return {
-          id: oi.id,
-          productId: oi.productId,
-          product: oi.product,
-          quantity: oi.quantity,
-          priceAtSale: oi.priceAtSale,
-          originalPriceAtSale: oi.originalPriceAtSale,
-          discountAmount: oi.discountAmount || 0,
-          discountReason: oi.discountReason || undefined,
-          note: oi.note || undefined,
-          optionsTextSnapshot: oi.optionsTextSnapshot || undefined,
-          selectedOptions: (oi.selectedOptions || []).map((so: any) => ({
-            optionItemId: so.optionItemId,
-            nameAtSale: so.nameAtSale,
-            priceAdjustmentAtSale: so.priceAdjustmentAtSale,
-          })),
-          stationId: oi.stationId || undefined,
-          kitchenStatus: oi.kitchenStatus as any,
-          sentToKitchenAt: oi.sentToKitchenAt,
-          sentQuantity: sentQty,
-          savedQuantity: Number(oi.quantity),
-          printedQuantity: printedQty,
-          orderedById: (oi as any).orderedById || undefined,
-          orderedByName: (oi as any).orderedByName || undefined,
-          createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (order.createdAt ? new Date(order.createdAt).toISOString() : undefined),
-        };
-      }),
-    );
+    setCartItems(mapAndSortOrderItemsToCart(order.orderItems || []));
 
     setIsDetailMode(false);
     setSearchQuery('');
   }, []);
+  loadOrderIntoPosRef.current = loadOrderIntoPos;
 
   const handleClearCart = () => {
     loadOrderIntoPos(null);
@@ -1904,6 +2177,7 @@ export const PosShell: React.FC = () => {
 
   // Select Table from Map
   const handleSelectTableFromMap = (table: PosTable) => {
+    originTabRef.current = 'TABLES';
     const existing = table.currentOrder ? branchOrders.find((o) => o.id === table.currentOrder?.id) : null;
     loadOrderIntoPos(existing || null, table);
     toast.success(`Đã chọn bàn: ${table.name}`, { duration: 1200, id: `tbl-${table.id}` });
@@ -1920,10 +2194,6 @@ export const PosShell: React.FC = () => {
     }
     if (isOnlineOrder(currentOrder)) {
       return currentOrder;
-    }
-    if (cartItems.length === 0 && !currentOrder?.id) {
-      toast.error('Giỏ hàng đang trống! Vui lòng chọn món trước khi lưu đơn.');
-      return null;
     }
 
     setIsSavingOrder(true);
@@ -1953,10 +2223,11 @@ export const PosShell: React.FC = () => {
             discountReason: orderDiscount?.discountReason || undefined,
             discountType: orderDiscount?.discountType,
             discountPercent: orderDiscount?.discountPercent,
-            items: cartItems.map((it) => ({
+            items: cartItems.map((it, idx) => ({
               id: it.id && !it.id.startsWith('item-') ? it.id : undefined,
               productId: it.productId,
-              quantity: it.quantity,
+              quantity: normalizePosQty(it.quantity) || it.quantity,
+              customPrice: it.customPrice,
               note: it.note,
               selectedOptionIds: it.selectedOptions.map((so) => so.optionItemId),
               discountAmount: it.discountAmount || 0,
@@ -1968,7 +2239,7 @@ export const PosShell: React.FC = () => {
               source: it.source || 'POS',
               orderedById: it.orderedById,
               orderedByName: it.orderedByName,
-              createdAt: it.createdAt,
+              createdAt: it.createdAt || new Date(Date.now() + idx * 50).toISOString(),
             })),
           }),
         });
@@ -1980,55 +2251,22 @@ export const PosShell: React.FC = () => {
 
         setCurrentOrder(json.data);
         if (json.data.orderItems) {
-          setCartItems(
-            json.data.orderItems.map((oi: any) => {
-              const isSent = oi.kitchenStatus === 'SENT' || oi.kitchenStatus === 'ACKNOWLEDGED' || oi.kitchenStatus === 'PREPARING' || oi.kitchenStatus === 'READY' || oi.kitchenStatus === 'SERVED';
-              const sentQty = oi.sentQuantity !== undefined ? Number(oi.sentQuantity) : isSent ? Number(oi.quantity) : 0;
-              const printedQty = oi.printedQuantity !== undefined ? Number(oi.printedQuantity) : sentQty;
-
-              return {
-                id: oi.id,
-                productId: oi.productId,
-                product: oi.product,
-                quantity: oi.quantity,
-                priceAtSale: oi.priceAtSale,
-                originalPriceAtSale: oi.originalPriceAtSale,
-                discountAmount: oi.discountAmount || 0,
-                discountReason: oi.discountReason || undefined,
-                note: oi.note || undefined,
-                optionsTextSnapshot: oi.optionsTextSnapshot || undefined,
-                selectedOptions: (oi.selectedOptions || []).map((so: any) => ({
-                  optionItemId: so.optionItemId,
-                  nameAtSale: so.nameAtSale,
-                  priceAdjustmentAtSale: so.priceAdjustmentAtSale,
-                })),
-                stationId: oi.stationId || undefined,
-                kitchenStatus: oi.kitchenStatus as any,
-                sentToKitchenAt: oi.sentToKitchenAt,
-                sentQuantity: sentQty,
-                savedQuantity: Number(oi.quantity),
-                printedQuantity: printedQty,
-                orderedById: (oi as any).orderedById || undefined,
-                orderedByName: (oi as any).orderedByName || undefined,
-                createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
-                pricingMode: oi.pricingMode || 'REGULAR',
-                buffetSessionId: oi.buffetSessionId || null,
-                buffetPackageId: oi.buffetPackageId || null,
-                buffetPackageNameSnapshot: oi.buffetPackageNameSnapshot || null,
-                buffetReferencePriceSnapshot: oi.buffetReferencePriceSnapshot || undefined,
-                source: oi.source || 'POS',
-              };
-            }),
-          );
+          setCartItems(mapAndSortOrderItemsToCart(json.data.orderItems, cartItems));
         }
 
         if (!silent) {
-          toast.success(`Đã lưu đơn mới [${json.data.orderCode}]!`, {
+          const savedCode = json.data.orderCode || json.data.temporaryOrderCode || 'Nháp';
+          toast.success(`Đã lưu đơn mới [${savedCode}]!`, {
             icon: <Save className="w-4 h-4 text-emerald-500" />,
           });
+          fetchOrdersSnapshot(currentBranch.id);
+          fetchTables(currentBranch.id);
+        } else {
+          setTimeout(() => {
+            fetchOrdersSnapshot(currentBranch.id);
+            fetchTables(currentBranch.id);
+          }, 30);
         }
-        fetchOrdersSnapshot(currentBranch.id);
-        fetchTables(currentBranch.id);
         return json.data;
       } else {
         // Case 2: Update Existing Order with Concurrency Lock
@@ -2037,10 +2275,11 @@ export const PosShell: React.FC = () => {
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
           body: JSON.stringify({
-            items: cartItems.map((it) => ({
+            items: cartItems.map((it, idx) => ({
               id: it.id && !it.id.startsWith('item-') ? it.id : undefined,
               productId: it.productId,
-              quantity: it.quantity,
+              quantity: normalizePosQty(it.quantity) || it.quantity,
+              customPrice: it.customPrice,
               note: it.note,
               selectedOptionIds: it.selectedOptions.map((so) => so.optionItemId),
               discountAmount: it.discountAmount || 0,
@@ -2052,7 +2291,7 @@ export const PosShell: React.FC = () => {
               source: it.source || 'POS',
               orderedById: it.orderedById,
               orderedByName: it.orderedByName,
-              createdAt: it.createdAt,
+              createdAt: it.createdAt || new Date(Date.now() + idx * 50).toISOString(),
             })),
             guestCount,
             customerName,
@@ -2085,44 +2324,7 @@ export const PosShell: React.FC = () => {
 
         setCurrentOrder(json.data);
         if (json.data.orderItems && json.data.orderItems.length > 0) {
-          setCartItems(
-            json.data.orderItems.map((oi: any) => {
-              const isSent = oi.kitchenStatus === 'SENT' || oi.kitchenStatus === 'ACKNOWLEDGED' || oi.kitchenStatus === 'PREPARING' || oi.kitchenStatus === 'READY' || oi.kitchenStatus === 'SERVED';
-              const sentQty = oi.sentQuantity !== undefined ? Number(oi.sentQuantity) : isSent ? Number(oi.quantity) : 0;
-              const printedQty = oi.printedQuantity !== undefined ? Number(oi.printedQuantity) : sentQty;
-
-              return {
-                id: oi.id,
-                productId: oi.productId,
-                product: oi.product,
-                quantity: oi.quantity,
-                priceAtSale: oi.priceAtSale,
-                originalPriceAtSale: oi.originalPriceAtSale,
-                note: oi.note || undefined,
-                optionsTextSnapshot: oi.optionsTextSnapshot || undefined,
-                selectedOptions: (oi.selectedOptions || []).map((so: any) => ({
-                  optionItemId: so.optionItemId,
-                  nameAtSale: so.nameAtSale,
-                  priceAdjustmentAtSale: so.priceAdjustmentAtSale,
-                })),
-                stationId: oi.stationId || undefined,
-                kitchenStatus: oi.kitchenStatus as any,
-                sentToKitchenAt: oi.sentToKitchenAt,
-                sentQuantity: sentQty,
-                savedQuantity: Number(oi.quantity),
-                printedQuantity: printedQty,
-                orderedById: (oi as any).orderedById || undefined,
-                orderedByName: (oi as any).orderedByName || undefined,
-                createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
-                pricingMode: oi.pricingMode || 'REGULAR',
-                buffetSessionId: oi.buffetSessionId || null,
-                buffetPackageId: oi.buffetPackageId || null,
-                buffetPackageNameSnapshot: oi.buffetPackageNameSnapshot || null,
-                buffetReferencePriceSnapshot: oi.buffetReferencePriceSnapshot || undefined,
-                source: oi.source || 'POS',
-              };
-            }),
-          );
+          setCartItems(mapAndSortOrderItemsToCart(json.data.orderItems, cartItems));
         } else {
           setCartItems([]);
         }
@@ -2136,9 +2338,14 @@ export const PosShell: React.FC = () => {
               icon: <Save className="w-4 h-4 text-emerald-500" />,
             },
           );
+          fetchOrdersSnapshot(currentBranch.id);
+          fetchTables(currentBranch.id);
+        } else {
+          setTimeout(() => {
+            fetchOrdersSnapshot(currentBranch.id);
+            fetchTables(currentBranch.id);
+          }, 30);
         }
-        fetchOrdersSnapshot(currentBranch.id);
-        fetchTables(currentBranch.id);
         return json.data;
       }
     } catch (e: any) {
@@ -2198,8 +2405,17 @@ export const PosShell: React.FC = () => {
         // Phát lệnh in âm thầm tới máy in Bếp/Bar và Tem nhãn qua Print Agent Local
         const payloads = sendJson.data?.printPayloads || [];
         if (Array.isArray(payloads) && payloads.length > 0) {
+          const seenVirtualPrinters = new Set<string>();
           for (const p of payloads) {
             if (p.printerName && p.htmlContent) {
+              // Chống spam mở đồng thời nhiều hộp thoại Save As trên máy in ảo
+              const isVirtual = /(pdf|onenote|xps|fax|print to)/i.test(p.printerName);
+              if (isVirtual) {
+                const lowerName = p.printerName.toLowerCase();
+                if (seenVirtualPrinters.has(lowerName)) continue;
+                seenVirtualPrinters.add(lowerName);
+              }
+
               const jobIds: string[] = p.printJobIds || (p.printJobId ? [p.printJobId] : []);
               const printKey = p.idempotencyKey || (jobIds.length > 0 ? jobIds.join('_') : `${p.printerName}_${p.purpose}_${p.htmlContent?.substring(0, 50)}`);
               if (!shouldProcessPrintKey(printKey)) {
@@ -2415,6 +2631,9 @@ export const PosShell: React.FC = () => {
     }
   };
 
+  // Ref chống spam click lệnh in hóa đơn / tạm tính
+  const isPrintingBillRef = useRef(false);
+
   // In Tạm Tính (Pro-forma Bill / Temp Bill) - Tự động lưu đơn trước, gửi thẳng lệnh in tới máy in hóa đơn/tạm tính, BỎ HOÀN TOÀN modal xem trước
   const handlePrintTempBill = async (
     customQrUrl?: string,
@@ -2441,7 +2660,32 @@ export const PosShell: React.FC = () => {
         ? 'đơn hàng online'
         : 'phiếu tạm tính';
 
+    // 1. Chống duplicate và spam click trong vòng 3 giây
+    const printKey = `bill-${orderId || 'new'}-${printType}`;
+    if (!shouldProcessPrintKey(printKey)) {
+      toast('Lệnh in đang được máy in xử lý, vui lòng chờ trong giây lát!', {
+        icon: <Clock className="w-4 h-4 text-amber-500" />,
+      });
+      return;
+    }
+
+    if (isPrintingBillRef.current) {
+      return;
+    }
+    isPrintingBillRef.current = true;
+
+    // 2. Tôn trọng cấu hình số liên in (copies) theo đúng mục đích - Phiếu tạm tính cố định 1 bản
+    const targetCopies = Math.max(
+      1,
+      Number(
+        printType === 'RECEIPT'
+          ? (branchPrintSettings.find((s) => s.purpose === 'RECEIPT')?.copies || currentBranch?.receiptCopies || 1)
+          : (branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.copies || 1)
+      ) || 1
+    );
+
     const targetPrinter =
+      (printType === 'RECEIPT' ? branchPrintSettings.find((s) => s.purpose === 'RECEIPT')?.printerName : undefined) ||
       (isOnline ? branchPrintSettings.find((s) => s.purpose === 'ONLINE_ORDER')?.printerName : undefined) ||
       branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.printerName ||
       branchPrintSettings.find((s) => s.purpose === 'RECEIPT')?.printerName ||
@@ -2449,25 +2693,27 @@ export const PosShell: React.FC = () => {
       'Xprinter XP-350B';
 
     const targetPaperSize = (
+      (printType === 'RECEIPT' ? branchPrintSettings.find((s) => s.purpose === 'RECEIPT')?.paperSize : undefined) ||
       (isOnline ? branchPrintSettings.find((s) => s.purpose === 'ONLINE_ORDER')?.paperSize : undefined) ||
       branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.paperSize ||
       currentBranch?.defaultPaperSize ||
       '80mm'
     ) as '80mm' | '58mm';
 
-    const targetCopies =
-      (isOnline ? branchPrintSettings.find((s) => s.purpose === 'ONLINE_ORDER')?.copies : undefined) ||
-      branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.copies || 1;
-
     try {
-      // Luôn lưu đơn trước khi in để đảm bảo ghi chú và thay đổi số lượng được lưu DB
-      if (!isOnline) {
+      // Chỉ lưu đơn trước khi in nếu chưa hoàn tất thanh toán (RECEIPT hoặc đơn COMPLETED không cần lưu lại)
+      const isAlreadyCompleted =
+        targetOrder?.status === 'COMPLETED' ||
+        targetOrder?.paymentStatus === 'PAID' ||
+        overridePrintType === 'RECEIPT';
+
+      if (!isOnline && !isAlreadyCompleted) {
         const saved = await handleSaveOrder(true);
         if (saved?.id) {
           setCurrentOrder(saved);
           orderId = saved.id;
         }
-      } else if (!orderId) {
+      } else if (!orderId && !isOnline) {
         const saved = await handleSaveOrder(true);
         if (saved?.id) {
           setCurrentOrder(saved);
@@ -2480,7 +2726,20 @@ export const PosShell: React.FC = () => {
         return;
       }
 
-      const qrParam = customQrUrl ? `&qrPayload=${encodeURIComponent(customQrUrl)}` : '';
+      // Tự động chèn mã QR chuyển khoản VietQR nếu in tạm tính và chưa có customQrUrl (Directive 6)
+      let resolvedQrUrl = customQrUrl;
+      if (!resolvedQrUrl && (printType === 'TEMP_BILL' || !overridePrintType)) {
+        const orderCodeForQr = targetOrder?.orderCode || targetOrder?.temporaryOrderCode || (orderId ? orderId.slice(0, 10) : 'AVORA');
+        const calculatedTotal =
+          cartItems.reduce(
+            (sum, it) => sum + Math.max(0, it.priceAtSale - (it.discountAmount || 0)) * it.quantity,
+            0,
+          ) - (orderDiscount?.discountAmount || currentOrder?.discountAmount || 0);
+        const amountForQr = targetOrder?.totalAmount || currentOrder?.totalAmount || Math.max(0, calculatedTotal);
+        resolvedQrUrl = `https://qr.sepay.vn/img?acc=1019224767&bank=VCB&amount=${amountForQr}&des=${encodeURIComponent(orderCodeForQr)}`;
+      }
+
+      const qrParam = resolvedQrUrl ? `&qrPayload=${encodeURIComponent(resolvedQrUrl)}` : '';
       const paperSizeParam = targetPaperSize ? `&paperSize=${encodeURIComponent(targetPaperSize)}` : '';
       const res = await fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=${printType}${qrParam}${paperSizeParam}`, {
         credentials: 'include',
@@ -2496,15 +2755,15 @@ export const PosShell: React.FC = () => {
         htmlContent: html,
         paperSize: targetPaperSize || data.data?.paperSize || '80mm',
         copies: targetCopies,
-        idempotencyKey: `tempbill-${orderId}-${Date.now()}`,
+        idempotencyKey: `print-${orderId}-${printType}-${Math.floor(Date.now() / 4000)}`,
         receiptPayload: data.data?.receiptPayload,
       });
 
       if (agentRes.success) {
         toast.success(
           customQrUrl
-            ? `Đã in ${typeLabel} & mã QR!`
-            : `Đã in ${typeLabel}!`,
+            ? `Đã in ${typeLabel} & mã QR (${targetCopies} bản)!`
+            : `Đã in ${typeLabel} (${targetCopies} bản)!`,
           { icon: <Printer className="w-4 h-4 text-emerald-500" /> }
         );
       } else {
@@ -2512,6 +2771,10 @@ export const PosShell: React.FC = () => {
       }
     } catch (err: any) {
       toast.error(err.message || `Không thể in ${typeLabel}`);
+    } finally {
+      setTimeout(() => {
+        isPrintingBillRef.current = false;
+      }, 1500);
     }
   };
 
@@ -2533,7 +2796,8 @@ export const PosShell: React.FC = () => {
             customerPhone,
             items: cartItems.map((it) => ({
               productId: it.productId,
-              quantity: it.quantity,
+              quantity: normalizePosQty(it.quantity) || it.quantity,
+              customPrice: it.customPrice,
               note: it.note,
               selectedOptionIds: it.selectedOptions.map((so) => so.optionItemId),
               pricingMode: it.pricingMode || 'REGULAR',
@@ -2662,7 +2926,8 @@ export const PosShell: React.FC = () => {
             discountReason: orderDiscount?.discountReason || undefined,
             items: cartItems.map((it) => ({
               productId: it.productId,
-              quantity: it.quantity,
+              quantity: normalizePosQty(it.quantity) || it.quantity,
+              customPrice: it.customPrice,
               note: it.note,
               selectedOptionIds: it.selectedOptions.map((so) => so.optionItemId),
               discountAmount: it.discountAmount || 0,
@@ -2707,13 +2972,14 @@ export const PosShell: React.FC = () => {
       const shouldAutoPrint =
         rSetting?.autoPrint !== undefined ? rSetting.autoPrint : currentBranch?.autoPrintReceipt !== false;
 
-      if (shouldAutoPrint && orderId) {
+      const printKey = `bill-${orderId}-RECEIPT`;
+      if (shouldAutoPrint && orderId && shouldProcessPrintKey(printKey)) {
         const targetPrinter =
           rSetting?.printerName ||
           currentBranch?.defaultReceiptPrinterId ||
           'Xprinter XP-350B';
         const paperSize = (rSetting?.paperSize || currentBranch?.defaultPaperSize || '80mm') as any;
-        const copies = rSetting?.copies || currentBranch?.receiptCopies || 1;
+        const copies = Math.max(1, Number(rSetting?.copies || currentBranch?.receiptCopies || 1));
 
         fetch(`${baseUrl}/api/print-templates/render/order/${orderId}?type=RECEIPT&paperSize=${encodeURIComponent(paperSize)}`, {
           credentials: 'include',
@@ -2726,12 +2992,12 @@ export const PosShell: React.FC = () => {
                 htmlContent: tplJson.data.html,
                 paperSize,
                 copies,
-                idempotencyKey: `receipt-${orderId}-${Date.now()}`,
+                idempotencyKey: `receipt-${orderId}-RECEIPT-${Math.floor(Date.now() / 4000)}`,
                 receiptPayload: tplJson.data?.receiptPayload,
               });
 
               if (printRes.success) {
-                toast.success(`Đã in hóa đơn thanh toán qua máy in [${targetPrinter}]!`, {
+                toast.success(`Đã in hóa đơn thanh toán qua máy in [${targetPrinter}] (${copies} bản)!`, {
                   icon: <Printer className="w-4 h-4 text-emerald-500" />,
                 });
               } else {
@@ -2772,7 +3038,7 @@ export const PosShell: React.FC = () => {
 
       setIsPaymentModalOpen(false);
       handleClearCart();
-      setActiveTab('TABLES');
+      returnToOriginTab();
       fetchOrdersSnapshot(currentBranch.id);
       fetchTables(currentBranch.id);
     } catch (e: any) {
@@ -2782,69 +3048,92 @@ export const PosShell: React.FC = () => {
     }
   };
 
-  // Pre-save order if needed when opening PaymentModal so real orderCode is generated for SePay QR
+  // Handler khi đơn hàng được thanh toán thành công (qua SePay Webhook / Socket / Polling)
+  const handleOrderPaymentSucceeded = useCallback(
+    async (payload: any) => {
+      const paidOrderId = payload?.orderId || payload?.order?.id || payload?.id;
+      const paidOrderCode = payload?.orderCode || payload?.order?.orderCode;
+      const paidTmpCode = payload?.temporaryOrderCode || payload?.order?.temporaryOrderCode;
+
+      // Check if this payment matches currently open order
+      const isCurrent =
+        (paidOrderId && currentOrder?.id && paidOrderId === currentOrder.id) ||
+        (paidOrderCode && currentOrder?.orderCode && paidOrderCode === currentOrder.orderCode) ||
+        (paidTmpCode && (currentOrder as any)?.temporaryOrderCode && paidTmpCode === (currentOrder as any).temporaryOrderCode);
+
+      if (isCurrent) {
+        setIsPaymentModalOpen(false);
+
+        // Chuẩn bị dữ liệu hiển thị Modal Thanh toán SePay Thành Công
+        const targetTableName =
+          selectedTable?.name ||
+          (currentOrder as any)?.table?.name ||
+          (currentOrder?.orderType === 'TAKEAWAY' ? 'Khách mang về' : 'Khách tại bàn');
+
+        const successData: SepaySuccessModalData = {
+          orderId: paidOrderId || currentOrder?.id || '',
+          orderCode: paidOrderCode || currentOrder?.orderCode || '',
+          temporaryOrderCode: paidTmpCode || (currentOrder as any)?.temporaryOrderCode,
+          tableName: targetTableName,
+          amount: Number(payload?.amount || currentOrder?.totalAmount || 0),
+          paidAt: new Date(),
+          transactionCode: payload?.transactionCode || (currentOrder as any)?.transactionId || '',
+          cashierName: currentUser?.fullName,
+        };
+
+        setSepaySuccessData(successData);
+        setIsSepaySuccessModalOpen(true);
+
+        handleClearCart();
+        returnToOriginTab();
+        toast.success(
+          `Đã xác nhận thanh toán SePay thành công cho đơn [${paidOrderCode || paidTmpCode || currentOrder?.orderCode || ''}]!`,
+          {
+            icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+            duration: 4000,
+          },
+        );
+      }
+
+      if (currentBranch) {
+        fetchOrdersSnapshot(currentBranch.id);
+        fetchTables(currentBranch.id);
+      }
+    },
+    [currentOrder, currentBranch, branchPrintSettings, handleClearCart, handlePrintTempBill, fetchOrdersSnapshot, fetchTables],
+  );
+
+  useEffect(() => {
+    handleOrderPaymentSucceededRef.current = handleOrderPaymentSucceeded;
+  }, [handleOrderPaymentSucceeded]);
+
+  // Tự động lưu đơn ngay lập tức khi bấm "Thanh toán" để đồng bộ CSDL, tính thuế/giảm giá và cấp mã TMP/OrderCode cho SePay
   const handleOpenPaymentModal = async () => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online không được phép mở thanh toán tại POS!');
       return;
     }
-    if (cartItems.length === 0) {
+    if (cartItems.length === 0 && !currentOrder?.id) {
       toast.error('Giỏ hàng đang trống!');
       return;
     }
-    if (!currentOrder?.id && currentBranch) {
-      setIsSavingOrder(true);
-      try {
-        const deliveryAddressStr =
-          orderType === 'DELIVERY' && deliveryInfo
-            ? `${deliveryInfo.customerName} (${deliveryInfo.customerPhone}) - ${deliveryInfo.deliveryAddress}${deliveryInfo.notes ? ` [Ghi chú: ${deliveryInfo.notes}]` : ''}`
-            : undefined;
-
-        const res = await fetch(`${baseUrl}/api/pos/orders/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            branchId: currentBranch.id,
-            tableId: selectedTable?.id,
-            guestCount,
-            customerName,
-            customerPhone,
-            userId: selectedMember?.id,
-            orderType: selectedTable ? 'DINE_IN' : orderType,
-            deliveryAddress: deliveryAddressStr,
-            discountAmount: orderDiscount?.discountAmount || 0,
-            discountReason: orderDiscount?.discountReason || undefined,
-            items: cartItems.map((it) => ({
-              productId: it.productId,
-              quantity: it.quantity,
-              note: it.note,
-              selectedOptionIds: it.selectedOptions.map((so) => so.optionItemId),
-              discountAmount: it.discountAmount || 0,
-              discountReason: it.discountReason || undefined,
-              pricingMode: it.pricingMode || 'REGULAR',
-              buffetSessionId: it.buffetSessionId || undefined,
-              buffetPackageId: it.buffetPackageId || undefined,
-              buffetPackageNameSnapshot: (it as any).buffetPackageNameSnapshot || undefined,
-              source: it.source || 'POS',
-            })),
-          }),
-        });
-        const json = await res.json();
-        if (json.success) {
-          setCurrentOrder(json.data);
-          setIsPaymentModalOpen(true);
-          fetchOrdersSnapshot(currentBranch.id);
-          fetchTables(currentBranch.id);
-          return;
-        }
-      } catch (e) {
-        console.error('Error pre-saving order before payment modal:', e);
-      } finally {
-        setIsSavingOrder(false);
+    setIsSavingOrder(true);
+    try {
+      const saved = await handleSaveOrder(true);
+      if (saved) {
+        setCurrentOrder(saved);
+        setIsPaymentModalOpen(true);
+      } else if (currentOrder?.id) {
+        setIsPaymentModalOpen(true);
       }
+    } catch (e: any) {
+      console.warn('Lỗi tự động lưu đơn trước khi thanh toán:', e);
+      if (currentOrder?.id) {
+        setIsPaymentModalOpen(true);
+      }
+    } finally {
+      setIsSavingOrder(false);
     }
-    setIsPaymentModalOpen(true);
   };
 
   const handleConfirmSplit = async (items: any[], targetTableId?: string, reason?: string) => {
@@ -3041,7 +3330,10 @@ export const PosShell: React.FC = () => {
         setIsCustomerSelectModalOpen(true);
       },
       onEscape: () => {
-        if (isPaymentModalOpen) setIsPaymentModalOpen(false);
+        if (isSepaySuccessModalOpen) {
+          setIsSepaySuccessModalOpen(false);
+          setSepaySuccessData(null);
+        } else if (isPaymentModalOpen) setIsPaymentModalOpen(false);
         else if (selectedOptionProduct) setSelectedOptionProduct(null);
         else if (isCustomerSelectModalOpen) setIsCustomerSelectModalOpen(false);
         else if (isDeliveryModalOpen) setIsDeliveryModalOpen(false);
@@ -3053,7 +3345,7 @@ export const PosShell: React.FC = () => {
         else if (isCancelOrderModalOpen) setIsCancelOrderModalOpen(false);
         else if (isGuestCountModalOpen) setIsGuestCountModalOpen(false);
         else if (searchQuery) setSearchQuery('');
-        else if (activeTab === 'SALE') setActiveTab('TABLES');
+        else if (activeTab === 'SALE') returnToOriginTab();
       },
     },
     activeTab === 'SALE',
@@ -3080,7 +3372,42 @@ export const PosShell: React.FC = () => {
   ).length;
 
   return (
-    <div className="flex flex-col h-screen w-full max-w-[100vw] overflow-hidden bg-gray-100 font-sans text-gray-900 select-none">
+    <div className={`flex flex-col h-screen w-full max-w-[100vw] overflow-hidden font-sans select-none transition-colors ${
+      isDarkMode ? 'dark bg-[#141b27] text-slate-100' : 'bg-gray-100 text-gray-900'
+    }`}>
+      {/* Cảnh báo pin yếu Android Gateway (Feature 5) */}
+      {bankGatewayBatteryAlert && (
+        <div className="bg-amber-500 text-slate-900 px-4 py-2 font-black text-xs sm:text-sm flex items-center justify-between shadow-md z-40 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🔌</span>
+            <span>{bankGatewayBatteryAlert.message}</span>
+          </div>
+          <button
+            onClick={() => setBankGatewayBatteryAlert(null)}
+            className="text-xs bg-amber-600 hover:bg-amber-700 text-white px-2.5 py-1 rounded font-bold transition"
+          >
+            Đã rõ
+          </button>
+        </div>
+      )}
+
+      {/* Cảnh báo khách chuyển khoản trùng 2 lần (Feature 3) */}
+      {overpaidDuplicateAlert && (
+        <div className="bg-rose-600 text-white px-4 py-2 font-black text-xs sm:text-sm flex items-center justify-between shadow-md z-40">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span>
+              Bàn {overpaidDuplicateAlert.tableName || 'Khách'} chuyển trùng 2 lần đơn #{overpaidDuplicateAlert.orderCode} (+{overpaidDuplicateAlert.overpaidAmount?.toLocaleString('vi-VN')}đ)!
+            </span>
+          </div>
+          <button
+            onClick={() => setOverpaidDuplicateAlert(null)}
+            className="text-xs bg-rose-700 hover:bg-rose-800 text-white px-2.5 py-1 rounded font-bold transition"
+          >
+            Đã xem
+          </button>
+        </div>
+      )}
 
       {/* POS Top Navigation Bar: Shown only on TABLES, ORDERS, RESERVATIONS, QR_ORDERS, KDS tabs. Hidden completely in SALE / Table Detail mode */}
       {activeTab !== 'SALE' && (
@@ -3109,6 +3436,8 @@ export const PosShell: React.FC = () => {
           onLogout={handleLogout}
           onGoToAdmin={handleGoToAdmin}
           onOpenSettingsDrawer={() => setIsSettingsDrawerOpen(true)}
+          isDarkMode={isDarkMode}
+          onToggleDarkMode={handleToggleDarkMode}
           currentOrder={currentOrder}
           selectedTable={selectedTable}
           grandTotal={
@@ -3140,12 +3469,17 @@ export const PosShell: React.FC = () => {
               categories={categories}
               selectedCategoryId={selectedCategoryId}
               onSelectCategory={setSelectedCategoryId}
+              isDarkMode={isDarkMode}
             />
 
             {/* 2. Middle: Top Bar + Products + Quick Number Keys + Dark Status Bar */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-slate-100 min-w-0">
+            <div className={`flex-1 flex flex-col overflow-hidden min-w-0 ${
+              isDarkMode ? 'bg-[#141b27] text-slate-100' : 'bg-slate-100 text-slate-900'
+            }`}>
               {/* Top Bar: Customer | Guests | Search */}
-              <div className="h-11 sm:h-12 bg-white border-b border-slate-200 flex items-center shrink-0">
+              <div className={`h-11 sm:h-12 border-b flex items-center shrink-0 ${
+                isDarkMode ? 'bg-[#1c2434] border-[#2c374c] text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+              }`}>
                 {/* Customer Selector */}
                 <button
                   type="button"
@@ -3161,10 +3495,14 @@ export const PosShell: React.FC = () => {
                     }
                     setIsCustomerSelectModalOpen(true);
                   }}
-                  className={`h-full px-3 flex items-center gap-1.5 border-r border-slate-200 transition-colors text-xs font-bold shrink-0 ${
-                    isOnlineOrder(currentOrder) || hasRedeemedPoints
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      : 'hover:bg-slate-50 active:bg-slate-100 text-slate-800 cursor-pointer'
+                  className={`h-full px-3 flex items-center gap-1.5 border-r transition-colors text-xs font-bold shrink-0 ${
+                    isDarkMode
+                      ? isOnlineOrder(currentOrder) || hasRedeemedPoints
+                        ? 'bg-slate-800/60 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : 'hover:bg-slate-800 active:bg-slate-700 text-slate-200 border-slate-800 cursor-pointer'
+                      : isOnlineOrder(currentOrder) || hasRedeemedPoints
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : 'hover:bg-slate-50 active:bg-slate-100 text-slate-800 border-slate-200 cursor-pointer'
                   }`}
                   title={
                     isOnlineOrder(currentOrder)
@@ -3174,14 +3512,14 @@ export const PosShell: React.FC = () => {
                       : 'Chọn khách hàng / hội viên'
                   }
                 >
-                  <User className="w-4 h-4 text-slate-500 shrink-0" />
+                  <User className="w-4 h-4 text-slate-400 shrink-0" />
                   <span className="truncate max-w-[120px] sm:max-w-[150px]">
                     {selectedMember?.fullName || customerName || 'Khách lẻ'}
                   </span>
                   {isOnlineOrder(currentOrder) || hasRedeemedPoints ? (
                     <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-0.5" />
                   ) : (
-                    <Edit3 className="w-3.5 h-3.5 text-sky-600 shrink-0 ml-0.5" />
+                    <Edit3 className="w-3.5 h-3.5 text-sky-500 shrink-0 ml-0.5" />
                   )}
                 </button>
 
@@ -3196,10 +3534,14 @@ export const PosShell: React.FC = () => {
                     }
                     setIsGuestCountModalOpen(true);
                   }}
-                  className={`h-full px-3 flex items-center gap-1.5 border-r border-slate-200 transition-colors text-xs font-bold shrink-0 ${
-                    isOnlineOrder(currentOrder)
-                      ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                      : 'hover:bg-slate-50 active:bg-slate-100 text-slate-800 cursor-pointer'
+                  className={`h-full px-3 flex items-center gap-1.5 border-r transition-colors text-xs font-bold shrink-0 ${
+                    isDarkMode
+                      ? isOnlineOrder(currentOrder)
+                        ? 'bg-slate-800/60 text-slate-500 border-slate-800 cursor-not-allowed'
+                        : 'hover:bg-slate-800 active:bg-slate-700 text-slate-200 border-slate-800 cursor-pointer'
+                      : isOnlineOrder(currentOrder)
+                        ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                        : 'hover:bg-slate-50 active:bg-slate-100 text-slate-800 border-slate-200 cursor-pointer'
                   }`}
                   title={
                     isOnlineOrder(currentOrder)
@@ -3207,7 +3549,7 @@ export const PosShell: React.FC = () => {
                       : 'Số lượng khách (chạm để mở bàn phím số)'
                   }
                 >
-                  <Users className="w-4 h-4 text-slate-500 shrink-0" />
+                  <Users className="w-4 h-4 text-slate-400 shrink-0" />
                   <span>{guestCount} Khách</span>
                   {isOnlineOrder(currentOrder) ? (
                     <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0 ml-0.5" />
@@ -3225,7 +3567,9 @@ export const PosShell: React.FC = () => {
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Nhập tên mặt hàng (F4)"
-                    className="w-full bg-transparent border-none outline-none text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 font-medium"
+                    className={`w-full bg-transparent border-none outline-none text-xs sm:text-sm font-medium ${
+                      isDarkMode ? 'text-slate-100 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
+                    }`}
                   />
                   {searchQuery && (
                     <button
@@ -3234,7 +3578,7 @@ export const PosShell: React.FC = () => {
                         setSearchQuery('');
                         searchInputRef.current?.focus();
                       }}
-                      className="p-1 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
                       title="Xóa tìm kiếm"
                     >
                       <X className="w-4 h-4" />
@@ -3246,10 +3590,14 @@ export const PosShell: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleToggleViewMode(viewMode === 'grid' ? 'fast' : 'grid')}
-                  className={`h-full px-3 flex items-center gap-1.5 border-l border-slate-200 transition-colors text-xs font-bold shrink-0 cursor-pointer select-none ${
-                    viewMode === 'fast'
-                      ? 'bg-red-50 text-[#da251d] hover:bg-red-100/80'
-                      : 'bg-white text-slate-700 hover:bg-slate-50 hover:text-[#da251d]'
+                  className={`h-full px-3 flex items-center gap-1.5 border-l transition-colors text-xs font-bold shrink-0 cursor-pointer select-none ${
+                    isDarkMode
+                      ? viewMode === 'fast'
+                        ? 'bg-red-950/60 text-red-400 border-slate-800'
+                        : 'bg-slate-900 text-slate-200 hover:bg-slate-800 border-slate-800'
+                      : viewMode === 'fast'
+                        ? 'bg-red-50 text-[#da251d] hover:bg-red-100/80 border-slate-200'
+                        : 'bg-white text-slate-700 hover:bg-slate-50 hover:text-[#da251d] border-slate-200'
                   }`}
                   title={
                     viewMode === 'fast'
@@ -3271,35 +3619,38 @@ export const PosShell: React.FC = () => {
                   viewMode={viewMode}
                   onSelectProduct={handleSelectProduct}
                   isLoading={isLoadingProducts}
+                  isDarkMode={isDarkMode}
                 />
               </div>
 
               {/* Status Bar at Bottom (AVORA Bright White-Red Tone) */}
-              <div className="h-8 sm:h-9 bg-white border-t border-slate-200 text-slate-700 px-3 flex items-center justify-between text-xs shrink-0 select-none font-medium shadow-2xs">
+              <div className={`h-8 sm:h-9 border-t px-3 flex items-center justify-between text-xs shrink-0 select-none font-medium shadow-2xs ${
+                isDarkMode ? 'bg-[#18202f] border-[#2c374c] text-slate-300' : 'bg-white border-slate-200 text-slate-700'
+              }`}>
                 {/* Left: User / Cashier */}
                 <div className="flex items-center gap-1.5">
                   <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-[#da251d] text-[10px] font-bold">
                     <User className="w-3 h-3 text-[#da251d]" />
                   </div>
-                  <span className="font-bold text-slate-900 truncate max-w-[120px]">
+                  <span className={`font-bold truncate max-w-[120px] ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
                     {currentUser?.fullName || 'HTP Official'}
                   </span>
                 </div>
 
                 {/* Center: Branch Name */}
                 <div
-                  className="flex items-center gap-1.5 text-slate-800 select-none cursor-default font-bold"
+                  className={`flex items-center gap-1.5 select-none cursor-default font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}
                   title="Chi nhánh hiện tại"
                 >
                   <Home className="w-3.5 h-3.5 text-[#da251d]" />
                   <span className="font-extrabold text-[#da251d] tracking-wide uppercase">
                     {currentBranch?.name || 'AVORA HOÀN KIẾM'}
                   </span>
-                  <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                  <ChevronRight className={`w-3.5 h-3.5 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />
                 </div>
 
                 {/* Right: Realtime Clock */}
-                <div className="text-[11px] text-slate-500 font-mono font-semibold tracking-tight">
+                <div className={`text-[11px] font-mono font-semibold tracking-tight ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {clockString}
                 </div>
               </div>
@@ -3327,7 +3678,7 @@ export const PosShell: React.FC = () => {
               onOpenMergeModal={() => setIsMergeModalOpen(true)}
               onOpenMoveTableModal={() => setIsMoveTableModalOpen(true)}
               onOpenCancelModal={() => setIsCancelOrderModalOpen(true)}
-              onSelectTableTab={() => setActiveTab('TABLES')}
+              onSelectTableTab={returnToOriginTab}
               isMenuCompactMode={viewMode === 'fast'}
               onToggleMenuCompact={() => handleToggleViewMode(viewMode === 'grid' ? 'fast' : 'grid')}
               onOpenReprintLabels={() => setIsReprintLabelsModalOpen(true)}
@@ -3337,12 +3688,12 @@ export const PosShell: React.FC = () => {
               onToggleOrderType={() => {
                 if (orderType === 'DINE_IN') handleSelectTakeaway();
                 else if (orderType === 'TAKEAWAY') handleSelectDelivery();
-                else setActiveTab('TABLES');
+                else returnToOriginTab();
               }}
               onSelectOrderType={(type) => {
                 if (type === 'DINE_IN') {
                   setOrderType('DINE_IN');
-                  if (!selectedTable) setActiveTab('TABLES');
+                  if (!selectedTable) returnToOriginTab();
                 } else if (type === 'TAKEAWAY') {
                   handleSelectTakeaway();
                 } else if (type === 'DELIVERY') {
@@ -3357,7 +3708,22 @@ export const PosShell: React.FC = () => {
               onOpenDeliveryAddressModal={() => setIsDeliveryModalOpen(true)}
               orderDiscountAmount={orderDiscount?.discountAmount || 0}
               orderDiscountReason={orderDiscount?.discountReason || undefined}
-              onOpenOrderDiscountModal={() => setIsOrderDiscountModalOpen(true)}
+              onOpenOrderDiscountModal={() => {
+                const isCodeAlreadyCreated = Boolean(
+                  currentOrder &&
+                    (currentOrder.paymentStatus === 'AWAITING_PAYMENT' ||
+                      currentOrder.paymentStatus === 'PAYMENT_REQUESTED' ||
+                      currentOrder.paymentStatus === 'PAID' ||
+                      currentOrder.status === 'COMPLETED' ||
+                      (currentOrder as any).paymentIntentStatus === 'ACTIVE' ||
+                      Boolean((currentOrder as any).paymentLockedAt))
+                );
+                if (isCodeAlreadyCreated) {
+                  toast.error('Đơn hàng đã tạo mã thanh toán, giá trị đơn hàng không được phép thay đổi!');
+                  return;
+                }
+                setIsOrderDiscountModalOpen(true);
+              }}
               onOpenItemDiscountModal={handleOpenItemDiscount}
               onOpenKeypad={(item) => {
                 setKeypadItem(item);
@@ -3382,6 +3748,19 @@ export const PosShell: React.FC = () => {
               onUpdateOrderNote={setOrderNote}
               onOpenBuffetModal={() => setIsBuffetApplyModalOpen(true)}
               onOpenRedeemPointsModal={() => {
+                const isCodeAlreadyCreated = Boolean(
+                  currentOrder &&
+                    (currentOrder.paymentStatus === 'AWAITING_PAYMENT' ||
+                      currentOrder.paymentStatus === 'PAYMENT_REQUESTED' ||
+                      currentOrder.paymentStatus === 'PAID' ||
+                      currentOrder.status === 'COMPLETED' ||
+                      (currentOrder as any).paymentIntentStatus === 'ACTIVE' ||
+                      Boolean((currentOrder as any).paymentLockedAt))
+                );
+                if (isCodeAlreadyCreated) {
+                  toast.error('Đơn hàng đã tạo mã thanh toán, giá trị đơn hàng không được phép thay đổi!');
+                  return;
+                }
                 if (!currentOrder) {
                   if (cartItems.length > 0) {
                     toast.error('Vui lòng lưu đơn hàng trước khi đổi điểm thưởng');
@@ -3393,6 +3772,7 @@ export const PosShell: React.FC = () => {
                 setIsRedeemPointsModalOpen(true);
               }}
               redeemableRewardsCount={redeemableRewardsCount}
+              isDarkMode={isDarkMode}
               onOpenQrManagement={() => {
                 if (selectedTable || currentOrder?.table) {
                   setIsQrManagementModalOpen(true);
@@ -3404,10 +3784,8 @@ export const PosShell: React.FC = () => {
               onExitOrder={() => {
                 if (isOnlineOrder(currentOrder)) {
                   handleClearCart();
-                  setActiveTab('ORDERS');
-                } else {
-                  setActiveTab('TABLES');
                 }
+                returnToOriginTab();
               }}
             />
           </div>
@@ -3420,13 +3798,16 @@ export const PosShell: React.FC = () => {
             onSelectTable={handleSelectTableFromMap}
             onRefresh={() => currentBranch && fetchTables(currentBranch.id)}
             isLoading={isLoadingTables}
+            isDarkMode={isDarkMode}
           />
         )}
 
         {activeTab === 'ORDERS' && (
           <OrdersListPanel
             orders={branchOrders}
+            isDarkMode={isDarkMode}
             onSelectOrder={(order) => {
+              originTabRef.current = 'ORDERS';
               loadOrderIntoPos(order);
               setActiveTab('SALE');
             }}
@@ -3435,6 +3816,7 @@ export const PosShell: React.FC = () => {
                 toast.error('Đơn hàng Online không được phép mở thanh toán tại POS!');
                 return;
               }
+              originTabRef.current = 'ORDERS';
               loadOrderIntoPos(order);
               setIsPaymentModalOpen(true);
             }}
@@ -3444,6 +3826,32 @@ export const PosShell: React.FC = () => {
             }}
             onOpenOrderFeesModal={(order) => handleOpenOrderFeesModal(order)}
             onQuickUpdateStatus={handleQuickUpdateStatus}
+            onCreateOrder={(type) => {
+              originTabRef.current = 'ORDERS';
+              handleClearCart();
+              if (type === 'TAKEAWAY') {
+                setSelectedTable(null);
+                setOrderType('TAKEAWAY');
+                setCustomerName('Khách mang đi');
+                setActiveTab('SALE');
+                toast.success('Bắt đầu tạo đơn Mang về (Takeaway)');
+              } else if (type === 'DELIVERY') {
+                setSelectedTable(null);
+                setOrderType('DELIVERY');
+                setCustomerName('Khách giao hàng');
+                setActiveTab('SALE');
+                setIsDeliveryModalOpen(true);
+                toast.success('Bắt đầu tạo đơn Giao hàng (Delivery)');
+              } else if (type === 'DINE_IN') {
+                setOrderType('DINE_IN');
+                setActiveTab('TABLES');
+                toast('Vui lòng chọn bàn trên sơ đồ để tạo đơn Tại bàn');
+              } else {
+                setSelectedTable(null);
+                setOrderType('TAKEAWAY');
+                setActiveTab('SALE');
+              }
+            }}
             onRefresh={() => currentBranch && fetchOrdersSnapshot(currentBranch.id)}
           />
         )}
@@ -3452,13 +3860,47 @@ export const PosShell: React.FC = () => {
           <ReservationPanel
             branchId={currentBranch?.id || ''}
             tables={tables}
+            isDarkMode={isDarkMode}
             onSeatReservation={async (resv, tableId) => {
+              originTabRef.current = 'RESERVATIONS';
               setSearchQuery('');
               const tbl = tables.find((t) => t.id === tableId) || null;
               setSelectedTable(tbl);
               setCustomerName(resv.customerName);
               setCustomerPhone(resv.customerPhone);
               setGuestCount(resv.partySize);
+
+              // Tự động tải món đặt trước vào giỏ hàng POS
+              if (Array.isArray(resv.preOrderedItems) && resv.preOrderedItems.length > 0) {
+                const loadedItems: PosCartItem[] = resv.preOrderedItems.map((it: any, idx: number) => {
+                  const prod = products.find((p) => p.id === it.productId) || {
+                    id: it.productId,
+                    name: it.name || 'Món ăn',
+                    price: it.price || 0,
+                    imageUrl: it.imageUrl || it.image,
+                  };
+                  return {
+                    id: `preorder-${it.productId}-${idx}-${Date.now()}`,
+                    productId: it.productId,
+                    product: prod as any,
+                    quantity: Number(it.quantity || 1),
+                    priceAtSale: Number(it.price || prod.price || 0),
+                    originalPriceAtSale: Number(it.price || prod.price || 0),
+                    discountAmount: 0,
+                    note: it.note || 'Món đặt trước',
+                    selectedOptions: [],
+                    pricingMode: 'REGULAR',
+                    source: 'POS',
+                  };
+                });
+                setCartItems(loadedItems);
+              }
+
+              if (currentBranch) {
+                fetchTables(currentBranch.id);
+                fetchOrdersSnapshot(currentBranch.id);
+              }
+
               setActiveTab('SALE');
               toast.success(`Đã xếp chỗ cho khách ${resv.customerName} tại ${tbl?.name}!`);
             }}
@@ -3468,7 +3910,9 @@ export const PosShell: React.FC = () => {
         {activeTab === 'QR_ORDERS' && (
           <QrOrderPanel
             branchId={currentBranch?.id || ''}
+            isDarkMode={isDarkMode}
             onAcceptQrOrder={(qrOrder) => {
+              originTabRef.current = 'QR_ORDERS';
               setSearchQuery('');
               toast.success(`Đã chấp nhận đơn món từ ${qrOrder.tableName}`);
               setActiveTab('SALE');
@@ -3480,6 +3924,7 @@ export const PosShell: React.FC = () => {
       {/* Product Option Customizer Modal */}
       <ProductOptionModal
         product={selectedOptionProduct}
+        isDarkMode={isDarkMode}
         onClose={() => setSelectedOptionProduct(null)}
         onConfirm={handleConfirmProductOptions}
       />
@@ -3506,7 +3951,17 @@ export const PosShell: React.FC = () => {
           }}
           onProcessPayment={handleProcessPayment}
           isProcessing={isProcessingPayment}
+          onPaymentSuccess={handleOrderPaymentSucceeded}
           onPrintTempBill={(qrUrl) => handlePrintTempBill(qrUrl)}
+          onMoveToAwaiting={async () => {
+            setIsPaymentModalOpen(false);
+            handleClearCart();
+            returnToOriginTab();
+            if (currentBranch) {
+              await fetchOrdersSnapshot(currentBranch.id);
+              await fetchTables(currentBranch.id);
+            }
+          }}
           receiptPrinterName={
             branchPrintSettings.find((s) => s.purpose === 'TEMP_BILL')?.printerName ||
             branchPrintSettings.find((s) => s.purpose === 'RECEIPT')?.printerName ||
@@ -3519,13 +3974,29 @@ export const PosShell: React.FC = () => {
               '80mm') as any
           }
           vatPriceMode={(currentOrder as any)?.vatPriceModeSnapshot || vatPriceMode || 'VAT_EXCLUDED'}
+          isDarkMode={isDarkMode}
         />
       )}
+
+      {/* SePay Payment Success Modal */}
+      <SepaySuccessModal
+        isOpen={isSepaySuccessModalOpen}
+        data={sepaySuccessData}
+        isDarkMode={isDarkMode}
+        onClose={() => {
+          setIsSepaySuccessModalOpen(false);
+          setSepaySuccessData(null);
+        }}
+        onPrintReceipt={async (orderId) => {
+          await handlePrintTempBill(undefined, orderId, 'RECEIPT');
+        }}
+      />
 
       {/* Delivery Address Modal (F2) */}
       {isDeliveryModalOpen && (
         <DeliveryAddressModal
           initialInfo={deliveryInfo || undefined}
+          isDarkMode={isDarkMode}
           onClose={() => setIsDeliveryModalOpen(false)}
           onConfirm={handleConfirmDelivery}
         />
@@ -3535,6 +4006,7 @@ export const PosShell: React.FC = () => {
       {isItemDiscountModalOpen && selectedDiscountItem && (
         <ItemDiscountModal
           item={selectedDiscountItem}
+          isDarkMode={isDarkMode}
           onClose={() => {
             setIsItemDiscountModalOpen(false);
             setSelectedDiscountItem(null);
@@ -3558,6 +4030,7 @@ export const PosShell: React.FC = () => {
           orderId={currentOrder?.id}
           branchId={currentBranch?.id}
           initialMember={selectedMember}
+          isDarkMode={isDarkMode}
           onRedeemReward={handleRedeemRewardInPos}
           onClose={() => setIsOrderDiscountModalOpen(false)}
           onApplyDiscount={handleApplyOrderDiscount}
@@ -3570,6 +4043,7 @@ export const PosShell: React.FC = () => {
         <ShiftModal
           branchId={currentBranch?.id || ''}
           activeShift={activeShift}
+          isDarkMode={isDarkMode}
           onClose={() => setIsShiftModalOpen(false)}
           onOpenShift={handleOpenShift}
           onCloseShift={handleCloseShift}
@@ -3582,6 +4056,7 @@ export const PosShell: React.FC = () => {
         <SplitOrderModal
           cartItems={cartItems}
           availableTables={tables}
+          isDarkMode={isDarkMode}
           onClose={() => setIsSplitModalOpen(false)}
           onConfirmSplit={handleConfirmSplit}
         />
@@ -3592,6 +4067,7 @@ export const PosShell: React.FC = () => {
         <MergeOrderModal
           currentOrder={currentOrder}
           occupiedTables={tables.filter((t) => t.visualStatus === 'OCCUPIED')}
+          isDarkMode={isDarkMode}
           onClose={() => setIsMergeModalOpen(false)}
           onConfirmMerge={handleConfirmMerge}
         />
@@ -3602,6 +4078,7 @@ export const PosShell: React.FC = () => {
         <MoveTableModal
           currentTable={selectedTable}
           tables={tables}
+          isDarkMode={isDarkMode}
           onClose={() => setIsMoveTableModalOpen(false)}
           onConfirmMove={handleConfirmMoveTable}
         />
@@ -3611,6 +4088,7 @@ export const PosShell: React.FC = () => {
       {isCancelOrderModalOpen && currentOrder && (
         <CancelOrderModal
           order={currentOrder}
+          isDarkMode={isDarkMode}
           onClose={() => setIsCancelOrderModalOpen(false)}
           onConfirmCancel={handleCancelOrder}
           isProcessing={isCancellingOrder}
@@ -3622,6 +4100,7 @@ export const PosShell: React.FC = () => {
         isOpen={isCommandPaletteOpen}
         onClose={() => setIsCommandPaletteOpen(false)}
         products={products}
+        isDarkMode={isDarkMode}
         onSelectProduct={handleSelectProduct}
         onSelectTab={setActiveTab}
       />
@@ -3630,6 +4109,7 @@ export const PosShell: React.FC = () => {
       {isCustomerSelectModalOpen && !isOnlineOrder(currentOrder) && (
         <CustomerSelectModal
           currentCustomer={selectedMember}
+          isDarkMode={isDarkMode}
           onClose={() => setIsCustomerSelectModalOpen(false)}
           onSelectCustomer={handleSelectCustomer}
           hasRedeemedPoints={hasRedeemedPoints}
@@ -3645,6 +4125,7 @@ export const PosShell: React.FC = () => {
       {isRedeemPointsModalOpen && currentOrder && (
         <PosRedeemPointsModal
           isOpen={isRedeemPointsModalOpen}
+          isDarkMode={isDarkMode}
           onClose={() => setIsRedeemPointsModalOpen(false)}
           order={currentOrder}
           currentBranch={currentBranch}
@@ -3663,40 +4144,7 @@ export const PosShell: React.FC = () => {
                 setCurrentOrder(json.data);
                 if (json.data.user) setSelectedMember(json.data.user);
                 // Đồng bộ giỏ hàng liền ngay lập tức mà không cần thoát đơn vào lại
-                setCartItems(
-                  (json.data.orderItems || []).map((oi: any) => {
-                    const isSent = oi.kitchenStatus === 'SENT' || oi.kitchenStatus === 'ACKNOWLEDGED' || oi.kitchenStatus === 'PREPARING' || oi.kitchenStatus === 'READY' || oi.kitchenStatus === 'SERVED';
-                    const sentQty = oi.sentQuantity !== undefined ? Number(oi.sentQuantity) : isSent ? Number(oi.quantity) : 0;
-                    const printedQty = oi.printedQuantity !== undefined ? Number(oi.printedQuantity) : sentQty;
-
-                    return {
-                      id: oi.id,
-                      productId: oi.productId,
-                      product: oi.product,
-                      quantity: oi.quantity,
-                      priceAtSale: oi.priceAtSale,
-                      originalPriceAtSale: oi.originalPriceAtSale,
-                      discountAmount: oi.discountAmount || 0,
-                      discountReason: oi.discountReason || undefined,
-                      note: oi.note || undefined,
-                      optionsTextSnapshot: oi.optionsTextSnapshot || undefined,
-                      selectedOptions: (oi.selectedOptions || []).map((so: any) => ({
-                        optionItemId: so.optionItemId,
-                        nameAtSale: so.nameAtSale,
-                        priceAdjustmentAtSale: so.priceAdjustmentAtSale,
-                      })),
-                      stationId: oi.stationId || undefined,
-                      kitchenStatus: oi.kitchenStatus as any,
-                      sentToKitchenAt: oi.sentToKitchenAt,
-                      sentQuantity: sentQty,
-                      savedQuantity: Number(oi.quantity),
-                      printedQuantity: printedQty,
-                      orderedById: (oi as any).orderedById || undefined,
-                      orderedByName: (oi as any).orderedByName || undefined,
-                      createdAt: (oi as any).createdAt ? new Date((oi as any).createdAt).toISOString() : (json.data.createdAt ? new Date(json.data.createdAt).toISOString() : undefined),
-                    };
-                  })
-                );
+                setCartItems(mapAndSortOrderItemsToCart(json.data.orderItems || [], cartItems));
               }
             } catch {}
           }}
@@ -3707,6 +4155,7 @@ export const PosShell: React.FC = () => {
       {isEditVatModalOpen && editingVatCustomer && (
         <EditCustomerVatModal
           customer={editingVatCustomer}
+          isDarkMode={isDarkMode}
           onClose={() => {
             setIsEditVatOpen(false);
             setEditingVatCustomer(null);
@@ -3727,6 +4176,7 @@ export const PosShell: React.FC = () => {
         branches={branches}
         canSwitchBranch={canSwitchBranch}
         currentUser={currentUser}
+        isDarkMode={isDarkMode}
         onSelectBranch={(b) => {
           setCurrentBranch(b);
           if (typeof window !== 'undefined') {
@@ -3786,13 +4236,29 @@ export const PosShell: React.FC = () => {
       <NumericKeypadModal
         isOpen={isKeypadOpen}
         item={keypadItem}
+        productToAdd={keypadAddContext?.product || null}
+        isDarkMode={isDarkMode}
         onClose={() => {
           setIsKeypadOpen(false);
           setKeypadItem(null);
+          setKeypadAddContext(null);
         }}
-        onConfirm={(newQty) => {
+        onConfirm={(newQty, customUnitPrice) => {
           if (keypadItem) {
-            handleUpdateItemQuantity(keypadItem.id, newQty);
+            handleUpdateItemQuantity(keypadItem.id, newQty, customUnitPrice);
+          } else if (keypadAddContext) {
+            addItemToCart(
+              keypadAddContext.product,
+              newQty,
+              [],
+              undefined,
+              keypadAddContext.pricingMode,
+              keypadAddContext.buffetSessionId,
+              keypadAddContext.buffetPackageId,
+              'POS',
+              customUnitPrice,
+            );
+            focusAndSelectSearch();
           }
         }}
       />
@@ -3801,6 +4267,7 @@ export const PosShell: React.FC = () => {
       <ItemDetailModal
         isOpen={isItemDetailOpen}
         item={detailModalItem}
+        isDarkMode={isDarkMode}
         orderCode={currentOrder?.orderCode || currentOrder?.temporaryOrderCode || undefined}
         tableName={selectedTable?.name}
         onClose={() => {
@@ -3813,6 +4280,7 @@ export const PosShell: React.FC = () => {
       <GuestCountModal
         isOpen={isGuestCountModalOpen && !isOnlineOrder(currentOrder)}
         currentCount={guestCount}
+        isDarkMode={isDarkMode}
         onClose={() => setIsGuestCountModalOpen(false)}
         onConfirm={(cnt) => {
           if (isOnlineOrder(currentOrder)) {
@@ -3847,6 +4315,7 @@ export const PosShell: React.FC = () => {
       {/* Reprint Labels Modal (Image 3) */}
       <ReprintLabelsModal
         isOpen={isReprintLabelsModalOpen}
+        isDarkMode={isDarkMode}
         onClose={() => setIsReprintLabelsModalOpen(false)}
         items={cartItems}
         orderCode={currentOrder?.orderCode || currentOrder?.temporaryOrderCode || undefined}
@@ -3859,6 +4328,7 @@ export const PosShell: React.FC = () => {
       {isOrderDetailFeesModalOpen && feesModalOrder && (
         <OrderDetailFeesModal
           order={feesModalOrder}
+          isDarkMode={isDarkMode}
           onClose={() => {
             setIsOrderDetailFeesModalOpen(false);
             setFeesModalOrder(null);
@@ -3882,6 +4352,7 @@ export const PosShell: React.FC = () => {
       {buffetSelectionProduct && (
         <BuffetSelectionModal
           product={buffetSelectionProduct}
+          isDarkMode={isDarkMode}
           packageName={
             (currentOrder as any)?.buffetSessions?.find((s: any) => s.status === 'ACTIVE')?.packageNameSnapshot ||
             (currentOrder as any)?.buffetSessions?.[0]?.packageNameSnapshot ||
@@ -3898,6 +4369,7 @@ export const PosShell: React.FC = () => {
       {isBuffetApplyModalOpen && currentBranch && (
         <PosBuffetApplyModal
           isOpen={isBuffetApplyModalOpen}
+          isDarkMode={isDarkMode}
           branchId={currentBranch.id}
           tableName={selectedTable ? `Bàn ${selectedTable.tableCode || selectedTable.name}` : 'Đơn hàng'}
           currentGuestCount={guestCount}
@@ -3912,6 +4384,7 @@ export const PosShell: React.FC = () => {
           table={selectedTable || (currentOrder?.table as any)}
           branch={currentBranch}
           order={currentOrder}
+          isDarkMode={isDarkMode}
           onClose={() => setIsQrManagementModalOpen(false)}
         />
       )}
@@ -3980,6 +4453,7 @@ export const PosShell: React.FC = () => {
         activeShiftId={activeShift?.id}
         currentCashierId={currentUser?.id}
         currentCashierName={currentUser?.fullName || currentUser?.email}
+        isDarkMode={isDarkMode}
       />
     </div>
   );

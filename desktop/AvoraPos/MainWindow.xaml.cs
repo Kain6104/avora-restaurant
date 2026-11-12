@@ -41,7 +41,7 @@ namespace AvoraPos
         private bool _isReturningPasswordRevealed = false;
         private DispatcherTimer? _pinRateLimitTimer = null;
         private int _pinRateLimitRemainingSec = 0;
-        private static string BackendUrl => Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:4001";
+        private static string BackendUrl => Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "https://avorafnb.com";
 
         private static readonly Geometry EyeOpenGeometry =
             Geometry.Parse("M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z");
@@ -153,6 +153,18 @@ namespace AvoraPos
         private void MainWindow_Closed(object? sender, EventArgs e)
         {
             UnregisterAltF4HotKey();
+            try
+            {
+                _bridgeHost?.Stop();
+                posWebView?.Dispose();
+            }
+            catch { }
+
+            try
+            {
+                Application.Current?.Shutdown(0);
+            }
+            catch { }
         }
 
         private IntPtr HwndMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -395,7 +407,18 @@ namespace AvoraPos
                 if (result == true)
                 {
                     _isCloseApproved = true;
+                    try
+                    {
+                        _bridgeHost?.Stop();
+                        posWebView?.Dispose();
+                    }
+                    catch { }
                     Close();
+                    try
+                    {
+                        Application.Current?.Shutdown(0);
+                    }
+                    catch { }
                 }
                 else
                 {
@@ -731,7 +754,7 @@ namespace AvoraPos
         {
             try
             {
-                string apiUrl = Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "http://127.0.0.1:4001";
+                string apiUrl = Environment.GetEnvironmentVariable("AVORA_BACKEND_URL") ?? "https://avorafnb.com";
                 var res = await _httpClient.GetAsync($"{apiUrl}/api/health");
                 if (res.IsSuccessStatusCode)
                 {
@@ -744,7 +767,7 @@ namespace AvoraPos
 
             try
             {
-                var res = await _httpClient.GetAsync("http://localhost:4001/api/health");
+                var res = await _httpClient.GetAsync("https://avorafnb.com/api/health");
                 if (res.IsSuccessStatusCode)
                 {
                     dotStatus.Fill = new SolidColorBrush(Color.FromRgb(16, 185, 129)); // #10B981
@@ -2003,12 +2026,14 @@ namespace AvoraPos
                 }
 
                 // Inject auth cookies into WebView2
+                InjectAuthCookie("avorafnb.com", token);
+                InjectAuthCookie(".avorafnb.com", token);
                 InjectAuthCookie("localhost", token);
                 InjectAuthCookie("127.0.0.1", token);
 
                 // Target POS URL (Directive 6: /admin/pos)
                 string posUrl = Environment.GetEnvironmentVariable("AVORA_POS_URL")
-                    ?? "http://localhost:4000/admin/pos";
+                    ?? "https://avorafnb.com/admin/pos";
 
                 Debug.WriteLine($"[AUTH] Navigating to allowed route: {posUrl}");
                 posWebView.CoreWebView2.Navigate(posUrl);
@@ -2091,7 +2116,7 @@ namespace AvoraPos
                 Debug.WriteLine($"[GUARD] CoreWebView2_NavigationStarting blocked non-POS admin URI, returning to POS: {e.Uri}");
                 Dispatcher.InvokeAsync(() =>
                 {
-                    string targetPosUrl = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000/admin/pos";
+                    string targetPosUrl = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "https://avorafnb.com/admin/pos";
                     posWebView.CoreWebView2?.Navigate(targetPosUrl);
                 });
                 return;
@@ -2121,14 +2146,14 @@ namespace AvoraPos
                 string fullUrl = url.Trim();
                 if (fullUrl.StartsWith("/"))
                 {
-                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000";
+                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "https://avorafnb.com";
                     if (Uri.TryCreate(baseWeb, UriKind.Absolute, out var baseUri))
                     {
                         fullUrl = $"{baseUri.Scheme}://{baseUri.Authority}{fullUrl}";
                     }
                     else
                     {
-                        fullUrl = $"http://localhost:4000{fullUrl}";
+                        fullUrl = $"https://avorafnb.com{fullUrl}";
                     }
                 }
 
@@ -2245,8 +2270,8 @@ namespace AvoraPos
                         silentPrintWebView.NavigationCompleted -= handler;
                     }
 
-                    // Brief render stabilization yield
-                    await Task.Delay(100);
+                    // Brief render stabilization yield (30ms for instant print dispatch)
+                    await Task.Delay(30);
 
                     // Create print settings
                     var printSettings = silentPrintWebView.CoreWebView2.Environment.CreatePrintSettings();
@@ -2260,7 +2285,12 @@ namespace AvoraPos
                     printSettings.MarginBottom = 0;
                     printSettings.MarginLeft = 0;
                     printSettings.MarginRight = 0;
-                    printSettings.Copies = copies > 0 ? copies : 1;
+
+                    // Microsoft Print to PDF và máy in ảo tuyệt đối chỉ in 1 bản để không pop-up lưu file nhiều lần
+                    bool isVirtualPrinter = System.Text.RegularExpressions.Regex.IsMatch(
+                        cleanPrinter ?? "", @"(pdf|xps|onenote|fax|print to)",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    printSettings.Copies = isVirtualPrinter ? 1 : (copies > 0 ? copies : 1);
 
                     var status = await silentPrintWebView.CoreWebView2.PrintAsync(printSettings);
                     if (status == CoreWebView2PrintStatus.Succeeded)

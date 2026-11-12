@@ -62,10 +62,13 @@ interface TransactionDao {
     @Query("DELETE FROM bank_transactions WHERE createdAt < :cutoffTime AND syncStatus = 'SYNCED'")
     suspend fun cleanupOldSynced(cutoffTime: Long)
 
-    @Query("DELETE FROM bank_transactions WHERE (matchedOrderId IS NULL OR matchedOrderId = '') AND (matchedStatus != 'MATCHED' OR matchedStatus IS NULL)")
+    @Query("DELETE FROM bank_transactions WHERE (matchedOrderId IS NULL OR matchedOrderId = '') AND (matchedStatus IS NULL OR matchedStatus IN ('UNMATCHED', 'IGNORED', 'DUPLICATE'))")
     suspend fun deleteAllUnmatched(): Int
 
-    @Query("DELETE FROM bank_transactions WHERE eventId = :eventId AND (matchedOrderId IS NULL OR matchedOrderId = '')")
+    @Query("DELETE FROM bank_transactions WHERE eventId IN (:eventIds) AND (matchedOrderId IS NULL OR matchedOrderId = '') AND (matchedStatus IS NULL OR matchedStatus IN ('UNMATCHED', 'IGNORED', 'DUPLICATE'))")
+    suspend fun deleteByEventIds(eventIds: List<String>): Int
+
+    @Query("DELETE FROM bank_transactions WHERE eventId = :eventId AND (matchedOrderId IS NULL OR matchedOrderId = '') AND (matchedStatus IS NULL OR matchedStatus IN ('UNMATCHED', 'IGNORED', 'DUPLICATE'))")
     suspend fun deleteSingleUnmatched(eventId: String): Int
 }
 

@@ -4,244 +4,366 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="1000"
+             d:DesignHeight="760" d:DesignWidth="1366"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
              Background="#F8FAFC">
     
     <Grid>
         <Grid.RowDefinitions>
-            <!-- Top bar -->
-            <RowDefinition Height="64"/>
-            <!-- Content -->
+            <!-- Top Filter & Search Bar (/admin/pos ReservationPanel.tsx parity) -->
+            <RowDefinition Height="Auto"/>
+            <!-- 3-Column Reservations Grid -->
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Top Bar -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="20,10">
+        <!-- ========================================================================= -->
+        <!-- 1. TOP FILTER & SEARCH BAR (Bright White & Red AVORA Theme)               -->
+        <!-- ========================================================================= -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1.5" Padding="16,10">
             <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="📅 QUẢN LÝ ĐẶT BÀN TRƯỚC" FontWeight="Bold" FontSize="16" Foreground="#0F172A" VerticalAlignment="Center"/>
-                    
-                    <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="8,4" Margin="12,0,16,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding ReservationCount, StringFormat='{}{0} lượt đặt'}" FontSize="11" FontWeight="Bold" Foreground="#1D4ED8"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: Title + Active Count + Status Filter Tabs -->
+                <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,16,0">
+                        <Border Width="32" Height="32" CornerRadius="8" Background="#FEF2F2" Margin="0,0,8,0">
+                            <TextBlock Text="📅" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <TextBlock Text="QUẢN LÝ ĐẶT BÀN TRƯỚC" FontWeight="Black" FontSize="15" Foreground="#0F172A" VerticalAlignment="Center"/>
+                        <Border Background="#FEF2F2" BorderBrush="#FECDD3" BorderThickness="1" CornerRadius="8" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding ActiveReservationCount, StringFormat='{}{0} chờ đón khách'}" FontSize="11" FontWeight="Bold" Foreground="#DA251D"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Status Filter Tabs Pill Container -->
+                    <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="3">
+                        <StackPanel Orientation="Horizontal">
+                            <!-- Tất cả -->
+                            <Button Content="Tất cả" Command="{Binding SelectFilterCommand}" CommandParameter="ALL" Cursor="Hand" Margin="0,0,4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#475569"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFilter}" Value="ALL">
+                                                <Setter Property="Background" Value="#DA251D"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                                            <TextBlock Text="{TemplateBinding Content}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+
+                            <!-- Đã xác nhận -->
+                            <Button Content="Đã xác nhận" Command="{Binding SelectFilterCommand}" CommandParameter="CONFIRMED" Cursor="Hand" Margin="0,0,4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#475569"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFilter}" Value="CONFIRMED">
+                                                <Setter Property="Background" Value="#059669"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                                            <TextBlock Text="{TemplateBinding Content}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+
+                            <!-- Chờ duyệt -->
+                            <Button Content="Chờ duyệt" Command="{Binding SelectFilterCommand}" CommandParameter="PENDING" Cursor="Hand" Margin="0,0,4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#475569"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFilter}" Value="PENDING">
+                                                <Setter Property="Background" Value="#D97706"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                                            <TextBlock Text="{TemplateBinding Content}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+
+                            <!-- Đang dùng bữa -->
+                            <Button Content="Đang ăn" Command="{Binding SelectFilterCommand}" CommandParameter="CHECKED_IN" Cursor="Hand" Margin="0,0,4,0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#475569"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFilter}" Value="CHECKED_IN">
+                                                <Setter Property="Background" Value="#2563EB"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                                            <TextBlock Text="{TemplateBinding Content}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+
+                            <!-- Hoàn tất -->
+                            <Button Content="Hoàn tất" Command="{Binding SelectFilterCommand}" CommandParameter="COMPLETED" Cursor="Hand">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#475569"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedFilter}" Value="COMPLETED">
+                                                <Setter Property="Background" Value="#0F172A"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" CornerRadius="7" Padding="12,5">
+                                            <TextBlock Text="{TemplateBinding Content}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </WrapPanel>
+                
+                <!-- Right: Search Box + Refresh Button -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="230" Height="34" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,0" Margin="0,0,8,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="🔍" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBox Grid.Column="1" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="Transparent" BorderThickness="0" FontSize="12.5" FontWeight="SemiBold" Foreground="#0F172A"
+                                     VerticalContentAlignment="Center"/>
+                        </Grid>
                     </Border>
 
-                    <!-- Filter pills -->
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Content="Tất cả" Command="{Binding SelectFilterCommand}" CommandParameter="ALL"
-                                Padding="12,6" Margin="0,0,6,0" FontSize="12" FontWeight="SemiBold" Cursor="Hand">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                    <Setter Property="Foreground" Value="#475569"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16" Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedFilter}" Value="ALL">
-                                            <Setter Property="Background" Value="#0F172A"/>
-                                            <Setter Property="Foreground" Value="#FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#0F172A"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-
-                        <Button Content="Chờ nhận bàn" Command="{Binding SelectFilterCommand}" CommandParameter="CONFIRMED"
-                                Padding="12,6" Margin="0,0,6,0" FontSize="12" FontWeight="SemiBold" Cursor="Hand">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                    <Setter Property="Foreground" Value="#475569"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16" Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedFilter}" Value="CONFIRMED">
-                                            <Setter Property="Background" Value="#16A34A"/>
-                                            <Setter Property="Foreground" Value="#FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#16A34A"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-
-                        <Button Content="Đã nhận bàn" Command="{Binding SelectFilterCommand}" CommandParameter="CHECKED_IN"
-                                Padding="12,6" Margin="0,0,6,0" FontSize="12" FontWeight="SemiBold" Cursor="Hand">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                    <Setter Property="Foreground" Value="#475569"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="16" Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding SelectedFilter}" Value="CHECKED_IN">
-                                            <Setter Property="Background" Value="#2563EB"/>
-                                            <Setter Property="Foreground" Value="#FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#2563EB"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                    </StackPanel>
+                    <Button Command="{Binding RefreshCommand}" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="12,7">
+                                    <TextBlock Text="🔄 Làm mới" FontSize="12" FontWeight="Bold" Foreground="#334155"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                 </StackPanel>
-                
-                <Button HorizontalAlignment="Right" Command="{Binding RefreshCommand}"
-                        Background="#F8FAFC" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
-                        Padding="14,8" FontWeight="SemiBold" FontSize="13" Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                <TextBlock Text="🔄 Làm mới"/>
-                            </Border>
-                        </ControlTemplate>
-                    </Button.Template>
-                </Button>
             </Grid>
         </Border>
 
-        <!-- Reservations List -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20">
-            <Grid MaxWidth="900" HorizontalAlignment="Center">
+        <!-- ========================================================================= -->
+        <!-- 2. RESERVATIONS GRID (3-Column White Cards on Bright #F8FAFC)             -->
+        <!-- ========================================================================= -->
+        <Grid Grid.Row="1">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16">
                 <ItemsControl ItemsSource="{Binding FilteredReservations}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16" Margin="0,0,0,12">
-                                <Border.Effect>
-                                    <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
-                                </Border.Effect>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
+                            <Border Width="410" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1.5" CornerRadius="12" Padding="16" Margin="8">
+                                <StackPanel>
+                                    <!-- Top Identity Row: Customer Name + Code + Status Badge -->
+                                    <Grid Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
 
-                                    <!-- Customer info -->
-                                    <StackPanel Grid.Column="0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding CustomerName}" FontWeight="Bold" FontSize="15" Foreground="#0F172A"/>
-                                            <TextBlock Text="{Binding CustomerPhone, StringFormat='{} • {0}'}" FontSize="13" Foreground="#64748B" Margin="6,0,0,0"/>
-                                            <Border Background="#F1F5F9" CornerRadius="4" Padding="6,2" Margin="10,0,0,0">
-                                                <TextBlock Text="{Binding ReservationCode}" FontSize="11" FontFamily="Consolas" Foreground="#475569"/>
-                                            </Border>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding CustomerName}" FontWeight="Black" FontSize="15" Foreground="#0F172A" VerticalAlignment="Center"/>
+                                                <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="5" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ReservationCode}" FontSize="10.5" FontFamily="Consolas, Segoe UI" FontWeight="Bold" Foreground="#475569"/>
+                                                </Border>
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding CustomerPhone, StringFormat='📞 {0}'}" FontSize="12" FontWeight="SemiBold" Foreground="#64748B" Margin="0,3,0,0"/>
                                         </StackPanel>
 
-                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                            <TextBlock Text="{Binding DateTimeDisplay, StringFormat='{}🕒 {0}'}" FontSize="12" Foreground="#2563EB" Margin="0,0,16,0" FontWeight="SemiBold"/>
-                                            <TextBlock Text="{Binding PartySize, StringFormat='{}👥 {0} khách'}" FontSize="12" Foreground="#64748B" Margin="0,0,16,0"/>
-                                            <TextBlock Text="{Binding AssignedTableNames, StringFormat='{}📍 {0}'}" FontSize="12" Foreground="#E11D48" FontWeight="SemiBold"/>
-                                        </StackPanel>
-                                    </StackPanel>
-
-                                    <!-- Action Button -->
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border CornerRadius="8" Padding="10,5" Margin="0,0,10,0" VerticalAlignment="Center">
+                                        <!-- Vietnamese Status Badge -->
+                                        <Border Grid.Column="1" CornerRadius="12" Padding="10,4" VerticalAlignment="Top" BorderThickness="1">
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Setter Property="Background" Value="#F1F5F9"/>
+                                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
                                                     <Style.Triggers>
                                                         <DataTrigger Binding="{Binding Status}" Value="CONFIRMED">
                                                             <Setter Property="Background" Value="#ECFDF5"/>
+                                                            <Setter Property="BorderBrush" Value="#A7F3D0"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Status}" Value="PENDING">
+                                                            <Setter Property="Background" Value="#FFFBEB"/>
+                                                            <Setter Property="BorderBrush" Value="#FDE68A"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding Status}" Value="CHECKED_IN">
                                                             <Setter Property="Background" Value="#EFF6FF"/>
+                                                            <Setter Property="BorderBrush" Value="#BFDBFE"/>
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding Status}" Value="CANCELLED">
                                                             <Setter Property="Background" Value="#FEF2F2"/>
+                                                            <Setter Property="BorderBrush" Value="#FECDD3"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Status}" Value="NO_SHOW">
+                                                            <Setter Property="Background" Value="#FEF2F2"/>
+                                                            <Setter Property="BorderBrush" Value="#FECDD3"/>
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </Border.Style>
-                                            <TextBlock Text="{Binding Status}" FontSize="11" FontWeight="Bold">
+                                            <TextBlock Text="{Binding StatusDisplayText}" FontSize="11" FontWeight="Bold">
                                                 <TextBlock.Style>
                                                     <Style TargetType="TextBlock">
-                                                        <Setter Property="Foreground" Value="#64748B"/>
+                                                        <Setter Property="Foreground" Value="#475569"/>
                                                         <Style.Triggers>
                                                             <DataTrigger Binding="{Binding Status}" Value="CONFIRMED">
-                                                                <Setter Property="Foreground" Value="#059669"/>
-                                                                <Setter Property="Text" Value="ĐÃ XÁC NHẬN"/>
+                                                                <Setter Property="Foreground" Value="#047857"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="PENDING">
+                                                                <Setter Property="Foreground" Value="#B45309"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding Status}" Value="CHECKED_IN">
-                                                                <Setter Property="Foreground" Value="#2563EB"/>
-                                                                <Setter Property="Text" Value="ĐÃ VÀO BÀN"/>
+                                                                <Setter Property="Foreground" Value="#1D4ED8"/>
                                                             </DataTrigger>
                                                             <DataTrigger Binding="{Binding Status}" Value="CANCELLED">
                                                                 <Setter Property="Foreground" Value="#DC2626"/>
-                                                                <Setter Property="Text" Value="ĐÃ HỦY"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="NO_SHOW">
+                                                                <Setter Property="Foreground" Value="#DC2626"/>
                                                             </DataTrigger>
                                                         </Style.Triggers>
                                                     </Style>
                                                 </TextBlock.Style>
                                             </TextBlock>
                                         </Border>
+                                    </Grid>
 
-                                        <Button Content="⚡ Nhận bàn"
-                                                Command="{Binding DataContext.CheckInCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    <!-- Middle Info Row: Time Slot & Party Size & Assigned Table -->
+                                    <Border BorderBrush="#F1F5F9" BorderThickness="0,1,0,1" Padding="0,10" Margin="0,0,0,12">
+                                        <WrapPanel Orientation="Horizontal">
+                                            <Border Background="#FEF2F2" BorderBrush="#FECDD3" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding DateTimeDisplay, StringFormat='🕒 {0}'}" FontSize="11.5" FontWeight="Bold" Foreground="#DA251D"/>
+                                            </Border>
+                                            <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding PartySize, StringFormat='👥 {0} khách'}" FontSize="11.5" FontWeight="Bold" Foreground="#334155"/>
+                                            </Border>
+                                            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,4">
+                                                <TextBlock Text="{Binding AssignedTableNames, StringFormat='📍 {0}'}" FontSize="11.5" FontWeight="Bold" Foreground="#0F172A"/>
+                                            </Border>
+                                        </WrapPanel>
+                                    </Border>
+
+                                    <!-- Bottom Action Row: Xếp bàn & Bắt đầu gọi món (ONLY when CanCheckIn == True) -->
+                                    <Grid>
+                                        <Button Command="{Binding DataContext.CheckInCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
-                                                Background="#16A34A" Foreground="#FFFFFF" BorderThickness="0"
-                                                Padding="14,8" FontWeight="Bold" FontSize="12" Cursor="Hand">
+                                                Cursor="Hand" Height="36">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanCheckIn}" Value="True">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    <Border Background="#DA251D" CornerRadius="8">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                            <TextBlock Text="⚡" FontSize="12" Foreground="#FFFFFF" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                                            <TextBlock Text="Xếp bàn &amp; Bắt đầu gọi món" FontSize="12.5" FontWeight="Bold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                                        </StackPanel>
                                                     </Border>
                                                 </ControlTemplate>
                                             </Button.Template>
                                         </Button>
-                                    </StackPanel>
-                                </Grid>
+
+                                        <!-- Status Footer Text when already seated/completed/cancelled -->
+                                        <Border Background="#F8FAFC" CornerRadius="8" Padding="10,8">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CanCheckIn}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding StatusFooterNote}" FontSize="12" FontWeight="SemiBold" Foreground="#64748B" HorizontalAlignment="Center"/>
+                                        </Border>
+                                    </Grid>
+                                </StackPanel>
                             </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+            </ScrollViewer>
 
-                <!-- Empty State -->
-                <Border HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,60,0,0">
-                    <Border.Style>
-                        <Style TargetType="Border">
-                            <Setter Property="Visibility" Value="Collapsed"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding ReservationCount}" Value="0">
-                                    <Setter Property="Visibility" Value="Visible"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Border.Style>
-                    <StackPanel HorizontalAlignment="Center">
-                        <TextBlock Text="📅" FontSize="48" HorizontalAlignment="Center" Margin="0,0,0,12"/>
-                        <TextBlock Text="Không có thông tin đặt bàn nào" FontSize="16" FontWeight="Bold" Foreground="#0F172A" HorizontalAlignment="Center"/>
-                        <TextBlock Text="Các lượt khách đặt bàn trước qua Web/App hoặc tổng đài sẽ hiển thị tại đây."
-                                   FontSize="13" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,6,0,0"/>
-                    </StackPanel>
-                </Border>
-            </Grid>
-        </ScrollViewer>
+            <!-- Empty State -->
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1.5" CornerRadius="16" Padding="42,32">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ReservationCount}" Value="0">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel HorizontalAlignment="Center">
+                    <Border Width="56" Height="56" CornerRadius="28" Background="#FEF2F2" HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <TextBlock Text="📅" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="Không có lịch đặt bàn nào" FontSize="16" FontWeight="Black" Foreground="#0F172A" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Các lượt khách đặt bàn trước qua Website hoặc tổng đài của chi nhánh sẽ hiển thị tại đây."
+                               FontSize="12.5" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

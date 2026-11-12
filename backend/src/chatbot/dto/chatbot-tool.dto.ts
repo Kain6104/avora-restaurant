@@ -72,6 +72,7 @@ export interface ChatSessionContext {
   reservationConfirmation?: ChatConfirmationState;
   lastIdempotencyKey?: string;
   lastSuggestedProducts?: { id: string; name: string }[];
+  lastCreatedOrderCode?: string;
 }
 
 export interface ChatCartSnapshot {

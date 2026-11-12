@@ -4,184 +4,409 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="600"
+             d:DesignHeight="750" d:DesignWidth="800"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
              Background="#F8FAFC">
-    
-    <Grid>
-        <Grid.RowDefinitions>
-            <!-- Search & Filter bar -->
-            <RowDefinition Height="Auto"/>
-            <!-- Category scrollable tabs -->
-            <RowDefinition Height="Auto"/>
-            <!-- Product grid -->
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
 
-        <!-- 1. SEARCH INPUT BAR -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,10">
+    <Grid Background="#F8FAFC">
+        <Grid.ColumnDefinitions>
+            <!-- 1. Left Vertical Category Sidebar (115px) - 1:1 with TouchCategorySidebar.tsx -->
+            <ColumnDefinition Width="115"/>
+            <!-- 2. Main Product Area (*) -->
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ========================================================================= -->
+        <!-- 1. LEFT VERTICAL CATEGORY SIDEBAR (TouchCategorySidebar)                  -->
+        <!-- ========================================================================= -->
+        <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,1,0">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <!-- Up / Down Touch Scroll Controls -->
+                    <RowDefinition Height="40"/>
+                    <!-- Scrollable Categories List -->
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="10,6">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Text="🔍" FontSize="14" Foreground="#64748B" Margin="0,0,8,0" VerticalAlignment="Center"/>
-                        <TextBox Grid.Column="1" Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="Transparent" BorderThickness="0" Foreground="#0F172A" FontSize="14"
-                                 VerticalAlignment="Center" CaretBrush="#E11D48"/>
-                        <Button Grid.Column="2" Content="✕" Command="{Binding ClearSearchCommand}"
-                                Background="Transparent" Foreground="#94A3B8" BorderThickness="0"
-                                Cursor="Hand" Padding="4,0" FontSize="12"/>
-                    </Grid>
-                </Border>
+                <!-- Touch Scroll Header Buttons -->
+                <Grid Grid.Row="0" Background="#F8FAFC">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- Refresh Menu -->
-                <Button Grid.Column="1" Command="{Binding RefreshCommand}"
-                        Background="#FFFFFF" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
-                        Padding="12,6" Margin="10,0,0,0" Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                <TextBlock Text="🔄 Tải lại" FontSize="12" FontWeight="SemiBold"/>
-                            </Border>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                    <Setter Property="BorderBrush" Value="#94A3B8"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
+                    <Button Grid.Column="0" Click="OnCategoryScrollUpClick" Cursor="Hand" BorderThickness="0,0,1,1" BorderBrush="#E2E8F0" Background="#F8FAFC">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                    <TextBlock Text="▲" FontSize="11" FontWeight="Bold" Foreground="#64748B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <Button Grid.Column="1" Click="OnCategoryScrollDownClick" Cursor="Hand" BorderThickness="0,0,0,1" BorderBrush="#E2E8F0" Background="#F8FAFC">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                    <TextBlock Text="▼" FontSize="11" FontWeight="Bold" Foreground="#64748B" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+
+                <!-- Vertical Category Buttons List -->
+                <ScrollViewer x:Name="CategoryScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Hidden" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Categories}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding Id}"
+                                        Cursor="Hand" BorderThickness="0,0,0,1" BorderBrush="#F1F5F9"
+                                        MinHeight="54" HorizontalContentAlignment="Stretch">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#334155"/>
+                                            <Style.Triggers>
+                                                <!-- We compare Category Id with SelectedCategory -->
+                                                <DataTrigger Value="True">
+                                                    <DataTrigger.Binding>
+                                                        <MultiBinding Converter="{x:Null}">
+                                                            <!-- Trigger handled via style trigger below -->
+                                                        </MultiBinding>
+                                                    </DataTrigger.Binding>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border x:Name="Bd" Background="#FFFFFF" Padding="8,10">
+                                                <TextBlock x:Name="Txt" Text="{Binding Name}"
+                                                           FontSize="11.5" FontWeight="Black"
+                                                           TextAlignment="Center" TextWrapping="Wrap"
+                                                           Foreground="#334155" LineHeight="14"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </Border>
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#FFF1F2"/>
+                                                    <Setter TargetName="Txt" Property="Foreground" Value="#DA251D"/>
+                                                </Trigger>
+                                                <!-- Match active category -->
+                                                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                    <Setter TargetName="Bd" Property="Background" Value="#DA251D"/>
+                                                    <Setter TargetName="Txt" Property="Foreground" Value="#FFFFFF"/>
+                                                </DataTrigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
             </Grid>
         </Border>
 
-        <!-- 2. CATEGORY TABS -->
-        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="10,8">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                <ItemsControl ItemsSource="{Binding Categories}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Content="{Binding Name}"
-                                    Command="{Binding DataContext.SelectCategoryCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    CommandParameter="{Binding Id}"
-                                    Margin="0,0,8,0" Padding="14,7"
-                                    FontSize="12" FontWeight="SemiBold"
-                                    Cursor="Hand">
+        <!-- ========================================================================= -->
+        <!-- 2. MAIN PRODUCT AREA                                                      -->
+        <!-- ========================================================================= -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <!-- Top Header & Search Bar -->
+                <RowDefinition Height="Auto"/>
+                <!-- Product Cards Grid -->
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- 2A. TOP SEARCH & CONTROLS TOOLBAR (Matching /admin/pos) -->
+            <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <!-- Left: Customer info tag -->
+                        <ColumnDefinition Width="Auto"/>
+                        <!-- Middle: Search Input -->
+                        <ColumnDefinition Width="*"/>
+                        <!-- Right: Actions (View Mode, Refresh) -->
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: Guest/Table quick indicator -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,6" Margin="0,0,6,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="👤" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Khách tại bàn" FontSize="12" FontWeight="Bold" Foreground="#334155" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+
+                        <Button Command="{Binding OpenGuestCountCommand}" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" Padding="10,6" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="👥 " FontSize="11" Margin="0,0,2,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding GuestCount, StringFormat='{}{0} Khách'}" FontSize="12" FontWeight="Bold" Foreground="#2563EB" VerticalAlignment="Center"/>
+                                            <TextBlock Text=" ▾" FontSize="10" Foreground="#64748B" Margin="3,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Middle: Search Box -->
+                    <Border Grid.Column="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="12,6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="🔍" FontSize="13" Foreground="#94A3B8" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                            <TextBox Grid.Column="1" Text="{Binding SearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="Transparent" BorderThickness="0" Foreground="#0F172A" FontSize="13.5"
+                                     VerticalAlignment="Center" CaretBrush="#DA251D"/>
+                            <Button Grid.Column="2" Content="✕" Command="{Binding ClearSearchCommand}"
+                                    Background="Transparent" Foreground="#94A3B8" BorderThickness="0"
+                                    Cursor="Hand" Padding="4,0" FontSize="12">
                                 <Button.Style>
                                     <Style TargetType="Button">
-                                        <Setter Property="Background" Value="#F1F5F9"/>
-                                        <Setter Property="Foreground" Value="#475569"/>
-                                        <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}"
-                                                            BorderBrush="{TemplateBinding BorderBrush}"
-                                                            BorderThickness="{TemplateBinding BorderThickness}"
-                                                            CornerRadius="8"
-                                                            Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
+                                        <Setter Property="Visibility" Value="Collapsed"/>
                                         <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Background" Value="#E2E8F0"/>
-                                                <Setter Property="Foreground" Value="#0F172A"/>
-                                                <Setter Property="BorderBrush" Value="#CBD5E1"/>
-                                            </Trigger>
+                                            <DataTrigger Binding="{Binding SearchKeyword.Length, FallbackValue=0}" Value="0">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Button.Style>
                             </Button>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right: View Mode Toggle & Refresh -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+                        <!-- Toggle View Mode Button: [☷ Rút gọn] / [🖼 Xem ảnh] -->
+                        <Button Command="{Binding ToggleCompactModeCommand}" Cursor="Hand" Margin="0,0,8,0" BorderThickness="0">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="12,6">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding ViewModeIcon}" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="{Binding ViewModeText}" FontSize="12" FontWeight="Bold" Foreground="#334155" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+
+                        <!-- Refresh Menu Button -->
+                        <Button Command="{Binding RefreshCommand}" Cursor="Hand" BorderThickness="0">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                        <TextBlock Text="🔄" FontSize="12" Foreground="#334155" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 2B. PRODUCT GRID (Dynamic Full / Compact Mode) -->
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="12">
+                <ItemsControl ItemsSource="{Binding FilteredProducts}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <!-- Product Card -->
+                            <Border CornerRadius="12" Margin="6" Padding="10"
+                                    Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1"
+                                    Cursor="Hand" MouseLeftButtonUp="OnProductCardClick">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Width" Value="176"/>
+                                        <Setter Property="Height" Value="200"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="BorderBrush" Value="#DA251D"/>
+                                                <Setter Property="Background" Value="#FFF1F2"/>
+                                            </Trigger>
+                                            <!-- Compact Mode Card Sizing -->
+                                            <DataTrigger Binding="{Binding DataContext.IsCompactMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                <Setter Property="Width" Value="152"/>
+                                                <Setter Property="Height" Value="128"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+
+                                <Grid>
+                                    <!-- A. FULL MODE WITH IMAGE (Default) -->
+                                    <Grid>
+                                        <Grid.Style>
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DataContext.IsCompactMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
+                                        <Grid.RowDefinitions>
+                                            <!-- Product Image + Top Badges -->
+                                            <RowDefinition Height="100"/>
+                                            <!-- Code & Unit -->
+                                            <RowDefinition Height="Auto"/>
+                                            <!-- Product Name -->
+                                            <RowDefinition Height="*"/>
+                                            <!-- Price & Add Button -->
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <!-- Image Container -->
+                                        <Border Grid.Row="0" CornerRadius="8" Background="#F1F5F9" ClipToBounds="True">
+                                            <Grid>
+                                                <!-- Fallback Fork & Knife Icon -->
+                                                <TextBlock Text="🍱" FontSize="36" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6"/>
+
+                                                <!-- Product Real Image (if available) -->
+                                                <Image Source="{Binding FullImageUrl}" Stretch="UniformToFill">
+                                                    <Image.Style>
+                                                        <Style TargetType="Image">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasImage}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Image.Style>
+                                                </Image>
+
+                                                <!-- Top-Left Badge: Bán chạy -->
+                                                <Border Background="#F59E0B" CornerRadius="4" Padding="5,2" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="4">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsBestSeller}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="🔥 Bán chạy" FontSize="9" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                </Border>
+
+                                                <!-- Top-Right Badge: Tùy chọn -->
+                                                <Border Background="#334155" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="4">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding HasOptions}" Value="True">
+                                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="⚙ Tùy chọn" FontSize="9" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                </Border>
+                                            </Grid>
+                                        </Border>
+
+                                        <!-- Row 1: Code & Unit -->
+                                        <Grid Grid.Row="1" Margin="0,6,0,2">
+                                            <TextBlock Text="{Binding Code}" FontSize="10.5" Foreground="#94A3B8" FontWeight="SemiBold" HorizontalAlignment="Left"/>
+                                            <TextBlock Text="{Binding Unit, FallbackValue='Phần'}" FontSize="10.5" Foreground="#94A3B8" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                        </Grid>
+
+                                        <!-- Row 2: Product Name -->
+                                        <TextBlock Grid.Row="2" Text="{Binding Name}" Foreground="#0F172A"
+                                                   FontWeight="Bold" FontSize="12.5" TextWrapping="Wrap"
+                                                   LineHeight="16" MaxHeight="34" TextTrimming="CharacterEllipsis"/>
+
+                                        <!-- Row 3: Price & Add (+) Button -->
+                                        <Grid Grid.Row="3" Margin="0,4,0,0">
+                                            <TextBlock Text="{Binding PriceText}" Foreground="#DA251D" FontWeight="Black" FontSize="14" VerticalAlignment="Center"/>
+
+                                            <Border HorizontalAlignment="Right" Width="26" Height="26" CornerRadius="6" Background="#FFF1F2" BorderBrush="#FECDD3" BorderThickness="1">
+                                                <TextBlock Text="+" FontSize="16" FontWeight="Black" Foreground="#DA251D" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0"/>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+
+                                    <!-- B. COMPACT MODE (Text-only fast touch) -->
+                                    <Grid>
+                                        <Grid.Style>
+                                            <Style TargetType="Grid">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding DataContext.IsCompactMode, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Grid.Style>
+                                        <Grid.RowDefinitions>
+                                            <!-- Code & Option badge -->
+                                            <RowDefinition Height="Auto"/>
+                                            <!-- Name -->
+                                            <RowDefinition Height="*"/>
+                                            <!-- Price & (+) -->
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+
+                                        <Grid Grid.Row="0">
+                                            <Border Background="#F1F5F9" CornerRadius="4" Padding="5,2" HorizontalAlignment="Left">
+                                                <TextBlock Text="{Binding Code}" FontSize="10" Foreground="#475569" FontWeight="Bold"/>
+                                            </Border>
+                                            <Border Background="#FEF2F2" CornerRadius="4" Padding="5,2" HorizontalAlignment="Right">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasOptions}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="⚙" FontSize="10" Foreground="#DA251D"/>
+                                            </Border>
+                                        </Grid>
+
+                                        <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="#0F172A"
+                                                   FontWeight="Bold" FontSize="12.5" TextWrapping="Wrap"
+                                                   VerticalAlignment="Center" Margin="0,4"/>
+
+                                        <Grid Grid.Row="2">
+                                            <TextBlock Text="{Binding PriceText}" Foreground="#DA251D" FontWeight="Black" FontSize="13.5" VerticalAlignment="Center"/>
+                                            <Border HorizontalAlignment="Right" Width="24" Height="24" CornerRadius="6" Background="#FFF1F2" BorderBrush="#FECDD3" BorderThickness="1">
+                                                <TextBlock Text="+" FontSize="14" FontWeight="Black" Foreground="#DA251D" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-2,0,0"/>
+                                            </Border>
+                                        </Grid>
+                                    </Grid>
+                                </Grid>
+                            </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
-        </Border>
-
-        <!-- 3. PRODUCT CARDS GRID -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="10">
-            <ItemsControl ItemsSource="{Binding FilteredProducts}">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <WrapPanel Orientation="Horizontal"/>
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Border Width="165" Height="150" Margin="6" CornerRadius="12" Padding="12"
-                                Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1.5"
-                                Cursor="Hand" MouseLeftButtonUp="OnProductCardClick">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.06" Color="#000000"/>
-                            </Border.Effect>
-                            <Border.Style>
-                                <Style TargetType="Border">
-                                    <Style.Triggers>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="BorderBrush" Value="#E11D48"/>
-                                            <Setter Property="Background" Value="#FFF1F2"/>
-                                        </Trigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Border.Style>
-
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <!-- Badge / Code -->
-                                    <RowDefinition Height="Auto"/>
-                                    <!-- Name -->
-                                    <RowDefinition Height="*"/>
-                                    <!-- Price -->
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-
-                                <!-- Code & Category -->
-                                <Grid Grid.Row="0">
-                                    <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left">
-                                        <TextBlock Text="{Binding Code, FallbackValue='MÓN'}" FontSize="10" Foreground="#475569" FontWeight="Bold"/>
-                                    </Border>
-                                    <!-- Out of stock badge -->
-                                    <Border Background="#FEE2E2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="4" Padding="6,2" HorizontalAlignment="Right"
-                                            Visibility="{Binding IsOutOfStock, Converter={x:Null}}">
-                                        <TextBlock Text="Hết món" FontSize="9" Foreground="#DC2626" FontWeight="Bold"/>
-                                    </Border>
-                                </Grid>
-
-                                <!-- Name -->
-                                <TextBlock Grid.Row="1" Text="{Binding Name}" Foreground="#0F172A"
-                                           FontWeight="Bold" FontSize="13.5" TextWrapping="Wrap"
-                                           VerticalAlignment="Center" Margin="0,6"/>
-
-                                <!-- Price -->
-                                <TextBlock Grid.Row="2" Text="{Binding PriceText}"
-                                           Foreground="#E11D48" FontWeight="Black" FontSize="15"
-                                           HorizontalAlignment="Right"/>
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+        </Grid>
     </Grid>
 </UserControl>

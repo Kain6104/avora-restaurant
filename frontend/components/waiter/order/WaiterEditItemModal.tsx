@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAdmin } from '@/contexts/AdminContext';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 
 interface WaiterEditItemModalProps {
   isOpen: boolean;
@@ -339,66 +340,85 @@ export default function WaiterEditItemModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="fixed inset-0" onClick={onClose} />
+    <ResponsiveModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={productName}
+      subtitle={`Đơn giá: ${baseUnitPrice.toLocaleString('vi-VN')} đ`}
+      icon={<ChefHat size={18} className="text-[#DA251D]" />}
+      maxWidth="lg"
+      headerExtra={
+        isSent ? (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+            {item.kitchenStatus === 'READY' ? (
+              <>
+                <CheckCircle2 size={11} className="text-emerald-600" />
+                <span>Sẵn sàng</span>
+              </>
+            ) : item.kitchenStatus === 'PREPARING' ? (
+              <>
+                <Flame size={11} className="text-orange-600" />
+                <span>Đang làm</span>
+              </>
+            ) : (
+              <>
+                <Clock size={11} className="text-amber-600" />
+                <span>Chờ chế biến</span>
+              </>
+            )}
+          </span>
+        ) : (
+          <span className="bg-[#DA251D] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Mới chờ gửi
+          </span>
+        )
+      }
+      footer={
+        <div className="flex items-center justify-between gap-2 w-full">
+          {isRedeemedReward ? (
+            <div className="px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold flex items-center gap-1.5 select-none">
+              <Lock size={13} className="text-amber-600" />
+              <span>Món đổi điểm (Cố định)</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleRemoveItem}
+              className="px-3 py-2 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Trash2 size={14} />
+              <span>{isSent ? 'Hủy món' : 'Xóa món'}</span>
+            </button>
+          )}
 
-      <div
-        className="relative w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col z-[125] max-h-[92vh] overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 bg-slate-50/70">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-xl bg-red-100 text-[#DA251D] flex items-center justify-center shrink-0">
-              <ChefHat size={18} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="font-bold text-base text-slate-900 truncate">
-                  {productName}
-                </h2>
-                {isSent ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                    {item.kitchenStatus === 'READY' ? (
-                      <>
-                        <CheckCircle2 size={11} className="text-emerald-600" />
-                        <span>Sẵn sàng</span>
-                      </>
-                    ) : item.kitchenStatus === 'PREPARING' ? (
-                      <>
-                        <Flame size={11} className="text-orange-600" />
-                        <span>Đang làm</span>
-                      </>
-                    ) : (
-                      <>
-                        <Clock size={11} className="text-amber-600" />
-                        <span>Chờ chế biến</span>
-                      </>
-                    )}
-                  </span>
-                ) : (
-                  <span className="bg-[#DA251D] text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider">
-                    Mới chờ gửi
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 font-medium mt-0.5">
-                Đơn giá: <strong>{baseUnitPrice.toLocaleString('vi-VN')} đ</strong>
-              </p>
-            </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={onClose}
+              className="px-3.5 py-2 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Đóng
+            </button>
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleSave}
+              className="px-4 py-2 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-95 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
+            >
+              {isSaving ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <Check size={14} />
+              )}
+              <span>Lưu thay đổi</span>
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-500 rounded-full transition-colors cursor-pointer"
-          >
-            <X size={18} />
-          </button>
         </div>
-
-        {/* Scrollable Content */}
-        <div className="p-4 space-y-4 overflow-y-auto flex-1 text-xs">
+      }
+    >
+      <div className="space-y-4 py-1 text-xs">
           {/* Card nổi bật cho Món Đổi Điểm Thưởng */}
           {isRedeemedReward && (
             <div className="p-3.5 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-200 space-y-2.5 shadow-2xs">
@@ -764,52 +784,7 @@ export default function WaiterEditItemModal({
               )}
             </div>
           )}
-        </div>
-
-        {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-100 bg-white flex items-center justify-between gap-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          {isRedeemedReward ? (
-            <div className="px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold flex items-center gap-1.5 select-none">
-              <Lock size={14} className="text-amber-600" />
-              <span>Món đổi điểm (Cố định)</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={handleRemoveItem}
-              className="px-3.5 py-2.5 rounded-xl border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
-            >
-              <Trash2 size={15} />
-              <span>{isSent ? 'Hủy món' : 'Xóa món'}</span>
-            </button>
-          )}
-
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 transition-colors cursor-pointer"
-            >
-              Đóng
-            </button>
-            <button
-              type="button"
-              disabled={isSaving}
-              onClick={handleSave}
-              className="px-5 py-2.5 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-95 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all disabled:opacity-50 cursor-pointer"
-            >
-              {isSaving ? (
-                <Loader2 size={15} className="animate-spin" />
-              ) : (
-                <Check size={15} />
-              )}
-              <span>Lưu thay đổi</span>
-            </button>
-          </div>
-        </div>
       </div>
-    </div>
+    </ResponsiveModal>
   );
 }

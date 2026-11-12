@@ -4,150 +4,247 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="750" d:DesignWidth="1100"
+             d:DesignHeight="760" d:DesignWidth="1366"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
              Background="#F8FAFC">
-    
+
     <Grid>
         <Grid.RowDefinitions>
-            <!-- Area & Status Metrics Bar -->
+            <!-- Row 0: Horizontal Combined Area & Status Bar (/admin/pos TableMap.tsx parity) -->
             <RowDefinition Height="Auto"/>
-            <!-- Table grid -->
+            <!-- Row 1: Full-Width Dense Table Cards Grid (*) -->
             <RowDefinition Height="*"/>
-            <!-- Bottom action toolbar for selected table -->
-            <RowDefinition Height="68"/>
         </Grid.RowDefinitions>
 
-        <!-- TOP BAR: Area Filters & Realtime Summary (LIGHT THEME) -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="16,12">
+        <!-- ========================================================================= -->
+        <!-- 1. TOP HORIZONTAL AREA & STATUS BAR (Bright White & Red AVORA Theme)      -->
+        <!-- ========================================================================= -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1.5" Padding="14,10">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-                <!-- Row 0: Quick Status Metrics -->
-                <Grid Grid.Row="0" Margin="0,0,0,10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                <!-- Left: Area Tabs + Vertical Divider + Status Quick Filters -->
+                <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Area Tabs Pill Container -->
+                    <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="10" Padding="3" Margin="0,0,10,0">
+                        <ItemsControl ItemsSource="{Binding Areas}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding DataContext.SelectAreaCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding Id}"
+                                            Cursor="Hand" Margin="2,0" BorderThickness="0">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border x:Name="areaBorder" Background="Transparent" CornerRadius="7" Padding="12,6">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock x:Name="areaPin" Text="📍" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                                        <TextBlock x:Name="areaText" Text="{Binding Name}" FontSize="12" FontWeight="Bold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="areaBorder" Property="Background" Value="#FFFFFF"/>
+                                                        <Setter TargetName="areaText" Property="Foreground" Value="#DA251D"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
 
+                    <!-- Vertical Divider -->
+                    <Border Width="1" Height="26" Background="#E2E8F0" Margin="2,0,12,0" VerticalAlignment="Center"/>
+
+                    <!-- Status Quick Filters -->
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <!-- Total -->
-                        <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Tổng: " Foreground="#64748B" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding TotalTablesCount}" Foreground="#0F172A" FontSize="12" FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- Tất cả -->
+                        <Button Command="{Binding SetStatusFilterCommand}" CommandParameter="ALL" Cursor="Hand" Margin="0,0,6,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#F1F5F9"/>
+                                    <Setter Property="Foreground" Value="#334155"/>
+                                    <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusFilter}" Value="ALL">
+                                            <Setter Property="Background" Value="#0F172A"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            <Setter Property="BorderBrush" Value="#0F172A"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="11,6">
+                                        <TextBlock Text="{Binding TotalTablesCount, StringFormat='Tất cả ({0})'}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                        <!-- Vacant -->
-                        <Border Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="7" Height="7" Fill="#10B981" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Trống: " Foreground="#065F46" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding VacantCount}" Foreground="#065F46" FontSize="12" FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- Bàn trống -->
+                        <Button Command="{Binding SetStatusFilterCommand}" CommandParameter="VACANT" Cursor="Hand" Margin="0,0,6,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#ECFDF5"/>
+                                    <Setter Property="Foreground" Value="#047857"/>
+                                    <Setter Property="BorderBrush" Value="#A7F3D0"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusFilter}" Value="VACANT">
+                                            <Setter Property="Background" Value="#059669"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            <Setter Property="BorderBrush" Value="#059669"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="11,6">
+                                        <TextBlock Text="{Binding VacantCount, StringFormat='Bàn trống ({0})'}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                        <!-- Occupied -->
-                        <Border Background="#FFFBEB" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="7" Height="7" Fill="#F59E0B" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Đang dùng: " Foreground="#92400E" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding OccupiedCount}" Foreground="#92400E" FontSize="12" FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- Có khách -->
+                        <Button Command="{Binding SetStatusFilterCommand}" CommandParameter="OCCUPIED" Cursor="Hand" Margin="0,0,6,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FEF2F2"/>
+                                    <Setter Property="Foreground" Value="#DA251D"/>
+                                    <Setter Property="BorderBrush" Value="#FECDD3"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusFilter}" Value="OCCUPIED">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            <Setter Property="BorderBrush" Value="#DA251D"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="11,6">
+                                        <TextBlock Text="{Binding OccupiedCount, StringFormat='Có khách ({0})'}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                        <!-- Bill Printed -->
-                        <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="7" Height="7" Fill="#3B82F6" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="In tạm tính: " Foreground="#1E40AF" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding BillPrintedCount}" Foreground="#1E40AF" FontSize="12" FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- Chờ TT -->
+                        <Button Command="{Binding SetStatusFilterCommand}" CommandParameter="BILL_PRINTED" Cursor="Hand" Margin="0,0,6,0">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FFFBEB"/>
+                                    <Setter Property="Foreground" Value="#B45309"/>
+                                    <Setter Property="BorderBrush" Value="#FDE68A"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusFilter}" Value="BILL_PRINTED">
+                                            <Setter Property="Background" Value="#D97706"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            <Setter Property="BorderBrush" Value="#D97706"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="11,6">
+                                        <TextBlock Text="{Binding BillPrintedCount, StringFormat='Chờ TT ({0})'}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                        <!-- Reserved -->
-                        <Border Background="#FAF5FF" BorderBrush="#E9D5FF" BorderThickness="1" CornerRadius="8" Padding="10,4" Margin="0,0,8,0">
-                            <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="7" Height="7" Fill="#8B5CF6" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Đặt trước: " Foreground="#5B21B6" FontSize="12" FontWeight="SemiBold"/>
-                                <TextBlock Text="{Binding ReservedCount}" Foreground="#5B21B6" FontSize="12" FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
+                        <!-- Đặt trước -->
+                        <Button Command="{Binding SetStatusFilterCommand}" CommandParameter="RESERVED" Cursor="Hand">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#F0F9FF"/>
+                                    <Setter Property="Foreground" Value="#0369A1"/>
+                                    <Setter Property="BorderBrush" Value="#BAE6FD"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusFilter}" Value="RESERVED">
+                                            <Setter Property="Background" Value="#0284C7"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            <Setter Property="BorderBrush" Value="#0284C7"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="11,6">
+                                        <TextBlock Text="{Binding ReservedCount, StringFormat='Đặt trước ({0})'}" FontSize="12" FontWeight="Bold" Foreground="{TemplateBinding Foreground}"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
                     </StackPanel>
+                </WrapPanel>
+
+                <!-- Right: Search Input + Scroll Up/Down + Refresh -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Search Box -->
+                    <Border Width="210" Height="34" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,0" Margin="0,0,8,0">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="🔍" FontSize="12" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                            <TextBox Grid.Column="1" Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="Transparent" BorderThickness="0" FontSize="12.5" FontWeight="SemiBold" Foreground="#0F172A"
+                                     VerticalContentAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Touch Scroll Up/Down Buttons -->
+                    <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="2" Margin="0,0,8,0">
+                        <StackPanel Orientation="Horizontal">
+                            <Button Click="OnScrollUpClick" Width="30" Height="28" Cursor="Hand" ToolTip="Cuộn lên" Background="Transparent" BorderThickness="0">
+                                <TextBlock Text="▲" FontSize="11" FontWeight="Black" Foreground="#475569" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                            <Border Width="1" Height="18" Background="#E2E8F0" Margin="1,0"/>
+                            <Button Click="OnScrollDownClick" Width="30" Height="28" Cursor="Hand" ToolTip="Cuộn xuống" Background="Transparent" BorderThickness="0">
+                                <TextBlock Text="▼" FontSize="11" FontWeight="Black" Foreground="#475569" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Button>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Refresh Button -->
-                    <Button Grid.Column="1" Command="{Binding RefreshCommand}"
-                            Background="#F1F5F9" Foreground="#0F172A" BorderBrush="#CBD5E1" BorderThickness="1"
-                            Padding="12,6" Cursor="Hand">
+                    <Button Command="{Binding RefreshCommand}" Width="34" Height="34" Cursor="Hand" ToolTip="Làm mới sơ đồ bàn">
                         <Button.Template>
                             <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="🔄" Margin="0,0,6,0" FontSize="12"/>
-                                        <TextBlock Text="Làm mới bàn" FontWeight="Bold" FontSize="12" Foreground="#0F172A"/>
-                                    </StackPanel>
+                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8">
+                                    <TextBlock Text="🔄" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                 </Border>
                             </ControlTemplate>
                         </Button.Template>
                     </Button>
-                </Grid>
-
-                <!-- Row 1: Area Filter Chips -->
-                <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                    <ItemsControl ItemsSource="{Binding Areas}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal"/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Content="{Binding Name}" 
-                                        Command="{Binding DataContext.SelectAreaCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"
-                                        Margin="0,0,8,0" Padding="14,7"
-                                        FontSize="13" FontWeight="SemiBold"
-                                        Cursor="Hand">
-                                    <Button.Style>
-                                        <Style TargetType="Button">
-                                            <Setter Property="Background" Value="#F8FAFC"/>
-                                            <Setter Property="Foreground" Value="#334155"/>
-                                            <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                            <Setter Property="BorderThickness" Value="1"/>
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <Border Background="{TemplateBinding Background}"
-                                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                                CornerRadius="8"
-                                                                Padding="{TemplateBinding Padding}">
-                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                        </Border>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <Trigger Property="IsMouseOver" Value="True">
-                                                    <Setter Property="Background" Value="#E2E8F0"/>
-                                                    <Setter Property="Foreground" Value="#0F172A"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </ScrollViewer>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- TABLE GRID CARDS -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="16">
+        <!-- ========================================================================= -->
+        <!-- 2. FULL-WIDTH DENSE COMPACT TABLE CARDS GRID (1-Click Opens Order!)       -->
+        <!-- ========================================================================= -->
+        <ScrollViewer x:Name="TablesScrollViewer" Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="14">
             <ItemsControl ItemsSource="{Binding FilteredTables}">
                 <ItemsControl.ItemsPanel>
                     <ItemsPanelTemplate>
@@ -156,164 +253,125 @@
                 </ItemsControl.ItemsPanel>
                 <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Width="184" Height="150" Margin="8" CornerRadius="12" Padding="14"
-                                BorderThickness="2" Cursor="Hand" MouseLeftButtonUp="OnTableCardClick">
-                            <!-- Background & Border based on table status (Light Theme) -->
+                        <Border Width="148" Height="104" Margin="6" CornerRadius="12" Cursor="Hand"
+                                MouseLeftButtonUp="OnTableCardClick"
+                                ToolTip="Nhấn vào bàn để mở đơn / gọi món ngay lập tức">
                             <Border.Style>
                                 <Style TargetType="Border">
                                     <Setter Property="Background" Value="#FFFFFF"/>
                                     <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                                    <Setter Property="BorderThickness" Value="1.5"/>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Status}" Value="VACANT">
-                                            <Setter Property="Background" Value="#FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#10B981"/>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="BorderBrush" Value="#DA251D"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding VisualStatus}" Value="OCCUPIED">
+                                            <Setter Property="Background" Value="#FFF1F2"/>
+                                            <Setter Property="BorderBrush" Value="#DA251D"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding Status}" Value="OCCUPIED">
-                                            <Setter Property="Background" Value="#FFFDF5"/>
+                                        <DataTrigger Binding="{Binding VisualStatus}" Value="BILL_PRINTED">
+                                            <Setter Property="Background" Value="#FFFBEB"/>
                                             <Setter Property="BorderBrush" Value="#F59E0B"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding Status}" Value="BILL_PRINTED">
-                                            <Setter Property="Background" Value="#F8FAFF"/>
-                                            <Setter Property="BorderBrush" Value="#3B82F6"/>
-                                        </DataTrigger>
-                                        <DataTrigger Binding="{Binding Status}" Value="RESERVED">
-                                            <Setter Property="Background" Value="#FCFAFF"/>
-                                            <Setter Property="BorderBrush" Value="#8B5CF6"/>
+                                        <DataTrigger Binding="{Binding VisualStatus}" Value="RESERVED">
+                                            <Setter Property="Background" Value="#F0F9FF"/>
+                                            <Setter Property="BorderBrush" Value="#0284C7"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
 
-                            <Grid>
+                            <Grid Margin="10,8">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
                                     <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
                                 </Grid.RowDefinitions>
 
-                                <!-- Header: Table Name & Capacity -->
-                                <Grid Grid.Row="0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Name}" FontWeight="Black" FontSize="16" Foreground="#0F172A"/>
-                                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="👥" FontSize="11" Margin="0,0,3,0"/>
-                                        <TextBlock Text="{Binding Capacity}" FontSize="12" FontWeight="SemiBold" Foreground="#64748B"/>
-                                    </StackPanel>
-                                </Grid>
+                                <!-- Row 0: Table Name / Number -->
+                                <TextBlock Grid.Row="0" Text="{Binding Name}" FontSize="14.5" FontWeight="Black" Foreground="#0F172A"
+                                           HorizontalAlignment="Center" TextTrimming="CharacterEllipsis"/>
 
-                                <!-- Middle: Status Pill & Elapsed Time -->
-                                <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,6,0,0">
-                                    <Border CornerRadius="6" Padding="6,2" HorizontalAlignment="Left">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="Background" Value="#F1F5F9"/>
+                                <!-- Row 1: Divider Line -->
+                                <Border Grid.Row="1" Height="1" Margin="8,7" Background="#E2E8F0">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="#E2E8F0"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding VisualStatus}" Value="OCCUPIED">
+                                                    <Setter Property="Background" Value="#FECDD3"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                </Border>
+
+                                <!-- Row 2: Status / Active Order Total & Elapsed Time -->
+                                <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <!-- Total Amount when Occupied/Bill Printed -->
+                                    <TextBlock Text="{Binding CurrentTotalText}" FontSize="13.5" FontWeight="Black" Foreground="#DA251D" HorizontalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding Status}" Value="VACANT">
-                                                        <Setter Property="Background" Value="#ECFDF5"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Status}" Value="OCCUPIED">
-                                                        <Setter Property="Background" Value="#FEF3C7"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Status}" Value="BILL_PRINTED">
-                                                        <Setter Property="Background" Value="#DBEAFE"/>
-                                                    </DataTrigger>
-                                                    <DataTrigger Binding="{Binding Status}" Value="RESERVED">
-                                                        <Setter Property="Background" Value="#F3E8FF"/>
+                                                    <DataTrigger Binding="{Binding CurrentTotalText}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
-                                        </Border.Style>
-                                        <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="Bold">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#64748B"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Status}" Value="VACANT">
-                                                            <Setter Property="Foreground" Value="#047857"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="OCCUPIED">
-                                                            <Setter Property="Foreground" Value="#B45309"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="BILL_PRINTED">
-                                                            <Setter Property="Foreground" Value="#1D4ED8"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Status}" Value="RESERVED">
-                                                            <Setter Property="Foreground" Value="#7E22CE"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </Border>
+                                        </TextBlock.Style>
+                                    </TextBlock>
 
-                                    <!-- Area name / Elapsed Time -->
-                                    <TextBlock Text="{Binding AreaName}" FontSize="11" Foreground="#94A3B8" Margin="0,4,0,0"/>
+                                    <!-- Status Label when Vacant or no total yet -->
+                                    <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#94A3B8"/>
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CurrentTotalText}" Value="">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding VisualStatus}" Value="OCCUPIED">
+                                                        <Setter Property="Foreground" Value="#DA251D"/>
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding VisualStatus}" Value="BILL_PRINTED">
+                                                        <Setter Property="Foreground" Value="#D97706"/>
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding VisualStatus}" Value="RESERVED">
+                                                        <Setter Property="Foreground" Value="#0284C7"/>
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+
+                                    <!-- Elapsed Time when Occupied -->
+                                    <TextBlock Text="{Binding ElapsedTimeText, StringFormat='🕒 {0}'}" FontSize="10.5" FontWeight="SemiBold" Foreground="#64748B" HorizontalAlignment="Center" Margin="0,2,0,0">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding ElapsedTimeText}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
-
-                                <!-- Bottom: Subtotal / Elapsed time -->
-                                <Grid Grid.Row="2">
-                                    <TextBlock Text="{Binding ElapsedTimeText}" FontSize="11" FontWeight="SemiBold" Foreground="#B45309" HorizontalAlignment="Left" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding CurrentTotalText}" FontWeight="Black" FontSize="14" Foreground="#E11D48" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                </Grid>
                             </Grid>
                         </Border>
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
-
-        <!-- BOTTOM ACTION TOOLBAR -->
-        <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="16,10">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <!-- Selected table indicator -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Bàn đang chọn:" Foreground="#64748B" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <Border Background="#F1F5F9" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="10,0,0,0">
-                        <TextBlock Text="{Binding SelectedTable.Name, FallbackValue='(Chưa chọn bàn)'}" 
-                                   FontWeight="Black" Foreground="#0F172A" FontSize="14" VerticalAlignment="Center"/>
-                    </Border>
-                </StackPanel>
-
-                <!-- Operational Action Buttons -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <!-- Đổi bàn -->
-                    <Button Content="🔄 Đổi bàn" Command="{Binding MoveTableCommand}"
-                            Background="#FFFFFF" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
-                            Padding="14,10" Margin="0,0,8,0" FontWeight="Bold" FontSize="13" Cursor="Hand"/>
-
-                    <!-- Gộp bàn -->
-                    <Button Content="➕ Gộp bàn" Command="{Binding MergeTableCommand}"
-                            Background="#FFFFFF" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
-                            Padding="14,10" Margin="0,0,8,0" FontWeight="Bold" FontSize="13" Cursor="Hand"/>
-
-                    <!-- Tách bàn -->
-                    <Button Content="✂️ Tách bàn" Command="{Binding SplitTableCommand}"
-                            Background="#FFFFFF" Foreground="#334155" BorderBrush="#CBD5E1" BorderThickness="1"
-                            Padding="14,10" Margin="0,0,8,0" FontWeight="Bold" FontSize="13" Cursor="Hand"/>
-
-                    <!-- Mở bàn / Vào gọi món -->
-                    <Button Content="⚡ Mở bàn / Gọi món" Command="{Binding OpenTableOrderCommand}"
-                            Background="#0F172A" Foreground="#FFFFFF" BorderThickness="0"
-                            Padding="22,10" FontWeight="Black" FontSize="14" Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
-                </StackPanel>
-            </Grid>
-        </Border>
     </Grid>
 </UserControl>

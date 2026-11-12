@@ -4,7 +4,11 @@ import {
   BadRequestException,
   NotFoundException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BankCryptoService } from './bank-crypto.service';
 import { BankParserService } from './bank-parser.service';
@@ -18,11 +22,16 @@ import {
   ScanReportDto,
   ConfirmRefundDto,
 } from '../dto/heartbeat.dto';
-import { randomBytes } from 'crypto';
 
 @Injectable()
 export class BankConnectService {
   private readonly logger = new Logger(BankConnectService.name);
+  private cachedApkMeta: {
+    cacheKey: string;
+    fileSize: number;
+    sha256: string;
+    releasedAt: string;
+  } | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -131,11 +140,16 @@ export class BankConnectService {
 
     // Thông báo realtime cho Admin Web
     if (this.posGateway.server) {
-      this.posGateway.server.to('admin:global').emit('bank.device.online', {
+      const pairedPayload = {
         deviceId: result.deviceId,
         deviceName: result.deviceName,
+        pairingCode,
         pairedAt: result.pairedAt.toISOString(),
-      });
+      };
+      this.posGateway.server.to('admin:global').emit('bank.device.paired', pairedPayload);
+      this.posGateway.server.emit('bank.device.paired', pairedPayload);
+      this.posGateway.server.to('admin:global').emit('bank.device.online', pairedPayload);
+      this.posGateway.server.emit('bank.device.online', pairedPayload);
     }
 
     return {
@@ -421,11 +435,13 @@ export class BankConnectService {
     });
 
     if (this.posGateway.server) {
-      this.posGateway.server.to('admin:global').emit('bank.device.revoked', {
+      const payload = {
         deviceId,
-        reason,
+        reason: reason || 'Thiết bị đã bị Quản trị viên thu hồi trên Web Admin',
         revokedAt: new Date().toISOString(),
-      });
+      };
+      this.posGateway.server.to('admin:global').emit('bank.device.revoked', payload);
+      this.posGateway.server.emit('bank.device.revoked', payload);
     }
 
     this.logger.warn(`[!] Thiết bị ${deviceId} đã bị thu hồi quyền truy cập.`);
@@ -465,6 +481,51 @@ export class BankConnectService {
   }
 
   /**
+   * Admin kiểm tra trạng thái ghép nối của mã pairing code
+   */
+  async getPairingStatus(code: string): Promise<{
+    paired: boolean;
+    device?: {
+      deviceId: string;
+      deviceName: string;
+      pairedAt: string;
+      appVersion?: string;
+    };
+  }> {
+    if (!code || !code.trim()) {
+      throw new BadRequestException('Mã pairing không được để trống');
+    }
+    const cleanCode = code.trim().toUpperCase();
+    const codeRecord = await this.prisma.bankPairingCode.findUnique({
+      where: { code: cleanCode },
+    });
+    if (!codeRecord) {
+      throw new NotFoundException('Không tìm thấy mã pairing');
+    }
+    if (codeRecord.isUsed && codeRecord.usedByDeviceId) {
+      const device = await this.prisma.bankConnectedDevice.findUnique({
+        where: { deviceId: codeRecord.usedByDeviceId },
+      });
+      return {
+        paired: true,
+        device: device
+          ? {
+              deviceId: device.deviceId,
+              deviceName: device.deviceName,
+              pairedAt: device.pairedAt ? device.pairedAt.toISOString() : new Date().toISOString(),
+              appVersion: device.appVersion,
+            }
+          : {
+              deviceId: codeRecord.usedByDeviceId,
+              deviceName: 'Android Gateway',
+              pairedAt: new Date().toISOString(),
+            },
+      };
+    }
+    return { paired: false };
+  }
+
+  /**
    * Admin lấy danh sách thiết bị đã kết nối
    */
   async listDevices(): Promise<any[]> {
@@ -488,12 +549,15 @@ export class BankConnectService {
     direction?: string;
     fromDate?: string;
     toDate?: string;
+    includeArchived?: boolean;
   }): Promise<{ items: any[]; total: number; page: number; limit: number }> {
     const page = Math.max(1, Number(params.page) || 1);
     const limit = Math.min(100, Math.max(1, Number(params.limit) || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const where: any = {
+      isArchived: params.includeArchived ? undefined : false,
+    };
     if (params.matchingStatus && params.matchingStatus !== 'ALL') {
       where.matchingStatus = params.matchingStatus;
     }
@@ -651,15 +715,24 @@ export class BankConnectService {
   }
 
   /**
-   * Xóa một giao dịch rác không thuộc về đơn hàng nào
+   * Dọn dẹp (Archive/Soft-delete an toàn) một giao dịch chưa khớp đơn lẻ.
+   * TUYỆT ĐỐI KHÔNG xóa cứng BankTransaction, BankTransactionOrderMatch hay OrderPayment,
+   * và KHÔNG tác động tới giao dịch đã khớp (MATCHED / MANUALLY_MATCHED / OVERPAID_DUPLICATE)
+   * hoặc giao dịch đang cần kiểm tra đối soát (REVIEW_REQUIRED).
    */
-  async deleteUnmatchedTransaction(idOrEventId: string): Promise<any> {
-    let tx = await this.prisma.bankTransaction.findUnique({
+  async deleteUnmatchedTransaction(
+    idOrEventId: string,
+    userId?: string,
+    reason?: string,
+  ): Promise<any> {
+    let tx: any = await this.prisma.bankTransaction.findUnique({
       where: { id: idOrEventId },
+      include: { orderMatches: true },
     });
     if (!tx) {
       tx = await this.prisma.bankTransaction.findUnique({
         where: { eventId: idOrEventId },
+        include: { orderMatches: true },
       });
     }
 
@@ -667,55 +740,182 @@ export class BankConnectService {
       throw new NotFoundException(`Không tìm thấy giao dịch với ID hoặc EventId: ${idOrEventId}`);
     }
 
-    if (tx.orderId || tx.matchingStatus === 'MATCHED') {
-      throw new BadRequestException('Không thể xóa giao dịch đã được đối soát với đơn hàng!');
+    if (tx.isArchived) {
+      return {
+        success: true,
+        alreadyArchived: true,
+        message: 'Giao dịch đã được dọn dẹp trước đó',
+        deletedId: tx.id,
+        eventId: tx.eventId,
+      };
     }
 
-    await this.prisma.bankTransaction.delete({
-      where: { id: tx.id },
+    const protectedStatuses = ['MATCHED', 'MANUALLY_MATCHED', 'OVERPAID_DUPLICATE', 'REVIEW_REQUIRED'];
+    const hasOrderMatches = Array.isArray(tx.orderMatches) && tx.orderMatches.length > 0;
+
+    if (tx.orderId || protectedStatuses.includes(tx.matchingStatus) || hasOrderMatches) {
+      throw new BadRequestException(
+        `Không thể dọn dẹp giao dịch đang ở trạng thái ${tx.matchingStatus} hoặc đã liên kết với đơn hàng!`,
+      );
+    }
+
+    const now = new Date();
+    const actor = userId || 'ADMIN';
+    const archiveReason = reason || 'Admin dọn dẹp giao dịch chưa khớp đơn lẻ';
+
+    await this.prisma.$transaction(async (prismaTx) => {
+      await prismaTx.bankTransaction.update({
+        where: { id: tx.id },
+        data: {
+          isArchived: true,
+          archivedAt: now,
+          archivedByUserId: actor,
+          archiveReason,
+        },
+      });
+
+      await prismaTx.bankConnectionLog.create({
+        data: {
+          deviceId: tx.deviceId || null,
+          action: 'ARCHIVE_SINGLE_TX',
+          details: JSON.stringify({
+            transactionId: tx.id,
+            eventId: tx.eventId,
+            matchingStatus: tx.matchingStatus,
+            archivedByUserId: actor,
+            archiveReason,
+            archivedAt: now.toISOString(),
+          }),
+        },
+      });
     });
 
-    this.logger.log(`Đã xóa giao dịch không gắn đơn: ${tx.id} (${tx.eventId})`);
+    this.logger.log(
+      `[Cleanup] Đã lưu trữ/ẩn an toàn giao dịch chưa khớp: ${tx.id} (${tx.eventId}) bởi ${actor}`,
+    );
 
-    // Đồng bộ tức thì tới Web Admin / POS qua WebSocket
     if (this.posGateway.server) {
       this.posGateway.server.to('admin:global').emit('bank.transaction.deleted', {
         id: tx.id,
         eventId: tx.eventId,
+        archivedAt: now.toISOString(),
       });
     }
 
     return {
       success: true,
-      message: 'Đã xóa giao dịch thành công',
+      message: 'Đã dọn dẹp giao dịch chưa khớp an toàn',
       deletedId: tx.id,
       eventId: tx.eventId,
     };
   }
 
   /**
-   * Xóa toàn bộ các giao dịch chưa gắn đơn hàng (UNMATCHED, REVIEW_REQUIRED, IGNORED, DUPLICATE)
+   * Dọn dẹp hàng loạt các giao dịch chưa khớp đủ điều kiện (UNMATCHED, IGNORED, DUPLICATE).
+   * - Không xóa cứng BankTransaction, BankTransactionOrderMatch, OrderPayment.
+   * - Không tác động giao dịch đã khớp (MATCHED, MANUALLY_MATCHED, OVERPAID_DUPLICATE).
+   * - Không tác động giao dịch đang cần review (REVIEW_REQUIRED) hoặc có gắn đơn hàng.
+   * - Thực hiện nguyên tử (atomic transaction) và idempotent khi bấm lặp lại.
    */
-  async deleteAllUnmatchedTransactions(): Promise<{ success: boolean; count: number; message: string }> {
-    const result = await this.prisma.bankTransaction.deleteMany({
-      where: {
-        orderId: null,
-        matchingStatus: { in: ['UNMATCHED', 'REVIEW_REQUIRED', 'IGNORED', 'DUPLICATE'] },
-      },
+  async deleteAllUnmatchedTransactions(
+    userId?: string,
+    reason?: string,
+  ): Promise<{
+    success: boolean;
+    count: number;
+    archivedIds: string[];
+    archivedEventIds: string[];
+    message: string;
+  }> {
+    const now = new Date();
+    const actor = userId || 'ADMIN';
+    const archiveReason = reason || 'Admin dọn dẹp hàng loạt giao dịch chưa khớp';
+    const eligibleStatuses = ['UNMATCHED', 'IGNORED', 'DUPLICATE'];
+
+    const cleanupResult = await this.prisma.$transaction(async (prismaTx) => {
+      const eligibleTxs = await prismaTx.bankTransaction.findMany({
+        where: {
+          isArchived: false,
+          orderId: null,
+          matchingStatus: { in: eligibleStatuses },
+          orderMatches: { none: {} },
+        },
+        select: {
+          id: true,
+          eventId: true,
+          matchingStatus: true,
+        },
+      });
+
+      if (eligibleTxs.length === 0) {
+        return {
+          count: 0,
+          archivedIds: [] as string[],
+          archivedEventIds: [] as string[],
+        };
+      }
+
+      const archivedIds = eligibleTxs.map((t) => t.id);
+      const archivedEventIds = eligibleTxs.map((t) => t.eventId);
+
+      const updateRes = await prismaTx.bankTransaction.updateMany({
+        where: {
+          id: { in: archivedIds },
+          isArchived: false,
+          orderId: null,
+          matchingStatus: { in: eligibleStatuses },
+        },
+        data: {
+          isArchived: true,
+          archivedAt: now,
+          archivedByUserId: actor,
+          archiveReason,
+        },
+      });
+
+      await prismaTx.bankConnectionLog.create({
+        data: {
+          action: 'CLEANUP_UNMATCHED_TX',
+          details: JSON.stringify({
+            count: updateRes.count,
+            archivedIds,
+            archivedEventIds,
+            archivedByUserId: actor,
+            archiveReason,
+            archivedAt: now.toISOString(),
+          }),
+        },
+      });
+
+      return {
+        count: updateRes.count,
+        archivedIds,
+        archivedEventIds,
+      };
     });
 
-    this.logger.log(`Đã dọn dẹp toàn bộ ${result.count} giao dịch không gắn đơn hàng.`);
+    this.logger.log(
+      `[Cleanup] Đã dọn dẹp an toàn ${cleanupResult.count} giao dịch chưa khớp bởi ${actor}.`,
+    );
 
-    if (this.posGateway.server) {
+    if (this.posGateway.server && cleanupResult.count > 0) {
       this.posGateway.server.to('admin:global').emit('bank.transactions.all_unmatched_deleted', {
-        count: result.count,
+        count: cleanupResult.count,
+        archivedIds: cleanupResult.archivedIds,
+        archivedEventIds: cleanupResult.archivedEventIds,
+        archivedAt: now.toISOString(),
       });
     }
 
     return {
       success: true,
-      count: result.count,
-      message: `Đã dọn dẹp ${result.count} giao dịch thành công`,
+      count: cleanupResult.count,
+      archivedIds: cleanupResult.archivedIds,
+      archivedEventIds: cleanupResult.archivedEventIds,
+      message:
+        cleanupResult.count > 0
+          ? `Đã dọn dẹp ${cleanupResult.count} giao dịch chưa khớp thành công`
+          : 'Không có giao dịch chưa khớp nào đủ điều kiện dọn dẹp',
     };
   }
 
@@ -1482,24 +1682,82 @@ export class BankConnectService {
   }
 
   /**
+   * Xác định đường dẫn chuẩn duy nhất của APK phát hành trên máy chủ
+   */
+  resolveCanonicalApkPath(): string | null {
+    const candidatePaths = [
+      path.resolve(process.cwd(), '../frontend/public/downloads/avora-bank-connect.apk'),
+      path.resolve(process.cwd(), 'uploads/avora-bank-connect.apk'),
+      path.resolve(process.cwd(), '../android/avora-bank-connect.apk'),
+      path.resolve(process.cwd(), 'uploads/apk/avora-bank-connect.apk'),
+    ];
+    return candidatePaths.find((p) => fs.existsSync(p)) || null;
+  }
+
+  /**
+   * Trả về metadata phiên bản mới nhất của ứng dụng Android kèm fileSize & SHA-256 thực tế từ đĩa
+   */
+  getLatestApkMetadata() {
+    const foundPath = this.resolveCanonicalApkPath();
+    let fileSize = 0;
+    let sha256 = '';
+    let releasedAt = new Date().toISOString();
+
+    if (foundPath) {
+      const stat = fs.statSync(foundPath);
+      const cacheKey = `${foundPath}:${stat.size}:${stat.mtimeMs}`;
+      if (this.cachedApkMeta && this.cachedApkMeta.cacheKey === cacheKey) {
+        fileSize = this.cachedApkMeta.fileSize;
+        sha256 = this.cachedApkMeta.sha256;
+        releasedAt = this.cachedApkMeta.releasedAt;
+      } else {
+        const fileBuffer = fs.readFileSync(foundPath);
+        sha256 = createHash('sha256').update(fileBuffer).digest('hex');
+        fileSize = stat.size;
+        releasedAt = stat.mtime.toISOString();
+        this.cachedApkMeta = {
+          cacheKey,
+          fileSize,
+          sha256,
+          releasedAt,
+        };
+      }
+    }
+
+    return {
+      packageName: 'vn.avora.bankconnect',
+      versionName: '1.0.5',
+      versionCode: 6,
+      fileSize,
+      sha256,
+      downloadUrl: 'https://avorafnb.com/api/bank-connect/v1/app/download-latest',
+      staticDownloadUrl: 'https://avorafnb.com/downloads/avora-bank-connect.apk',
+      releaseNotes:
+        'Bản nâng cấp v1.0.5 (Build 6): Bổ sung hộp thoại tự động thông báo cập nhật khi mở ứng dụng, chặn tải lại khi đã ở bản mới nhất, bắt buộc ghép nối thiết bị trên /admin/bank-connect trước khi sử dụng, thu hồi thiết bị thời gian thực (chặn vào app & ngắt đọc thông báo ngay lập tức), và tối ưu hàng nút Đăng nhập Vân tay + Google.',
+      releasedAt,
+    };
+  }
+
+  /**
    * Bắn sự kiện cập nhật OTA từ xa xuống thiết bị Gateway
    */
   async pushOtaUpdate(deviceId?: string) {
+    const meta = this.getLatestApkMetadata();
     if (this.posGateway.server) {
       const payload = {
-        versionName: '1.0.1',
-        versionCode: 2,
-        downloadUrl: 'https://avorafnb.com/api/bank-connect/v1/app/download-latest',
-        releaseNotes: 'Bản siêu nâng cấp: Đối soát ca 1-chạm, chống Fake Bill, cảnh báo chuyển trùng, sửa lỗi nhận diện Zalo, xác thực vân tay bảo vệ Admin.',
+        ...meta,
         pushedAt: new Date().toISOString(),
       };
 
       this.posGateway.server.emit('PUSH_APP_UPDATE', payload);
-      this.logger.log(`[OTA] Đã phát sự kiện PUSH_APP_UPDATE xuống Gateway Android (Target: ${deviceId || 'ALL'})`);
+      this.logger.log(
+        `[OTA] Đã phát sự kiện PUSH_APP_UPDATE v${meta.versionName} (Build ${meta.versionCode}, SHA-256: ${meta.sha256.slice(0, 12)}...) xuống Gateway Android (Target: ${deviceId || 'ALL'})`,
+      );
     }
 
     return {
       success: true,
+      data: meta,
       message: 'Đã bắn lệnh cập nhật ứng dụng tự động xuống thiết bị Android',
     };
   }

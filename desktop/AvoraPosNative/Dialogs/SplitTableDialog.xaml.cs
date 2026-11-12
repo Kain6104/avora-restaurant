@@ -31,6 +31,7 @@ namespace AvoraPosNative.Dialogs
         public SplitTableDialog(List<PosCartItem> orderItems, List<PosTable> vacantTables)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
 
             pnlItems.Children.Clear();
             foreach (var item in orderItems)
@@ -115,7 +116,7 @@ namespace AvoraPosNative.Dialogs
             var selected = SelectedItemsToMove;
             if (selected.Count == 0)
             {
-                MessageBox.Show("Vui lòng tích chọn ít nhất 1 món để tách.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AvoraMessageDialog.Warning("Vui lòng tích chọn ít nhất 1 món để tách.", "Thông báo");
                 return;
             }
 
@@ -126,7 +127,7 @@ namespace AvoraPosNative.Dialogs
 
             if (SelectedDestinationTable == null)
             {
-                MessageBox.Show("Vui lòng chọn bàn chuyển đến.", "Thông báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                AvoraMessageDialog.Warning("Vui lòng chọn bàn chuyển đến.", "Thông báo");
                 return;
             }
 

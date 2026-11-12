@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, use } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import {
   ArrowLeft,
   ShoppingBag,
@@ -25,6 +26,7 @@ import {
   Zap,
   ShieldCheck,
   Lock,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import {
@@ -34,15 +36,19 @@ import {
   ConfirmDialog,
 } from '@/app/admin/components/ui';
 import { printOrderInvoice } from '@/lib/utils/print-order';
+import { OrderAuditTimeline } from './OrderAuditTimeline';
+import { OrderCancellationSection } from './OrderCancellationSection';
+import { useAdmin } from '@/contexts/AdminContext';
 
 interface OrderItem {
   id: string;
+  productId?: string;
   quantity: number;
   priceAtSale: number;
   optionsTextSnapshot?: string;
   note?: string;
   isFlashSaleItem: boolean;
-  product?: { name: string; imageUrl?: string };
+  product?: { id?: string; name: string; imageUrl?: string; slug?: string };
 }
 
 interface OrderServiceChargeItem {
@@ -90,6 +96,13 @@ interface Order {
   serviceCharges?: OrderServiceChargeItem[];
   cancelReason?: string;
   canceledBy?: string;
+  canceledByName?: string;
+  canceledByRole?: string;
+  creatorInfo?: { fullName?: string; email?: string; role?: string; avatarUrl?: string };
+  cancellerInfo?: { fullName?: string; email?: string; role?: string; avatarUrl?: string };
+  modifierInfo?: { fullName?: string; email?: string; role?: string; avatarUrl?: string };
+  cashierInfo?: { fullName?: string; email?: string; role?: string; avatarUrl?: string };
+  editability?: any;
   user?: { id?: string; fullName?: string; email?: string; phone?: string };
 
   isInvoiceRequested: boolean;
@@ -130,6 +143,7 @@ const STATUS_OPTIONS = [
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
   const router = useRouter();
+  const { user } = useAdmin();
   const id = resolvedParams.id;
 
   const [order, setOrder] = useState<Order | null>(null);
@@ -197,8 +211,13 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const updateOrderPaymentStatus = async (newPaymentStatus: string) => {
     if (!order) return;
-    if (order.paymentMethod === 'SEPAY' && order.paymentStatus === 'PAID') {
-      toast.error('Đơn hàng SePay đã được tự động xác nhận tiền về tài khoản, không thể sửa đổi thủ công!');
+    const isGatewayPaid =
+      order.paymentStatus === 'PAID' &&
+      (['SEPAY', 'TRANSFER', 'BANK_TRANSFER', 'VNPAY', 'MOMO', 'PAYOS'].includes((order.paymentMethod || '').toUpperCase()) ||
+        Boolean(order.transactionId));
+
+    if (isGatewayPaid) {
+      toast.error('Đơn hàng đã được hệ thống cổng ngân hàng / Bank Gateway tự động xác nhận tiền về tài khoản. Đã khóa bảo mật nghiêm ngặt!');
       return;
     }
     try {
@@ -350,19 +369,57 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
       {/* Cancellation Notice */}
       {order.status === 'CANCELLED' && (
-        <div className="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-2xl shadow-xs flex items-start gap-3">
-          <AlertCircle size={20} className="text-rose-600 shrink-0 mt-0.5" />
-          <div className="text-xs sm:text-sm">
-            <h4 className="font-bold text-rose-900">Đơn hàng đã bị hủy</h4>
-            <p className="text-rose-700 mt-0.5">
-              Người hủy: <strong className="font-semibold">{order.canceledBy || 'Khách hàng'}</strong>
-            </p>
+        <div className="bg-rose-50 border border-rose-200 text-rose-900 p-4 sm:p-5 rounded-2xl shadow-xs flex items-start gap-3.5">
+          <AlertCircle size={22} className="text-rose-600 shrink-0 mt-0.5" />
+          <div className="text-xs sm:text-sm w-full">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h4 className="font-bold text-rose-900 text-sm sm:text-base">Đơn hàng đã bị hủy</h4>
+              {order.canceledAt && (
+                <span className="text-xs text-rose-700 font-semibold bg-rose-100/80 px-2.5 py-0.5 rounded-full">
+                  Thời điểm hủy: {new Date(order.canceledAt).toLocaleString('vi-VN')}
+                </span>
+              )}
+            </div>
+            
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 py-2 border-y border-rose-200/60 text-xs">
+              <div>
+                <span className="text-rose-600 block">Nhân sự thực hiện:</span>
+                <strong className="font-bold text-rose-900">
+                  {order.cancellerInfo?.fullName || order.canceledByName || order.cashierInfo?.fullName || 'Khách hàng'}
+                </strong>
+                {order.cancellerInfo?.role && (
+                  <span className="ml-1.5 text-[10px] bg-rose-200 text-rose-800 font-bold px-1.5 py-0.2 rounded uppercase">
+                    {order.cancellerInfo.role}
+                  </span>
+                )}
+              </div>
+              <div>
+                <span className="text-rose-600 block">Trạng thái trước hủy:</span>
+                <strong className="font-bold text-rose-900">
+                  {order.paymentStatus === 'PAID' ? 'Đã thanh toán' : 'Chưa thanh toán'}
+                </strong>
+              </div>
+              <div>
+                <span className="text-rose-600 block">Chi nhánh:</span>
+                <strong className="font-bold text-rose-900">{order.branch?.name || 'Chi nhánh AVORA'}</strong>
+              </div>
+            </div>
+
             {order.cancelReason && (
-              <p className="text-rose-600 italic mt-1">Lý do: &quot;{order.cancelReason}&quot;</p>
+              <p className="text-rose-800 italic mt-2 bg-rose-100/50 p-2.5 rounded-xl border border-rose-200/50">
+                Lý do: &quot;{order.cancelReason}&quot;
+              </p>
             )}
           </div>
         </div>
       )}
+
+      {/* Enterprise Cancellation Management Section */}
+      <OrderCancellationSection
+        order={order}
+        currentUser={user}
+        onRefresh={fetchOrder}
+      />
 
       {/* Grid: Customer & Branch Info */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 lg:gap-5">
@@ -689,17 +746,19 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
                 Trạng thái thanh toán
               </label>
-              {order.paymentMethod === 'SEPAY' && order.paymentStatus === 'PAID' ? (
+              {order.paymentStatus === 'PAID' &&
+              (['SEPAY', 'TRANSFER', 'BANK_TRANSFER', 'VNPAY', 'MOMO', 'PAYOS'].includes((order.paymentMethod || '').toUpperCase()) ||
+                Boolean(order.transactionId)) ? (
                 <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-300 text-emerald-900 space-y-1">
                   <div className="flex items-center gap-1.5 font-black text-xs text-emerald-800">
                     <ShieldCheck size={14} className="text-emerald-600" />
-                    <span>Tiền đã về tài khoản (SePay Tự động)</span>
+                    <span>Tiền đã về tài khoản (Xác nhận tự động)</span>
                   </div>
                   <p className="text-[10px] text-emerald-700 font-mono">
-                    Mã GD: {order.transactionId || 'SEPAY-AUTO'}
+                    Mã GD: {order.transactionId || 'BANK-CONNECT-AUTO'}
                   </p>
                   <p className="text-[9px] text-emerald-600 font-bold flex items-center gap-1 pt-1 border-t border-emerald-200">
-                    <Lock size={10} /> Đã khóa sửa đổi thủ công (Bảo vệ doanh thu)
+                    <Lock size={10} /> Đã khóa sửa đổi thủ công (Bảo vệ doanh thu & chống gian lận)
                   </p>
                 </div>
               ) : (
@@ -724,7 +783,24 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           {order.orderItems?.map((item) => (
             <div key={item.id} className="pt-3 first:pt-0 flex items-center gap-3.5">
               <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200/60 overflow-hidden shrink-0 flex items-center justify-center">
-                {item.product?.imageUrl ? (
+                {(item.product?.id || item.productId) ? (
+                  <Link
+                    href={`/admin/products/${item.product?.id || item.productId}/edit`}
+                    target="_blank"
+                    className="w-full h-full block hover:opacity-85 transition-opacity"
+                    title={`Xem & sửa món: ${item.product?.name || 'Món ăn'}`}
+                  >
+                    {item.product?.imageUrl ? (
+                      <img
+                        src={item.product.imageUrl}
+                        alt={item.product.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <ShoppingBag size={20} className="text-slate-300 m-auto mt-4" />
+                    )}
+                  </Link>
+                ) : item.product?.imageUrl ? (
                   <img
                     src={item.product.imageUrl}
                     alt={item.product.name}
@@ -736,9 +812,21 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <h4 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
-                    {item.product?.name || 'Món ăn'}
-                  </h4>
+                  {(item.product?.id || item.productId) ? (
+                    <Link
+                      href={`/admin/products/${item.product?.id || item.productId}/edit`}
+                      target="_blank"
+                      className="group flex items-center gap-1.5 font-bold text-xs sm:text-sm text-slate-900 hover:text-red-600 transition-colors truncate"
+                      title="Bấm để mở trang chi tiết sản phẩm"
+                    >
+                      <span className="truncate">{item.product?.name || 'Món ăn'}</span>
+                      <ExternalLink size={12} className="text-slate-400 group-hover:text-red-500 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </Link>
+                  ) : (
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 truncate">
+                      {item.product?.name || 'Món ăn'}
+                    </h4>
+                  )}
                   <span className="font-black text-xs sm:text-sm text-slate-900 shrink-0">
                     {formatMoney(item.priceAtSale * item.quantity)}
                   </span>
@@ -882,6 +970,9 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </div>
         </AdminCard>
       )}
+
+      {/* Order Audit Timeline */}
+      <OrderAuditTimeline orderId={order.id} />
 
       {/* Confirm Status Modal */}
       <ConfirmDialog

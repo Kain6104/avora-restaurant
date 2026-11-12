@@ -121,6 +121,12 @@ class HeartbeatWorker(
             val res = apiService.sendHeartbeat(req)
             if (res.isSuccessful) {
                 Log.i(TAG, "[✓] Gửi Heartbeat thành công tới VPS AVORA (${res.body()?.serverTime})")
+            } else if (res.code() == 401 || res.code() == 403) {
+                Log.w(TAG, "[REVOKED] Heartbeat nhận HTTP ${res.code()} -> Thiết bị đã bị thu hồi trên /admin/bank-connect")
+                BankNotificationListenerService.handleDeviceRevokedOrUnpaired(
+                    applicationContext,
+                    "Thiết bị đã bị thu hồi liên kết trên /admin/bank-connect. Vui lòng ghép nối lại."
+                )
             } else {
                 Log.w(TAG, "[!] Gửi Heartbeat không thành công: ${res.code()}")
             }

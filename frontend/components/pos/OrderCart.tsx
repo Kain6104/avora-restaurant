@@ -36,11 +36,13 @@ import {
   Building2,
   Sparkles,
   QrCode,
+  Lock,
 } from 'lucide-react';
 import { PosCartItem, PosTable, PosOrder } from './pos-types';
 import { OrderCartItem } from './OrderCartItem';
 import { isOnlineOrder } from './pos-utils';
 import TaxBreakdownModal from '@/components/checkout/TaxBreakdownModal';
+import toast from 'react-hot-toast';
 
 export interface OrderCartProps {
   currentOrder: PosOrder | null;
@@ -97,6 +99,7 @@ export interface OrderCartProps {
   onOpenQrManagement?: () => void;
   onOpenRedeemPointsModal?: () => void;
   redeemableRewardsCount?: number;
+  isDarkMode?: boolean;
 }
 
 export const OrderCart: React.FC<OrderCartProps> = ({
@@ -154,8 +157,21 @@ export const OrderCart: React.FC<OrderCartProps> = ({
   vatPriceMode = 'VAT_EXCLUDED',
   onOpenBuffetModal,
   onOpenQrManagement,
+  isDarkMode = false,
 }) => {
   const isOnline = isOnlineOrder(currentOrder);
+  const isAwaitingPayment =
+    currentOrder?.paymentStatus === 'AWAITING_PAYMENT' ||
+    currentOrder?.paymentStatus === 'PAYMENT_REQUESTED' ||
+    (currentOrder as any)?.paymentIntentStatus === 'ACTIVE';
+  // Chỉ khóa khi thực sự đã phát hành mã thanh toán chuyển khoản / đang chờ thanh toán / đã khóa tài chính
+  const isCodeAlreadyCreated = Boolean(
+    isAwaitingPayment ||
+    (currentOrder as any)?.paymentLockedAt ||
+    currentOrder?.paymentStatus === 'PAID' ||
+    currentOrder?.status === 'COMPLETED'
+  );
+  const isCartLocked = isOnline || isAwaitingPayment;
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const [isOrderTypeMenuOpen, setIsOrderTypeMenuOpen] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -182,19 +198,18 @@ export const OrderCart: React.FC<OrderCartProps> = ({
   };
 
   // Calculate item discounts total
-  const itemDiscountsTotal = cartItems.reduce(
-    (sum, it) => sum + (it.discountAmount || 0) * it.quantity,
-    0,
+  const itemDiscountsTotal = Math.round(
+    cartItems.reduce((sum, it) => sum + (it.discountAmount || 0) * it.quantity, 0),
   );
 
   // Compute Subtotal (base pricing of items)
-  const baseSubTotal = cartItems.reduce(
-    (sum, it) => sum + it.priceAtSale * it.quantity,
-    0,
+  const baseSubTotal = Math.round(
+    cartItems.reduce((sum, it) => sum + it.priceAtSale * it.quantity, 0),
   );
 
-  // Total item quantity
-  const totalItemCount = cartItems.reduce((acc, it) => acc + it.quantity, 0);
+  // Total item quantity (rounded cleanly for Kg decimal weights)
+  const totalItemCount =
+    Math.round(cartItems.reduce((acc, it) => acc + it.quantity, 0) * 1000) / 1000;
 
   // Effective Order Discount
   const effectiveOrderDiscount = orderDiscountAmount || currentOrder?.discountAmount || 0;
@@ -307,15 +322,18 @@ export const OrderCart: React.FC<OrderCartProps> = ({
     : Math.max(0, baseSubTotal - totalDiscounts + serviceChargeTotal + computedTaxAmount);
 
   // Count items not yet sent to kitchen (including newly added quantity to existing items)
-  const unsentKitchenItemsCount = cartItems.reduce((sum, it) => {
-    if (!it.kitchenStatus || it.kitchenStatus === 'PENDING') {
-      return sum + it.quantity;
-    }
-    if (it.sentQuantity !== undefined && it.quantity > it.sentQuantity) {
-      return sum + (it.quantity - it.sentQuantity);
-    }
-    return sum;
-  }, 0);
+  const unsentKitchenItemsCount =
+    Math.round(
+      cartItems.reduce((sum, it) => {
+        if (!it.kitchenStatus || it.kitchenStatus === 'PENDING') {
+          return sum + it.quantity;
+        }
+        if (it.sentQuantity !== undefined && it.quantity > it.sentQuantity) {
+          return sum + (it.quantity - it.sentQuantity);
+        }
+        return sum;
+      }, 0) * 1000,
+    ) / 1000;
 
   const hasUnsentKitchenItems = unsentKitchenItemsCount > 0;
 
@@ -373,19 +391,27 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
   return (
     <aside
-      className={`bg-white border-l border-slate-200 flex flex-col justify-between h-full select-none shadow-xs shrink-0 z-20 ${
+      className={`border-l flex flex-col justify-between h-full select-none shadow-xs shrink-0 z-20 ${
+        isDarkMode
+          ? 'bg-slate-900 border-slate-800 text-slate-100'
+          : 'bg-white border-slate-200 text-slate-900'
+      } ${
         className || 'w-[330px] sm:w-[350px] md:w-[370px] lg:w-[390px]'
       }`}
     >
       {/* 1. Header: [ Table/Order > ] | [ Order Type Dropdown ] | [ More Options ] */}
-      <div className="h-11 sm:h-12 px-2 sm:px-2.5 border-b border-slate-200 bg-white shrink-0 flex items-center justify-between gap-1.5 relative">
+      <div className={`h-11 sm:h-12 px-2 sm:px-2.5 border-b shrink-0 flex items-center justify-between gap-1.5 relative ${
+        isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+      }`}>
         {/* Table / Order Code Trigger (opens table switcher/floor map) */}
         <button
           type="button"
           onClick={isOnline ? undefined : onSelectTableTab}
           disabled={isOnline}
-          className={`flex-1 flex items-center gap-1.5 border border-slate-200 px-2 py-1.5 rounded-lg text-xs font-black text-slate-800 shadow-2xs transition-colors h-9 truncate min-w-0 ${
-            isOnline ? 'cursor-default bg-slate-50' : 'hover:bg-slate-50 cursor-pointer'
+          className={`flex-1 flex items-center gap-1.5 border px-2 py-1.5 rounded-lg text-xs font-black shadow-2xs transition-colors h-9 truncate min-w-0 ${
+            isDarkMode
+              ? isOnline ? 'cursor-default bg-slate-800/60 border-slate-700 text-slate-400' : 'bg-slate-800 border-slate-700 text-slate-100 hover:bg-slate-700 cursor-pointer'
+              : isOnline ? 'cursor-default bg-slate-50 border-slate-200 text-slate-800' : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800 cursor-pointer'
           }`}
           title={isOnline ? 'Đơn hàng trực tuyến' : 'Nhấn để đổi / xem sơ đồ bàn (F3)'}
         >
@@ -400,10 +426,10 @@ export const OrderCart: React.FC<OrderCartProps> = ({
               <ShoppingBag className="w-3 h-3 text-white" />
             )}
           </div>
-          <span className="font-black text-xs sm:text-sm text-slate-900 tracking-tight truncate">
+          <span className={`font-black text-xs sm:text-sm tracking-tight truncate ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
             {orderTitle}
           </span>
-          {!isOnline && <ChevronRight className="w-4 h-4 text-slate-400 shrink-0 ml-auto" />}
+          {!isOnline && <ChevronRight className={`w-4 h-4 shrink-0 ml-auto ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`} />}
         </button>
 
         {/* Order Type Dropdown (Matching Image 3) */}
@@ -440,7 +466,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 className="fixed inset-0 z-30"
                 onClick={() => setIsOrderTypeMenuOpen(false)}
               />
-              <div className="absolute right-0 top-full mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-40 animate-in fade-in duration-100 divide-y divide-slate-100">
+              <div className={`absolute right-0 top-full mt-1.5 w-44 rounded-xl shadow-xl py-1 z-40 animate-in fade-in duration-100 divide-y ${
+                isDarkMode ? 'bg-slate-800 border border-slate-700 divide-slate-700' : 'bg-white border border-slate-200 divide-slate-100'
+              }`}>
                 {/* 1. Ăn tại bàn */}
                 <button
                   type="button"
@@ -452,7 +480,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                   className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer font-bold transition-colors ${
                     orderType === 'DINE_IN'
                       ? 'bg-blue-500 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
+                      : isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className={`w-5 h-5 rounded flex items-center justify-center ${orderType === 'DINE_IN' ? 'text-white' : 'text-blue-500'}`}>
@@ -472,7 +500,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                   className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer font-bold transition-colors ${
                     orderType === 'TAKEAWAY'
                       ? 'bg-blue-500 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
+                      : isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className={`w-5 h-5 rounded flex items-center justify-center ${orderType === 'TAKEAWAY' ? 'text-white' : 'text-rose-500'}`}>
@@ -493,7 +521,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                   className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 cursor-pointer font-bold transition-colors ${
                     orderType === 'DELIVERY'
                       ? 'bg-blue-500 text-white'
-                      : 'text-slate-700 hover:bg-slate-50'
+                      : isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
                   }`}
                 >
                   <div className={`w-5 h-5 rounded flex items-center justify-center ${orderType === 'DELIVERY' ? 'text-white' : 'text-sky-500'}`}>
@@ -511,7 +539,11 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           <button
             type="button"
             onClick={onOpenQrManagement}
-            className="w-9 h-9 flex items-center justify-center bg-white hover:bg-red-50 hover:border-red-200 active:scale-95 border border-slate-200 rounded-lg text-slate-700 hover:text-[#da251d] shadow-2xs transition-all cursor-pointer shrink-0"
+            className={`w-9 h-9 flex items-center justify-center active:scale-95 border rounded-lg shadow-2xs transition-all cursor-pointer shrink-0 ${
+              isDarkMode
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-200 hover:text-white'
+                : 'bg-white hover:bg-red-50 hover:border-red-200 border-slate-200 text-slate-700 hover:text-[#da251d]'
+            }`}
             title="Mở QR gọi món tại bàn"
           >
             <QrCode className="w-4 h-4 text-[#da251d]" />
@@ -523,10 +555,14 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           <button
             type="button"
             onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
-            className="w-9 h-9 flex items-center justify-center bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-slate-600 hover:text-slate-900 shadow-2xs transition-colors cursor-pointer"
+            className={`w-9 h-9 flex items-center justify-center border rounded-lg shadow-2xs transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300 hover:text-white'
+                : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-900'
+            }`}
             title="Tùy chọn khác"
           >
-            <MoreVertical className="w-4 h-4 text-slate-700" />
+            <MoreVertical className="w-4 h-4" />
           </button>
 
           {isMoreMenuOpen && (
@@ -535,22 +571,26 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 className="fixed inset-0 z-30"
                 onClick={() => setIsMoreMenuOpen(false)}
               />
-              <div className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl py-1.5 z-40 animate-in fade-in duration-100">
+              <div className={`absolute right-0 top-full mt-1.5 w-64 border rounded-2xl shadow-xl py-1.5 z-40 animate-in fade-in duration-100 ${
+                isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-100 divide-slate-700' : 'bg-white border-slate-200 text-slate-800 divide-slate-100'
+              }`}>
                 {/* Order Information Header Card: Tên đơn | Người tạo đơn | Ngày giờ tạo đơn */}
-                <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-100 text-xs space-y-1.5 select-none">
+                <div className={`px-3.5 py-2.5 border-b text-xs space-y-1.5 select-none ${
+                  isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-slate-50 border-slate-100 text-slate-700'
+                }`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-500 font-medium">Tên đơn:</span>
-                    <span className="font-bold text-slate-900 truncate max-w-[130px]">{orderTitle}</span>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Tên đơn:</span>
+                    <span className={`font-bold truncate max-w-[130px] ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>{orderTitle}</span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-500 font-medium">Người tạo đơn:</span>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Người tạo đơn:</span>
                     <span className="font-bold text-[#da251d] truncate max-w-[130px]">
                       {currentOrder?.cashierName || (currentOrder as any)?.user?.fullName || currentUser?.fullName || 'HTP Official'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-slate-500 font-medium">Ngày giờ tạo:</span>
-                    <span className="font-mono text-[11px] text-slate-700">
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Ngày giờ tạo:</span>
+                    <span className={`font-mono text-[11px] ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       {currentOrder?.createdAt
                         ? new Date(currentOrder.createdAt).toLocaleString('vi-VN')
                         : new Date().toLocaleString('vi-VN')}
@@ -567,7 +607,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                         setIsMoreMenuOpen(false);
                         onOpenQrManagement();
                       }}
-                      className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-red-50 hover:text-[#da251d] flex items-center gap-2.5 cursor-pointer font-medium"
+                      className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                        isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-red-50 hover:text-[#da251d]'
+                      }`}
                     >
                       <QrCode className="w-4 h-4 text-[#da251d]" />
                       <span>Mở QR gọi món tại bàn</span>
@@ -580,7 +622,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                       setIsMoreMenuOpen(false);
                       onOpenPrintBill();
                     }}
-                    className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                      isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                    }`}
                   >
                     <Printer className="w-4 h-4 text-slate-500" />
                     <span>{isOnline ? 'In đơn hàng Online (F2)' : 'In tạm tính (F2)'}</span>
@@ -594,7 +638,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                           setIsMoreMenuOpen(false);
                           onOpenSplitModal();
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                        className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                          isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
                       >
                         <Split className="w-4 h-4 text-blue-500" />
                         <span>Tách đơn</span>
@@ -606,7 +652,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                           setIsMoreMenuOpen(false);
                           onOpenMergeModal();
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                        className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                          isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
                       >
                         <Combine className="w-4 h-4 text-indigo-500" />
                         <span>Gộp đơn</span>
@@ -618,7 +666,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                           setIsMoreMenuOpen(false);
                           onOpenMoveTableModal();
                         }}
-                        className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                        className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                          isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                        }`}
                       >
                         <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
                         <span>Chuyển bàn</span>
@@ -626,7 +676,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                     </>
                   )}
 
-                  <div className="border-t border-slate-100 my-1" />
+                  <div className={`border-t my-1 ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`} />
 
                   {/* In lại Tem */}
                   <button
@@ -635,7 +685,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                       setIsMoreMenuOpen(false);
                       onOpenReprintLabels?.();
                     }}
-                    className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                      isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                    }`}
                   >
                     <Tag className="w-4 h-4 text-sky-500" />
                     <span>In lại Tem</span>
@@ -648,7 +700,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                       setIsMoreMenuOpen(false);
                       onResendKitchen?.();
                     }}
-                    className="w-full text-left px-3.5 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 cursor-pointer font-medium"
+                    className={`w-full text-left px-3.5 py-2 text-xs flex items-center gap-2.5 cursor-pointer font-medium ${
+                      isDarkMode ? 'text-slate-200 hover:bg-slate-700' : 'text-slate-700 hover:bg-slate-50'
+                    }`}
                   >
                     <ChefHat className="w-4 h-4 text-orange-500" />
                     <span>Gửi lại Bếp</span>
@@ -763,6 +817,36 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         </div>
       )}
 
+      {/* 1.3 Awaiting Payment Notice Banner (Chờ xác nhận & Giải phóng bàn) */}
+      {isAwaitingPayment && (
+        <div className={`border-b px-3 py-2 flex items-center justify-between text-xs shrink-0 select-none shadow-sm ${
+          isDarkMode
+            ? 'bg-blue-950/80 border-blue-800 text-blue-200'
+            : 'bg-blue-50 border-blue-200 text-blue-900'
+        }`}>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="relative flex h-2.5 w-2.5 shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-600"></span>
+            </span>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 font-black text-xs">
+                <span>CHỜ XÁC NHẬN CHUYỂN KHOẢN</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white uppercase tracking-wider">
+                  Khóa đơn
+                </span>
+              </div>
+              <p className={`text-[10px] ${isDarkMode ? 'text-blue-300' : 'text-blue-700'}`}>
+                Bàn đã giải phóng &bull; Không thay đổi giá trị đơn
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-amber-500">
+            <Lock className="w-3.5 h-3.5" />
+          </div>
+        </div>
+      )}
+
       {/* 2. Cart Items List: Dense, Numbered, Scrollable */}
       <div
         ref={cartItemsContainerRef}
@@ -789,7 +873,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 isCompact={isCompactMode}
                 isUnsaved={false}
                 isSelected={selectedItemId === item.id}
-                readOnly={isOnline}
+                readOnly={isCartLocked}
+                isDarkMode={isDarkMode}
                 onSelect={() =>
                   setSelectedItemId(selectedItemId === item.id ? null : item.id)
                 }
@@ -805,12 +890,12 @@ export const OrderCart: React.FC<OrderCartProps> = ({
             {/* 2. Centered Dashed Divider: ------ Chờ lưu ------ (Tương tự Waiter) */}
             {unsavedItems.length > 0 && (
               <div className="relative flex py-2 items-center justify-center my-1.5 select-none">
-                <div className="flex-grow border-t border-dashed border-amber-300" />
-                <span className="flex-shrink mx-3 text-[11px] font-extrabold text-amber-800 uppercase tracking-wider bg-amber-50 px-3 py-0.5 rounded-full border border-amber-300 flex items-center gap-1.5 shadow-2xs">
-                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+                <div className="flex-grow border-t border-dashed border-amber-300 dark:border-amber-700" />
+                <span className="flex-shrink mx-3 text-[11px] font-extrabold text-amber-800 dark:text-amber-300 uppercase tracking-wider bg-amber-50 dark:bg-amber-950/60 px-3 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 flex items-center gap-1.5 shadow-2xs">
+                  <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 animate-pulse" />
                   <span>------ Chờ lưu ------</span>
                 </span>
-                <div className="flex-grow border-t border-dashed border-amber-300" />
+                <div className="flex-grow border-t border-dashed border-amber-300 dark:border-amber-700" />
               </div>
             )}
 
@@ -823,7 +908,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 isCompact={isCompactMode}
                 isUnsaved={true}
                 isSelected={selectedItemId === item.id}
-                readOnly={isOnline}
+                readOnly={isCartLocked}
+                isDarkMode={isDarkMode}
                 onSelect={() =>
                   setSelectedItemId(selectedItemId === item.id ? null : item.id)
                 }
@@ -840,32 +926,36 @@ export const OrderCart: React.FC<OrderCartProps> = ({
       </div>
 
       {/* 3. Bottom Block: Toolbar + Total + 4 Big Touch Buttons */}
-      <div className="border-t border-slate-200 bg-white shrink-0 flex flex-col relative">
+      <div className={`border-t shrink-0 flex flex-col relative ${
+        isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+      }`}>
         {/* Breakdown Popover (Image 5) */}
         {showBreakdownPopover && (
-          <div className="absolute bottom-full left-2 right-2 mb-2 p-3 bg-white border border-slate-200 rounded-2xl shadow-xl z-40 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-150">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-              <span className="text-xs font-extrabold text-slate-900">Chi tiết thanh toán</span>
+          <div className={`absolute bottom-full left-2 right-2 mb-2 p-3 border rounded-2xl shadow-xl z-40 space-y-2 animate-in fade-in slide-in-from-bottom-2 duration-150 ${
+            isDarkMode ? 'bg-slate-800 border-slate-700 text-slate-200' : 'bg-white border-slate-200 text-slate-600'
+          }`}>
+            <div className={`flex items-center justify-between border-b pb-1.5 ${isDarkMode ? 'border-slate-700' : 'border-slate-100'}`}>
+              <span className={`text-xs font-extrabold ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>Chi tiết thanh toán</span>
               <button
                 type="button"
                 onClick={() => setShowBreakdownPopover(false)}
-                className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer"
+                className="text-slate-400 hover:text-slate-200 p-0.5 cursor-pointer"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            <div className="space-y-1.5 text-xs text-slate-600">
+            <div className={`space-y-1.5 text-xs ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
               <div className="flex justify-between">
                 <span>Tiền hàng ({totalItemCount} món):</span>
-                <span className="font-bold text-slate-900">
+                <span className={`font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
                   {baseSubTotal.toLocaleString('vi-VN')}đ
                 </span>
               </div>
-              <div className="flex justify-between text-emerald-600">
+              <div className="flex justify-between text-emerald-500 font-medium">
                 <span>Khuyến mại:</span>
                 <span className="font-bold">0đ</span>
               </div>
-              <div className="flex justify-between text-amber-600">
+              <div className="flex justify-between text-amber-500 font-medium">
                 <span>Chiết khấu:</span>
                 <span className="font-bold">
                   {totalDiscounts > 0 ? `-${totalDiscounts.toLocaleString('vi-VN')}đ` : '0đ'}
@@ -874,7 +964,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
               {serviceChargeTotal > 0 && (
                 <div className="flex justify-between">
                   <span>Phí dịch vụ / Phụ thu:</span>
-                  <span className="font-bold text-amber-600">
+                  <span className="font-bold text-amber-500">
                     +{serviceChargeTotal.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
@@ -886,20 +976,20 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsTaxModalOpen(true)}
-                      className="text-slate-400 hover:text-red-600 transition-colors p-0.5 rounded-full hover:bg-slate-100 cursor-pointer"
+                      className="text-slate-400 hover:text-red-500 transition-colors p-0.5 rounded-full hover:bg-slate-700 cursor-pointer"
                       title="Xem chi tiết thuế VAT"
                     >
                       <Info size={12} />
                     </button>
                   </div>
-                  <span className="font-bold text-slate-800">
+                  <span className={`font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-800'}`}>
                     {isVatIncluded
                       ? `${computedTaxAmount.toLocaleString('vi-VN')}đ`
                       : `+${computedTaxAmount.toLocaleString('vi-VN')}đ`}
                   </span>
                 </div>
               )}
-              <div className="border-t border-slate-100 pt-1.5 flex justify-between font-black text-slate-900">
+              <div className={`border-t pt-1.5 flex justify-between font-black ${isDarkMode ? 'border-slate-700 text-slate-100' : 'border-slate-100 text-slate-900'}`}>
                 <span>Tổng cộng:</span>
                 <span className="text-[#da251d] text-sm">
                   {grandTotal.toLocaleString('vi-VN')}đ
@@ -911,15 +1001,21 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
         {/* Order Note inline editor (if active) */}
         {isEditingOrderNote && (
-          <div className="p-2.5 bg-amber-50 border-b border-amber-200 flex flex-col gap-1.5">
-            <span className="text-[11px] font-bold text-amber-900">Ghi chú cho toàn đơn hàng:</span>
+          <div className={`p-2.5 border-b flex flex-col gap-1.5 ${
+            isDarkMode ? 'bg-amber-950/40 border-amber-800' : 'bg-amber-50 border-amber-200'
+          }`}>
+            <span className={`text-[11px] font-bold ${isDarkMode ? 'text-amber-300' : 'text-amber-900'}`}>Ghi chú cho toàn đơn hàng:</span>
             <div className="flex gap-1.5">
               <input
                 type="text"
                 value={tempOrderNote}
                 onChange={(e) => setTempOrderNote(e.target.value)}
                 placeholder="VD: Không hành lá, chuẩn bị nhanh..."
-                className="flex-1 bg-white border border-amber-300 rounded-lg px-2.5 py-1 text-xs text-slate-900 outline-none focus:border-amber-500"
+                className={`flex-1 rounded-lg px-2.5 py-1 text-xs outline-none focus:border-amber-500 ${
+                  isDarkMode
+                    ? 'bg-slate-800 border border-slate-700 text-slate-100'
+                    : 'bg-white border border-amber-300 text-slate-900'
+                }`}
                 autoFocus
               />
               <button
@@ -932,7 +1028,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditingOrderNote(false)}
-                className="px-2 py-1 bg-slate-200 text-slate-700 rounded-lg text-xs hover:bg-slate-300 cursor-pointer"
+                className={`px-2 py-1 rounded-lg text-xs cursor-pointer ${
+                  isDarkMode ? 'bg-slate-700 text-slate-200 hover:bg-slate-600' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                }`}
               >
                 Hủy
               </button>
@@ -941,7 +1039,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         )}
 
         {/* 3.1 5-Icon Toolstrip + In tạm tính + Scroll Controls */}
-        <div className="h-10 border-b border-slate-200 bg-slate-50 flex items-center justify-between px-1.5 gap-1 shrink-0 relative">
+        <div className={`h-10 border-b flex items-center justify-between px-1.5 gap-1 shrink-0 relative ${
+          isDarkMode ? 'bg-slate-850 border-slate-800' : 'bg-slate-50 border-slate-200'
+        }`}>
           {/* Tooltip Overlay */}
           {activeTooltip && (
             <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold py-0.5 px-2 rounded shadow-md pointer-events-none z-30">
@@ -952,18 +1052,28 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           {/* Button 1: Khuyến mại / Đổi điểm */}
           <button
             type="button"
-            disabled={isOnline}
-            onClick={onOpenRedeemPointsModal}
-            onMouseEnter={() => setActiveTooltip('Đổi điểm thưởng lấy món')}
+            disabled={isOnline || isCodeAlreadyCreated}
+            onClick={() => {
+              if (isCodeAlreadyCreated) {
+                toast.error('Đơn hàng đã tạo mã, giá trị đơn hàng không được phép thay đổi!');
+                return;
+              }
+              onOpenRedeemPointsModal?.();
+            }}
+            onMouseEnter={() => setActiveTooltip(isCodeAlreadyCreated ? 'Đơn đã tạo mã (Khóa đổi điểm)' : 'Đổi điểm thưởng lấy món')}
             onMouseLeave={() => setActiveTooltip(null)}
             className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-md border text-xs font-bold transition-all ${
-              isOnline
-                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              isOnline || isCodeAlreadyCreated
+                ? isDarkMode
+                  ? 'bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed opacity-60'
+                  : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                : isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white cursor-pointer active:scale-95'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:text-[#da251d] hover:border-red-200 active:scale-95 cursor-pointer'
             }`}
-            title="Đổi điểm thưởng lấy món"
+            title={isCodeAlreadyCreated ? 'Đơn hàng đã tạo mã, không được phép thay đổi' : 'Đổi điểm thưởng lấy món'}
           >
-            <Gift className="w-3.5 h-3.5 text-slate-600" />
+            {isCodeAlreadyCreated ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <Gift className="w-3.5 h-3.5 text-slate-600" />}
             <span className="text-[10px] text-red-500 font-black">
               ({redeemableRewardsCount})
             </span>
@@ -972,20 +1082,30 @@ export const OrderCart: React.FC<OrderCartProps> = ({
           {/* Button 2: Chiết khấu % */}
           <button
             type="button"
-            disabled={isOnline}
-            onClick={isOnline ? undefined : onOpenOrderDiscountModal}
-            onMouseEnter={() => setActiveTooltip('Chiết khấu')}
+            disabled={isOnline || isCodeAlreadyCreated}
+            onClick={() => {
+              if (isCodeAlreadyCreated) {
+                toast.error('Đơn hàng đã tạo mã, giá trị đơn hàng không được phép thay đổi!');
+                return;
+              }
+              if (!isOnline) onOpenOrderDiscountModal?.();
+            }}
+            onMouseEnter={() => setActiveTooltip(isCodeAlreadyCreated ? 'Đơn đã tạo mã (Khóa chiết khấu)' : 'Chiết khấu')}
             onMouseLeave={() => setActiveTooltip(null)}
             className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-md border transition-all text-xs font-bold ${
-              isOnline
-                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+              isOnline || isCodeAlreadyCreated
+                ? isDarkMode
+                  ? 'bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed opacity-60'
+                  : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
                 : effectiveOrderDiscount > 0
                 ? 'bg-red-50 border-[#da251d] text-[#da251d] font-black cursor-pointer active:scale-95'
+                : isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white cursor-pointer active:scale-95'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:text-[#da251d] cursor-pointer active:scale-95'
             }`}
-            title="Chiết khấu"
+            title={isCodeAlreadyCreated ? 'Đơn hàng đã tạo mã, không được phép chiết khấu' : 'Chiết khấu'}
           >
-            <Percent className="w-3.5 h-3.5" />
+            {isCodeAlreadyCreated ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <Percent className="w-3.5 h-3.5" />}
           </button>
 
           {/* Button 3: Phụ thu & Thuế / Xuất hóa đơn VAT */}
@@ -1007,6 +1127,8 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                   : 'bg-amber-500 text-white border-amber-600 shadow-2xs hover:bg-amber-600'
                 : serviceChargeTotal > 0 || computedTaxAmount > 0 || (currentOrder as any)?.isInvoiceRequested
                 ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                : isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:text-[#da251d]'
             }`}
             title={isOnline ? 'Thêm / chỉnh sửa thông tin xuất hóa đơn VAT' : 'Phụ thu dịch vụ & Xuất hóa đơn VAT'}
@@ -1027,9 +1149,13 @@ export const OrderCart: React.FC<OrderCartProps> = ({
             onMouseLeave={() => setActiveTooltip(null)}
             className={`flex-1 h-8 flex items-center justify-center gap-1 rounded-md border transition-all text-xs font-bold ${
               isOnline
-                ? 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
+                ? isDarkMode
+                  ? 'bg-slate-800/50 border-slate-700/50 text-slate-500 cursor-not-allowed opacity-60'
+                  : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed opacity-60'
                 : orderNote || currentOrder?.note
                 ? 'bg-[#da251d] text-white border-[#da251d] cursor-pointer active:scale-95'
+                : isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white cursor-pointer active:scale-95'
                 : 'bg-white border-slate-200 text-slate-700 hover:bg-red-50 hover:text-[#da251d] cursor-pointer active:scale-95'
             }`}
             title="Ghi chú"
@@ -1043,37 +1169,51 @@ export const OrderCart: React.FC<OrderCartProps> = ({
             onClick={onOpenPrintBill}
             onMouseEnter={() => setActiveTooltip(isOnline ? 'In đơn online' : 'In tạm tính')}
             onMouseLeave={() => setActiveTooltip(null)}
-            className="flex-[2] h-8 flex items-center justify-center gap-1.5 rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 active:scale-95 transition-all text-xs font-bold cursor-pointer px-2 shrink-0 shadow-2xs"
+            className={`flex-[2] h-8 flex items-center justify-center gap-1.5 rounded-md border active:scale-95 transition-all text-xs font-bold cursor-pointer px-2 shrink-0 shadow-2xs ${
+              isDarkMode
+                ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700 hover:text-white'
+                : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+            }`}
             title={isOnline ? 'In đơn hàng Online (F2)' : 'In tạm tính (F2)'}
           >
-            <Printer className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+            <Printer className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <span className="truncate font-bold">{isOnline ? 'In đơn online' : 'In tạm tính'}</span>
           </button>
 
           {/* Button 6: Scroll Up / Down Controls */}
-          <div className="flex items-center gap-0.5 shrink-0 pl-1 border-l border-slate-200">
+          <div className={`flex items-center gap-0.5 shrink-0 pl-1 border-l ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
             <button
               type="button"
               onClick={() => scrollCart(-120)}
-              className="w-7 h-8 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 active:scale-95 cursor-pointer"
+              className={`w-7 h-8 flex items-center justify-center rounded-md border active:scale-95 cursor-pointer ${
+                isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
               title="Cuộn lên"
             >
-              <ChevronUp className="w-4 h-4 text-slate-700 stroke-[2.5]" />
+              <ChevronUp className="w-4 h-4 stroke-[2.5]" />
             </button>
             <button
               type="button"
               onClick={() => scrollCart(120)}
-              className="w-7 h-8 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 active:scale-95 cursor-pointer"
+              className={`w-7 h-8 flex items-center justify-center rounded-md border active:scale-95 cursor-pointer ${
+                isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
+                  : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+              }`}
               title="Cuộn xuống"
             >
-              <ChevronDown className="w-4 h-4 text-slate-700 stroke-[2.5]" />
+              <ChevronDown className="w-4 h-4 stroke-[2.5]" />
             </button>
           </div>
         </div>
 
         {/* 3.2 Total Row with ℹ button */}
-        <div className="h-11 px-3 flex items-center justify-between border-b border-slate-200 bg-white">
-          <span className="text-xs sm:text-sm font-black text-slate-900">Tổng tiền</span>
+        <div className={`h-11 px-3 flex items-center justify-between border-b ${
+          isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200'
+        }`}>
+          <span className={`text-xs sm:text-sm font-black ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>Tổng tiền</span>
           <div className="flex items-center gap-2">
             <span className="text-base sm:text-lg font-black text-[#da251d] tracking-tight font-mono">
               {grandTotal.toLocaleString('vi-VN')}đ
@@ -1091,7 +1231,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
         {/* 3.3 Action Buttons */}
         {isOnline ? (
-          <div className="grid grid-cols-4 h-14 bg-slate-100 divide-x divide-white/20">
+          <div className={`grid grid-cols-4 h-14 divide-x divide-white/20 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
             {/* 1. Thoát (ESC) */}
             <button
               type="button"
@@ -1132,22 +1272,22 @@ export const OrderCart: React.FC<OrderCartProps> = ({
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-4 h-14 bg-slate-100 divide-x divide-white/20">
+          <div className={`grid grid-cols-4 h-14 divide-x divide-white/20 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`}>
             {/* 1. Thoát (ESC) */}
             <button
               type="button"
               onClick={handleExitWithCheck}
               className="flex flex-col items-center justify-center bg-slate-700 hover:bg-slate-800 active:bg-slate-900 text-white transition-all cursor-pointer select-none"
-              title="Quay lại sơ đồ bàn (ESC)"
+              title="Thoát đơn hàng (ESC)"
             >
               <span className="text-xs font-bold leading-tight">Thoát</span>
               <span className="text-[10px] opacity-85 font-medium">(ESC)</span>
             </button>
 
-            {/* 2. Lưu đơn (F3) */}
+            {/* 2. Lưu đơn (F3) - Hỗ trợ lưu đơn rỗng / giữ bàn / nháp */}
             <button
               type="button"
-              disabled={(!currentOrder && cartItems.length === 0) || isSavingOrder}
+              disabled={isSavingOrder}
               onClick={onSaveOrder}
               className="flex flex-col items-center justify-center bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white transition-all cursor-pointer select-none"
               title="Lưu đơn hàng vào hệ thống (F3)"
@@ -1209,22 +1349,27 @@ export const OrderCart: React.FC<OrderCartProps> = ({
         taxBreakdown={taxBreakdown}
         totalTaxAmount={computedTaxAmount}
         vatPriceMode={activeVatPriceMode}
+        isDarkMode={isDarkMode}
       />
 
       {/* Exit Confirmation Modal – shown when there are unsaved changes */}
       {showExitConfirm && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[90vw] max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
+          <div className={`rounded-2xl shadow-2xl border w-[90vw] max-w-sm mx-4 overflow-hidden animate-in zoom-in-95 duration-150 ${
+            isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
             {/* Header */}
             <div className="px-5 pt-5 pb-3 flex items-start gap-3">
-              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center shrink-0">
-                <FileText className="w-5 h-5 text-amber-600" />
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+                isDarkMode ? 'bg-amber-950/60 text-amber-400' : 'bg-amber-100 text-amber-600'
+              }`}>
+                <FileText className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-slate-900 leading-snug">
+                <h3 className={`text-sm font-black leading-snug ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   Thông tin chưa được lưu
                 </h3>
-                <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                <p className={`text-xs mt-1 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   Có thay đổi &amp; thông tin đơn hàng chưa được lưu.<br />
                   Bạn có muốn tiếp tục thao tác?
                 </p>
@@ -1232,7 +1377,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
             </div>
 
             {/* Divider */}
-            <div className="h-px bg-slate-100 mx-5" />
+            <div className={`h-px mx-5 ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
 
             {/* Actions */}
             <div className="px-5 py-4 flex gap-2.5">
@@ -1243,7 +1388,9 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                   const exitFn = onExitOrder || onSelectTableTab;
                   exitFn?.();
                 }}
-                className="flex-1 h-10 rounded-xl border border-slate-200 text-slate-700 text-xs font-bold hover:bg-slate-50 active:bg-slate-100 transition-colors cursor-pointer"
+                className={`flex-1 h-10 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+                  isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                }`}
               >
                 Không lưu, thoát ngay
               </button>

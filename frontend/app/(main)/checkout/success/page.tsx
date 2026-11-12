@@ -19,10 +19,10 @@ function SuccessContent() {
 
         <div className="space-y-2">
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
-            Đặt Hàng & Thanh Toán Thành Công!
+            Đặt Hàng Thành Công!
           </h1>
           <p className="text-sm text-slate-500">
-            Cảm ơn bạn đã đặt món tại <strong>Avora Restaurant</strong>. Nhà hàng đã nhận được thanh toán và đang chuẩn bị đơn hàng của bạn.
+            Cảm ơn bạn đã đặt món tại <strong>Avora Restaurant</strong>. Đơn hàng của bạn đã được ghi nhận vào hệ thống và đang được chuẩn bị.
           </p>
         </div>
 

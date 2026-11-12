@@ -6,6 +6,46 @@ import { ShippingFeeService } from '../shipping/shipping-fee.service';
 
 @Controller('checkout')
 export class CheckoutController {
+  private async ensureArchitectProduct() {
+    let master = await this.prisma.product.findFirst({
+      where: {
+        OR: [
+          { id: 'prod-ai-meal-architect' },
+          { slug: 'ai-meal-architect' },
+        ],
+      },
+    });
+
+    if (!master) {
+      const cat = await this.prisma.category.findFirst({ orderBy: { displayOrder: 'asc' } });
+      try {
+        master = await this.prisma.product.create({
+          data: {
+            id: 'prod-ai-meal-architect',
+            itemCode: 'ARCH-001',
+            name: '[AI Architect™] Đĩa Ăn Độc Bản',
+            slug: 'ai-meal-architect',
+            price: 0,
+            description: 'Đĩa ăn dinh dưỡng tùy chỉnh cá nhân hóa được tạo bởi AI Architect Mixer.',
+            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800',
+            available: true,
+            categoryId: cat?.id || 'cat-general',
+          },
+        });
+      } catch (e) {
+        master = await this.prisma.product.findFirst({
+          where: {
+            OR: [
+              { id: 'prod-ai-meal-architect' },
+              { slug: 'ai-meal-architect' },
+            ],
+          },
+        });
+      }
+    }
+    return master;
+  }
+
   private readonly logger = new Logger(CheckoutController.name);
 
   constructor(
@@ -155,8 +195,11 @@ export class CheckoutController {
         }
 
         const comboPrice = Math.round(combo.price);
-        const qty = Math.max(1, Math.floor(Number(cartItem.quantity || 1)));
-        const grossLineTotal = comboPrice * qty;
+        const parsedComboQty = Number(cartItem.quantity);
+        const qty = Number.isFinite(parsedComboQty) && parsedComboQty > 0
+          ? Math.max(0.001, Math.round(parsedComboQty * 1000) / 1000)
+          : 1;
+        const grossLineTotal = Math.round(comboPrice * qty);
         computedSubTotal += grossLineTotal;
 
         // VAT cho combo: lấy thuế suất của sản phẩm thành phần đầu tiên hoặc 0%
@@ -175,7 +218,53 @@ export class CheckoutController {
         continue;
       }
 
-      const product = productMap.get(cartItem.productId);
+      let isCustomArchitect =
+        Boolean(cartItem.isCustomRecipe) ||
+        (typeof cartItem.name === 'string' && (cartItem.name.includes('AI Architect') || cartItem.name.includes('Đĩa Cơm') || cartItem.name.includes('Đĩa Ăn'))) ||
+        cartItem.productId === 'prod-ai-meal-architect' ||
+        cartItem.productId === 'ai-meal-architect' ||
+        String(cartItem.id || '').startsWith('custom-architect-') ||
+        String(cartItem.productId || '').includes('architect');
+
+      let product = productMap.get(cartItem.productId);
+      if (!product && !isCustomArchitect) {
+        try {
+          const ing = await (this.prisma as any).architectIngredient?.findFirst({
+            where: { OR: [{ id: cartItem.productId }, { code: cartItem.productId }] },
+          });
+          if (ing) {
+            isCustomArchitect = true;
+          }
+        } catch {}
+      }
+
+      if (!product && !isCustomArchitect) {
+        const itemName = String(cartItem.name || '').toLowerCase();
+        if (itemName.includes('architect') || itemName.includes('đĩa cơm') || itemName.includes('đĩa ăn') || itemName.includes('tùy chỉnh') || itemName.includes('chuẩn form') || itemName.includes('fit & healthy')) {
+          isCustomArchitect = true;
+        }
+      }
+
+      if (isCustomArchitect) {
+        const customPrice = Math.max(0, Math.round(Number(cartItem.priceAtSale ?? cartItem.price ?? 0)));
+        if (!product) {
+          const archMaster = await this.ensureArchitectProduct();
+          product = {
+            ...archMaster,
+            price: customPrice > 0 ? customPrice : Number(archMaster?.price || 0),
+            name: cartItem.name || archMaster?.name || '[AI Architect™] Đĩa Ăn Độc Bản',
+          };
+          productMap.set(cartItem.productId, product);
+        } else {
+          product = {
+            ...product,
+            price: customPrice > 0 ? customPrice : product.price,
+            name: cartItem.name || product.name,
+          };
+          productMap.set(cartItem.productId, product);
+        }
+      }
+
       if (!product) {
         warnings.push(`Sản phẩm không tồn tại: ${cartItem.productId}`);
         continue;
@@ -192,7 +281,10 @@ export class CheckoutController {
         }
       }
 
-      const qty = Math.max(1, Math.floor(Number(cartItem.quantity || 1)));
+      const parsedCartQty = Number(cartItem.quantity);
+      const qty = Number.isFinite(parsedCartQty) && parsedCartQty > 0
+        ? Math.max(0.001, Math.round(parsedCartQty * 1000) / 1000)
+        : 1;
       let flashSaleQty = 0;
       let normalQty = qty;
       let flashSalePrice = product.price;
@@ -272,8 +364,23 @@ export class CheckoutController {
     // 6. Calculate Shipping Quote from Routing Engine
     let shippingQuote: any = null;
     let rawShippingFee = 0;
+    const isTakeaway = payload.orderType === 'TAKEAWAY' || payload.orderType === 'TAKE_AWAY';
 
-    if (branchId || address?.id) {
+    if (isTakeaway) {
+      shippingQuote = {
+        deliveryAvailable: true,
+        distanceKm: 0,
+        distanceMeters: 0,
+        durationMinutes: 0,
+        durationSeconds: 0,
+        originalShippingFee: 0,
+        shippingDiscount: 0,
+        finalShippingFee: 0,
+        provider: 'PICKUP_STORE',
+        isFallback: false,
+      };
+      rawShippingFee = 0;
+    } else if (branchId || address?.id) {
       try {
         shippingQuote = await this.shippingFeeService.getShippingQuote({
           branchId,

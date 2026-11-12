@@ -23,5 +23,15 @@ namespace AvoraPosNative.Views
                 }
             }
         }
+
+        private void OnCategoryScrollUpClick(object sender, RoutedEventArgs e)
+        {
+            CategoryScrollViewer?.ScrollToVerticalOffset(CategoryScrollViewer.VerticalOffset - 120);
+        }
+
+        private void OnCategoryScrollDownClick(object sender, RoutedEventArgs e)
+        {
+            CategoryScrollViewer?.ScrollToVerticalOffset(CategoryScrollViewer.VerticalOffset + 120);
+        }
     }
 }

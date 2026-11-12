@@ -278,6 +278,99 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Xác minh Google ID Token cho Android App và kiểm tra quyền Quản trị viên (ADMIN)
+   */
+  async verifyGoogleIdTokenForAdmin(idToken: string) {
+    let payload: any;
+    try {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken)}`,
+      );
+      if (!response.ok) {
+        throw new Error('Google tokeninfo verification failed');
+      }
+      payload = await response.json();
+    } catch (e: any) {
+      throw new UnauthorizedException({
+        success: false,
+        message: 'Google ID Token không hợp lệ hoặc đã hết hạn.',
+      });
+    }
+
+    if (!payload?.email) {
+      throw new UnauthorizedException({
+        success: false,
+        message: 'Google ID Token không chứa thông tin email hợp lệ.',
+      });
+    }
+
+    const email = payload.email.toLowerCase().trim();
+
+    // 1. Tìm user trong hệ thống AVORA
+    const user = await this.prisma.user.findFirst({
+      where: {
+        OR: [
+          { email: email },
+          { googleId: payload.sub }
+        ]
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException({
+        success: false,
+        message: `Tài khoản Google (${email}) chưa được kích hoạt trong hệ thống AVORA. Vui lòng liên hệ Quản trị viên.`,
+      });
+    }
+
+    if (user.isAccountLocked) {
+      throw new ForbiddenException({
+        success: false,
+        message: 'Tài khoản này đã bị khóa trong hệ thống AVORA.',
+      });
+    }
+
+    // 2. Bắt buộc kiểm tra quyền ADMIN / SUPER_ADMIN / MANAGER
+    const role = (user.role || '').toUpperCase();
+    const isAdmin = role === 'ADMIN' || role === 'SUPER_ADMIN' || role === 'MANAGER';
+    if (!isAdmin) {
+      throw new ForbiddenException({
+        success: false,
+        message: `Tài khoản Google (${email}) có vai trò [${role}], không có quyền Quản trị viên (ADMIN) để truy cập Gateway.`,
+      });
+    }
+
+    // 3. Liên kết googleId nếu chưa có
+    if (!user.googleId) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          googleId: payload.sub,
+          authProvider: user.authProvider || 'GOOGLE',
+          avatarUrl: user.avatarUrl || payload.picture,
+        },
+      });
+    }
+
+    // 4. Tạo JWT payload và trả về phiên đăng nhập
+    const jwtPayload = { sub: user.id, email: user.email, role: user.role };
+    const token = this.jwtService.sign(jwtPayload);
+
+    return {
+      success: true,
+      message: 'Đăng nhập Google thành công với quyền Quản trị viên.',
+      access_token: token,
+      token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+      },
+    };
+  }
+
   async updatePhone(userId: string, phone: string) {
     const existingUser = await this.prisma.user.findUnique({
       where: { phone },

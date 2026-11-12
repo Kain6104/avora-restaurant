@@ -249,7 +249,7 @@ export default function NewsListClient({ initialArticles = [] }: NewsListClientP
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/80 pb-24 md:pb-20 font-sans selection:bg-red-100 selection:text-red-900">
+    <div className="min-h-screen bg-slate-50/80 pb-6 sm:pb-10 font-sans selection:bg-red-100 selection:text-red-900">
       {/* ── HEADER BANNER: COMPACT ON MOBILE, RICH ON DESKTOP ── */}
       <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-zinc-900 text-white pt-6 pb-12 sm:pt-10 sm:pb-16 px-4 sm:px-6 lg:px-8 relative overflow-hidden border-b border-white/5">
         <div className="absolute top-0 right-0 w-80 sm:w-96 h-80 sm:h-96 bg-red-600/15 rounded-full blur-3xl pointer-events-none" />

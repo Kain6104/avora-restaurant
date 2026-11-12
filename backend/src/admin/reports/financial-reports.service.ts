@@ -222,6 +222,7 @@ export class FinancialReportsService {
             refunds: true,
           },
         },
+        cancellation: true,
         orderItems: {
           include: {
             product: {
@@ -434,6 +435,7 @@ export class FinancialReportsService {
             refunds: true,
           },
         },
+        cancellation: true,
         orderItems: {
           include: {
             product: {

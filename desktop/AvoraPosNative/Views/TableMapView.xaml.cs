@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -19,15 +20,20 @@ namespace AvoraPosNative.Views
             {
                 if (DataContext is TableMapViewModel vm)
                 {
-                    vm.SelectedTable = table;
-
-                    // Double click opens order directly
-                    if (e.ClickCount == 2)
-                    {
-                        vm.OpenTableOrderCommand.Execute(table);
-                    }
+                    // 1-Click Instant Order Opening (100% parity with /admin/pos TableMap.tsx)
+                    vm.SelectTableCommand.Execute(table);
                 }
             }
+        }
+
+        private void OnScrollUpClick(object sender, RoutedEventArgs e)
+        {
+            TablesScrollViewer?.ScrollToVerticalOffset(Math.Max(0, TablesScrollViewer.VerticalOffset - 240));
+        }
+
+        private void OnScrollDownClick(object sender, RoutedEventArgs e)
+        {
+            TablesScrollViewer?.ScrollToVerticalOffset(TablesScrollViewer.VerticalOffset + 240);
         }
     }
 }

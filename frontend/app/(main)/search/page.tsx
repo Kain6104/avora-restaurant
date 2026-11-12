@@ -4,6 +4,7 @@ import React, { useEffect, useState, useMemo, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
+import { getProductSoldCount } from '@/lib/utils/product-utils';
 import {
   ChevronRight,
   Filter,
@@ -740,7 +741,7 @@ function SearchPageContent() {
                               <div className="flex items-center gap-1.5 mb-2 text-[10px] text-slate-500 flex-wrap">
                                 <ProductRatingBadge avgRating={product.avgRating} ratingCount={product.ratingCount} size="sm" />
                                 <span className="text-slate-300">•</span>
-                                <span>Đã bán {product.soldQuantity || 48}</span>
+                                <span>Đã bán {getProductSoldCount(product)}</span>
                               </div>
 
                               <div className="mt-auto flex items-center justify-between gap-2">

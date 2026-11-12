@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import useSWR from 'swr';
 import { useWaiterStore, UnsentItem } from '@/store/useWaiterStore';
 import { db } from '@/lib/offline/db';
+import { useInstantProducts } from '@/lib/offline/useOfflineData';
+import { useIsIPhone } from '@/lib/utils/device';
 import Image from 'next/image';
 import { 
   ArrowLeft, 
@@ -28,18 +30,35 @@ const EMPTY_ITEMS: UnsentItem[] = [];
 
 export default function MenuView() {
   const isOffline = useWaiterStore(s => s.isOffline);
+  const isIPhone = useIsIPhone();
   const activeBranchId = useWaiterStore(s => s.activeBranchId);
   const selectedTableId = useWaiterStore(s => s.selectedTableId);
   const selectedOrderId = useWaiterStore(s => s.selectedOrderId);
   const addUnsentItem = useWaiterStore(s => s.addUnsentItem);
   const setActiveTab = useWaiterStore(s => s.setActiveTab);
+  const sourceTab = useWaiterStore(s => s.sourceTab);
+  const registerModalHandler = useWaiterStore(s => s.registerModalHandler);
+  const setShouldScrollToUnsent = useWaiterStore(s => s.setShouldScrollToUnsent);
+  const searchInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleInputSelectAll = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    const target = e.currentTarget;
+    if (target && target.value) {
+      target.select();
+      try {
+        target.setSelectionRange(0, target.value.length);
+      } catch {}
+    }
+  };
 
   // Stable selector avoiding re-render loops - works for both table and takeaway/delivery orders
   const cartKey = selectedTableId || selectedOrderId;
   const unsentMap = useWaiterStore(s => s.unsentItems);
   const unsentItems = (cartKey && unsentMap[cartKey]) || EMPTY_ITEMS;
 
-  const { data: response, isLoading } = useSWR(
+  const { products: localProducts, categories: localCategories, hasLocalData } = useInstantProducts(activeBranchId);
+
+  const { data: response, isLoading: isSwrLoading } = useSWR(
     isOffline || !activeBranchId ? null : `/api/pos/products?branchId=${activeBranchId}`,
     fetcher
   );
@@ -58,16 +77,16 @@ export default function MenuView() {
   const [buffetSelectionProduct, setBuffetSelectionProduct] = useState<any | null>(null);
   const [pendingPricingMode, setPendingPricingMode] = useState<'REGULAR' | 'BUFFET_INCLUDED'>('REGULAR');
 
-  // Offline fallback
-  const [offlineProducts, setOfflineProducts] = useState<any[]>([]);
-  React.useEffect(() => {
-    if (isOffline) {
-      db.products.toArray().then(setOfflineProducts);
-    }
-  }, [isOffline]);
+  // Instant load: prefer persistent IndexedDB, fallback to SWR response
+  const products = hasLocalData
+    ? localProducts
+    : (response?.data?.products || []);
 
-  const products = isOffline ? offlineProducts : (response?.data?.products || []);
-  const dbCategories = response?.data?.categories || [];
+  const dbCategories = (localCategories.length > 0)
+    ? localCategories
+    : (response?.data?.categories || []);
+
+  const isInitialLoading = !hasLocalData && isSwrLoading;
 
   // Active buffet check (supports both buffetSessions array and singular buffetSession)
   const activeBuffet =
@@ -110,14 +129,30 @@ export default function MenuView() {
     return true;
   });
 
+  // Register modal handlers for Android back navigation
+  useEffect(() => {
+    return registerModalHandler('menu-view', () => {
+      if (selectedProductForOptions) {
+        setSelectedProductForOptions(null);
+        return true;
+      }
+      if (isSearchMode) {
+        setIsSearchMode(false);
+        setSearchQuery('');
+        return true;
+      }
+      return false;
+    });
+  }, [selectedProductForOptions, isSearchMode, registerModalHandler]);
+
   const handleBack = () => {
     if (isSearchMode) {
       setIsSearchMode(false);
       setSearchQuery('');
       return;
     }
-    // Return to OrderDetailView
-    setActiveTab('TABLES');
+    // Return to OrderDetailView with preserved origin tab
+    setActiveTab(sourceTab || 'TABLES');
   };
 
   const handleProductClick = (product: any) => {
@@ -293,10 +328,13 @@ export default function MenuView() {
 
           <div className="relative flex-1">
             <input
+              ref={searchInputRef}
               type="text"
               autoFocus
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={handleInputSelectAll}
+              onClick={handleInputSelectAll}
               placeholder="Tìm kiếm món ăn..."
               className="w-full pl-4 pr-9 py-2 bg-slate-50 border border-slate-300 rounded-full text-sm outline-none focus:bg-white focus:border-[#DA251D] focus:ring-1 focus:ring-[#DA251D]"
             />
@@ -406,7 +444,7 @@ export default function MenuView() {
 
           {/* Right Column: 2-Column Dish Grid (Image 3) */}
           <main className="flex-1 overflow-y-auto touch-pan-y p-3 pb-28">
-            {isLoading && !isOffline ? (
+            {isInitialLoading ? (
               <div className="flex justify-center py-20">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DA251D]" />
               </div>
@@ -482,11 +520,16 @@ export default function MenuView() {
 
       {/* FLOATING BOTTOM BAR: If unsent items exist, allow quick return to OrderDetailView */}
       {unsentCount > 0 && (
-        <div className="fixed bottom-0 left-0 w-full p-3 bg-white border-t border-slate-200 shadow-xl z-30 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <div className={`fixed bottom-0 left-0 w-full p-3 bg-white border-t border-slate-200 shadow-xl z-30 touch-none overscroll-none ${
+          isIPhone ? 'pb-[max(18px,calc(env(safe-area-inset-bottom)+10px))]' : 'pb-2.5'
+        }`}>
           <button
             type="button"
-            onClick={() => setActiveTab('TABLES')}
-            className="w-full py-3 px-4 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-98 text-white font-bold text-sm shadow-md flex items-center justify-between transition-all"
+            onClick={() => {
+              setShouldScrollToUnsent(true);
+              setActiveTab(sourceTab || 'TABLES');
+            }}
+            className="w-full py-3 px-4 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-98 text-white font-bold text-sm shadow-md flex items-center justify-between transition-all cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <span className="bg-white text-[#DA251D] w-6 h-6 rounded-full text-xs font-black flex items-center justify-center">

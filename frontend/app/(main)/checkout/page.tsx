@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Info,
   ReceiptText,
+  PencilLine,
 } from 'lucide-react';
 import Image from 'next/image';
 import AddressSelectionModal from '@/components/checkout/AddressSelectionModal';
@@ -33,6 +34,7 @@ import PaymentMethodSelector, { PaymentMethodItem } from '@/components/checkout/
 import TaxBreakdownModal from '@/components/checkout/TaxBreakdownModal';
 import FreeShippingModal from '@/components/checkout/FreeShippingModal';
 import OrderConfirmationModal from '@/components/checkout/OrderConfirmationModal';
+import EditCartItemModal from '../cart/EditCartItemModal';
 import { useCheckoutSocket } from '@/hooks/useCheckoutSocket';
 
 function getVietnamDate(): string {
@@ -59,9 +61,13 @@ export default function CheckoutPage() {
     removeShippingVoucher,
     getCartItemTotal,
     refreshQuotas,
+    setIsBranchModalOpen,
+    updateCartItem,
+    removeFromCart,
   } = useCart();
   const router = useRouter();
 
+  const [editingCartItem, setEditingCartItem] = useState<any>(null);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>('');
   
@@ -69,6 +75,7 @@ export default function CheckoutPage() {
   const [orderType, setOrderType] = useState<'DELIVERY' | 'TAKEAWAY'>('DELIVERY');
   const [takeawayName, setTakeawayName] = useState('');
   const [takeawayPhone, setTakeawayPhone] = useState('');
+  const [isOutOfRangeModalOpen, setIsOutOfRangeModalOpen] = useState(false);
 
   // Khung giờ hoạt động
   const [selectedSlot, setSelectedSlot] = useState<OperatingSlot | null>(null);
@@ -254,6 +261,8 @@ export default function CheckoutPage() {
         orderType: orderType,
         cartItems: cartItems.map(item => ({
           productId: item.productId,
+          name: item.name,
+          priceAtSale: item.priceAtSale,
           quantity: item.quantity,
           optionItemIds: item.selectedOptions?.map(opt => opt.optionItemId) || [],
           isFlashSaleItem: item.isFlashSaleItem,
@@ -283,6 +292,9 @@ export default function CheckoutPage() {
           setPreviewData(json.data);
           if (json.data.shippingQuote) {
             setShippingQuote(json.data.shippingQuote);
+            if (!json.data.shippingQuote.deliveryAvailable && orderType === 'DELIVERY') {
+              setIsOutOfRangeModalOpen(true);
+            }
           }
         }
       }
@@ -447,6 +459,8 @@ export default function CheckoutPage() {
         branchId: currentBranchId,
         cartItems: cartItems.map(item => ({
           productId: item.productId,
+          name: item.name,
+          priceAtSale: item.priceAtSale,
           quantity: item.quantity,
           optionItemIds: item.selectedOptions?.map(opt => opt.optionItemId) || [],
           isFlashSaleItem: item.isFlashSaleItem,
@@ -514,14 +528,32 @@ export default function CheckoutPage() {
         currentGateway.includes('TRANSFER');
 
       if (isOnlineTransfer && code) {
-        window.location.href = `/payment/sepay?orderCode=${code}`;
+        window.location.href = `/payment/transfer?orderCode=${code}`;
       } else if (code) {
         window.location.href = `/checkout/success?orderCode=${code}`;
       } else {
         window.location.href = '/orders';
       }
     } catch (error: any) {
-      toast.error(`Lỗi: ${error.message}`, { id: loadingToast });
+      const errMsg = error?.message || '';
+      if (
+        errMsg.includes('Product not found') ||
+        errMsg.includes('không còn kinh doanh') ||
+        errMsg.includes('gỡ khỏi thực đơn')
+      ) {
+        // Tự động tìm UUID sản phẩm lỗi và loại bỏ khỏi giỏ hàng
+        const matched = errMsg.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+        if (matched) {
+          const badId = matched[0];
+          removeFromCart(badId);
+          removeFromCart(`cart-${badId}`);
+        }
+        refreshQuotas();
+        toast.error('Một món ăn trong giỏ hàng hiện không còn kinh doanh và đã được tự động loại bỏ. Quý khách vui lòng kiểm tra lại đơn nhé!', { id: loadingToast, duration: 6000 });
+        setIsConfirmOrderModalOpen(false);
+      } else {
+        toast.error(`Lỗi: ${errMsg}`, { id: loadingToast });
+      }
       setIsSubmitting(false);
     }
   };
@@ -574,11 +606,11 @@ export default function CheckoutPage() {
           <div className="w-full lg:w-[65%] space-y-4 sm:space-y-6">
 
             {/* CHỌN HÌNH THỨC NHẬN HÀNG: GIAO HÀNG TẬN NƠI vs TỰ ĐẾN QUÁN LẤY */}
-            <div className="bg-white p-2 rounded-2xl shadow-sm border border-slate-200/70 flex items-center gap-2">
+            <div className="bg-white p-1.5 sm:p-2 rounded-2xl shadow-sm border border-slate-200/70 flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setOrderType('DELIVERY')}
-                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
                   orderType === 'DELIVERY'
                     ? 'bg-[#da251d] text-white shadow-md shadow-red-500/25 ring-2 ring-[#da251d]/20'
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -590,7 +622,7 @@ export default function CheckoutPage() {
               <button
                 type="button"
                 onClick={() => setOrderType('TAKEAWAY')}
-                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer relative ${
+                className={`flex-1 py-3 px-3 sm:px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
                   orderType === 'TAKEAWAY'
                     ? 'bg-[#da251d] text-white shadow-md shadow-red-500/25 ring-2 ring-[#da251d]/20'
                     : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900'
@@ -598,11 +630,31 @@ export default function CheckoutPage() {
               >
                 <Store size={18} className="shrink-0" />
                 <span>Tự đến quán lấy</span>
-                <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-full shrink-0 ${
-                  orderType === 'TAKEAWAY' ? 'bg-amber-300 text-amber-950' : 'bg-emerald-100 text-emerald-700'
-                }`}>
-                  Freeship 0đ
-                </span>
+              </button>
+            </div>
+
+            {/* CHI NHÁNH PHỤC VỤ ĐƠN HÀNG */}
+            <div className="bg-white p-3.5 sm:p-4 rounded-2xl shadow-sm border border-slate-200/70 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center shrink-0 border border-red-100">
+                  <Store size={20} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400">Chi nhánh phục vụ đơn hàng</div>
+                  <div className="text-sm font-bold text-slate-900 truncate">
+                    {activeBranch?.name || 'Chi nhánh AVORA'}
+                  </div>
+                  <div className="text-xs text-slate-500 truncate">
+                    {[activeBranch?.street, activeBranch?.ward, activeBranch?.district, activeBranch?.province].filter(Boolean).join(', ') || 'Chưa có thông tin chi nhánh'}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBranchModalOpen(true)}
+                className="shrink-0 px-3 py-1.5 rounded-xl text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 transition-colors cursor-pointer"
+              >
+                Đổi chi nhánh
               </button>
             </div>
 
@@ -778,22 +830,43 @@ export default function CheckoutPage() {
 
               <div className="space-y-4">
                 {cartItems.map((item, idx) => (
-                  <div key={`${item.id}-${idx}`} className="flex gap-4">
+                  <div key={`${item.id}-${idx}`} className="flex gap-3 sm:gap-4 p-2 sm:p-2.5 rounded-2xl hover:bg-slate-50/60 transition-colors">
                     <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-xl overflow-hidden border border-slate-100 shrink-0 relative bg-slate-50">
-                      {item.imageUrl && <Image src={item.imageUrl} alt={item.name} fill sizes="(max-width: 768px) 100px, 80px" className="object-cover" />}
+                      <img
+                        src={item.imageUrl || (item as any).image || item.rawProduct?.imageUrl || item.rawProduct?.image || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200'}
+                        alt={item.name}
+                        className="w-full h-full object-cover"
+                        onError={(e: any) => {
+                          e.currentTarget.src = 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=200';
+                        }}
+                      />
                     </div>
-                    <div className="flex-1 flex flex-col justify-center">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <h3 className="font-bold text-sm text-slate-800 line-clamp-1">{item.name}</h3>
-                          {item.optionsTextSnapshot && <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{item.optionsTextSnapshot}</p>}
+                    <div className="flex-1 flex flex-col justify-center min-w-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-bold text-xs sm:text-sm text-slate-800 line-clamp-1">{item.name}</h3>
+                          {item.optionsTextSnapshot && (
+                            <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">{item.optionsTextSnapshot}</p>
+                          )}
+                          {item.note && (
+                            <p className="text-[10px] text-slate-500 italic mt-0.5 line-clamp-1">Ghi chú: {item.note}</p>
+                          )}
+                          {/* Nút sửa Tùy chọn / Ghi chú */}
+                          <button
+                            type="button"
+                            onClick={() => setEditingCartItem(item)}
+                            className="text-[11px] text-blue-600 hover:text-blue-700 flex items-center gap-1 mt-1 font-medium hover:underline w-fit cursor-pointer"
+                          >
+                            <PencilLine className="w-3 h-3" />
+                            Tùy chọn / Ghi chú
+                          </button>
                         </div>
-                        <span className="font-bold text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded ml-2">x{item.quantity}</span>
+                        <span className="font-bold text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded shrink-0">x{item.quantity}</span>
                       </div>
                       <div className="mt-2 flex items-end gap-2">
-                        <span className="font-bold text-[#da251d] text-sm">{getCartItemTotal(item).toLocaleString('vi-VN')}đ</span>
+                        <span className="font-bold text-[#da251d] text-xs sm:text-sm font-mono">{getCartItemTotal(item).toLocaleString('vi-VN')}đ</span>
                         {item.priceAtSale < item.originalPriceAtSale && (
-                          <span className="text-xs text-slate-400 line-through">{(item.originalPriceAtSale * item.quantity).toLocaleString('vi-VN')}đ</span>
+                          <span className="text-[10px] sm:text-xs text-slate-400 line-through font-mono">{(item.originalPriceAtSale * item.quantity).toLocaleString('vi-VN')}đ</span>
                         )}
                       </div>
                     </div>
@@ -885,13 +958,41 @@ export default function CheckoutPage() {
                   )}
 
                   {shippingQuote && !shippingQuote.deliveryAvailable && (
-                    <div className="mt-3 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-rose-800 text-xs">
-                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                      <div>
-                        <strong className="font-bold block">Địa chỉ nằm ngoài phạm vi giao hàng!</strong>
-                        <p className="mt-0.5 leading-relaxed text-rose-700">
-                          {shippingQuote.reason || `Khoảng cách (${shippingQuote.distanceKm} km) vượt quá bán kính phục vụ của chi nhánh. Quý khách vui lòng chọn địa chỉ khác gần hơn hoặc đổi chi nhánh!`}
-                        </p>
+                    <div className="mt-3 p-3.5 bg-rose-50 border border-rose-200 rounded-xl flex flex-col gap-2.5 text-rose-800 text-xs shadow-xs">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                          <strong className="font-bold block text-sm">Địa chỉ nằm ngoài phạm vi giao hàng!</strong>
+                          <p className="mt-0.5 leading-relaxed text-rose-700">
+                            {shippingQuote.reason || `Khoảng cách (${shippingQuote.distanceKm} km) vượt quá bán kính phục vụ của chi nhánh. Quý khách vui lòng chọn địa chỉ khác gần hơn hoặc đổi chi nhánh!`}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 pt-1.5 border-t border-rose-200/60 flex-wrap items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setValidationErrors(prev => ({ ...prev, address: false }));
+                            setIsAddressModalOpen(true);
+                          }}
+                          className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                        >
+                          <MapPin size={13} /> Đổi địa chỉ
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsBranchModalOpen(true)}
+                          className="px-3 py-1.5 bg-white hover:bg-rose-100 border border-rose-300 text-rose-700 rounded-lg text-xs font-bold transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                        >
+                          <Store size={13} /> Đổi chi nhánh
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsOutOfRangeModalOpen(true)}
+                          className="px-2 py-1 text-rose-600 hover:text-rose-800 underline text-xs font-semibold ml-auto cursor-pointer"
+                        >
+                          Xem chi tiết lý do
+                        </button>
                       </div>
                     </div>
                   )}
@@ -1347,6 +1448,94 @@ export default function CheckoutPage() {
         }
         paymentMethodText={selectedPaymentMethodItem?.name || paymentMethod || 'Chưa chọn'}
       />
+
+      {/* MODAL BÁO LỖI ĐỊA CHỈ NGOÀI PHẠM VI GIAO HÀNG */}
+      {isOutOfRangeModalOpen && shippingQuote && !shippingQuote.deliveryAvailable && orderType === 'DELIVERY' && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsOutOfRangeModalOpen(false)} />
+          <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-rose-100 animate-in zoom-in-95 duration-200">
+            
+            <div className="p-6 text-center flex flex-col items-center border-b border-slate-100 bg-rose-50/60">
+              <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mb-3 shadow-inner">
+                <AlertTriangle className="w-8 h-8 stroke-[2.5]" />
+              </div>
+              <h3 className="text-lg font-black text-slate-900 leading-tight">Địa chỉ nằm ngoài phạm vi giao hàng!</h3>
+              <p className="text-xs text-slate-500 mt-1">Đơn hàng không thể giao tận nơi đến vị trí hiện tại</p>
+            </div>
+
+            <div className="p-5 sm:p-6 space-y-3.5">
+              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 space-y-2 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-medium">Chi nhánh đang phục vụ:</span>
+                  <span className="font-bold text-slate-900 truncate max-w-[200px]">{activeBranch?.name || 'Chi nhánh AVORA'}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-medium">Quãng đường di chuyển:</span>
+                  <span className="font-black text-rose-600 text-sm">{shippingQuote.distanceKm} km</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-medium">Bán kính phục vụ tối đa:</span>
+                  <span className="font-bold text-slate-700">{(shippingQuote as any)?.maxDistanceKm || 30} km</span>
+                </div>
+              </div>
+
+              <p className="text-xs leading-relaxed text-slate-600 bg-amber-50/70 border border-amber-200/60 p-3 rounded-xl">
+                {shippingQuote.reason || 'Khoảng cách giao hàng thực tế vượt quá bán kính phục vụ tối đa của chi nhánh. Quý khách vui lòng chọn địa chỉ khác gần hơn hoặc đổi sang chi nhánh gần bạn hơn để được phục vụ chu đáo nhất!'}
+              </p>
+            </div>
+
+            <div className="p-5 sm:p-6 pt-0 flex flex-col gap-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOutOfRangeModalOpen(false);
+                  setValidationErrors(prev => ({ ...prev, address: false }));
+                  setIsAddressModalOpen(true);
+                }}
+                className="w-full py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md shadow-red-600/20 flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <MapPin size={16} /> Đổi địa chỉ nhận hàng
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOutOfRangeModalOpen(false);
+                  setIsBranchModalOpen(true);
+                }}
+                className="w-full py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl text-xs sm:text-sm font-bold transition-colors flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+              >
+                <Store size={16} className="text-red-600" /> Đổi chi nhánh phục vụ
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsOutOfRangeModalOpen(false);
+                  setOrderType('TAKEAWAY');
+                }}
+                className="w-full py-2.5 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer"
+              >
+                Hoặc chuyển sang Tự đến quán lấy
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* Modal chỉnh sửa Tùy chọn & Ghi chú ngay tại Checkout */}
+      {editingCartItem && (
+        <EditCartItemModal
+          item={editingCartItem}
+          onClose={() => setEditingCartItem(null)}
+          onSave={(updatedItem) => {
+            updateCartItem(editingCartItem.id, updatedItem);
+            setEditingCartItem(null);
+            toast.success('Đã cập nhật tùy chọn món');
+          }}
+        />
+      )}
     </div>
   );
 }

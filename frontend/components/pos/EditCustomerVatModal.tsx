@@ -19,12 +19,14 @@ interface EditCustomerVatModalProps {
   customer: RealMember;
   onClose: () => void;
   onSuccess: (updatedCustomer: RealMember) => void;
+  isDarkMode?: boolean;
 }
 
 export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
   customer,
   onClose,
   onSuccess,
+  isDarkMode = false,
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -104,16 +106,20 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh]">
+      <div className={`rounded-2xl shadow-2xl border w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] ${
+        isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-900'
+      }`}>
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between bg-red-50/50">
+        <div className={`px-5 py-3.5 border-b flex items-center justify-between ${
+          isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-red-50/50 border-gray-100'
+        }`}>
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-full bg-red-100 text-[#da251d] flex items-center justify-center font-bold">
               <Building2 className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Thông tin xuất hóa đơn VAT</h3>
-              <p className="text-[11px] text-gray-500">
+              <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Thông tin xuất hóa đơn VAT</h3>
+              <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                 Chỉ cho phép sửa/thêm thông tin xuất hóa đơn cho khách hàng
               </p>
             </div>
@@ -121,7 +127,9 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+            className={`p-1 rounded-lg transition-colors cursor-pointer ${
+              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -130,41 +138,45 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
           {/* Locked Information Section */}
-          <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 space-y-2">
-            <div className="flex items-center gap-1.5 text-gray-500 font-bold text-[11px]">
+          <div className={`p-3 rounded-xl border space-y-2 ${
+            isDarkMode ? 'bg-slate-800/70 border-slate-700 text-slate-300' : 'bg-gray-50 border-gray-200 text-gray-800'
+          }`}>
+            <div className={`flex items-center gap-1.5 font-bold text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
               <Lock className="w-3.5 h-3.5 text-gray-400" />
               <span>Thông tin tài khoản (Cố định, không được sửa):</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
               <div>
-                <span className="text-gray-400 block">Họ và tên:</span>
-                <span className="font-bold text-gray-800">{customer.fullName}</span>
+                <span className={`block ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`}>Họ và tên:</span>
+                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{customer.fullName}</span>
               </div>
               <div>
-                <span className="text-gray-400 block">Số điện thoại:</span>
-                <span className="font-mono font-bold text-gray-800">{customer.phone || 'Chưa SĐT'}</span>
+                <span className={`block ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`}>Số điện thoại:</span>
+                <span className={`font-mono font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{customer.phone || 'Chưa SĐT'}</span>
               </div>
               <div>
-                <span className="text-gray-400 block">Mã thành viên:</span>
-                <span className="font-mono font-bold text-amber-700">{customer.memberCode || 'N/A'}</span>
+                <span className={`block ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`}>Mã thành viên:</span>
+                <span className={`font-mono font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>{customer.memberCode || 'N/A'}</span>
               </div>
               <div>
-                <span className="text-gray-400 block">Hạng thành viên:</span>
-                <span className="font-bold text-gray-800">{customer.membershipTier?.name || 'Thành viên'}</span>
+                <span className={`block ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`}>Hạng thành viên:</span>
+                <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{customer.membershipTier?.name || 'Thành viên'}</span>
               </div>
             </div>
           </div>
 
           {/* Editable VAT Invoice Section */}
-          <div className="p-3.5 bg-red-50/40 rounded-xl border border-red-200/80 space-y-3">
-            <div className="flex items-center gap-1.5 font-bold text-gray-900 text-xs">
+          <div className={`p-3.5 rounded-xl border space-y-3 ${
+            isDarkMode ? 'bg-slate-800/50 border-slate-700' : 'bg-red-50/40 border-red-200/80'
+          }`}>
+            <div className={`flex items-center gap-1.5 font-bold text-xs ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
               <Building2 className="w-4 h-4 text-[#da251d]" />
               <span>Thông tin xuất hóa đơn VAT doanh nghiệp:</span>
             </div>
 
             {/* MST with quick lookup */}
             <div>
-              <label className="block text-gray-700 font-semibold mb-1">
+              <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                 Mã số thuế doanh nghiệp (MST):
               </label>
               <div className="flex gap-2">
@@ -173,26 +185,30 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
                   value={taxCode}
                   onChange={(e) => setTaxCode(e.target.value)}
                   placeholder="Nhập MST (VD: 0300588569)..."
-                  className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-mono font-bold"
+                  className={`flex-1 px-3 py-1.5 rounded-lg outline-none text-xs font-mono font-bold border ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#da251d]'
+                  }`}
                 />
                 <button
                   type="button"
                   disabled={isLookingUpTax || !taxCode.trim()}
                   onClick={handleLookupTax}
-                  className="px-3 py-1.5 bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                  className="px-3 py-1.5 bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg font-bold text-xs flex items-center justify-center transition-colors cursor-pointer shadow-xs min-w-[34px]"
+                  title="Tra cứu mã số thuế"
                 >
                   {isLookingUpTax ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (
                     <Search className="w-3.5 h-3.5" />
                   )}
-                  <span>Tra cứu MST</span>
                 </button>
               </div>
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold mb-1">
+              <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                 Tên công ty / Đơn vị (trên DKKD):
               </label>
               <input
@@ -200,25 +216,33 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
                 value={companyName}
                 onChange={(e) => setCompanyName(e.target.value)}
                 placeholder="Tên công ty trên đăng ký kinh doanh..."
-                className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                className={`w-full px-3 py-1.5 rounded-lg outline-none text-xs font-medium border ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#da251d]'
+                }`}
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold mb-1">
+              <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                 Địa chỉ công ty (trên hóa đơn):
               </label>
-              <input
-                type="text"
+              <textarea
+                rows={3}
                 value={taxAddress}
                 onChange={(e) => setTaxAddress(e.target.value)}
                 placeholder="Địa chỉ xuất hóa đơn..."
-                className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                className={`w-full px-3 py-1.5 rounded-lg outline-none text-xs font-medium border resize-y leading-relaxed ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#da251d]'
+                }`}
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold mb-1">
+              <label className={`block font-semibold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
                 Email nhận hóa đơn điện tử:
               </label>
               <input
@@ -226,7 +250,11 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
                 value={invoiceEmail}
                 onChange={(e) => setInvoiceEmail(e.target.value)}
                 placeholder="ketoan@congty.com..."
-                className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                className={`w-full px-3 py-1.5 rounded-lg outline-none text-xs font-medium border ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                    : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-[#da251d]'
+                }`}
               />
             </div>
           </div>
@@ -236,7 +264,9 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 font-semibold transition-colors text-xs cursor-pointer"
+              className={`px-4 py-2 rounded-xl font-semibold transition-colors text-xs cursor-pointer ${
+                isDarkMode ? 'text-slate-400 hover:bg-slate-800 hover:text-white' : 'text-gray-600 hover:bg-gray-100'
+              }`}
             >
               Hủy
             </button>

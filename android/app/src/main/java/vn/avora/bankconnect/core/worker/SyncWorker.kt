@@ -84,6 +84,13 @@ class SyncWorker(
                     val body = response.body()!!
                     db.transactionDao().markSynced(tx.eventId, body.status, body.orderId)
                     Log.i(TAG, "[✓] Đồng bộ thành công event ${tx.eventId} -> Status: ${body.status}")
+                } else if (response.code() == 401 || response.code() == 403) {
+                    Log.w(TAG, "[REVOKED] Thiết bị bị từ chối xác thực (${response.code()}) trong SyncWorker. Ngắt kết nối & hủy ghép nối.")
+                    vn.avora.bankconnect.core.service.BankNotificationListenerService.handleDeviceRevokedOrUnpaired(
+                        applicationContext,
+                        "Thiết bị đã bị thu hồi liên kết trên /admin/bank-connect. Vui lòng ghép nối lại."
+                    )
+                    return Result.success()
                 } else {
                     anyFailed = true
                     val err = response.errorBody()?.string() ?: "HTTP ${response.code()}"

@@ -1,7 +1,7 @@
 export interface RouteCalculationResult {
   distanceMeters: number;
   durationSeconds: number;
-  provider: string;
+  provider: 'OPENMAP_MOTOR' | 'OSRM_ROUTING' | 'HAVERSINE_CURVATURE_ESTIMATE' | string;
   isFallback: boolean;
   calculatedAt: Date;
 }
@@ -36,8 +36,8 @@ export function calculateHaversineDistanceMeters(
 }
 
 /**
- * Fallback Provider: Haversine nhân với hệ số đường bộ đô thị Việt Nam (1.35)
- * Tốc độ xe máy ước tính trung bình 28 km/h (466 m/phút)
+ * Fallback Provider: Haversine nhân với hệ số uốn lượn đường phố đô thị Việt Nam (1.35)
+ * Tốc độ xe máy ước tính trung bình ~25 km/h (~7 m/giây)
  */
 export class HaversineFallbackRoutingProvider implements ShippingRoutingProvider {
   async calculateRoute(
@@ -50,9 +50,7 @@ export class HaversineFallbackRoutingProvider implements ShippingRoutingProvider
       destination.lat,
       destination.lng,
     );
-    // Hệ số uốn lượn đường phố thực tế tại Hà Nội / TP.HCM ~ 1.35
     const distanceMeters = Math.round(rawHaversine * 1.35);
-    // Thời gian: ~25 km/h ~ 7 m/giây
     const durationSeconds = Math.max(300, Math.round(distanceMeters / 7));
 
     return {
@@ -66,41 +64,121 @@ export class HaversineFallbackRoutingProvider implements ShippingRoutingProvider
 }
 
 /**
- * OSRM (Open Source Routing Machine) Provider - Tính đường bộ xe máy/ô tô chính xác
+ * OpenMap.vn Directions API Provider
+ * Official Documentation: https://docs.openmap.vn/docs/rest-apis/routing/
+ * Endpoint: GET https://mapapis.openmap.vn/v1/direction
+ * Vehicle: motor (motorcycle routing according to Vietnam road rules)
  */
-export class OsrmRoutingProvider implements ShippingRoutingProvider {
-  private fallback = new HaversineFallbackRoutingProvider();
+export class OpenMapRoutingProvider implements ShippingRoutingProvider {
+  constructor(
+    private readonly apiKey: string,
+    private readonly vehicle: string = 'motor',
+  ) {}
 
   async calculateRoute(
     origin: { lat: number; lng: number },
     destination: { lat: number; lng: number },
   ): Promise<RouteCalculationResult> {
+    if (!this.apiKey || !this.apiKey.trim()) {
+      throw new Error('OPENMAP_API_KEY is empty or missing');
+    }
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4500); // 4.5s timeout
+
+    // Request params: origin=lat,lng & destination=lat,lng & vehicle=motor
+    const url = `https://mapapis.openmap.vn/v1/direction?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&vehicle=${encodeURIComponent(
+      this.vehicle,
+    )}&apikey=${encodeURIComponent(this.apiKey.trim())}`;
+
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500); // 3.5s timeout
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'AvoraRestaurant/2.0 (contact@avorafnb.com)',
+        },
+      });
 
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
+      if (!res.ok) {
+        throw new Error(`OpenMap.vn Directions API returned HTTP ${res.status}`);
+      }
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
-          const route = data.routes[0];
+      const data = await res.json();
+      if (
+        data &&
+        Array.isArray(data.routes) &&
+        data.routes.length > 0 &&
+        Array.isArray(data.routes[0].legs) &&
+        data.routes[0].legs.length > 0
+      ) {
+        const leg = data.routes[0].legs[0];
+        const distanceMeters = Math.round(Number(leg.distance?.value || 0));
+        const durationSeconds = Math.round(Number(leg.duration?.value || 0));
+
+        if (distanceMeters > 0) {
           return {
-            distanceMeters: Math.round(route.distance),
-            durationSeconds: Math.round(route.duration),
-            provider: 'STANDARD_DELIVERY',
+            distanceMeters,
+            durationSeconds: Math.max(60, durationSeconds),
+            provider: 'OPENMAP_MOTOR',
             isFallback: false,
             calculatedAt: new Date(),
           };
         }
       }
-    } catch (err) {
-      console.warn('OSRM routing request failed or timed out, falling back to Haversine Curvature:', err);
-    }
 
-    // Fallback if OSRM unavailable
-    return this.fallback.calculateRoute(origin, destination);
+      throw new Error('OpenMap.vn returned empty or invalid route legs');
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/**
+ * OSRM (Open Source Routing Machine) Provider
+ * Real road network routing used as reliable fallback when OpenMap API key is absent or quota is exceeded
+ */
+export class OsrmRoutingProvider implements ShippingRoutingProvider {
+  async calculateRoute(
+    origin: { lat: number; lng: number },
+    destination: { lat: number; lng: number },
+  ): Promise<RouteCalculationResult> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000); // 4s timeout
+
+    // Note: OSRM expects coordinates in order: lng,lat;lng,lat
+    const url = `https://router.project-osrm.org/route/v1/driving/${origin.lng},${origin.lat};${destination.lng},${destination.lat}?overview=false`;
+
+    try {
+      const res = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          Accept: 'application/json',
+          'User-Agent': 'AvoraRestaurant/2.0 (contact@avorafnb.com)',
+        },
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
+          const route = data.routes[0];
+          const distanceMeters = Math.round(Number(route.distance || 0));
+          const durationSeconds = Math.round(Number(route.duration || 0));
+
+          if (distanceMeters > 0) {
+            return {
+              distanceMeters,
+              durationSeconds: Math.max(60, durationSeconds),
+              provider: 'OSRM_ROUTING',
+              isFallback: false,
+              calculatedAt: new Date(),
+            };
+          }
+        }
+      }
+      throw new Error(`OSRM router returned HTTP ${res.status}`);
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 }

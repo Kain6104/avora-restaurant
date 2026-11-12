@@ -101,10 +101,13 @@ export function getPresetDateRange(
       const fromShift = activeShiftOpenedAt
         ? dayjs(activeShiftOpenedAt).tz(VN_TIMEZONE).format('YYYY-MM-DDTHH:mm')
         : now.startOf('day').format('YYYY-MM-DDTHH:mm');
+      const minAllowedShift = activeShiftOpenedAt && dayjs(activeShiftOpenedAt).isBefore(dayjs(minAllowed))
+        ? fromShift
+        : minAllowed;
       return {
         from: fromShift,
         to: maxAllowed,
-        minAllowed,
+        minAllowed: minAllowedShift,
         maxAllowed,
       };
     }

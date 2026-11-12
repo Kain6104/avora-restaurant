@@ -77,6 +77,7 @@ interface PosSettingsDrawerProps {
     reservations?: number;
   };
   onOpenEndOfDayReport?: () => void;
+  isDarkMode?: boolean;
 }
 
 // Máy in ảo hệ điều hành
@@ -114,6 +115,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   onOpenDesktopLaunch,
   orderCounts = { allOrders: 0, qrOrders: 0, reservations: 0 },
   onOpenEndOfDayReport,
+  isDarkMode = false,
 }) => {
   // 1. Sidebar menu bên trái:
   // - Máy in & Phiếu chế biến
@@ -653,6 +655,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
     purpose: 'RECEIPT' | 'KITCHEN' | 'BAR' | 'ITEM_LABEL',
     paperOrLabelSize: string,
   ) => {
+    if (testingPrinterId) return;
     if (!targetPrinterName) {
       toast.error('Vui lòng chọn máy in trước khi in thử!');
       return;
@@ -892,10 +895,14 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled}
-          className={`w-full h-10 px-3 text-xs bg-slate-50 border rounded-xl outline-none focus:bg-white transition-colors disabled:opacity-50 disabled:bg-slate-100 cursor-pointer ${
+          className={`w-full h-10 px-3 text-xs border rounded-xl outline-none transition-colors disabled:opacity-50 cursor-pointer ${
+            isDarkMode
+              ? 'bg-slate-800 border-slate-700 text-white focus:bg-slate-800 disabled:bg-slate-850'
+              : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white disabled:bg-slate-100'
+          } ${
             isMissing
               ? 'border-amber-400 bg-amber-50/40 text-amber-900 focus:border-amber-500 font-semibold'
-              : 'border-slate-300 focus:border-[#da251d]'
+              : 'focus:border-[#da251d]'
           }`}
         >
           <option value="">{placeholder}</option>
@@ -952,17 +959,25 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-slate-50 text-slate-800 select-none animate-in fade-in duration-150">
+    <div className={`fixed inset-0 z-[100] flex flex-col select-none animate-in fade-in duration-150 ${
+      isDarkMode ? 'dark bg-slate-900 text-slate-100' : 'bg-slate-50 text-slate-800'
+    }`}>
       {/* ========================================================================= */}
       {/* 1. TOP HEADER (Tone sáng đỏ trắng thương hiệu AVORA) */}
       {/* ========================================================================= */}
-      <header className="h-13 sm:h-14 bg-white border-b border-slate-200 px-3 sm:px-5 flex items-center justify-between gap-3 shrink-0 z-20 shadow-2xs">
+      <header className={`h-13 sm:h-14 border-b px-3 sm:px-5 flex items-center justify-between gap-3 shrink-0 z-20 shadow-2xs ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+      }`}>
         {/* Left: Hamburger + Logo AVORA */}
         <div className="flex items-center gap-2.5">
           <button
             type="button"
             onClick={onClose}
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 hover:bg-red-50 hover:border-red-200 text-slate-700 hover:text-[#da251d] flex items-center justify-center transition-colors cursor-pointer"
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white'
+                : 'border-slate-200 bg-slate-50 hover:bg-red-50 hover:border-red-200 text-slate-700 hover:text-[#da251d]'
+            }`}
             title="Đóng menu cài đặt"
           >
             <Menu className="w-5 h-5" />
@@ -976,13 +991,17 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             />
           </div>
 
-          <span className="hidden sm:inline-block text-xs font-black text-slate-800 px-2.5 py-0.5 bg-slate-100 rounded-md border border-slate-200">
+          <span className={`hidden sm:inline-block text-xs font-black px-2.5 py-0.5 rounded-md border ${
+            isDarkMode ? 'text-slate-200 bg-slate-800 border-slate-700' : 'text-slate-800 bg-slate-100 border-slate-200'
+          }`}>
             Cài đặt POS Chi Nhánh
           </span>
         </div>
 
         {/* Center: Navigation shortcuts */}
-        <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+        <nav className={`hidden md:flex items-center gap-1 p-1 rounded-xl border text-xs ${
+          isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-100 border-slate-200'
+        }`}>
           <button
             type="button"
             onClick={() => {
@@ -992,6 +1011,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
               activePosTab === 'TABLES'
                 ? 'bg-[#da251d] text-white shadow-xs'
+                : isDarkMode
+                ? 'text-slate-300 hover:text-white hover:bg-slate-700'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
@@ -1007,12 +1028,16 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activePosTab === 'ORDERS'
                 ? 'bg-[#da251d] text-white shadow-xs'
+                : isDarkMode
+                ? 'text-slate-300 hover:text-white hover:bg-slate-700'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <span>Tất cả đơn</span>
             {orderCounts.allOrders !== undefined && orderCounts.allOrders > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 bg-red-100 text-[#da251d] rounded-full font-bold">
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                isDarkMode ? 'bg-red-950/60 text-red-300' : 'bg-red-100 text-[#da251d]'
+              }`}>
                 {orderCounts.allOrders}
               </span>
             )}
@@ -1027,12 +1052,16 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activePosTab === 'RESERVATIONS'
                 ? 'bg-[#da251d] text-white shadow-xs'
+                : isDarkMode
+                ? 'text-slate-300 hover:text-white hover:bg-slate-700'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <span>Đặt bàn</span>
             {orderCounts.reservations !== undefined && orderCounts.reservations > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 bg-sky-100 text-sky-700 rounded-full font-bold">
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                isDarkMode ? 'bg-sky-950/60 text-sky-300' : 'bg-sky-100 text-sky-700'
+              }`}>
                 {orderCounts.reservations}
               </span>
             )}
@@ -1047,12 +1076,16 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
             className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
               activePosTab === 'QR_ORDERS'
                 ? 'bg-[#da251d] text-white shadow-xs'
+                : isDarkMode
+                ? 'text-slate-300 hover:text-white hover:bg-slate-700'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-white'
             }`}
           >
             <span>QR Order</span>
             {orderCounts.qrOrders !== undefined && orderCounts.qrOrders > 0 && (
-              <span className="text-[10px] px-1.5 py-0.2 bg-amber-100 text-amber-700 rounded-full font-bold">
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                isDarkMode ? 'bg-amber-950/60 text-amber-300' : 'bg-amber-100 text-amber-700'
+              }`}>
                 {orderCounts.qrOrders}
               </span>
             )}
@@ -1061,7 +1094,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
 
         {/* Right: Trực tuyến + Đóng */}
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold ${
+            isDarkMode ? 'bg-emerald-950/40 border-emerald-800 text-emerald-400' : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+          }`}>
             <Wifi className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Online</span>
           </div>
@@ -1069,7 +1104,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-xl border border-slate-200 bg-slate-50 hover:bg-red-50 hover:border-red-200 text-slate-500 hover:text-[#da251d] flex items-center justify-center transition-colors cursor-pointer"
+            className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white'
+                : 'border-slate-200 bg-slate-50 hover:bg-red-50 hover:border-red-200 text-slate-500 hover:text-[#da251d]'
+            }`}
             title="Đóng"
           >
             <X className="w-4 h-4" />
@@ -1083,7 +1122,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar (Ẩn hoàn toàn khi vào Tab Hóa đơn để tối ưu 100% diện tích) */}
         {activeSidebarItem !== 'invoices' && (
-        <aside className="w-56 sm:w-64 bg-white border-r border-slate-200 flex flex-col justify-between shrink-0 select-none overflow-y-auto">
+        <aside className={`w-56 sm:w-64 border-r flex flex-col justify-between shrink-0 select-none overflow-y-auto ${
+          isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-700'
+        }`}>
           <div className="p-3 space-y-4">
             {/* NHÓM: THIẾT LẬP THIẾT BỊ */}
             <div>
@@ -1099,6 +1140,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                     activeSidebarItem === 'settings'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1108,7 +1151,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   </div>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded ${
-                      activeSidebarItem === 'settings' ? 'bg-white/20' : 'bg-slate-100'
+                      activeSidebarItem === 'settings' ? 'bg-white/20' : isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-600'
                     }`}
                   >
                     {printers.length} máy
@@ -1122,6 +1165,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeSidebarItem === 'drawer'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1136,6 +1181,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeSidebarItem === 'sync'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1160,7 +1207,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                       onClose();
                       onOpenEndOfDayReport();
                     }}
-                    className="w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 cursor-pointer bg-red-50/60 hover:bg-red-50 border border-red-200/80 hover:border-[#da251d] shadow-2xs group active:scale-[0.99]"
+                    className={`w-full text-left p-2.5 rounded-xl transition-all flex flex-col gap-1 cursor-pointer border shadow-2xs group active:scale-[0.99] ${
+                      isDarkMode
+                        ? 'bg-red-950/30 hover:bg-red-950/50 border-red-900/60 hover:border-red-500'
+                        : 'bg-red-50/60 hover:bg-red-50 border-red-200/80 hover:border-[#da251d]'
+                    }`}
                     title="Mở tổng kết doanh thu và in phiếu kết ca"
                   >
                     <div className="flex items-center justify-between w-full">
@@ -1168,15 +1219,21 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         <div className="w-6 h-6 rounded-lg bg-[#da251d] text-white flex items-center justify-center shrink-0 shadow-xs">
                           <FileText className="w-3.5 h-3.5" />
                         </div>
-                        <span className="text-xs font-black text-slate-900 group-hover:text-[#da251d] truncate">
+                        <span className={`text-xs font-black truncate ${
+                          isDarkMode ? 'text-slate-100 group-hover:text-red-400' : 'text-slate-900 group-hover:text-[#da251d]'
+                        }`}>
                           Tổng kết cuối ngày
                         </span>
                       </div>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-white text-[#da251d] border border-red-200 shrink-0">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                        isDarkMode ? 'bg-slate-800 text-red-400 border border-red-900/60' : 'bg-white text-[#da251d] border border-red-200'
+                      }`}>
                         Báo cáo
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 font-normal leading-snug group-hover:text-slate-700 pl-8">
+                    <p className={`text-[11px] font-normal leading-snug pl-8 ${
+                      isDarkMode ? 'text-slate-400 group-hover:text-slate-300' : 'text-slate-500 group-hover:text-slate-700'
+                    }`}>
                       Xem doanh thu, phương thức thanh toán, hàng hóa bán ra và in phiếu kết ca.
                     </p>
                   </button>
@@ -1186,13 +1243,19 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 <button
                   type="button"
                   onClick={() => setActiveSidebarItem('invoices')}
-                  className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]"
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
+                    isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
+                      : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
                     <Receipt className="w-4 h-4 shrink-0" />
                     <span>Hóa đơn & Biên lai</span>
                   </div>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-slate-100 text-slate-700">
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                    isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-700'
+                  }`}>
                     {(allOrders && allOrders.length > 0)
                       ? allOrders.filter((o) => o.status === 'COMPLETED' || o.status === 'CANCELLED').length || allOrders.length
                       : completedOrders.length}
@@ -1206,6 +1269,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
                     activeSidebarItem === 'branch'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1220,6 +1285,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                     activeSidebarItem === 'security'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1232,8 +1299,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                       activeSidebarItem === 'security'
                         ? 'bg-white/20 text-white'
                         : hasPosPin
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-100 text-slate-500'
+                        ? isDarkMode ? 'bg-emerald-950/60 text-emerald-300' : 'bg-emerald-100 text-emerald-700'
+                        : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
                     {hasPosPin ? 'ĐÃ CÓ PIN' : 'CHƯA CÓ'}
@@ -1252,14 +1319,15 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                       window.open('/admin/dashboard', '_blank');
                     }
                   }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 flex items-center justify-between transition-colors cursor-pointer"
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold flex items-center justify-between transition-colors cursor-pointer ${
+                    isDarkMode ? 'text-slate-300 hover:bg-slate-800' : 'text-slate-700 hover:bg-slate-100'
+                  }`}
                 >
                   <div className="flex items-center gap-2">
                     <ExternalLink className="w-4 h-4 text-slate-500" />
                     <span>Trang Quản Trị Hệ Thống</span>
                   </div>
                 </button>
-
 
                 {/* 8. Giới thiệu & Cập nhật ứng dụng */}
                 <button
@@ -1268,6 +1336,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between cursor-pointer ${
                     activeSidebarItem === 'about'
                       ? 'bg-[#da251d] text-white shadow-xs'
+                      : isDarkMode
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-red-400'
                       : 'text-slate-700 hover:bg-red-50/70 hover:text-[#da251d]'
                   }`}
                 >
@@ -1277,7 +1347,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                   </div>
                   <span
                     className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                      activeSidebarItem === 'about' ? 'bg-white/20' : 'bg-slate-100 text-slate-500'
+                      activeSidebarItem === 'about' ? 'bg-white/20' : isDarkMode ? 'bg-slate-800 text-slate-400' : 'bg-slate-100 text-slate-500'
                     }`}
                   >
                     v{platformBridge.getVersion()}
@@ -1292,7 +1362,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                       onClose();
                       onOpenDesktopLaunch();
                     }}
-                    className="w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold text-[#da251d] bg-red-50 hover:bg-red-100 border border-red-200 flex items-center justify-between transition-colors cursor-pointer mt-1"
+                    className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold border flex items-center justify-between transition-colors cursor-pointer mt-1 ${
+                      isDarkMode
+                        ? 'text-red-400 bg-red-950/40 hover:bg-red-950/60 border-red-900/60'
+                        : 'text-[#da251d] bg-red-50 hover:bg-red-100 border-red-200'
+                    }`}
                   >
                     <div className="flex items-center gap-2">
                       <Monitor className="w-4 h-4 shrink-0 text-[#da251d]" />
@@ -1308,7 +1382,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           </div>
 
           {/* Nút Thao Tác Ứng Dụng & Đăng Xuất Ca */}
-          <div className="p-3 border-t border-slate-200 bg-slate-50 space-y-2">
+          <div className={`p-3 border-t space-y-2 ${isDarkMode ? 'border-slate-800 bg-slate-900' : 'border-slate-200 bg-slate-50'}`}>
             {/* Nút Đóng ứng dụng (Chỉ hiển thị trên Desktop) */}
             {platformBridge.isDesktop && (
               <button
@@ -1328,7 +1402,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 onClose();
                 onLogout?.();
               }}
-              className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-red-50 border border-red-200 text-[#da251d] font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition-all cursor-pointer active:scale-95"
+              className={`w-full py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2 shadow-2xs transition-all cursor-pointer active:scale-95 ${
+                isDarkMode
+                  ? 'bg-slate-800 hover:bg-slate-750 border-red-900/60 text-red-400'
+                  : 'bg-white hover:bg-red-50 border-red-200 text-[#da251d]'
+              }`}
             >
               <LogOut className="w-4 h-4 text-[#da251d]" />
               <span>Đăng xuất ca làm việc</span>
@@ -1338,14 +1416,18 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
         )}
 
         {/* Right Main Content */}
-        <main className="flex-1 bg-slate-50/70 flex flex-col overflow-hidden">
+        <main className={`flex-1 flex flex-col overflow-hidden ${
+          isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-50/70 text-slate-800'
+        }`}>
           {/* =================================================================== */}
           {/* SECTION 1: MÁY IN & PHIẾU CHẾ BIẾN (RENDER TRỰC TIẾP TRONG POS SHELL) */}
           {/* =================================================================== */}
           {activeSidebarItem === 'settings' && (
             <div className="flex-1 flex flex-col overflow-hidden">
               {/* 3 Sub-tabs chính: In hóa đơn/tạm tính | In bar/bếp | In tem mặt hàng */}
-              <div className="h-12 bg-white border-b border-slate-200 px-4 sm:px-6 flex items-center shrink-0 shadow-2xs">
+              <div className={`h-12 border-b px-4 sm:px-6 flex items-center shrink-0 shadow-2xs ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-200' : 'bg-white border-slate-200 text-slate-600'
+              }`}>
                 <div className="flex items-center gap-6 sm:gap-8 text-xs font-bold">
                   <button
                     type="button"
@@ -1353,6 +1435,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     className={`h-12 border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
                       printSubTab === 'bill'
                         ? 'border-[#da251d] text-[#da251d]'
+                        : isDarkMode
+                        ? 'border-transparent text-slate-400 hover:text-white'
                         : 'border-transparent text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -1366,6 +1450,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     className={`h-12 border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
                       printSubTab === 'kitchen'
                         ? 'border-[#da251d] text-[#da251d]'
+                        : isDarkMode
+                        ? 'border-transparent text-slate-400 hover:text-white'
                         : 'border-transparent text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -1379,6 +1465,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     className={`h-12 border-b-2 flex items-center gap-1.5 transition-colors cursor-pointer ${
                       printSubTab === 'barcode'
                         ? 'border-[#da251d] text-[#da251d]'
+                        : isDarkMode
+                        ? 'border-transparent text-slate-400 hover:text-white'
                         : 'border-transparent text-slate-600 hover:text-slate-900'
                     }`}
                   >
@@ -1465,16 +1553,22 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 {printSubTab === 'bill' && (
                   <div className="max-w-3xl space-y-5">
                     {/* Card 1: MÁY IN HÓA ĐƠN */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                      <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
-                        <div className="w-8 h-8 rounded-xl bg-red-50 text-[#da251d] flex items-center justify-center font-bold">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      <div className={`flex items-center gap-2.5 border-b pb-3 ${
+                        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                      }`}>
+                        <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                          isDarkMode ? 'bg-red-950/50 text-red-400' : 'bg-red-50 text-[#da251d]'
+                        }`}>
                           <Receipt className="w-4.5 h-4.5" />
                         </div>
                         <div>
-                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                          <h3 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                             MÁY IN HÓA ĐƠN
                           </h3>
-                          <p className="text-[11px] text-slate-500">
+                          <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             In hóa đơn thanh toán và phiếu tạm tính tại quầy thu ngân qua máy in Windows
                           </p>
                         </div>
@@ -1482,24 +1576,28 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end pt-1">
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Tên máy in hóa đơn
                           </label>
                           {renderPrinterDropdown(receiptPrinterName, setReceiptPrinterName)}
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Khổ giấy
                           </label>
                           <select
                             value={defaultPaperSize}
                             onChange={(e) => setDefaultPaperSize(e.target.value as any)}
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors cursor-pointer border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           >
-                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
-                            <option value="XP-350B">Xprinter XP-350B (76mm - Chống rớt giấy / Tiết kiệm)</option>
-                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
+                            <option value="80mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Xprinter XP-350B (76mm - Chống rớt giấy / Tiết kiệm)</option>
+                            <option value="58mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
@@ -1510,7 +1608,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                               handleTestPrint(receiptPrinterName, 'RECEIPT', defaultPaperSize)
                             }
                             disabled={!!testingPrinterId || !receiptPrinterName}
-                            className="w-full h-10 px-3 rounded-xl border border-red-300 text-[#da251d] hover:bg-red-50 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            className={`w-full h-10 px-3 rounded-xl border font-bold text-xs transition-colors cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 ${
+                              isDarkMode
+                                ? 'border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-950/60'
+                                : 'border-red-300 text-[#da251d] hover:bg-red-50'
+                            }`}
                           >
                             <Printer className="w-3.5 h-3.5" />
                             <span>
@@ -1522,19 +1624,21 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     </div>
 
                     {/* Card 2: LIÊN IN */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                      <div className="border-b border-slate-100 pb-3">
-                        <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      <div className={`border-b pb-3 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                        <h3 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                           LIÊN IN
                         </h3>
-                        <p className="text-[11px] text-slate-500">
+                        <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                           Cấu hình số bản in hóa đơn và tùy chọn tự động in
                         </p>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Số liên in hóa đơn
                           </label>
                           <input
@@ -1545,12 +1649,16 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             onChange={(e) =>
                               setBillCopies(Math.max(1, Number(e.target.value) || 1))
                             }
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           />
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Số liên in tạm tính
                           </label>
                           <input
@@ -1561,7 +1669,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             onChange={(e) =>
                               setTempBillCopies(Math.max(1, Number(e.target.value) || 1))
                             }
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           />
                         </div>
                       </div>
@@ -1589,14 +1701,20 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     </div>
 
                     {/* Card 3: CẤU HÌNH GÓI BUFFET (IN ẤN & HÓA ĐƠN) */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                      <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      <div className={`border-b pb-3 flex items-center justify-between ${
+                        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                      }`}>
                         <div>
-                          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                          <h3 className={`text-xs font-bold uppercase tracking-wider flex items-center gap-2 ${
+                            isDarkMode ? 'text-white' : 'text-slate-900'
+                          }`}>
                             <UtensilsCrossed className="w-4 h-4 text-[#da251d]" />
                             <span>CẤU HÌNH GÓI BUFFET</span>
                           </h3>
-                          <p className="text-[11px] text-slate-500">
+                          <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                             Quy tắc hiển thị món ăn thuộc gói Buffet trên Phiếu tạm tính và Hóa đơn thanh toán
                           </p>
                         </div>
@@ -1604,12 +1722,14 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
 
                       <div className="space-y-3.5">
                         {/* Switch 1: KHÔNG IN MÓN BUFFET KHI IN TẠM TÍNH */}
-                        <div className="flex items-start justify-between gap-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className={`flex items-start justify-between gap-4 p-3.5 rounded-xl border ${
+                          isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200/80'
+                        }`}>
                           <div>
-                            <span className="text-xs font-bold text-slate-900 block">
+                            <span className={`text-xs font-bold block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               Không in món Buffet khi in Tạm tính
                             </span>
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                            <p className={`text-[11px] mt-0.5 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               Bật: Hệ thống sẽ tự động ẩn các món 0đ thuộc gói Buffet trên Phiếu tạm tính.
                             </p>
                           </div>
@@ -1621,17 +1741,19 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                               onChange={(e) => setExcludeBuffetItemsFromTempBill(e.target.checked)}
                               className="sr-only peer"
                             />
-                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#da251d]" />
+                            <div className="w-11 h-6 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#da251d]" />
                           </label>
                         </div>
 
                         {/* Switch 2: XÓA MÓN BUFFET KHI THANH TOÁN */}
-                        <div className="flex items-start justify-between gap-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200/80">
+                        <div className={`flex items-start justify-between gap-4 p-3.5 rounded-xl border ${
+                          isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200/80'
+                        }`}>
                           <div>
-                            <span className="text-xs font-bold text-slate-900 block">
+                            <span className={`text-xs font-bold block ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               Xóa món Buffet khi Thanh toán
                             </span>
-                            <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                            <p className={`text-[11px] mt-0.5 leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               Bật: Các món 0đ thuộc gói Buffet sẽ bị tự động xóa bỏ khỏi đơn hàng để làm gọn Hóa đơn cuối cùng.
                             </p>
                           </div>
@@ -1657,17 +1779,23 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 {printSubTab === 'kitchen' && (
                   <div className="max-w-3xl space-y-5">
                     {/* Card 1: MÁY IN BẾP (NÓNG) */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      <div className={`flex items-center justify-between border-b pb-3 ${
+                        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                      }`}>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center font-bold">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                            isDarkMode ? 'bg-orange-950/50 text-orange-400' : 'bg-orange-50 text-orange-600'
+                          }`}>
                             <ChefHat className="w-4.5 h-4.5" />
                           </div>
                           <div>
-                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            <h3 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               MÁY IN BẾP (NÓNG)
                             </h3>
-                            <p className="text-[11px] text-slate-500">
+                            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               In phiếu cho bếp: món xào, nướng, lẩu, chiên
                             </p>
                           </div>
@@ -1676,7 +1804,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         {/* Bật/Tắt Toggle */}
                         <div className="flex items-center gap-2 text-xs font-medium">
                           <span
-                            className={kitchenEnabled ? 'text-[#da251d] font-bold' : 'text-slate-400'}
+                            className={kitchenEnabled ? 'text-[#da251d] font-bold' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}
                           >
                             {kitchenEnabled ? 'Đang bật' : 'Đã tắt'}
                           </span>
@@ -1684,7 +1812,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             type="button"
                             onClick={() => setKitchenEnabled(!kitchenEnabled)}
                             className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer p-0.5 ${
-                              kitchenEnabled ? 'bg-[#da251d]' : 'bg-slate-300'
+                              kitchenEnabled ? 'bg-[#da251d]' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
                             }`}
                           >
                             <span
@@ -1702,7 +1830,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         }`}
                       >
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Tên máy in Bếp (Nóng)
                           </label>
                           {renderPrinterDropdown(
@@ -1713,43 +1841,53 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Khổ giấy
                           </label>
                           <select
                             value={kitchenPaperSize}
                             onChange={(e) => setKitchenPaperSize(e.target.value as any)}
                             disabled={!kitchenEnabled}
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors cursor-pointer border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           >
-                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
-                            <option value="XP-350B">Xprinter XP-350B (76mm)</option>
-                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
+                            <option value="80mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Xprinter XP-350B (76mm)</option>
+                            <option value="58mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                            <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                               Số liên
                             </label>
-                            <div className="flex items-center h-10 border border-slate-300 rounded-xl bg-slate-50 overflow-hidden">
+                            <div className={`flex items-center h-10 border rounded-xl overflow-hidden ${
+                              isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                            }`}>
                               <button
                                 type="button"
                                 disabled={!kitchenEnabled || kitchenCopies <= 1}
                                 onClick={() => setKitchenCopies(Math.max(1, kitchenCopies - 1))}
-                                className="w-8 h-full flex items-center justify-center text-slate-600 hover:bg-slate-200 active:bg-slate-300 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+                                }`}
                               >
                                 <Minus className="w-3.5 h-3.5" />
                               </button>
-                              <span className="flex-1 text-center font-bold text-xs text-slate-800">
+                              <span className={`flex-1 text-center font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                                 {kitchenCopies}
                               </span>
                               <button
                                 type="button"
                                 disabled={!kitchenEnabled || kitchenCopies >= 5}
                                 onClick={() => setKitchenCopies(Math.min(5, kitchenCopies + 1))}
-                                className="w-8 h-full flex items-center justify-center text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-emerald-400 hover:bg-emerald-950/40' : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
@@ -1762,7 +1900,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                               handleTestPrint(kitchenPrinterName, 'KITCHEN', kitchenPaperSize)
                             }
                             disabled={!kitchenEnabled || !!testingPrinterId || !kitchenPrinterName}
-                            className="h-10 px-3.5 rounded-xl border border-red-300 text-[#da251d] hover:bg-red-50 font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                            className={`h-10 px-3.5 rounded-xl border font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50 ${
+                              isDarkMode
+                                ? 'border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-950/60'
+                                : 'border-red-300 text-[#da251d] hover:bg-red-50'
+                            }`}
                           >
                             {testingPrinterId === kitchenPrinterName ? 'Đang in...' : 'In thử'}
                           </button>
@@ -1771,17 +1913,23 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     </div>
 
                     {/* Card 2: MÁY IN QUẦY BAR (NƯỚC) */}
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                      <div className={`flex items-center justify-between border-b pb-3 ${
+                        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                      }`}>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                            isDarkMode ? 'bg-sky-950/50 text-sky-400' : 'bg-sky-50 text-sky-600'
+                          }`}>
                             <Utensils className="w-4.5 h-4.5" />
                           </div>
                           <div>
-                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            <h3 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               MÁY IN QUẦY BAR (NƯỚC)
                             </h3>
-                            <p className="text-[11px] text-slate-500">
+                            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               In phiếu cho quầy bar: đồ uống, cocktail, sinh tố, chè
                             </p>
                           </div>
@@ -1790,7 +1938,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         {/* Bật/Tắt Toggle */}
                         <div className="flex items-center gap-2 text-xs font-medium">
                           <span
-                            className={barEnabled ? 'text-[#da251d] font-bold' : 'text-slate-400'}
+                            className={barEnabled ? 'text-[#da251d] font-bold' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}
                           >
                             {barEnabled ? 'Đang bật' : 'Đã tắt'}
                           </span>
@@ -1798,7 +1946,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             type="button"
                             onClick={() => setBarEnabled(!barEnabled)}
                             className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer p-0.5 ${
-                              barEnabled ? 'bg-[#da251d]' : 'bg-slate-300'
+                              barEnabled ? 'bg-[#da251d]' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
                             }`}
                           >
                             <span
@@ -1816,7 +1964,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         }`}
                       >
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Tên máy in Quầy Bar
                           </label>
                           {renderPrinterDropdown(
@@ -1827,43 +1975,53 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Khổ giấy
                           </label>
                           <select
                             value={barPaperSize}
                             onChange={(e) => setBarPaperSize(e.target.value as any)}
                             disabled={!barEnabled}
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors cursor-pointer border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           >
-                            <option value="80mm">80mm (Khổ nhiệt tiêu chuẩn)</option>
-                            <option value="XP-350B">Xprinter XP-350B (76mm)</option>
-                            <option value="58mm">58mm (Khổ nhỏ K58)</option>
+                            <option value="80mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>80mm (Khổ nhiệt tiêu chuẩn)</option>
+                            <option value="XP-350B" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Xprinter XP-350B (76mm)</option>
+                            <option value="58mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>58mm (Khổ nhỏ K58)</option>
                           </select>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                            <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                               Số liên
                             </label>
-                            <div className="flex items-center h-10 border border-slate-300 rounded-xl bg-slate-50 overflow-hidden">
+                            <div className={`flex items-center h-10 border rounded-xl overflow-hidden ${
+                              isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                            }`}>
                               <button
                                 type="button"
                                 disabled={!barEnabled || barCopies <= 1}
                                 onClick={() => setBarCopies(Math.max(1, barCopies - 1))}
-                                className="w-8 h-full flex items-center justify-center text-slate-600 hover:bg-slate-200 active:bg-slate-300 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+                                }`}
                               >
                                 <Minus className="w-3.5 h-3.5" />
                               </button>
-                              <span className="flex-1 text-center font-bold text-xs text-slate-800">
+                              <span className={`flex-1 text-center font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                                 {barCopies}
                               </span>
                               <button
                                 type="button"
                                 disabled={!barEnabled || barCopies >= 5}
                                 onClick={() => setBarCopies(Math.min(5, barCopies + 1))}
-                                className="w-8 h-full flex items-center justify-center text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-emerald-400 hover:bg-emerald-950/40' : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
@@ -1876,7 +2034,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                               handleTestPrint(barPrinterName, 'BAR', barPaperSize)
                             }
                             disabled={!barEnabled || !!testingPrinterId || !barPrinterName}
-                            className="h-10 px-3.5 rounded-xl border border-red-300 text-[#da251d] hover:bg-red-50 font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                            className={`h-10 px-3.5 rounded-xl border font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50 ${
+                              isDarkMode
+                                ? 'border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-950/60'
+                                : 'border-red-300 text-[#da251d] hover:bg-red-50'
+                            }`}
                           >
                             {testingPrinterId === barPrinterName ? 'Đang in...' : 'In thử'}
                           </button>
@@ -1891,18 +2053,24 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 {/* ------------------------------------------------------------- */}
                 {printSubTab === 'barcode' && (
                   <div className="max-w-3xl space-y-4">
-                    <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
+                    <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                      isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
                       {/* Header */}
-                      <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className={`flex items-center justify-between border-b pb-3 ${
+                        isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                      }`}>
                         <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center font-bold">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold ${
+                            isDarkMode ? 'bg-purple-950/50 text-purple-400' : 'bg-purple-50 text-purple-600'
+                          }`}>
                             <Tag className="w-4.5 h-4.5" />
                           </div>
                           <div>
-                            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                            <h3 className={`text-xs font-bold uppercase tracking-wider ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               MÁY IN TEM NHÃN
                             </h3>
-                            <p className="text-[11px] text-slate-500">
+                            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               In tem nhãn dán ly trà sữa, hộp mang về, tem barcode
                             </p>
                           </div>
@@ -1911,7 +2079,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         {/* Bật/Tắt Toggle */}
                         <div className="flex items-center gap-2 text-xs font-medium">
                           <span
-                            className={barcodeEnabled ? 'text-[#da251d] font-bold' : 'text-slate-400'}
+                            className={barcodeEnabled ? 'text-[#da251d] font-bold' : isDarkMode ? 'text-slate-500' : 'text-slate-400'}
                           >
                             {barcodeEnabled ? 'Đang bật' : 'Đã tắt'}
                           </span>
@@ -1919,7 +2087,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                             type="button"
                             onClick={() => setBarcodeEnabled(!barcodeEnabled)}
                             className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer p-0.5 ${
-                              barcodeEnabled ? 'bg-[#da251d]' : 'bg-slate-300'
+                              barcodeEnabled ? 'bg-[#da251d]' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
                             }`}
                           >
                             <span
@@ -1938,7 +2106,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         }`}
                       >
                         <div className="sm:col-span-2">
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Tên máy in Tem Nhãn
                           </label>
                           {renderPrinterDropdown(
@@ -1949,42 +2117,52 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                         </div>
 
                         <div>
-                          <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                          <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                             Khổ tem
                           </label>
                           <select
                             value={barcodePaperSize}
                             onChange={(e) => setBarcodePaperSize(e.target.value)}
                             disabled={!barcodeEnabled}
-                            className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-300 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-colors cursor-pointer"
+                            className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors cursor-pointer border ${
+                              isDarkMode
+                                ? 'bg-slate-800 border-slate-700 text-white focus:bg-slate-800 focus:border-[#da251d]'
+                                : 'bg-slate-50 border-slate-300 text-slate-900 focus:bg-white focus:border-[#da251d]'
+                            }`}
                           >
-                            <option value="30x50mm">30x50mm</option>
-                            <option value="50x70mm">50x70mm</option>
+                            <option value="30x50mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>30x50mm</option>
+                            <option value="50x70mm" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>50x70mm</option>
                           </select>
                         </div>
 
                         <div className="flex items-center gap-2">
                           <div className="flex-1">
-                            <label className="block text-xs font-medium text-slate-700 mb-1.5">
+                            <label className={`block text-xs font-medium mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                               Số liên
                             </label>
-                            <div className="flex items-center h-10 border border-slate-300 rounded-xl bg-slate-50 overflow-hidden">
+                            <div className={`flex items-center h-10 border rounded-xl overflow-hidden ${
+                              isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-300 text-slate-800'
+                            }`}>
                               <button
                                 type="button"
                                 disabled={!barcodeEnabled || barcodeCopies <= 1}
                                 onClick={() => setBarcodeCopies(Math.max(1, barcodeCopies - 1))}
-                                className="w-8 h-full flex items-center justify-center text-slate-600 hover:bg-slate-200 active:bg-slate-300 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-slate-300 hover:bg-slate-700' : 'text-slate-600 hover:bg-slate-200'
+                                }`}
                               >
                                 <Minus className="w-3.5 h-3.5" />
                               </button>
-                              <span className="flex-1 text-center font-bold text-xs text-slate-800">
+                              <span className={`flex-1 text-center font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                                 {barcodeCopies}
                               </span>
                               <button
                                 type="button"
                                 disabled={!barcodeEnabled || barcodeCopies >= 10}
                                 onClick={() => setBarcodeCopies(Math.min(10, barcodeCopies + 1))}
-                                className="w-8 h-full flex items-center justify-center text-emerald-600 hover:bg-emerald-50 active:bg-emerald-100 disabled:opacity-30 cursor-pointer"
+                                className={`w-8 h-full flex items-center justify-center transition-colors disabled:opacity-30 cursor-pointer ${
+                                  isDarkMode ? 'text-emerald-400 hover:bg-emerald-950/40' : 'text-emerald-600 hover:bg-emerald-50'
+                                }`}
                               >
                                 <Plus className="w-3.5 h-3.5" />
                               </button>
@@ -1997,7 +2175,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                               handleTestPrint(barcodePrinterName, 'ITEM_LABEL', barcodePaperSize)
                             }
                             disabled={!barcodeEnabled || !!testingPrinterId || !barcodePrinterName}
-                            className="h-10 px-3.5 rounded-xl border border-red-300 text-[#da251d] hover:bg-red-50 font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50"
+                            className={`h-10 px-3.5 rounded-xl border font-bold text-xs shrink-0 transition-colors cursor-pointer disabled:opacity-50 ${
+                              isDarkMode
+                                ? 'border-red-900/60 bg-red-950/30 text-red-400 hover:bg-red-950/60'
+                                : 'border-red-300 text-[#da251d] hover:bg-red-50'
+                            }`}
                           >
                             {testingPrinterId === barcodePrinterName ? 'Đang in...' : 'In thử'}
                           </button>
@@ -2015,18 +2197,22 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           {/* =================================================================== */}
           {activeSidebarItem === 'drawer' && (
             <div className="p-4 sm:p-6 max-w-xl space-y-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2 text-base font-bold text-amber-700">
-                  <Unlock className="w-5 h-5 text-amber-600" />
+              <div className={`rounded-2xl border p-6 shadow-2xs space-y-4 ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <div className={`flex items-center gap-2 text-base font-bold ${
+                  isDarkMode ? 'text-amber-400' : 'text-amber-700'
+                }`}>
+                  <Unlock className="w-5 h-5 text-amber-500" />
                   <span>Mở Két Tiền Thu Ngân (Cash Drawer)</span>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                   Gửi lệnh xung điện qua máy in hóa đơn quầy để bật mở ngăn kéo tiền mặt. Mọi thao tác
                   đều được lưu lại vào nhật ký kiểm toán ca của thu ngân.
                 </p>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                  <label className={`block text-xs font-bold mb-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                     Lý do mở két:
                   </label>
                   <input
@@ -2034,7 +2220,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     value={drawerReason}
                     onChange={(e) => setDrawerReason(e.target.value)}
                     placeholder="VD: Thu ngân đổi tiền lẻ, kiểm két..."
-                    className="w-full h-10 px-3 text-xs bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white transition-colors"
+                    className={`w-full h-10 px-3 text-xs rounded-xl outline-none transition-colors border ${
+                      isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-amber-500'
+                        : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-amber-500 focus:bg-white'
+                    }`}
                   />
                 </div>
 
@@ -2056,19 +2246,25 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           {/* =================================================================== */}
           {activeSidebarItem === 'sync' && (
             <div className="p-4 sm:p-6 max-w-xl space-y-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-2xs space-y-4">
-                <div className="flex items-center gap-2 text-base font-bold text-slate-900">
+              <div className={`rounded-2xl border p-6 shadow-2xs space-y-4 ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <div className={`flex items-center gap-2 text-base font-bold ${
+                  isDarkMode ? 'text-white' : 'text-slate-900'
+                }`}>
                   <RefreshCw className="w-5 h-5 text-[#da251d]" />
                   <span>Đồng Bộ Dữ Liệu Thời Gian Thực</span>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
+                <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`}>
                   Làm mới danh mục món, bảng giá, sơ đồ bàn và khuyến mãi từ máy chủ trung tâm về trình
                   duyệt POS.
                 </p>
 
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-                  <span className="text-slate-500">Đồng bộ lần gần nhất:</span>
-                  <span className="font-bold text-slate-800">
+                <div className={`p-3 rounded-xl border flex items-center justify-between text-xs ${
+                  isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-slate-50 border-slate-200'
+                }`}>
+                  <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Đồng bộ lần gần nhất:</span>
+                  <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
                     {lastSyncedAt ? lastSyncedAt.toLocaleTimeString('vi-VN') : 'Vừa xong'}
                   </span>
                 </div>
@@ -2098,6 +2294,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                 onReprintReceipt={onReprintReceipt}
                 onRefresh={onSyncData}
                 onBackToSettings={() => setActiveSidebarItem('settings')}
+                isDarkMode={isDarkMode}
               />
             </div>
           )}
@@ -2107,15 +2304,21 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
           {/* =================================================================== */}
           {activeSidebarItem === 'branch' && (
             <div className="p-4 sm:p-6 max-w-2xl space-y-4">
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-4">
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <div className={`rounded-2xl border p-5 shadow-2xs space-y-4 ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <h3 className={`text-sm font-bold flex items-center gap-1.5 ${
+                  isDarkMode ? 'text-white' : 'text-slate-900'
+                }`}>
                   <MapPin className="w-4 h-4 text-[#da251d]" />
                   Chi Nhánh Đang Bán Hàng
                 </h3>
 
-                <div className="p-4 rounded-xl bg-red-50/40 border border-red-100 space-y-2">
-                  <div className="text-base font-black text-slate-900">{currentBranch?.name}</div>
-                  <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                <div className={`p-4 rounded-xl border space-y-2 ${
+                  isDarkMode ? 'bg-red-950/20 border-red-900/40' : 'bg-red-50/40 border-red-100'
+                }`}>
+                  <div className={`text-base font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{currentBranch?.name}</div>
+                  <div className={`text-xs flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                     <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span>
                       {[
@@ -2129,13 +2332,13 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     </span>
                   </div>
                   {currentBranch?.phone && (
-                    <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                    <div className={`text-xs flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                       <Phone className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>Hotline: {currentBranch.phone}</span>
                     </div>
                   )}
                   {currentBranch?.openTime && (
-                    <div className="text-xs text-slate-600 flex items-center gap-1.5">
+                    <div className={`text-xs flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                       <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                       <span>
                         Giờ phục vụ: {currentBranch.openTime} - {currentBranch.closeTime}
@@ -2146,8 +2349,8 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
 
                 {/* ADMIN được đổi branch, MANAGER/Cashier bị khóa */}
                 {canSwitchBranch && branches.length > 1 ? (
-                  <div className="pt-4 border-t border-slate-100 space-y-2">
-                    <h4 className="text-xs font-bold text-slate-700 uppercase">
+                  <div className={`pt-4 border-t space-y-2 ${isDarkMode ? 'border-slate-800' : 'border-slate-100'}`}>
+                    <h4 className={`text-xs font-bold uppercase ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Chuyển sang chi nhánh khác
                     </h4>
                     <div className="space-y-2">
@@ -2161,7 +2364,11 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                           }}
                           className={`w-full p-3 rounded-xl border text-left flex items-center justify-between text-xs cursor-pointer ${
                             b.id === currentBranch?.id
-                              ? 'border-[#da251d] bg-red-50/50 font-bold text-slate-900'
+                              ? isDarkMode
+                                ? 'border-[#da251d] bg-red-950/40 font-bold text-white'
+                                : 'border-[#da251d] bg-red-50/50 font-bold text-slate-900'
+                              : isDarkMode
+                              ? 'border-slate-800 hover:bg-slate-800 text-slate-300'
                               : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                           }`}
                         >
@@ -2172,7 +2379,9 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     </div>
                   </div>
                 ) : (
-                  <div className="pt-3 border-t border-slate-100 text-xs text-slate-500 flex items-center gap-2">
+                  <div className={`pt-3 border-t text-xs flex items-center gap-2 ${
+                    isDarkMode ? 'border-slate-800 text-slate-400' : 'border-slate-100 text-slate-500'
+                  }`}>
                     <Shield className="w-4 h-4 text-slate-400 shrink-0" />
                     <span>Tài khoản được khóa cố định theo chi nhánh được phân công.</span>
                   </div>
@@ -2180,18 +2389,22 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
               </div>
 
               {/* Cấu hình QR Gọi Món tại bàn */}
-              <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-2xs space-y-3">
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+              <div className={`rounded-2xl border p-5 shadow-2xs space-y-3 ${
+                isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <h3 className={`text-sm font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                   <QrCode className="w-4 h-4 text-[#da251d]" />
                   Cấu hình QR Gọi Món Tại Bàn
                 </h3>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between gap-4">
+                <div className={`p-4 rounded-xl border flex items-center justify-between gap-4 ${
+                  isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200/80'
+                }`}>
                   <div className="space-y-1">
-                    <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <div className={`text-xs font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       <Zap className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                       Tự động gửi món gọi QR trực tiếp vào bếp
                     </div>
-                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                    <p className={`text-[11px] leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       {branchQrAutoSend
                         ? 'Đang BẬT: Khách quét QR gọi món, hệ thống tự động xác nhận và in phiếu bếp ngay mà không cần nhân viên bấm duyệt.'
                         : 'Đang TẮT: Món gọi từ QR sẽ gửi vào tab "QR Order" để nhân viên kiểm tra và bấm "Duyệt & Gửi bếp" trước.'}
@@ -2202,7 +2415,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
                     onClick={handleToggleQrAutoSend}
                     disabled={isUpdatingQrSetting}
                     className={`w-12 h-6.5 rounded-full transition-colors relative p-0.5 cursor-pointer shrink-0 disabled:opacity-50 ${
-                      branchQrAutoSend ? 'bg-emerald-500' : 'bg-slate-300'
+                      branchQrAutoSend ? 'bg-emerald-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
                     }`}
                   >
                     <div
@@ -2766,6 +2979,7 @@ export const PosSettingsDrawer: React.FC<PosSettingsDrawerProps> = ({
       {/* Modal xác nhận đóng ứng dụng AVORA POS */}
       <PosExitConfirmModal
         isOpen={isExitConfirmOpen}
+        isDarkMode={isDarkMode}
         onClose={() => setIsExitConfirmOpen(false)}
         onConfirm={handleConfirmExit}
       />

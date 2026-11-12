@@ -32,6 +32,7 @@ namespace AvoraPosNative.Dialogs
         public PaymentDialog(PosOrder order)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             _order = order;
             _baseTotalAmount = order.TotalAmount;
 
@@ -139,6 +140,15 @@ namespace AvoraPosNative.Dialogs
             }
         }
 
+        private void BtnPresetAdd_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is Button btn && btn.Tag != null && long.TryParse(btn.Tag.ToString(), out long addVal))
+            {
+                long.TryParse(txtReceivedAmount.Text.Replace(".", "").Replace(",", ""), out long current);
+                txtReceivedAmount.Text = (current + addVal).ToString();
+            }
+        }
+
         private void BtnApplyDiscountVoucher_Click(object sender, RoutedEventArgs e)
         {
             string code = txtDiscountVoucher.Text.Trim().ToUpper();
@@ -151,7 +161,7 @@ namespace AvoraPosNative.Dialogs
 
             // Simple demo discount calculation or full API validation
             _discountVoucherAmount = Math.Min(50000, _baseTotalAmount * 0.1m);
-            MessageBox.Show($"Đã áp dụng mã giảm giá {code}: -{_discountVoucherAmount:N0}đ", "Khuyến Mãi", MessageBoxButton.OK, MessageBoxImage.Information);
+            AvoraMessageDialog.Success($"Đã áp dụng mã giảm giá {code}: -{_discountVoucherAmount:N0}đ", "Khuyến Mãi");
             UpdateTotals();
         }
 
@@ -166,7 +176,7 @@ namespace AvoraPosNative.Dialogs
             }
 
             _shippingVoucherAmount = Math.Min(30000, _order.ShippingFee > 0 ? _order.ShippingFee : 30000);
-            MessageBox.Show($"Đã áp dụng mã freeship {code}: -{_shippingVoucherAmount:N0}đ", "Khuyến Mãi", MessageBoxButton.OK, MessageBoxImage.Information);
+            AvoraMessageDialog.Success($"Đã áp dụng mã freeship {code}: -{_shippingVoucherAmount:N0}đ", "Khuyến Mãi");
             UpdateTotals();
         }
 
@@ -185,7 +195,7 @@ namespace AvoraPosNative.Dialogs
             {
                 if (!decimal.TryParse(txtReceivedAmount.Text.Replace(",", "").Replace(".", ""), out received) || received < netTotal)
                 {
-                    MessageBox.Show("Số tiền khách đưa chưa đủ để thanh toán hóa đơn!", "Cảnh báo", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    AvoraMessageDialog.Warning("Số tiền khách đưa chưa đủ để thanh toán hóa đơn!", "Cảnh báo");
                     return;
                 }
             }

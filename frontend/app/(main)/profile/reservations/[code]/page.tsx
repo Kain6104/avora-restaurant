@@ -19,6 +19,15 @@ import {
   Utensils,
   Share2,
   Check,
+  Plus,
+  Minus,
+  Trash2,
+  Edit3,
+  ShoppingBag,
+  Sparkles,
+  Info,
+  Search,
+  X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
@@ -26,6 +35,20 @@ import { QRCodeSVG } from 'qrcode.react';
 interface PageProps {
   params: Promise<{ code: string }>;
 }
+
+const formatVND = (amount: number) => {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount || 0);
+};
+
+const formatDateVN = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return clean;
+};
 
 function ReservationDetailContent({ code }: { code: string }) {
   const router = useRouter();
@@ -35,6 +58,16 @@ function ReservationDetailContent({ code }: { code: string }) {
   const [reservation, setReservation] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
+
+  // Pre-ordered Dine-in items state
+  const [preOrderItems, setPreOrderItems] = useState<any[]>([]);
+  const [isAddDishModalOpen, setIsAddDishModalOpen] = useState<boolean>(false);
+  const [dineInMenu, setDineInMenu] = useState<any[]>([]);
+  const [loadingMenu, setLoadingMenu] = useState<boolean>(false);
+  const [menuSearch, setMenuSearch] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
+  const [isSavingPreOrder, setIsSavingPreOrder] = useState<boolean>(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean>(false);
 
   // Cancellation modal
   const [isCancelModalOpen, setIsCancelModalOpen] = useState<boolean>(false);
@@ -62,6 +95,8 @@ function ReservationDetailContent({ code }: { code: string }) {
         const data = await res.json();
         if (res.ok && data.success) {
           setReservation(data.data);
+          setPreOrderItems(Array.isArray(data.data.preOrderedItems) ? data.data.preOrderedItems : []);
+          setHasUnsavedChanges(false);
           setError('');
           return;
         } else {
@@ -74,6 +109,8 @@ function ReservationDetailContent({ code }: { code: string }) {
       if (res.ok) {
         const data = await res.json();
         setReservation(data.data);
+        setPreOrderItems(Array.isArray(data.data.preOrderedItems) ? data.data.preOrderedItems : []);
+        setHasUnsavedChanges(false);
         setError('');
       } else {
         const errData = await res.json();
@@ -127,6 +164,106 @@ function ReservationDetailContent({ code }: { code: string }) {
       toast.error('Lỗi kết nối');
     } finally {
       setCancelling(false);
+    }
+  };
+
+  // Pre-order Dine-in Handlers
+  const fetchDineInMenu = async () => {
+    if (!reservation?.branchId) return;
+    try {
+      setLoadingMenu(true);
+      const res = await fetch(`/api/reservations/dine-in-menu?branchId=${reservation.branchId}`);
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDineInMenu(data.data || []);
+      } else {
+        toast.error('Không thể tải thực đơn món ăn');
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Lỗi kết nối tải thực đơn');
+    } finally {
+      setLoadingMenu(false);
+    }
+  };
+
+  const handleOpenAddDish = () => {
+    setIsAddDishModalOpen(true);
+    fetchDineInMenu();
+  };
+
+  const handleAddDishToPreOrder = (prod: any) => {
+    const pId = prod.id;
+    const existingIdx = preOrderItems.findIndex(i => (i.productId || i.id) === pId);
+    let updated: any[] = [];
+    if (existingIdx >= 0) {
+      updated = preOrderItems.map((item, idx) =>
+        idx === existingIdx ? { ...item, quantity: item.quantity + 1, lineTotal: (item.quantity + 1) * item.price } : item
+      );
+    } else {
+      updated = [
+        ...preOrderItems,
+        {
+          productId: prod.id,
+          name: prod.name,
+          image: prod.imageUrl || prod.image || '',
+          price: Number(prod.price),
+          quantity: 1,
+          lineTotal: Number(prod.price),
+          selectedOptions: [],
+          optionsTextSnapshot: '',
+          note: '',
+        }
+      ];
+    }
+    setPreOrderItems(updated);
+    setHasUnsavedChanges(true);
+    toast.success(`Đã thêm "${prod.name}" vào danh sách`);
+  };
+
+  const handleUpdateItemQty = (productId: string, newQty: number) => {
+    if (newQty <= 0) {
+      setPreOrderItems(prev => prev.filter(i => (i.productId || i.id) !== productId));
+    } else {
+      setPreOrderItems(prev =>
+        prev.map(i => ((i.productId || i.id) === productId ? { ...i, quantity: newQty, lineTotal: newQty * i.price } : i))
+      );
+    }
+    setHasUnsavedChanges(true);
+  };
+
+  const handleRemovePreOrderItem = (productId: string) => {
+    setPreOrderItems(prev => prev.filter(i => (i.productId || i.id) !== productId));
+    setHasUnsavedChanges(true);
+    toast.success('Đã xóa món');
+  };
+
+  const handleSavePreOrder = async () => {
+    if (!reservation) return;
+    try {
+      setIsSavingPreOrder(true);
+      const res = await fetch(`/api/reservations/${reservation.id}/pre-order-items`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          items: preOrderItems,
+          phone: guestPhone || manualPhone || reservation.customerPhone,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast.success('Cập nhật món đặt trước thành công!');
+        setHasUnsavedChanges(false);
+        fetchDetail(guestPhone || manualPhone);
+      } else {
+        const msg = data?.error?.message || data?.message || 'Cập nhật thất bại';
+        toast.error(msg);
+      }
+    } catch (e) {
+      toast.error('Lỗi kết nối máy chủ');
+    } finally {
+      setIsSavingPreOrder(false);
     }
   };
 
@@ -185,6 +322,27 @@ function ReservationDetailContent({ code }: { code: string }) {
   const isCompleted = reservation.status === 'COMPLETED';
   const isNoShow = reservation.status === 'NO_SHOW';
 
+  // 30-Minute Cutoff Calculation
+  let canModifyPreOrder = false;
+  let remainingMinutesToBooking = 999;
+  try {
+    const rawDate = reservation.reservationDate ? reservation.reservationDate.split('T')[0] : '';
+    const rawTime = reservation.reservationTime || '12:00';
+    if (rawDate) {
+      const bookingDateTime = new Date(`${rawDate}T${rawTime}:00+07:00`);
+      remainingMinutesToBooking = Math.floor((bookingDateTime.getTime() - Date.now()) / (1000 * 60));
+      canModifyPreOrder = remainingMinutesToBooking > 30 && !isCancelled && !isCompleted && !isNoShow;
+    }
+  } catch (err) {
+    canModifyPreOrder = false;
+  }
+
+  // Pre-order calculations
+  const totalPreOrderAmount = preOrderItems.reduce(
+    (sum, item) => sum + (Number(item.lineTotal) || (Number(item.price) * Number(item.quantity)) || 0),
+    0
+  );
+
   // State Machine Step indexing
   const getStepIndex = (status: string) => {
     switch (status) {
@@ -204,6 +362,14 @@ function ReservationDetailContent({ code }: { code: string }) {
   };
 
   const currentStepIdx = getStepIndex(reservation.status);
+
+  // Filter menu by search & category
+  const categories = Array.from(new Set(dineInMenu.map((m: any) => m.category?.name).filter(Boolean)));
+  const filteredMenu = dineInMenu.filter((prod: any) => {
+    const matchSearch = menuSearch.trim() === '' || prod.name.toLowerCase().includes(menuSearch.toLowerCase());
+    const matchCat = selectedCategory === 'ALL' || prod.category?.name === selectedCategory;
+    return matchSearch && matchCat;
+  });
 
   return (
     <div className="min-h-screen bg-slate-50/70 text-slate-800 pb-24 pt-4 sm:pt-8">
@@ -329,7 +495,7 @@ function ReservationDetailContent({ code }: { code: string }) {
               <div className="border-t border-slate-100 pt-3">
                 <span className="text-slate-400 font-medium block mb-1">Thời Gian & Số Lượng</span>
                 <div className="text-sm font-bold text-red-600">
-                  {reservation.reservationTime} • {reservation.reservationDate ? reservation.reservationDate.split('T')[0] : ''}
+                  {reservation.reservationTime} • {formatDateVN(reservation.reservationDate)}
                 </div>
                 <div className="text-slate-700 text-xs mt-0.5">
                   Đoàn: <strong>{reservation.partySize} người</strong>
@@ -402,9 +568,200 @@ function ReservationDetailContent({ code }: { code: string }) {
             </div>
           </div>
 
+          {/* PRE-ORDER DINE-IN DISHES SECTION */}
+          <div className="mt-8 pt-6 border-t border-slate-200">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Utensils className="w-5 h-5 text-red-600" />
+                  <h3 className="text-base font-bold text-slate-900">Món Đặt Trước Dùng Tại Quán (Dine-in)</h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Đặt món trước giúp đầu bếp sơ chế sẵn, tiết kiệm thời gian chờ đợi khi quý khách đến nơi.
+                </p>
+              </div>
+
+              {canModifyPreOrder && (
+                <button
+                  type="button"
+                  onClick={handleOpenAddDish}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-red-600/20 shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Thêm món dùng tại quán</span>
+                </button>
+              )}
+            </div>
+
+            {/* 30-Minute Cutoff Notification Banner */}
+            {!canModifyPreOrder && !isCancelled && !isCompleted && (
+              <div className="mb-4 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-start gap-3 text-amber-900 text-xs leading-relaxed">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <strong className="font-bold block text-amber-950 mb-0.5">Thời gian tự sửa món trực tuyến đã khóa</strong>
+                  Đã dưới 30 phút trước giờ hẹn đến dùng bữa. Bếp nhà hàng đã chuẩn bị nguyên liệu phục vụ quý khách. Để thêm, xóa hoặc đổi món, quý khách vui lòng liên hệ hotline chi nhánh qua số{' '}
+                  <a
+                    href={`tel:${reservation.branch?.phone || '19006868'}`}
+                    className="font-bold text-red-700 underline hover:text-red-800"
+                  >
+                    {reservation.branch?.phone || '1900 6868'}
+                  </a>{' '}
+                  để được nhân viên lễ tân hỗ trợ ngay ạ.
+                </div>
+              </div>
+            )}
+
+            {/* Items list */}
+            {preOrderItems.length === 0 ? (
+              <div className="p-6 rounded-2xl bg-slate-50 border border-dashed border-slate-200 text-center text-xs text-slate-500">
+                <ShoppingBag className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                <p className="font-medium text-slate-700 mb-1">Chưa có món nào được đặt trước cho bữa ăn này</p>
+                {canModifyPreOrder ? (
+                  <p className="text-[11px] text-slate-400 mb-3">
+                    Bấm "+ Thêm món dùng tại quán" để chọn các món đặc sắc phục vụ tại chỗ khi bạn đến.
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-400">
+                    Bạn có thể gọi món trực tiếp qua máy POS hoặc nhân viên phục vụ khi đến nhà hàng.
+                  </p>
+                )}
+                {canModifyPreOrder && (
+                  <button
+                    type="button"
+                    onClick={handleOpenAddDish}
+                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 hover:border-red-400 text-red-600 font-bold rounded-xl text-xs transition-all shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Chọn món ngay
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2.5">
+                <div className="divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                  {preOrderItems.map((item: any, idx: number) => {
+                    const itemKey = item.productId || item.id || idx;
+                    return (
+                      <div key={itemKey} className="p-3.5 flex items-center justify-between gap-3 text-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {item.image ? (
+                            <img
+                              src={item.image}
+                              alt={item.name}
+                              className="w-12 h-12 object-cover rounded-xl border border-slate-100 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 shrink-0">
+                              <Utensils className="w-5 h-5" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block truncate text-xs sm:text-sm">
+                              {item.name}
+                            </span>
+                            {item.optionsTextSnapshot && (
+                              <span className="text-[10px] text-slate-500 block truncate">
+                                {item.optionsTextSnapshot}
+                              </span>
+                            )}
+                            <span className="text-red-600 font-bold text-xs block mt-0.5">
+                              {formatVND(item.price)}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Quantity / Subtotal controls */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          {canModifyPreOrder ? (
+                            <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50">
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItemQty(item.productId || item.id, item.quantity - 1)}
+                                className="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-red-600 active:scale-95"
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <span className="w-8 text-center font-bold text-xs text-slate-800">
+                                {item.quantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateItemQty(item.productId || item.id, item.quantity + 1)}
+                                className="w-7 h-7 flex items-center justify-center text-slate-600 hover:text-red-600 active:scale-95"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs">
+                              x{item.quantity}
+                            </span>
+                          )}
+
+                          <div className="text-right w-24">
+                            <span className="font-extrabold text-slate-900 block text-xs sm:text-sm">
+                              {formatVND(item.lineTotal || (item.price * item.quantity))}
+                            </span>
+                          </div>
+
+                          {canModifyPreOrder && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePreOrderItem(item.productId || item.id)}
+                              className="text-slate-400 hover:text-rose-600 transition-colors p-1"
+                              title="Xóa món"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Pre-order Total Summary */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="text-xs text-slate-600">
+                    Tổng cộng: <strong className="text-slate-900">{preOrderItems.length} món</strong> (
+                    {preOrderItems.reduce((acc, i) => acc + (Number(i.quantity) || 1), 0)} phần)
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-500">Tạm tính:</span>
+                    <span className="text-base sm:text-lg font-extrabold text-red-600 font-mono">
+                      {formatVND(totalPreOrderAmount)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Unsaved changes banner */}
+                {hasUnsavedChanges && canModifyPreOrder && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-3 text-xs text-red-700 animate-in fade-in">
+                    <span className="font-semibold">Bạn có thay đổi món chưa lưu!</span>
+                    <button
+                      type="button"
+                      disabled={isSavingPreOrder}
+                      onClick={handleSavePreOrder}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5"
+                    >
+                      {isSavingPreOrder ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Đang lưu...
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" /> Lưu danh sách món
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Cancellation Action (if applicable) */}
           {!isCancelled && !isCompleted && (
-            <div className="border-t border-slate-100 pt-4 flex flex-col sm:flex-row justify-between items-center gap-3">
+            <div className="mt-8 border-t border-slate-100 pt-4 flex flex-col sm:flex-row justify-between items-center gap-3">
               <div className="text-[11px] text-slate-500">
                 Cần thay đổi hoặc hủy bàn? Bạn có thể hủy trực tuyến trước giờ hẹn ít nhất 60 phút.
               </div>
@@ -421,7 +778,7 @@ function ReservationDetailContent({ code }: { code: string }) {
 
         {/* Cancellation Modal */}
         {isCancelModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4 animate-in fade-in">
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in">
             <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full shadow-2xl">
               <h3 className="text-base font-bold text-slate-900 mb-1.5">Xác Nhận Hủy Đặt Bàn</h3>
               <p className="text-xs text-slate-500 mb-4 leading-relaxed">
@@ -453,6 +810,156 @@ function ReservationDetailContent({ code }: { code: string }) {
                   className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs"
                 >
                   {cancelling ? 'Đang xử lý...' : 'Xác nhận hủy'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADD DINE-IN DISH MODAL */}
+        {isAddDishModalOpen && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-3.5 sm:p-4 animate-in fade-in">
+            <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+              {/* Modal Header */}
+              <div className="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Utensils className="w-5 h-5 text-red-600" />
+                    Thực Đơn Dùng Tại Quán (Dine-in)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Các món ăn khả dụng tại {reservation.branch?.name}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddDishModalOpen(false)}
+                  className="p-1.5 rounded-full text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Search & Category Filter */}
+              <div className="p-4 border-b border-slate-100 space-y-3 bg-slate-50/50">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={menuSearch}
+                    onChange={(e) => setMenuSearch(e.target.value)}
+                    placeholder="Tìm tên món ăn..."
+                    className="w-full pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                  />
+                </div>
+
+                {categories.length > 0 && (
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCategory('ALL')}
+                      className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                        selectedCategory === 'ALL'
+                          ? 'bg-red-600 text-white'
+                          : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                      }`}
+                    >
+                      Tất cả
+                    </button>
+                    {categories.map((cat: any) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-3 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                          selectedCategory === cat
+                            ? 'bg-red-600 text-white'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Dish List */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+                {loadingMenu ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-red-600" />
+                    <span className="text-xs">Đang tải thực đơn...</span>
+                  </div>
+                ) : filteredMenu.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs">
+                    Không tìm thấy món ăn phù hợp
+                  </div>
+                ) : (
+                  filteredMenu.map((prod: any) => {
+                    const alreadyInOrder = preOrderItems.find((i) => (i.productId || i.id) === prod.id);
+                    return (
+                      <div
+                        key={prod.id}
+                        className="p-3 bg-white border border-slate-200 hover:border-red-200 rounded-2xl flex items-center justify-between gap-3 transition-colors shadow-xs"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {prod.imageUrl ? (
+                            <img
+                              src={prod.imageUrl}
+                              alt={prod.name}
+                              className="w-14 h-14 object-cover rounded-xl border border-slate-100 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-14 h-14 rounded-xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 shrink-0">
+                              <Utensils className="w-6 h-6" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <span className="font-bold text-slate-900 block truncate text-xs sm:text-sm">
+                              {prod.name}
+                            </span>
+                            <span className="text-slate-400 text-[11px] block truncate">
+                              {prod.category?.name || 'Món ăn'}
+                            </span>
+                            <span className="text-red-600 font-extrabold text-xs block mt-0.5">
+                              {formatVND(prod.price)}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="shrink-0 flex items-center gap-2">
+                          {alreadyInOrder && (
+                            <span className="text-[11px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                              x{alreadyInOrder.quantity}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleAddDishToPreOrder(prod)}
+                            className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-1 shadow-xs transition-all"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>{alreadyInOrder ? 'Thêm +1' : 'Thêm'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between">
+                <span className="text-xs text-slate-500">
+                  Đã chọn: <strong className="text-slate-900">{preOrderItems.length} món</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsAddDishModalOpen(false)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-all shadow-xs"
+                >
+                  Xong
                 </button>
               </div>
             </div>

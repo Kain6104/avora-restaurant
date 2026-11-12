@@ -1,10 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
-import Image from 'next/image';
-import { useWaiterStore } from '@/store/useWaiterStore';
+import { Check, UtensilsCrossed } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 
 interface ProductOptionSheetProps {
   product: any;
@@ -31,7 +30,7 @@ export default function ProductOptionSheet({ product, isOpen, onClose, onConfirm
 
   if (!isOpen || !product) return null;
 
-  const currentPrice = product.flashSalePrice || product.discountedPrice || product.price;
+  const currentPrice = product.flashSalePrice || product.discountedPrice || product.price || 0;
 
   const handleOptionToggle = (group: any, item: any) => {
     setSelections(prev => {
@@ -77,12 +76,12 @@ export default function ProductOptionSheet({ product, isOpen, onClose, onConfirm
     Object.entries(selections).forEach(([groupId, items]) => {
       Object.entries(items).forEach(([itemId, qty]) => {
         const group = product.optionGroups.find((g: any) => g.id === groupId);
-        const item = group.optionItems.find((i: any) => i.id === itemId);
+        const item = group?.optionItems?.find((i: any) => i.id === itemId);
         if (item) {
           flatOptions.push({
             optionItemId: item.id,
             nameAtSale: item.name,
-            priceAdjustment: item.priceAdjustment,
+            priceAdjustment: item.priceAdjustment || 0,
           });
         }
       });
@@ -96,9 +95,9 @@ export default function ProductOptionSheet({ product, isOpen, onClose, onConfirm
   let optionsTotal = 0;
   Object.entries(selections).forEach(([groupId, items]) => {
     Object.keys(items).forEach(itemId => {
-      const group = product.optionGroups.find((g: any) => g.id === groupId);
-      const item = group?.optionItems.find((i: any) => i.id === itemId);
-      if (item) {
+      const group = product.optionGroups?.find((g: any) => g.id === groupId);
+      const item = group?.optionItems?.find((i: any) => i.id === itemId);
+      if (item && item.priceAdjustment) {
         optionsTotal += item.priceAdjustment;
       }
     });
@@ -106,112 +105,105 @@ export default function ProductOptionSheet({ product, isOpen, onClose, onConfirm
   const finalPrice = (currentPrice + optionsTotal) * quantity;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/40 z-[60] transition-opacity"
-        onClick={onClose}
-      />
-      
-      {/* Sheet */}
-      <div className="fixed bottom-0 left-0 w-full bg-slate-50 rounded-t-2xl z-[70] flex flex-col max-h-[90dvh] shadow-2xl transition-transform transform duration-300 ease-out">
-        
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 bg-white rounded-t-2xl border-b border-slate-100 shrink-0">
-          <h2 className="font-bold text-lg text-slate-800 line-clamp-1 pr-4">{product.name}</h2>
-          <button onClick={onClose} className="p-2 bg-slate-100 rounded-full text-slate-500 active:bg-slate-200">
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto touch-pan-y p-4 space-y-6">
-          
-          {/* Options */}
-          {product.optionGroups?.map((group: any) => (
-            <div key={group.id} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-              <div className="flex justify-between items-baseline mb-3">
-                <h3 className="font-bold text-slate-800">{group.name}</h3>
-                {group.isRequired && (
-                  <span className="text-[10px] font-bold uppercase text-[#DA251D] bg-red-50 px-2 py-0.5 rounded">Bắt buộc</span>
-                )}
-              </div>
-              
-              <div className="space-y-2">
-                {group.optionItems?.map((item: any) => {
-                  const isSelected = !!(selections[group.id]?.[item.id]);
-                  
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => handleOptionToggle(group, item)}
-                      disabled={!item.available}
-                      className={`w-full flex items-center justify-between p-3 rounded-xl border transition-colors ${
-                        !item.available ? 'opacity-50' : 
-                        isSelected ? 'border-[#DA251D] bg-red-50 text-[#DA251D]' : 'border-slate-200 bg-white text-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`w-5 h-5 rounded flex items-center justify-center border ${
-                          isSelected ? 'bg-[#DA251D] border-[#DA251D] text-white' : 'border-slate-300'
-                        }`}>
-                          {isSelected && <Check size={14} strokeWidth={3} />}
-                        </div>
-                        <span className="font-medium text-sm">{item.name}</span>
-                      </div>
-                      {item.priceAdjustment > 0 && (
-                        <span className="text-sm font-semibold">+{item.priceAdjustment.toLocaleString('vi-VN')}₫</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-
-          {/* Note & Quantity */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-4">
-            <div>
-              <label className="block text-sm font-bold text-slate-800 mb-2">Ghi chú cho bếp</label>
-              <input 
-                type="text" 
-                value={note}
-                onChange={e => setNote(e.target.value)}
-                placeholder="VD: Không hành, ít cay..."
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#DA251D] focus:border-[#DA251D] outline-none text-[16px]"
-              />
+    <ResponsiveModal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={product.name}
+      subtitle={`Đơn giá: ${Number(currentPrice).toLocaleString('vi-VN')} đ`}
+      icon={<UtensilsCrossed size={18} className="text-[#DA251D]" />}
+      maxWidth="md"
+      footer={
+        <button
+          type="button"
+          onClick={handleConfirm}
+          className="w-full flex items-center justify-between bg-[#DA251D] hover:bg-[#b81d16] text-white p-3 rounded-2xl font-bold shadow-md shadow-red-500/25 active:scale-95 transition-all cursor-pointer text-xs sm:text-sm"
+        >
+          <span>Thêm vào đơn ({quantity})</span>
+          <span className="font-mono text-sm sm:text-base font-black">{finalPrice.toLocaleString('vi-VN')} đ</span>
+        </button>
+      }
+    >
+      <div className="space-y-4 py-1">
+        {/* Options */}
+        {product.optionGroups?.map((group: any) => (
+          <div key={group.id} className="bg-slate-50/70 rounded-2xl p-3 border border-slate-200/80">
+            <div className="flex justify-between items-baseline mb-2">
+              <h3 className="font-bold text-xs sm:text-sm text-slate-900">{group.name}</h3>
+              {group.isRequired && (
+                <span className="text-[9.5px] font-black uppercase text-[#DA251D] bg-red-50 px-2 py-0.5 rounded border border-red-200">
+                  Bắt buộc
+                </span>
+              )}
             </div>
             
-            <div className="flex items-center justify-between pt-2">
-              <span className="font-bold text-slate-800">Số lượng</span>
-              <div className="flex items-center bg-slate-100 rounded-xl p-1">
-                <button 
-                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="w-10 h-10 flex items-center justify-center bg-white rounded-lg shadow-sm text-slate-600 font-bold text-xl active:scale-95"
-                >-</button>
-                <span className="w-12 text-center font-bold text-lg text-slate-800">{quantity}</span>
-                <button 
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="w-10 h-10 flex items-center justify-center bg-white rounded-lg shadow-sm text-[#DA251D] font-bold text-xl active:scale-95"
-                >+</button>
-              </div>
+            <div className="space-y-1.5">
+              {group.optionItems?.map((item: any) => {
+                const isSelected = !!(selections[group.id]?.[item.id]);
+                
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => handleOptionToggle(group, item)}
+                    disabled={!item.available}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl border transition-all text-xs cursor-pointer ${
+                      !item.available ? 'opacity-40 cursor-not-allowed' : 
+                      isSelected ? 'border-[#DA251D] bg-red-50/70 text-[#DA251D] font-bold' : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <div className={`w-4 h-4 rounded flex items-center justify-center border ${
+                        isSelected ? 'bg-[#DA251D] border-[#DA251D] text-white' : 'border-slate-300'
+                      }`}>
+                        {isSelected && <Check size={12} strokeWidth={3} />}
+                      </div>
+                      <span className="text-xs">{item.name}</span>
+                    </div>
+                    {item.priceAdjustment > 0 && (
+                      <span className="text-[11px] font-bold">+{item.priceAdjustment.toLocaleString('vi-VN')} đ</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
+        ))}
+
+        {/* Note & Quantity */}
+        <div className="bg-slate-50/70 rounded-2xl p-3 border border-slate-200/80 space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-slate-700 mb-1">Ghi chú cho bếp</label>
+            <input 
+              type="text" 
+              value={note}
+              onChange={e => setNote(e.target.value)}
+              placeholder="VD: Không hành, ít cay, ra trước..."
+              className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl focus:ring-1 focus:ring-[#DA251D] focus:border-[#DA251D] outline-none text-xs shadow-2xs"
+            />
+          </div>
           
+          <div className="flex items-center justify-between pt-1">
+            <span className="font-bold text-xs text-slate-800">Số lượng món</span>
+            <div className="flex items-center bg-slate-200/80 rounded-xl p-0.5">
+              <button 
+                type="button"
+                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                className="w-8 h-8 flex items-center justify-center bg-white rounded-lg shadow-2xs text-slate-700 font-black text-base active:scale-95 cursor-pointer"
+              >
+                -
+              </button>
+              <span className="w-10 text-center font-black text-sm text-slate-900 font-mono">{quantity}</span>
+              <button 
+                type="button"
+                onClick={() => setQuantity(quantity + 1)}
+                className="w-8 h-8 flex items-center justify-center bg-[#DA251D] text-white rounded-lg shadow-2xs font-black text-base active:scale-95 cursor-pointer"
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
-
-        {/* Footer */}
-        <div className="p-4 bg-white border-t border-slate-100 shrink-0 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-          <button
-            onClick={handleConfirm}
-            className="w-full flex items-center justify-between bg-[#DA251D] hover:bg-red-700 text-white p-4 rounded-xl font-bold shadow-md shadow-red-200 active:scale-95 transition-transform"
-          >
-            <span>Thêm món</span>
-            <span>{finalPrice.toLocaleString('vi-VN')}₫</span>
-          </button>
-        </div>
-
       </div>
-    </>
+    </ResponsiveModal>
   );
 }

@@ -66,7 +66,10 @@ interface BankApiService {
     @DELETE("api/bank-connect/v1/admin/transactions-unmatched/all")
     suspend fun deleteAllUnmatchedTransactions(
         @Header("Authorization") authHeader: String
-    ): Response<SimpleApiResponse>
+    ): Response<CleanupUnmatchedResponse>
+
+    @GET("api/bank-connect/v1/app/version")
+    suspend fun getAppVersion(): Response<AppVersionResponse>
 
     @GET("api/bank-connect/v1/admin/branches")
     suspend fun getBranches(

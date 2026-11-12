@@ -4,115 +4,349 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignHeight="700" d:DesignWidth="450"
+             d:DesignHeight="750" d:DesignWidth="420"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
              Background="#FFFFFF">
     
     <Grid>
         <Grid.RowDefinitions>
-            <!-- 1. Order Header -->
+            <!-- 1. Cart Header: Table trigger + Order Type + More -->
             <RowDefinition Height="Auto"/>
             <!-- 2. Customer / Loyalty bar -->
             <RowDefinition Height="Auto"/>
-            <!-- 3. Items List -->
-            <RowDefinition Height="*"/>
-            <!-- 4. Totals Breakdown -->
+            <!-- 3. Inline Order Note Editor (if active) -->
             <RowDefinition Height="Auto"/>
-            <!-- 5. Action Buttons -->
+            <!-- 4. Scrollable Items List -->
+            <RowDefinition Height="*"/>
+            <!-- 5. Breakdown Popover (Overlay if active) -->
+            <RowDefinition Height="Auto"/>
+            <!-- 6. 5-Icon Toolstrip + In tạm tính -->
+            <RowDefinition Height="Auto"/>
+            <!-- 7. Total Row -->
+            <RowDefinition Height="Auto"/>
+            <!-- 8. 4 Big Action Buttons -->
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- 1. ORDER HEADER -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="14,12">
+        <!-- 1. CART HEADER (Matching OrderCart.tsx 1:1) -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="10,8">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
+                    <!-- Table / Order Code Trigger -->
                     <ColumnDefinition Width="*"/>
+                    <!-- Order Type Dropdown -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- Quick Table QR Button -->
+                    <ColumnDefinition Width="Auto"/>
+                    <!-- More Options [ ⋮ ] -->
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Back button -->
-                <Button Command="{Binding BackCommand}" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
-                        Padding="10,6" Margin="0,0,10,0" Cursor="Hand">
+                <!-- Table Button Trigger -->
+                <Button Grid.Column="0" Command="{Binding BackCommand}"
+                        Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1"
+                        Padding="8,6" Margin="0,0,6,0" Cursor="Hand" HorizontalContentAlignment="Stretch">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                <TextBlock Text="← Bàn" FontWeight="Bold" FontSize="12"/>
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Grid.Column="0" Width="22" Height="22" Background="#DA251D" CornerRadius="6" VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <TextBlock Text="🍽️" FontSize="11" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding OrderTitle}" FontWeight="Black" FontSize="13" Foreground="#0F172A" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Grid.Column="2" Text="›" FontSize="16" FontWeight="Bold" Foreground="#94A3B8" VerticalAlignment="Center"/>
+                                </Grid>
                             </Border>
                         </ControlTemplate>
                     </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#E2E8F0"/>
-                                    <Setter Property="Foreground" Value="#0F172A"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
                 </Button>
 
-                <!-- Table & Order info -->
-                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding CurrentTable.Name, FallbackValue='BÀN ĐANG CHỌN'}" FontWeight="Black" FontSize="16" Foreground="#E11D48"/>
-                        <TextBlock Text=" • " Foreground="#94A3B8"/>
-                        <TextBlock Text="{Binding CurrentTable.GuestCount, StringFormat='{}{0} khách', FallbackValue='1 khách'}" FontSize="13" Foreground="#64748B" FontWeight="SemiBold"/>
+                <!-- Order Type Toggle Button -->
+                <Button Grid.Column="1" Command="{Binding ToggleOrderTypeMenuCommand}"
+                        Background="#2563EB" Foreground="#FFFFFF" BorderThickness="0"
+                        Padding="10,6" Margin="0,0,6,0" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding OrderTypeDisplay}" FontWeight="Bold" FontSize="12" Foreground="#FFFFFF"/>
+                                    <TextBlock Text=" ▾" FontSize="11" Foreground="#FFFFFF"/>
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Quick Table QR Button -->
+                <Button Grid.Column="2" Command="{Binding OpenTableQrCommand}"
+                        Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1"
+                        Width="36" Height="36" Margin="0,0,6,0" Cursor="Hand" ToolTip="Mã QR gọi món bàn">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                                <TextBlock Text="📱" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- More Options Button [ ⋮ ] -->
+                <Button Grid.Column="3" Command="{Binding ToggleMoreMenuCommand}"
+                        Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1"
+                        Width="36" Height="36" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8">
+                                <TextBlock Text="⋮" FontWeight="Black" FontSize="16" Foreground="#475569" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+        </Border>
+
+        <!-- Dropdown Menu for Order Type (Overlay) -->
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="6" Margin="10,2,10,0"
+                Panel.ZIndex="30">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsOrderTypeMenuOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <StackPanel>
+                <Button Content="🍽️ Ăn tại bàn" Command="{Binding SetOrderTypeCommand}" CommandParameter="DINE_IN"
+                        Background="Transparent" BorderThickness="0" Padding="8,6" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Button Content="📦 Mang về" Command="{Binding SetOrderTypeCommand}" CommandParameter="TAKEAWAY"
+                        Background="Transparent" BorderThickness="0" Padding="8,6" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Button Content="🚚 Giao hàng" Command="{Binding SetOrderTypeCommand}" CommandParameter="DELIVERY"
+                        Background="Transparent" BorderThickness="0" Padding="8,6" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Dropdown Menu for More Options (Overlay) -->
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Padding="6" Margin="10,2,10,0"
+                Panel.ZIndex="30">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsMoreMenuOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <StackPanel>
+                <Button Content="🔀 Chuyển bàn" Command="{Binding OpenMoveTableCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Button Content="🔗 Gộp bàn / Gộp đơn" Command="{Binding OpenMergeTableCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Button Content="✂️ Tách đơn / Tách món" Command="{Binding OpenSplitTableCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Button Content="📱 Mã QR bàn ăn" Command="{Binding OpenTableQrCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Cursor="Hand"/>
+                <Separator Background="#F1F5F9" Margin="0,4"/>
+                <Button Content="🗑️ Xóa toàn bộ giỏ" Command="{Binding ClearCartCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Foreground="#DC2626" Cursor="Hand"/>
+                <Button Content="⛔ Hủy đơn hàng" Command="{Binding CancelOrderCommand}" Background="Transparent" BorderThickness="0" Padding="10,8" HorizontalContentAlignment="Left" FontWeight="SemiBold" Foreground="#DC2626" Cursor="Hand"/>
+            </StackPanel>
+        </Border>
+
+        <!-- 2. CUSTOMER / LOYALTY BAR & BUFFET BANNER -->
+        <StackPanel Grid.Row="1">
+            <!-- Customer / Loyalty Bar -->
+            <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,7">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="👤" Margin="0,0,6,0" FontSize="13"/>
+                        <TextBlock Text="{Binding CustomerName, FallbackValue='Khách lẻ'}" FontWeight="Bold" FontSize="12.5" Foreground="#0F172A"/>
+                        <TextBlock Text="{Binding CustomerTier, StringFormat=' ({0})'}" Foreground="#2563EB" FontSize="11" FontWeight="Bold" Margin="4,0,0,0"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding CurrentOrder.OrderCode, FallbackValue='Đơn hàng mới'}" FontSize="11" Foreground="#94A3B8"/>
-                </StackPanel>
 
-                <!-- Unsaved Changes Dot -->
-                <Border Grid.Column="2" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="1" CornerRadius="10" Padding="8,3"
-                        Visibility="{Binding HasUnsavedChanges, Converter={x:Null}}">
-                    <TextBlock Text="Chưa gửi" FontSize="11" FontWeight="Bold" Foreground="#B45309"/>
-                </Border>
-            </Grid>
+                    <Button Grid.Column="1" Content="🔍 Tích điểm" Command="{Binding SearchCustomerCommand}"
+                            Background="#FFFFFF" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                            Padding="8,4" FontSize="11" FontWeight="Bold" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- 2b. BUFFET BANNER (1:1 with /admin/pos PosBuffetApplyModal) -->
+            <Border BorderThickness="0,0,0,1" Padding="12,6">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="#FFFBEB"/>
+                        <Setter Property="BorderBrush" Value="#FEF3C7"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasActiveBuffet}" Value="True">
+                                <Setter Property="Background" Value="#EFF6FF"/>
+                                <Setter Property="BorderBrush" Value="#DBEAFE"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- When Buffet INACTIVE: prompt to apply -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasActiveBuffet}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="✨ " FontSize="12"/>
+                        <TextBlock Text="Khách dùng Buffet?" FontWeight="SemiBold" FontSize="11.5" Foreground="#D97706"/>
+                    </StackPanel>
+
+                    <!-- When Buffet ACTIVE: show package name & countdown -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel.Style>
+                            <Style TargetType="StackPanel">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasActiveBuffet}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </StackPanel.Style>
+                        <TextBlock Text="🍱 " FontSize="12"/>
+                        <TextBlock Text="{Binding ActiveBuffetPackageName}" FontWeight="Bold" FontSize="11.5" Foreground="#1D4ED8"/>
+                        <TextBlock Text=" • " Foreground="#94A3B8"/>
+                        <TextBlock Text="{Binding BuffetRemainingText}" FontWeight="SemiBold" FontSize="11" Foreground="#2563EB"/>
+                    </StackPanel>
+
+                    <!-- Action Button -->
+                    <Button Grid.Column="1" Command="{Binding ApplyBuffetCommand}" Cursor="Hand" Padding="8,3">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#FFF1F2"/>
+                                <Setter Property="BorderBrush" Value="#FECDD3"/>
+                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="Foreground" Value="#DA251D"/>
+                                <Setter Property="Content" Value="✨ Áp dụng Buffet"/>
+                                <Setter Property="FontSize" Value="11"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasActiveBuffet}" Value="True">
+                                        <Setter Property="Command" Value="{Binding CancelBuffetCommand}"/>
+                                        <Setter Property="Background" Value="#FEF2F2"/>
+                                        <Setter Property="BorderBrush" Value="#FEE2E2"/>
+                                        <Setter Property="Foreground" Value="#EF4444"/>
+                                        <Setter Property="Content" Value="✕ Hủy gói"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+            </Border>
+        </StackPanel>
+
+        <!-- 3. INLINE ORDER NOTE EDITOR (if active) -->
+        <Border Grid.Row="2" Background="#FEF3C7" BorderBrush="#FDE68A" BorderThickness="0,0,0,1" Padding="10,6">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsEditingNote}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
+            <StackPanel>
+                <TextBlock Text="Ghi chú đơn hàng:" FontSize="11" FontWeight="Bold" Foreground="#92400E" Margin="0,0,0,4"/>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBox Text="{Binding TempOrderNote, UpdateSourceTrigger=PropertyChanged}"
+                             Background="#FFFFFF" BorderBrush="#F59E0B" BorderThickness="1" Padding="6,4" FontSize="12" Margin="0,0,6,0"/>
+                    <Button Grid.Column="1" Content="Lưu" Command="{Binding SaveOrderNoteCommand}"
+                            Background="#D97706" Foreground="#FFFFFF" Padding="8,4" FontWeight="Bold" FontSize="11" Cursor="Hand" Margin="0,0,4,0"/>
+                    <Button Grid.Column="2" Content="✕" Command="{Binding CancelEditNoteCommand}"
+                            Background="#CBD5E1" Foreground="#334155" Padding="8,4" FontWeight="Bold" FontSize="11" Cursor="Hand"/>
+                </Grid>
+            </StackPanel>
         </Border>
 
-        <!-- 2. CUSTOMER / LOYALTY BAR -->
-        <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,8">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="👤" Margin="0,0,6,0" FontSize="13"/>
-                    <TextBlock Text="{Binding CustomerName, FallbackValue='Khách lẻ'}" FontWeight="Bold" FontSize="13" Foreground="#0F172A"/>
-                    <TextBlock Text="{Binding CustomerTier, StringFormat=' ({0})'}" Foreground="#2563EB" FontSize="12" FontWeight="Bold" Margin="4,0,0,0"/>
+        <!-- 4. ITEMS LIST (Dense, Numbered, Scrollable with Item status) -->
+        <Grid Grid.Row="3" Background="#FFFFFF">
+            <!-- Empty Cart State (1:1 with /admin/pos) -->
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,40,0,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel HorizontalAlignment="Center">
+                    <Border Width="64" Height="64" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="32" HorizontalAlignment="Center" Margin="0,0,0,14">
+                        <TextBlock Text="🍽" FontSize="26" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5"/>
+                    </Border>
+                    <TextBlock Text="Bàn chưa có món nào" FontSize="14.5" FontWeight="Bold" Foreground="#475569" HorizontalAlignment="Center"/>
+                    <TextBlock Text="Chạm vào các món trong thực đơn bên trái để gọi món" FontSize="12" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,6,0,0"/>
                 </StackPanel>
+            </Border>
 
-                <Button Grid.Column="1" Content="🔍 Tích điểm" Command="{Binding SearchCustomerCommand}"
-                        Background="#FFFFFF" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
-                        Padding="10,5" FontSize="11" FontWeight="Bold" Cursor="Hand">
-                    <Button.Template>
-                        <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                        </ControlTemplate>
-                    </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#F1F5F9"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
-            </Grid>
-        </Border>
-
-        <!-- 3. ITEMS LIST -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="#FFFFFF">
-            <ItemsControl ItemsSource="{Binding Items}">
-                <ItemsControl.ItemTemplate>
+            <!-- Scrollable Items List -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Background="Transparent">
+                <ScrollViewer.Style>
+                    <Style TargetType="ScrollViewer">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Items.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ScrollViewer.Style>
+                <ItemsControl ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemTemplate>
                     <DataTemplate>
-                        <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,10" Background="Transparent">
+                        <Border BorderBrush="#F1F5F9" BorderThickness="0,0,0,1" Padding="12,8" Background="Transparent">
                             <Grid>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto"/>
@@ -120,22 +354,81 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
 
-                                <!-- Row 0: Name & Price -->
+                                <!-- Row 0: Name, Badges & Price -->
                                 <Grid Grid.Row="0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding ProductName}" FontWeight="Bold" FontSize="13.5" Foreground="#0F172A" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding LineTotal, StringFormat='{}{0:N0}đ'}" FontWeight="Bold" FontSize="13.5" Foreground="#E11D48"/>
+                                    <WrapPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ProductName}" FontWeight="Bold" FontSize="13" Foreground="#0F172A" Margin="0,0,6,0" TextWrapping="Wrap"/>
+                                        
+                                        <!-- Buffet Included Badge (0đ) -->
+                                        <Border CornerRadius="4" Padding="5,1" Margin="0,0,4,0" Background="#ECFDF5" BorderBrush="#A7F3D0" BorderThickness="1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding PricingMode}" Value="BUFFET_INCLUDED">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="Buffet 0đ" FontSize="10" FontWeight="Bold" Foreground="#059669"/>
+                                        </Border>
+
+                                        <!-- Buffet Ticket Badge -->
+                                        <Border CornerRadius="4" Padding="5,1" Margin="0,0,4,0" Background="#F5F3FF" BorderBrush="#DDD6FE" BorderThickness="1">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding PricingMode}" Value="BUFFET_TICKET">
+                                                            <Setter Property="Visibility" Value="Visible"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="Vé Buffet" FontSize="10" FontWeight="Bold" Foreground="#7C3AED"/>
+                                        </Border>
+                                    </WrapPanel>
+
+                                    <TextBlock Grid.Column="1" Text="{Binding LineTotal, StringFormat='{}{0:N0}đ'}" FontWeight="Bold" FontSize="13" Foreground="#DA251D"/>
                                 </Grid>
 
                                 <!-- Row 1: Options & Note -->
-                                <StackPanel Grid.Row="1" Margin="0,3,0,6">
-                                    <TextBlock Text="{Binding OptionsText}" FontSize="11" Foreground="#64748B" TextWrapping="Wrap"
-                                               Visibility="{Binding OptionsText, Converter={x:Null}}"/>
-                                    <TextBlock Text="{Binding Note, StringFormat='Ghi chú: {0}'}" FontSize="11" Foreground="#D97706" FontStyle="Italic"
-                                               Visibility="{Binding Note, Converter={x:Null}}"/>
+                                <StackPanel Grid.Row="1" Margin="0,2,0,4">
+                                    <TextBlock Text="{Binding OptionsText}" FontSize="11" Foreground="#64748B" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding OptionsText}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding OptionsText}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock Text="{Binding Note, StringFormat='Ghi chú: {0}'}" FontSize="11" Foreground="#D97706" FontStyle="Italic">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Note}" Value="{x:Null}">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding Note}" Value="">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
 
                                 <!-- Row 2: Quantity buttons & Actions -->
@@ -146,13 +439,13 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- Qty controller: [-] [1] [+] -->
+                                    <!-- Qty controller: [-] [Qty] [+] -->
                                     <StackPanel Orientation="Horizontal">
                                         <Button Content="−" 
                                                 Command="{Binding DataContext.DecreaseQuantityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
-                                                Width="28" Height="28" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
-                                                FontSize="14" FontWeight="Bold" Cursor="Hand">
+                                                Width="26" Height="26" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                FontSize="13" FontWeight="Bold" Cursor="Hand">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
@@ -165,8 +458,8 @@
                                         <Button Content="{Binding Quantity}" 
                                                 Command="{Binding DataContext.SetQuantityKeypadCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
-                                                MinWidth="36" Height="28" Background="#FFFFFF" Foreground="#0F172A" BorderThickness="1" BorderBrush="#CBD5E1"
-                                                Margin="4,0" FontSize="13" FontWeight="Bold" Cursor="Hand">
+                                                MinWidth="32" Height="26" Background="#FFFFFF" Foreground="#0F172A" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                Margin="4,0" FontSize="12" FontWeight="Bold" Cursor="Hand">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
@@ -179,8 +472,8 @@
                                         <Button Content="+" 
                                                 Command="{Binding DataContext.IncreaseQuantityCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
-                                                Width="28" Height="28" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
-                                                FontSize="14" FontWeight="Bold" Cursor="Hand">
+                                                Width="26" Height="26" Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
+                                                FontSize="13" FontWeight="Bold" Cursor="Hand">
                                             <Button.Template>
                                                 <ControlTemplate TargetType="Button">
                                                     <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
@@ -193,15 +486,41 @@
 
                                     <!-- Status indicator & Cancel button -->
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
-                                            <TextBlock Text="{Binding Status}" FontSize="10" Foreground="#64748B" FontWeight="SemiBold"/>
+                                        <Border CornerRadius="4" Padding="6,2" Margin="0,0,6,0">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Background" Value="#FEF3C7"/>
+                                                    <Setter Property="BorderBrush" Value="#FDE68A"/>
+                                                    <Setter Property="BorderThickness" Value="1"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Status}" Value="SENT_KITCHEN">
+                                                            <Setter Property="Background" Value="#ECFDF5"/>
+                                                            <Setter Property="BorderBrush" Value="#A7F3D0"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <TextBlock Text="{Binding Status}" FontSize="10" FontWeight="Bold">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="Chờ gửi"/>
+                                                        <Setter Property="Foreground" Value="#B45309"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="SENT_KITCHEN">
+                                                                <Setter Property="Text" Value="Đã gửi bếp"/>
+                                                                <Setter Property="Foreground" Value="#059669"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                         </Border>
 
                                         <Button Content="🗑️" 
                                                 Command="{Binding DataContext.RemoveItemCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
                                                 Background="Transparent" BorderThickness="0" Foreground="#EF4444"
-                                                Cursor="Hand" Padding="4" ToolTip="Hủy món"/>
+                                                Cursor="Hand" Padding="2" ToolTip="Hủy món"/>
                                     </StackPanel>
                                 </Grid>
                             </Grid>
@@ -210,119 +529,242 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
+    </Grid>
 
-        <!-- 4. TOTALS BREAKDOWN -->
-        <Border Grid.Row="3" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="14,10">
+        <!-- 5. BREAKDOWN POPOVER (Chi tiết tiền hàng, thuế VAT, chiết khấu) -->
+        <Border Grid.Row="4" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="12" Margin="10,4" Padding="12"
+                Panel.ZIndex="20">
+            <Border.Style>
+                <Style TargetType="Border">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsBreakdownOpen}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
             <StackPanel>
-                <!-- Tiền hàng -->
-                <Grid Margin="0,2">
-                    <TextBlock Text="Tiền hàng:" Foreground="#64748B" FontSize="12"/>
-                    <TextBlock Text="{Binding SubTotal, StringFormat='{}{0:N0}đ'}" Foreground="#0F172A" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Right"/>
+                <Grid Margin="0,0,0,6">
+                    <TextBlock Text="Chi tiết thanh toán" FontWeight="Black" FontSize="12" Foreground="#0F172A"/>
+                    <Button Content="✕" Command="{Binding ToggleBreakdownCommand}" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Cursor="Hand" Foreground="#94A3B8"/>
                 </Grid>
-                <!-- Giảm giá -->
                 <Grid Margin="0,2">
-                    <TextBlock Text="Giảm giá voucher:" Foreground="#64748B" FontSize="12"/>
-                    <TextBlock Text="{Binding DiscountAmount, StringFormat='-{0:N0}đ'}" Foreground="#16A34A" FontWeight="Bold" FontSize="12" HorizontalAlignment="Right"/>
+                    <TextBlock Text="Tiền hàng:" Foreground="#64748B" FontSize="11.5"/>
+                    <TextBlock Text="{Binding SubTotal, StringFormat='{}{0:N0}đ'}" FontWeight="SemiBold" FontSize="11.5" Foreground="#0F172A" HorizontalAlignment="Right"/>
                 </Grid>
-                <!-- Thuế VAT -->
                 <Grid Margin="0,2">
-                    <TextBlock Text="Thuế VAT:" Foreground="#64748B" FontSize="12"/>
-                    <TextBlock Text="{Binding TaxAmount, StringFormat='{}{0:N0}đ'}" Foreground="#64748B" FontSize="12" HorizontalAlignment="Right"/>
+                    <TextBlock Text="Chiết khấu:" Foreground="#16A34A" FontSize="11.5"/>
+                    <TextBlock Text="{Binding DiscountAmount, StringFormat='-{0:N0}đ'}" FontWeight="Bold" FontSize="11.5" Foreground="#16A34A" HorizontalAlignment="Right"/>
                 </Grid>
-                <!-- TỔNG TIỀN -->
-                <Border BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Margin="0,6,0,0" Padding="0,6,0,0">
+                <Grid Margin="0,2">
+                    <TextBlock Text="Thuế VAT (8%):" Foreground="#64748B" FontSize="11.5"/>
+                    <TextBlock Text="{Binding TaxAmount, StringFormat='{}{0:N0}đ'}" FontWeight="SemiBold" FontSize="11.5" Foreground="#64748B" HorizontalAlignment="Right"/>
+                </Grid>
+                <Border BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Margin="0,4,0,0" Padding="0,4,0,0">
                     <Grid>
-                        <TextBlock Text="TỔNG CỘNG:" Foreground="#0F172A" FontWeight="Bold" FontSize="15" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding TotalAmount, StringFormat='{}{0:N0}đ'}" Foreground="#E11D48" FontWeight="Black" FontSize="20" HorizontalAlignment="Right"/>
+                        <TextBlock Text="Tổng cộng:" FontWeight="Black" FontSize="12.5" Foreground="#0F172A"/>
+                        <TextBlock Text="{Binding TotalAmount, StringFormat='{}{0:N0}đ'}" FontWeight="Black" FontSize="13" Foreground="#DA251D" HorizontalAlignment="Right"/>
                     </Grid>
                 </Border>
             </StackPanel>
         </Border>
 
-        <!-- 5. ACTION BUTTONS -->
-        <Border Grid.Row="4" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Padding="12">
+        <!-- 6. 5-ICON TOOLSTRIP + IN TẠM TÍNH + SCROLL CONTROLS (Section 3.1 in OrderCart.tsx) -->
+        <Border Grid.Row="5" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,1,0,1" Height="38" Padding="6,4">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <!-- Button 1: Đổi điểm thưởng -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Button 2: Chiết khấu % -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Button 3: Phụ thu & Thuế -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Button 4: Ghi chú -->
+                    <ColumnDefinition Width="*"/>
+                    <!-- Button 5: In tạm tính -->
+                    <ColumnDefinition Width="2*"/>
+                </Grid.ColumnDefinitions>
 
-                <!-- Row 1: Gửi bếp & Tạm tính -->
-                <Grid Grid.Row="0" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="8"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-
-                    <!-- Gửi bếp -->
-                    <Button Grid.Column="0" Content="🍳 GỬI BẾP (F2)" Command="{Binding SendKitchenCommand}"
-                            Background="#2563EB" Foreground="#FFFFFF" BorderThickness="0"
-                            Padding="0,12" FontWeight="Bold" FontSize="13" Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#1D4ED8"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-
-                    <!-- Tạm tính -->
-                    <Button Grid.Column="2" Content="🧾 TẠM TÍNH (F3)" Command="{Binding TempBillCommand}"
-                            Background="#F1F5F9" Foreground="#334155" BorderThickness="1" BorderBrush="#CBD5E1"
-                            Padding="0,12" FontWeight="Bold" FontSize="13" Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#E2E8F0"/>
-                                        <Setter Property="Foreground" Value="#0F172A"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </Grid>
-
-                <!-- Row 2: THANH TOÁN (F5) -->
-                <Button Grid.Row="1" Content="💰 THANH TOÁN (F5)" Command="{Binding PaymentCommand}"
-                        Background="#16A34A" Foreground="#FFFFFF" BorderThickness="0"
-                        Padding="0,14" FontWeight="Black" FontSize="16" Cursor="Hand">
+                <!-- Button 1: Đổi điểm (Gift) -->
+                <Button Grid.Column="0" Command="{Binding RedeemPointsCommand}" Margin="0,0,3,0"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Cursor="Hand" ToolTip="Đổi điểm thưởng">
                     <Button.Template>
                         <ControlTemplate TargetType="Button">
-                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <TextBlock Text="🎁" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                             </Border>
                         </ControlTemplate>
                     </Button.Template>
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#15803D"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
+                </Button>
+
+                <!-- Button 2: Chiết khấu (%) -->
+                <Button Grid.Column="1" Command="{Binding OrderDiscountCommand}" Margin="0,0,3,0"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Cursor="Hand" ToolTip="Chiết khấu %">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <TextBlock Text="%" FontWeight="Black" FontSize="12" Foreground="#475569" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Button 3: Phụ thu & Thuế (Tag) -->
+                <Button Grid.Column="2" Command="{Binding OrderFeesCommand}" Margin="0,0,3,0"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Cursor="Hand" ToolTip="Phụ thu dịch vụ &amp; Thuế VAT">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <TextBlock Text="🏷️" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Button 4: Ghi chú (Edit) -->
+                <Button Grid.Column="3" Command="{Binding ToggleEditNoteCommand}" Margin="0,0,3,0"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Cursor="Hand" ToolTip="Ghi chú toàn đơn hàng">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                                <TextBlock Text="📝" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <!-- Button 5: In tạm tính (F2/F4) -->
+                <Button Grid.Column="4" Command="{Binding TempBillCommand}"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Cursor="Hand" ToolTip="In phiếu tạm tính (F2)">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="6,0">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <TextBlock Text="🖨️" FontSize="12" Margin="0,0,4,0"/>
+                                    <TextBlock Text="In tạm tính" FontWeight="Bold" FontSize="11" Foreground="#334155"/>
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
                 </Button>
             </Grid>
         </Border>
+
+        <!-- 7. TOTAL ROW WITH (ℹ) BUTTON (Section 3.2 in OrderCart.tsx) -->
+        <Border Grid.Row="6" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="12,8">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Tổng tiền" FontWeight="Black" FontSize="14" Foreground="#0F172A" VerticalAlignment="Center"/>
+                    <Border Background="#F1F5F9" CornerRadius="10" Padding="6,2" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding TotalItemCount, StringFormat='{}{0} món'}" FontSize="11" FontWeight="Bold" Foreground="#64748B"/>
+                    </Border>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding TotalAmount, StringFormat='{}{0:N0}đ'}" FontWeight="Black" FontSize="18" Foreground="#DA251D" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    
+                    <!-- Breakdown (ℹ) Button -->
+                    <Button Command="{Binding ToggleBreakdownCommand}" Width="24" Height="24" Cursor="Hand" ToolTip="Xem chi tiết tiền hàng &amp; chiết khấu">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="#1E293B" CornerRadius="12">
+                                    <TextBlock Text="ℹ" FontSize="12" FontWeight="Bold" Foreground="#FFFFFF" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 8. 4 BIG ACTION BUTTONS (Section 3.3 in OrderCart.tsx) -->
+        <Grid Grid.Row="7" Height="52" Background="#F1F5F9">
+            <Grid.ColumnDefinitions>
+                <!-- 1. Thoát (ESC) -->
+                <ColumnDefinition Width="*"/>
+                <!-- 2. Lưu đơn (F3) -->
+                <ColumnDefinition Width="*"/>
+                <!-- 3. Gửi bếp (F2) -->
+                <ColumnDefinition Width="*"/>
+                <!-- 4. Thanh toán (F4) -->
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- 1. Thoát (ESC) -->
+            <Button Grid.Column="0" Command="{Binding BackCommand}"
+                    Background="#334155" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="2">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="Thoát" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="(ESC)" FontSize="10" Foreground="#CBD5E1" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <!-- 2. Lưu đơn (F3) -->
+            <Button Grid.Column="1" Command="{Binding SaveOrderCommand}"
+                    Background="#059669" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="2">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="Lưu đơn" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="(F3)" FontSize="10" Foreground="#A7F3D0" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <!-- 3. Gửi bếp (F2) with unsent badge -->
+            <Button Grid.Column="2" Command="{Binding SendKitchenCommand}"
+                    Background="#D97706" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="2">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <TextBlock Text="Gửi bếp" FontWeight="Bold" FontSize="12"/>
+                                    <Border Background="#FFFFFF" CornerRadius="8" Padding="5,1" Margin="4,0,0,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasUnsentItems}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding UnsentKitchenCount}" FontSize="10" FontWeight="Black" Foreground="#92400E"/>
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="(F2)" FontSize="10" Foreground="#FDE68A" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+
+            <!-- 4. Thanh toán (F4) in Avora Red -->
+            <Button Grid.Column="3" Command="{Binding PaymentCommand}"
+                    Background="#DA251D" Foreground="#FFFFFF" BorderThickness="0" Cursor="Hand">
+                <Button.Template>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" Padding="2">
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <TextBlock Text="Thanh toán" FontWeight="Black" FontSize="12" HorizontalAlignment="Center"/>
+                                <TextBlock Text="(F4)" FontSize="10" Foreground="#FECACA" HorizontalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+            </Button>
+        </Grid>
     </Grid>
 </UserControl>

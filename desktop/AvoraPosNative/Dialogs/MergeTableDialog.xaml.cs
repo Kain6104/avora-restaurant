@@ -18,6 +18,7 @@ namespace AvoraPosNative.Dialogs
         public MergeTableDialog(PosTable currentTable, List<PosTable> allTables)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             _currentTable = currentTable;
             txtCurrentTable.Text = $"Gộp đơn từ: {currentTable.Name} ({currentTable.AreaName})";
 

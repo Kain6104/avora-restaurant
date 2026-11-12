@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Barcode from 'react-barcode';
-import { logoutUser, getAuthHeaders, getApiBaseUrl, getAuthToken } from '@/lib/auth';
+import { logoutUser, getAuthHeaders, getApiBaseUrl, getAuthToken, saveAuthSession } from '@/lib/auth';
 import {
   User,
   LayoutDashboard,
@@ -63,6 +63,7 @@ function ProfileContent() {
   const [birthdate, setBirthdate] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Handle avatar upload to backend (saved in frontend/public/avt)
@@ -87,12 +88,11 @@ function ProfileContent() {
     const toastId = toast.loading('Đang tải ảnh đại diện lên...');
 
     try {
-      const res = await fetch(`${API_URL}/api/auth/avatar`, {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/auth/avatar`, {
         method: 'POST',
         credentials: 'include',
-        headers: {
-          'ngrok-skip-browser-warning': 'true',
-        },
+        headers: getAuthHeaders(),
         body: formData,
       });
 
@@ -101,9 +101,19 @@ function ProfileContent() {
         toast.error(data.message || 'Tải ảnh thất bại', { id: toastId });
       } else {
         toast.success('Cập nhật ảnh đại diện thành công!', { id: toastId });
-        const updatedUser = data.user || { ...user, avatarUrl: data.avatarUrl };
+        const rawAvatarUrl = data.avatarUrl || data.user?.avatarUrl;
+        const cacheBustedAvatar = rawAvatarUrl ? `${rawAvatarUrl}?t=${Date.now()}` : '';
+        const updatedUser = {
+          ...(data.user || user),
+          avatarUrl: cacheBustedAvatar || rawAvatarUrl,
+          avatar: cacheBustedAvatar || rawAvatarUrl,
+        };
+        setAvatarError(false);
         setUser(updatedUser);
+        const token = getAuthToken() || '';
+        saveAuthSession(token, updatedUser);
         if (typeof window !== 'undefined') {
+          localStorage.setItem('user', JSON.stringify(updatedUser));
           window.dispatchEvent(new CustomEvent('user-updated', { detail: updatedUser }));
         }
       }
@@ -388,10 +398,11 @@ function ProfileContent() {
                 className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl bg-slate-800 border-4 border-white/20 shadow-2xl overflow-hidden relative cursor-pointer group-hover:border-red-500/60 transition-all"
                 title="Nhấn để đổi ảnh đại diện"
               >
-                {(user?.avatarUrl || user?.avatar) ? (
+                {(!avatarError && (user?.avatarUrl || user?.avatar)) ? (
                   <img
                     src={user?.avatarUrl || user?.avatar}
                     alt="Avatar"
+                    onError={() => setAvatarError(true)}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 ) : (

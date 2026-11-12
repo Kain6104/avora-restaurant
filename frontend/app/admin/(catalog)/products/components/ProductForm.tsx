@@ -189,6 +189,7 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
     discountedPrice: 0,
     flashSalePrice: 0,
     unit: 'phần',
+    allowOpenPriceOnPos: false,
     taxPercentage: 0,
     badge: '',
     imageUrl: '',
@@ -251,6 +252,7 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
         discountedPrice: initialData.discountedPrice || 0,
         flashSalePrice: initialData.flashSalePrice || 0,
         unit: initialData.unit || 'phần',
+        allowOpenPriceOnPos: Boolean(initialData.allowOpenPriceOnPos),
         taxPercentage: initialData.taxPercentage ?? 0,
         badge: initialData.badge || '',
         imageUrl: initialData.imageUrl || '',
@@ -550,8 +552,8 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
       return;
     }
 
-    if (Number(formData.price) <= 0) {
-      toast.error('Vui lòng nhập giá bán hợp lệ lớn hơn 0!');
+    if (isNaN(Number(formData.price)) || Number(formData.price) < 0) {
+      toast.error('Vui lòng nhập giá bán hợp lệ (không được âm)!');
       setActiveTab('basic');
       return;
     }
@@ -615,6 +617,7 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
         discountedPrice: formData.discountedPrice ? Number(formData.discountedPrice) : null,
         flashSalePrice: formData.flashSalePrice ? Number(formData.flashSalePrice) : null,
         unit: formData.unit,
+        allowOpenPriceOnPos: Boolean(formData.allowOpenPriceOnPos),
         taxPercentage: Number(formData.taxPercentage || 0),
         badge: formData.badge || null,
         imageUrl: formData.imageUrl || null,
@@ -809,12 +812,41 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
 
                     <div className="grid grid-cols-2 gap-2">
                       <FormField label="Đơn vị tính">
-                        <input
-                          value={formData.unit}
-                          onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-                          className="w-full h-10 px-3 text-xs bg-white border border-slate-200 rounded-xl outline-none"
-                          placeholder="phần, ly, tô..."
-                        />
+                        <div className="space-y-1.5">
+                          <div className="flex gap-1.5">
+                            <input
+                              value={formData.unit}
+                              onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                              className="w-full h-10 px-3 text-xs font-semibold bg-white border border-slate-200 rounded-xl outline-none focus:border-red-500"
+                              placeholder="Phần, Kg, Ly, Tô..."
+                            />
+                            <select
+                              value={['Phần', 'Kg', 'Ly', 'Tô', 'Gram', 'Con', 'Đĩa', 'Set', 'Lon', 'Chai'].includes(formData.unit) ? formData.unit : ''}
+                              onChange={(e) => {
+                                if (e.target.value) setFormData({ ...formData, unit: e.target.value });
+                              }}
+                              className="h-10 px-2 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl outline-none cursor-pointer"
+                              title="Chọn nhanh đơn vị tính"
+                            >
+                              <option value="">Chọn...</option>
+                              <option value="Phần">Phần</option>
+                              <option value="Kg">Kg</option>
+                              <option value="Gram">Gram</option>
+                              <option value="Ly">Ly</option>
+                              <option value="Tô">Tô</option>
+                              <option value="Con">Con</option>
+                              <option value="Đĩa">Đĩa</option>
+                              <option value="Set">Set</option>
+                              <option value="Lon">Lon</option>
+                              <option value="Chai">Chai</option>
+                            </select>
+                          </div>
+                          {formData.unit?.trim().toLowerCase() === 'kg' && (
+                            <p className="text-[10px] text-emerald-700 font-semibold">
+                              ✓ POS hỗ trợ nhập số lẻ theo Kg (0.1, 0.3, 1.25...)
+                            </p>
+                          )}
+                        </div>
                       </FormField>
                       <FormField label="Thuế VAT (%)">
                         <input
@@ -869,6 +901,18 @@ export default function ProductForm({ initialData, isEdit }: ProductFormProps) {
                       />
                       <span className="absolute right-3.5 top-3 text-xs font-bold text-red-500">đ</span>
                     </div>
+                    <label className="mt-2.5 flex items-start gap-2.5 p-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-red-50/40 hover:border-red-200 cursor-pointer transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={formData.allowOpenPriceOnPos}
+                        onChange={(e) => setFormData({ ...formData, allowOpenPriceOnPos: e.target.checked })}
+                        className="mt-0.5 w-4 h-4 accent-red-600 rounded cursor-pointer shrink-0"
+                      />
+                      <span className="text-[11px] leading-snug">
+                        <strong className="text-slate-900 block">Nhập giá khi bán</strong>
+                        <span className="text-amber-700 font-semibold">(Chỉ áp dụng cho máy POS)</span>
+                      </span>
+                    </label>
                   </FormField>
 
                   <FormField label="Giá gốc gạch ngang (Old Price)">

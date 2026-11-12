@@ -50,6 +50,7 @@ interface PosShiftReceiptsViewProps {
   onReprintReceipt?: (order: PosOrder) => void;
   onRefresh?: () => Promise<void>;
   onBackToSettings?: () => void;
+  isDarkMode?: boolean;
 }
 
 // 8 mốc thời gian lọc
@@ -70,6 +71,7 @@ export const PosShiftReceiptsView: React.FC<PosShiftReceiptsViewProps> = ({
   onReprintReceipt,
   onRefresh,
   onBackToSettings,
+  isDarkMode = false,
 }) => {
   // Tab chính: POS | ONLINE | TẤT CẢ
   const [activeTab, setActiveTab] = useState<'POS' | 'ONLINE' | 'ALL'>('POS');

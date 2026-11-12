@@ -21,17 +21,76 @@ export function doTimesOverlap(
   return sA < eB && eA > sB;
 }
 
+export function normalizeDateToYYYYMMDD(dateInput?: string | Date): string {
+  const vnFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const now = new Date();
+  if (!dateInput) return vnFormatter.format(now);
+
+  if (dateInput instanceof Date) {
+    return isNaN(dateInput.getTime()) ? vnFormatter.format(now) : vnFormatter.format(dateInput);
+  }
+
+  const raw = String(dateInput).trim().toLowerCase();
+  if (!raw || raw === 'today' || raw.includes('hôm nay') || raw === 'nay') {
+    return vnFormatter.format(now);
+  }
+
+  if (raw === 'tomorrow' || raw.includes('mai') || raw === 'ngay mai') {
+    const tm = new Date(now.getTime() + 86400000);
+    return vnFormatter.format(tm);
+  }
+
+  if (raw.includes('mốt') || raw.includes('ngày kia') || raw === 'ngay mot') {
+    const dayAfter = new Date(now.getTime() + 2 * 86400000);
+    return vnFormatter.format(dayAfter);
+  }
+
+  // Check DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = raw.match(/^(\d{1,2})[\/\.-](\d{1,2})(?:[\/\.-](\d{2,4}))?$/);
+  if (dmyMatch) {
+    const d = dmyMatch[1].padStart(2, '0');
+    const m = dmyMatch[2].padStart(2, '0');
+    let y = dmyMatch[3] || String(now.getFullYear());
+    if (y.length === 2) y = '20' + y;
+    return `${y}-${m}-${d}`;
+  }
+
+  // Check YYYY-MM-DD
+  const ymdMatch = raw.match(/^(\d{4})[\/\.-](\d{1,2})[\/\.-](\d{1,2})/);
+  if (ymdMatch) {
+    const y = ymdMatch[1];
+    const m = ymdMatch[2].padStart(2, '0');
+    const d = ymdMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  // Try standard Date parsing
+  const parsed = new Date(raw);
+  if (!isNaN(parsed.getTime())) {
+    return vnFormatter.format(parsed);
+  }
+
+  return vnFormatter.format(now);
+}
+
 export function getDayOfWeekFromDate(dateInput: Date | string): DayOfWeek {
   let dayIndex: number;
-  if (typeof dateInput === 'string') {
-    const [y, m, d] = dateInput.split('-').map(Number);
+  const normalizedStr = typeof dateInput === 'string' ? normalizeDateToYYYYMMDD(dateInput) : '';
+  if (typeof dateInput === 'string' && normalizedStr) {
+    const [y, m, d] = normalizedStr.split('-').map(Number);
     const dateObj = new Date(y, m - 1, d, 12, 0, 0);
     dayIndex = dateObj.getDay();
   } else {
+    const dObj = dateInput instanceof Date ? dateInput : new Date(dateInput);
     const vnWeekday = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Ho_Chi_Minh',
       weekday: 'short',
-    }).format(dateInput);
+    }).format(dObj);
     const weekdayMap: Record<string, number> = {
       Sun: 0,
       Mon: 1,
@@ -41,7 +100,7 @@ export function getDayOfWeekFromDate(dateInput: Date | string): DayOfWeek {
       Fri: 5,
       Sat: 6,
     };
-    dayIndex = weekdayMap[vnWeekday] ?? dateInput.getDay();
+    dayIndex = weekdayMap[vnWeekday] ?? dObj.getDay();
   }
   const mapping: Record<number, DayOfWeek> = {
     0: DayOfWeek.SUNDAY,
@@ -95,7 +154,8 @@ export class OperatingSlotService {
     dateStr: string; // YYYY-MM-DD
     orderType?: SlotOrderType;
   }) {
-    const { branchId, dateStr, orderType = SlotOrderType.DELIVERY } = params;
+    const { branchId, dateStr: rawDateStr, orderType = SlotOrderType.DELIVERY } = params;
+    const dateStr = normalizeDateToYYYYMMDD(rawDateStr);
 
     const targetDate = new Date(`${dateStr}T00:00:00.000Z`);
     if (isNaN(targetDate.getTime())) {
@@ -105,7 +165,7 @@ export class OperatingSlotService {
     const dayOfWeek = getDayOfWeekFromDate(dateStr);
 
     // Lấy các template slot đang hoạt động
-    const templateSlots = await this.prisma.operatingSlot.findMany({
+    let templateSlots = await this.prisma.operatingSlot.findMany({
       where: {
         branchId,
         dayOfWeek,
@@ -114,6 +174,18 @@ export class OperatingSlotService {
       },
       orderBy: { startTime: 'asc' },
     });
+
+    // Fallback thông minh: nếu chi nhánh chưa cấu hình riêng TAKEAWAY thì dùng khung giờ hoạt động chung
+    if (templateSlots.length === 0) {
+      templateSlots = await this.prisma.operatingSlot.findMany({
+        where: {
+          branchId,
+          dayOfWeek,
+          isActive: true,
+        },
+        orderBy: { startTime: 'asc' },
+      });
+    }
 
     // Lấy thông tin tracking đơn của ngày đó
     const dailyTrackings = await this.prisma.dailySlotTracking.findMany({

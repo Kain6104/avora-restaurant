@@ -13,6 +13,7 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -108,6 +109,15 @@ export class BankConnectController {
   }
 
   /**
+   * 6.1. Admin kiểm tra trạng thái của mã pairing
+   */
+  @Get('admin/pairing-status')
+  @UseGuards(JwtAuthGuard)
+  async getPairingStatus(@Query('code') code: string) {
+    return this.bankConnectService.getPairingStatus(code);
+  }
+
+  /**
    * 7. Admin xem danh sách thiết bị Android đã kết nối
    */
   @Get('admin/devices')
@@ -194,22 +204,55 @@ export class BankConnectController {
     return this.bankConnectService.getOrderDetail(id);
   }
 
-  /**
-   * 14. Xóa giao dịch không gắn với đơn hàng nào
-   */
-  @Delete('admin/transactions/:id')
-  @UseGuards(JwtAuthGuard)
-  async deleteUnmatchedTransaction(@Param('id') id: string) {
-    return this.bankConnectService.deleteUnmatchedTransaction(id);
+  private assertAdminRole(user: any) {
+    if (!user) {
+      throw new ForbiddenException('Yêu cầu xác thực Quản trị viên (Admin)');
+    }
+    const role = (user.role || '').toString().toUpperCase();
+    if (role && role !== 'ADMIN' && role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Chỉ tài khoản Quản trị viên (ADMIN) mới được phép thực hiện thao tác này');
+    }
   }
 
   /**
-   * 14b. Xóa toàn bộ các giao dịch không gắn đơn hàng
+   * 14. Dọn dẹp (archive an toàn) giao dịch không gắn với đơn hàng nào
+   */
+  @Delete('admin/transactions/:id')
+  @UseGuards(JwtAuthGuard)
+  async deleteUnmatchedTransaction(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Query('reason') reason?: string,
+  ) {
+    this.assertAdminRole(req?.user);
+    const userId = req?.user?.id || req?.user?.sub || 'ADMIN';
+    return this.bankConnectService.deleteUnmatchedTransaction(id, userId, reason);
+  }
+
+  /**
+   * 14b. Dọn dẹp (archive an toàn) toàn bộ các giao dịch chưa khớp đủ điều kiện
    */
   @Delete('admin/transactions-unmatched/all')
   @UseGuards(JwtAuthGuard)
-  async deleteAllUnmatchedTransactions() {
-    return this.bankConnectService.deleteAllUnmatchedTransactions();
+  async deleteAllUnmatchedTransactions(
+    @Req() req: any,
+    @Query('reason') reason?: string,
+  ) {
+    this.assertAdminRole(req?.user);
+    const userId = req?.user?.id || req?.user?.sub || 'ADMIN';
+    return this.bankConnectService.deleteAllUnmatchedTransactions(userId, reason);
+  }
+
+  @Post('admin/transactions-unmatched/cleanup')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async cleanupUnmatchedTransactionsPost(
+    @Req() req: any,
+    @Body('reason') reason?: string,
+  ) {
+    this.assertAdminRole(req?.user);
+    const userId = req?.user?.id || req?.user?.sub || 'ADMIN';
+    return this.bankConnectService.deleteAllUnmatchedTransactions(userId, reason);
   }
 
   /**
@@ -371,38 +414,42 @@ export class BankConnectController {
   // ==========================================
 
   /**
-   * 26. Tải trực tiếp file APK bản cập nhật mới nhất cho Android
+   * 26. Tải trực tiếp file APK bản cập nhật mới nhất cho Android (Một nguồn phát hành chuẩn duy nhất)
    */
   @Get('app/download-latest')
   async downloadLatestApk(@Res() res: any) {
-    const candidatePaths = [
-      path.resolve(process.cwd(), '../frontend/public/downloads/avora-bank-connect.apk'),
-      path.resolve(process.cwd(), '../android/avora-bank-connect.apk'),
-      path.resolve(process.cwd(), 'uploads/avora-bank-connect.apk'),
-      path.resolve(process.cwd(), 'uploads/apk/avora-bank-connect.apk'),
-    ];
-    const foundPath = candidatePaths.find((p) => fs.existsSync(p));
+    const foundPath = this.bankConnectService.resolveCanonicalApkPath();
 
     if (!foundPath) {
       throw new NotFoundException('Chưa tìm thấy file APK cập nhật trên máy chủ');
     }
 
+    const meta = this.bankConnectService.getLatestApkMetadata();
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('X-Apk-Package-Name', meta.packageName);
+    res.setHeader('X-Apk-Version-Name', meta.versionName);
+    res.setHeader('X-Apk-Version-Code', String(meta.versionCode));
+    res.setHeader('X-Apk-Sha256', meta.sha256);
+
     return res.download(foundPath, 'avora-bank-connect.apk');
   }
 
   /**
-   * 27. Kiểm tra phiên bản mới nhất của ứng dụng Android
+   * 27. Kiểm tra phiên bản mới nhất của ứng dụng Android kèm SHA-256 & kích thước thực tế
    */
   @Get('app/version')
-  getAppVersion() {
+  getAppVersion(@Res({ passthrough: true }) res: any) {
+    if (res && typeof res.setHeader === 'function') {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
     return {
       success: true,
-      data: {
-        versionName: '1.0.4',
-        versionCode: 5,
-        downloadUrl: 'https://avorafnb.com/downloads/avora-bank-connect.apk',
-        releaseNotes: 'Bản nâng cấp v1.0.4 (Build 5): Đồng bộ 100% Pure White Fintech UI toàn ứng dụng, tối ưu chiều cao giao diện compact không bị dãn, menu Settings dạng nhóm thẻ ngắn gọn, dialog trắng hiện đại, sửa chi tiết đơn hàng & gán đơn 1-chạm.',
-      },
+      data: this.bankConnectService.getLatestApkMetadata(),
     };
   }
 

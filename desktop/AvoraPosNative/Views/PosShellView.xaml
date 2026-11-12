@@ -5,228 +5,382 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:views="clr-namespace:AvoraPosNative.Views"
              mc:Ignorable="d" 
-             d:DesignHeight="800" d:DesignWidth="1280"
+             d:DesignHeight="850" d:DesignWidth="1366"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
+             RenderOptions.BitmapScalingMode="HighQuality"
              Background="#F8FAFC">
-    
+
     <Grid>
         <Grid.RowDefinitions>
-            <!-- Top App Header -->
-            <RowDefinition Height="64"/>
-            <!-- Active Tab Content Area -->
+            <!-- Row 0: Top Navigation Header (54px - Bright White & Red AVORA Theme) -->
+            <RowDefinition Height="54"/>
+            <!-- Row 1: Main Fullscreen Workspace (*) -->
             <RowDefinition Height="*"/>
+            <!-- Row 2: Bottom Status Bar (36px - Bright White & Red AVORA Theme) -->
+            <RowDefinition Height="36"/>
         </Grid.RowDefinitions>
 
-        <!-- TOP APPLICATION HEADER BAR (LIGHT THEME LUXURY) -->
-        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" Padding="16,8">
+        <!-- ========================================================================= -->
+        <!-- 1. TOP NAVIGATION HEADER (100% Parity with /admin/pos PosHeader.tsx)      -->
+        <!-- ========================================================================= -->
+        <Border Grid.Row="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1.5" Padding="12,0">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <!-- Brand & Branch -->
+                    <!-- Left: Hamburger + Real AVORA Logo -->
                     <ColumnDefinition Width="Auto"/>
-                    <!-- Operational Tabs -->
+                    <!-- Center: Functional Pill Tabs -->
                     <ColumnDefinition Width="*"/>
-                    <!-- Realtime & Cashier Status -->
+                    <!-- Right: Sync, Online Status, Bell, Fullscreen Controls -->
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Brand & Branch Badge -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
-                    <TextBlock Text="AVORA" FontWeight="Black" FontSize="20" Foreground="#E11D48" VerticalAlignment="Center"/>
-                    <Border Background="#FEE2E2" BorderBrush="#FECACA" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="NATIVE POS" FontSize="10" FontWeight="Bold" Foreground="#991B1B"/>
-                    </Border>
-                    <Border Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding BranchName}" FontSize="12" FontWeight="SemiBold" Foreground="#334155"/>
-                    </Border>
+                <!-- 1A. Left: Hamburger Menu Button + Real AVORA Horizontal Logo -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding ToggleSettingsDrawerCommand}" Width="38" Height="38" Cursor="Hand"
+                            ToolTip="Menu POS / Cài đặt hệ thống (Toàn màn hình)">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="#F8FAFC"/>
+                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
+                                <Setter Property="Foreground" Value="#334155"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#FEF2F2"/>
+                                        <Setter Property="BorderBrush" Value="#FECDD3"/>
+                                        <Setter Property="Foreground" Value="#DA251D"/>
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsSettingsDrawerOpen}" Value="True">
+                                        <Setter Property="Background" Value="#DA251D"/>
+                                        <Setter Property="BorderBrush" Value="#DA251D"/>
+                                        <Setter Property="Foreground" Value="#FFFFFF"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10">
+                                    <TextBlock Text="☰" FontSize="18" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Official AVORA Horizontal Brand Logo -->
+                    <Image Source="pack://application:,,,/Assets/avora_logo_ngang.png"
+                           Height="34" Margin="12,0,16,0" Stretch="Uniform"
+                           VerticalAlignment="Center" RenderOptions.BitmapScalingMode="HighQuality"/>
                 </StackPanel>
 
-                <!-- Navigation Tabs (F1 - F6) -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- F1: Phòng bàn -->
-                    <Button Content="🏛️ Phòng bàn (F1)" Command="{Binding SwitchTabCommand}" CommandParameter="TABLES"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="TABLES">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                <!-- 1B. Center: Navigation Pill Container (/admin/pos PosHeader style) -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="#F1F5F9" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="4">
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Tab 1: Thực đơn (F3) (SALE) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="SALE" Height="34" Margin="0,0,4,0" Cursor="Hand" ToolTip="Bán hàng &amp; Thực đơn món (F3)">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="SALE">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="🛍" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Thực đơn (F3)" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                    <!-- F2: Gọi món -->
-                    <Button Content="🍽️ Gọi món (F2)" Command="{Binding SwitchTabCommand}" CommandParameter="ORDER"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="ORDER">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                        <!-- Tab 2: Bàn phòng (TABLES) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="TABLES" Height="34" Margin="0,0,4,0" Cursor="Hand" ToolTip="Sơ đồ bàn phòng (F1)">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="TABLES">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="⊞" FontSize="13" FontWeight="Bold" Margin="0,0,6,0" VerticalAlignment="Center" Foreground="{TemplateBinding Foreground}"/>
+                                            <TextBlock Text="Bàn phòng" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                    <!-- F3: Bếp / KDS -->
-                    <Button Content="🍳 Bếp / Pha chế (F3)" Command="{Binding SwitchTabCommand}" CommandParameter="KITCHEN"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Tab 3: Đơn hàng (ORDERS) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="ORDERS" Height="34" Margin="0,0,4,0" Cursor="Hand" ToolTip="Tất cả đơn hàng đang phục vụ (F9)">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="ORDERS">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="📋" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Đơn hàng" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                            <Border CornerRadius="10" Padding="6,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#DA251D"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveTab}" Value="ORDERS">
+                                                                <Setter Property="Background" Value="#FFFFFF"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding AllOrdersCount}" FontSize="10.5" FontWeight="Black">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.ActiveTab, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="ORDERS">
+                                                                    <Setter Property="Foreground" Value="#DA251D"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="KITCHEN">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                    <!-- F4: Đặt bàn -->
-                    <Button Content="📅 Đặt bàn" Command="{Binding SwitchTabCommand}" CommandParameter="RESERVATIONS"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Tab 4: Đặt bàn (RESERVATIONS) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="RESERVATIONS" Height="34" Margin="0,0,4,0" Cursor="Hand" ToolTip="Quản lý đặt bàn trước">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="RESERVATIONS">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="📅" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Đặt bàn" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                            <Border CornerRadius="10" Padding="6,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#2563EB"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveTab}" Value="RESERVATIONS">
+                                                                <Setter Property="Background" Value="#FFFFFF"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding ReservationsCount}" FontSize="10.5" FontWeight="Black">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.ActiveTab, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="RESERVATIONS">
+                                                                    <Setter Property="Foreground" Value="#DA251D"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="RESERVATIONS">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                    <!-- F5: Két tiền -->
-                    <Button Content="💵 Két tiền / Ca" Command="{Binding SwitchTabCommand}" CommandParameter="SHIFT"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Tab 5: QR Order (QR_ORDERS) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="QR_ORDERS" Height="34" Margin="0,0,4,0" Cursor="Hand" ToolTip="Đơn gọi món qua mã QR tại bàn">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="QR_ORDERS">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="📱" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="QR Order" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                            <Border CornerRadius="10" Padding="6,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#F59E0B"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveTab}" Value="QR_ORDERS">
+                                                                <Setter Property="Background" Value="#FFFFFF"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding QrOrdersCount}" FontSize="10.5" FontWeight="Black">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.ActiveTab, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="QR_ORDERS">
+                                                                    <Setter Property="Foreground" Value="#DA251D"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="SHIFT">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
 
-                    <!-- F6: Cài đặt -->
-                    <Button Content="⚙️ Cài đặt / Máy in" Command="{Binding SwitchTabCommand}" CommandParameter="SETTINGS"
-                            Margin="0,0,6,0" Padding="14,8" FontSize="13" FontWeight="SemiBold" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Background" Value="#F8FAFC"/>
-                                <Setter Property="Foreground" Value="#475569"/>
-                                <Setter Property="BorderBrush" Value="#E2E8F0"/>
-                                <Setter Property="BorderThickness" Value="1"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <!-- Tab 6: Bếp KDS (KITCHEN) -->
+                        <Button Command="{Binding SwitchTabCommand}" CommandParameter="KITCHEN" Height="34" Cursor="Hand" ToolTip="Màn hình điều phối Bếp / Bar (KDS)">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#475569"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFFFFF"/>
+                                            <Setter Property="Foreground" Value="#DA251D"/>
+                                        </Trigger>
+                                        <DataTrigger Binding="{Binding ActiveTab}" Value="KITCHEN">
+                                            <Setter Property="Background" Value="#DA251D"/>
+                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="14,0">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="👨‍🍳" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Bếp KDS" FontSize="12.5" FontWeight="Bold" Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center"/>
+                                            <Border CornerRadius="10" Padding="6,1" Margin="6,0,0,0" VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#10B981"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ActiveTab}" Value="KITCHEN">
+                                                                <Setter Property="Background" Value="#FFFFFF"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding KitchenTicketsCount}" FontSize="10.5" FontWeight="Black">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="#FFFFFF"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding DataContext.ActiveTab, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="KITCHEN">
+                                                                    <Setter Property="Foreground" Value="#DA251D"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
                                             </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding ActiveTab}" Value="SETTINGS">
-                                        <Setter Property="Background" Value="#0F172A"/>
-                                        <Setter Property="Foreground" Value="#FFFFFF"/>
-                                        <Setter Property="BorderBrush" Value="#0F172A"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                </StackPanel>
+                                        </StackPanel>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+                </Border>
 
-                <!-- Status & Cashier info -->
+                <!-- 1C. Right: Sync Status, Online Indicator, Notification Bell & Fullscreen Window Controls -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- Realtime dot indicator -->
-                    <Border CornerRadius="8" Padding="10,5" Margin="0,0,12,0">
+                    <!-- Sync Status Button -->
+                    <Button Command="{Binding TriggerSyncCommand}" Cursor="Hand" Margin="0,0,8,0" ToolTip="Nhấn để đồng bộ dữ liệu POS">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8" Padding="10,6">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <TextBlock Text="🔄" FontSize="11" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SyncStatusText}" FontSize="11.5" FontWeight="Bold" Foreground="#334155" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+
+                    <!-- Realtime Socket + Network Status -->
+                    <Border CornerRadius="8" Padding="10,6" Margin="0,0,8,0" BorderThickness="1">
                         <Border.Style>
                             <Style TargetType="Border">
                                 <Setter Property="Background" Value="#FEF2F2"/>
-                                <Setter Property="BorderBrush" Value="#FECACA"/>
-                                <Setter Property="BorderThickness" Value="1"/>
+                                <Setter Property="BorderBrush" Value="#FECDD3"/>
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsRealtimeConnected}" Value="True">
+                                    <DataTrigger Binding="{Binding IsNetworkOnline}" Value="True">
                                         <Setter Property="Background" Value="#ECFDF5"/>
                                         <Setter Property="BorderBrush" Value="#A7F3D0"/>
                                     </DataTrigger>
@@ -234,27 +388,25 @@
                             </Style>
                         </Border.Style>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="8" Height="8" Margin="0,0,6,0">
+                            <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center">
                                 <Ellipse.Style>
                                     <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="#EF4444"/>
+                                        <Setter Property="Fill" Value="#DC2626"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsRealtimeConnected}" Value="True">
-                                                <Setter Property="Fill" Value="#10B981"/>
+                                            <DataTrigger Binding="{Binding IsNetworkOnline}" Value="True">
+                                                <Setter Property="Fill" Value="#059669"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </Ellipse.Style>
                             </Ellipse>
-                            <TextBlock FontSize="12" FontWeight="Bold">
+                            <TextBlock Text="{Binding NetworkStatusText}" FontSize="11.5" FontWeight="Black" VerticalAlignment="Center">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
-                                        <Setter Property="Text" Value="Offline"/>
                                         <Setter Property="Foreground" Value="#DC2626"/>
                                         <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsRealtimeConnected}" Value="True">
-                                                <Setter Property="Text" Value="Realtime"/>
-                                                <Setter Property="Foreground" Value="#047857"/>
+                                            <DataTrigger Binding="{Binding IsNetworkOnline}" Value="True">
+                                                <Setter Property="Foreground" Value="#059669"/>
                                             </DataTrigger>
                                         </Style.Triggers>
                                     </Style>
@@ -263,130 +415,259 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Cashier profile badge -->
-                    <StackPanel VerticalAlignment="Center" Margin="0,0,12,0">
-                        <TextBlock Text="{Binding CashierName}" FontWeight="Bold" Foreground="#0F172A" FontSize="13" HorizontalAlignment="Right"/>
-                        <TextBlock Text="{Binding CashierRole}" Foreground="#64748B" FontSize="10" FontWeight="SemiBold" HorizontalAlignment="Right"/>
-                    </StackPanel>
-
-                    <!-- Logout Button -->
-                    <Button Content="🚪 Đăng xuất" Command="{Binding LogoutCommand}"
-                            Background="#FEF2F2" Foreground="#DC2626" BorderBrush="#FECACA" BorderThickness="1"
-                            Padding="12,6" FontSize="12" FontWeight="Bold" Cursor="Hand">
-                        <Button.Template>
-                            <ControlTemplate TargetType="Button">
-                                <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6" Padding="{TemplateBinding Padding}">
-                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                </Border>
-                            </ControlTemplate>
-                        </Button.Template>
-                    </Button>
+                    <!-- Notification Bell with Live Badge -->
+                    <Grid Width="34" Height="34">
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="8">
+                            <TextBlock Text="🔔" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <Border Background="#DA251D" CornerRadius="8" Padding="5,1" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-4,-4,0">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding NotificationCount}" Value="0">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding NotificationCount}" FontSize="9.5" FontWeight="Black" Foreground="#FFFFFF"/>
+                        </Border>
+                    </Grid>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- MAIN VIEW PRESENTER -->
+        <!-- ========================================================================= -->
+        <!-- 2. MAIN WORKSPACE AREA (Grid.Row="1")                                     -->
+        <!-- ========================================================================= -->
         <Grid Grid.Row="1">
-            <!-- 1. TABLES VIEW (Wrapped in Grid so DataTrigger uses PosShellViewModel) -->
+            <!-- A. NORMAL POS TABS WORKSPACE -->
             <Grid>
                 <Grid.Style>
                     <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Setter Property="Visibility" Value="Visible"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="TABLES">
-                                <Setter Property="Visibility" Value="Visible"/>
+                            <DataTrigger Binding="{Binding IsSettingsDrawerOpen}" Value="True">
+                                <Setter Property="Visibility" Value="Collapsed"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
                 </Grid.Style>
-                <views:TableMapView x:Name="TableMapViewControl" DataContext="{Binding TableMapVm}"/>
+
+                <!-- 1. SALE VIEW (Thực đơn & Giỏ hàng Split Screen) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="SALE">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="420"/>
+                    </Grid.ColumnDefinitions>
+
+                    <views:ProductMenuView Grid.Column="0" DataContext="{Binding ProductMenuVm}"/>
+
+                    <Border Grid.Column="1" BorderBrush="#E2E8F0" BorderThickness="1.5,0,0,0">
+                        <views:OrderView DataContext="{Binding OrderVm}"/>
+                    </Border>
+                </Grid>
+
+                <!-- 2. TABLES VIEW (Sơ đồ bàn) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="TABLES">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <views:TableMapView x:Name="TableMapViewControl" DataContext="{Binding TableMapVm}"/>
+                </Grid>
+
+                <!-- 3. ORDERS VIEW (Tất cả đơn hàng) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="ORDERS">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <views:OrderListView DataContext="{Binding OrderListVm}"/>
+                </Grid>
+
+                <!-- 4. RESERVATIONS VIEW (Đặt bàn) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="RESERVATIONS">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <views:ReservationView DataContext="{Binding ReservationVm}"/>
+                </Grid>
+
+                <!-- 5. QR ORDERS VIEW (QR Order) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="QR_ORDERS">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <views:QrOrderView DataContext="{Binding QrOrderVm}"/>
+                </Grid>
+
+                <!-- 6. KITCHEN KDS VIEW (Bếp KDS) -->
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding ActiveTab}" Value="KITCHEN">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <views:KitchenView DataContext="{Binding KitchenVm}"/>
+                </Grid>
             </Grid>
 
-            <!-- 2. ORDER VIEW (Split Menu & Cart) -->
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
+            <!-- B. 100% FULLSCREEN MENU & SETTINGS WORKSPACE (NO MODAL!) -->
+            <views:PosSettingsDrawerView Panel.ZIndex="50">
+                <views:PosSettingsDrawerView.Style>
+                    <Style TargetType="views:PosSettingsDrawerView">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="ORDER">
+                            <DataTrigger Binding="{Binding IsSettingsDrawerOpen}" Value="True">
                                 <Setter Property="Visibility" Value="Visible"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </Grid.Style>
+                </views:PosSettingsDrawerView.Style>
+            </views:PosSettingsDrawerView>
+
+            <!-- C. BRANCH SELECTOR POPUP (When Admin/Multi-branch user clicks Branch in Footer) -->
+            <Border HorizontalAlignment="Center" VerticalAlignment="Bottom" Margin="0,0,0,8"
+                    Width="360" Background="#FFFFFF" BorderBrush="#FECDD3" BorderThickness="2" CornerRadius="12" Padding="14"
+                    Panel.ZIndex="90">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsBranchSelectorOpen}" Value="True">
+                                <Setter Property="Visibility" Value="Visible"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="CHỌN CHI NHÁNH LÀM VIỆC" FontSize="11.5" FontWeight="Black" Foreground="#DA251D" Margin="4,0,0,8"/>
+                    <ItemsControl ItemsSource="{Binding AllowedBranches}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding DataContext.SwitchBranchCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"
+                                        Cursor="Hand" Margin="0,3" BorderThickness="0">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="#FFF1F2" BorderBrush="#FECDD3" BorderThickness="1" CornerRadius="8" Padding="12,9">
+                                                <Grid>
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="🏠" FontSize="13" Margin="0,0,8,0"/>
+                                                        <TextBlock Text="{Binding Name}" FontSize="13" FontWeight="Bold" Foreground="#0F172A"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="Chuyển ›" FontSize="11.5" FontWeight="Black" Foreground="#DA251D" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ========================================================================= -->
+        <!-- 3. BOTTOM STATUS BAR (100% Parity with /admin/pos PosShell.tsx Footer)   -->
+        <!-- ========================================================================= -->
+        <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1.5,0,0" Padding="14,0">
+            <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="420"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
 
-                <!-- Left: Product Catalog -->
-                <views:ProductMenuView Grid.Column="0" DataContext="{Binding ProductMenuVm}"/>
+                <!-- Left: Staff Identity & Role Verification Badge -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="22" Height="22" CornerRadius="11" Background="#FEE2E2" Margin="0,0,8,0">
+                        <TextBlock Text="👤" FontSize="10.5" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#DA251D"/>
+                    </Border>
+                    <TextBlock Text="{Binding CashierName}" FontSize="12.5" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                    <Border Background="#FEF2F2" BorderBrush="#FECDD3" BorderThickness="1" CornerRadius="6" Padding="7,2" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding CashierRoleDisplay}" FontSize="10.5" FontWeight="Black" Foreground="#DA251D"/>
+                    </Border>
+                </StackPanel>
 
-                <!-- Right: Order Ticket Cart with left divider border -->
-                <Border Grid.Column="1" BorderBrush="#E2E8F0" BorderThickness="1,0,0,0">
-                    <views:OrderView DataContext="{Binding OrderVm}"/>
-                </Border>
-            </Grid>
+                <!-- Center: Current Branch Selector (Interactive for ADMIN / Multi-branch) -->
+                <Button Grid.Column="1" Command="{Binding ToggleBranchSelectorCommand}" Cursor="Hand"
+                        Background="Transparent" BorderThickness="0" ToolTip="Chi nhánh hiện tại (Nhấn để chuyển chi nhánh nếu có quyền)">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="#FFF1F2" BorderBrush="#FECDD3" BorderThickness="1" CornerRadius="8" Padding="14,4">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="🏠" FontSize="12" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding BranchName}" FontSize="12" FontWeight="Black" Foreground="#DA251D" VerticalAlignment="Center"/>
+                                    <TextBlock Text=" ▾" FontSize="11" FontWeight="Bold" Foreground="#DA251D" VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding CanSwitchBranch}" Value="True">
+                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
 
-            <!-- 3. KITCHEN KDS -->
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="KITCHEN">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
-                <views:KitchenView DataContext="{Binding KitchenVm}"/>
+                <!-- Right: Live Clock & Date -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding SystemClockText}" FontFamily="Consolas, Segoe UI" FontSize="12.5" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
+                    <TextBlock Text="  |  " FontSize="12" Foreground="#CBD5E1" VerticalAlignment="Center"/>
+                    <TextBlock Text="{Binding SystemDateText}" FontSize="12" FontWeight="SemiBold" Foreground="#64748B" VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
-
-            <!-- 4. RESERVATIONS -->
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="RESERVATIONS">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
-                <views:ReservationView DataContext="{Binding ReservationVm}"/>
-            </Grid>
-
-            <!-- 5. CASH SHIFT -->
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="SHIFT">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
-                <views:CashShiftView DataContext="{Binding CashShiftVm}"/>
-            </Grid>
-
-            <!-- 6. SETTINGS -->
-            <Grid>
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding ActiveTab}" Value="SETTINGS">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
-                <views:SettingsView/>
-            </Grid>
-        </Grid>
+        </Border>
     </Grid>
 </UserControl>

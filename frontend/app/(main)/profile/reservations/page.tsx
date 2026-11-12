@@ -7,6 +7,7 @@ import {
   Calendar,
   Clock,
   Users,
+  Utensils,
   MapPin,
   Search,
   ChevronRight,
@@ -38,7 +39,20 @@ interface ReservationItem {
   };
   startAt?: string;
   createdAt: string;
+  preOrderedItems?: any[];
+  preOrderTotal?: number;
 }
+
+
+const formatDateVN = (dateStr?: string) => {
+  if (!dateStr) return '';
+  const clean = dateStr.split('T')[0];
+  const parts = clean.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return clean;
+};
 
 export default function ReservationsListPage() {
   const router = useRouter();
@@ -276,7 +290,7 @@ export default function ReservationsListPage() {
                   <div className="flex items-center gap-2">
                     <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <span className="font-medium text-slate-700">
-                      {res.reservationTime} • {res.reservationDate ? res.reservationDate.split('T')[0] : ''}
+                      {res.reservationTime} • {formatDateVN(res.reservationDate)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -284,6 +298,18 @@ export default function ReservationsListPage() {
                     <span className="font-medium text-slate-700">{res.partySize} khách</span>
                   </div>
                 </div>
+
+                {Array.isArray(res.preOrderedItems) && res.preOrderedItems.length > 0 && (
+                  <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-red-600 font-semibold">
+                      <Utensils className="w-3.5 h-3.5" />
+                      <span>Đã đặt trước {res.preOrderedItems.length} món dùng tại quán</span>
+                    </div>
+                    <span className="font-extrabold text-red-700 font-mono">
+                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(res.preOrderTotal || 0)}
+                    </span>
+                  </div>
+                )}
               </Link>
             ))}
           </div>

@@ -963,15 +963,18 @@ export default function ArticleDetailClient({
                         key={product.id}
                         className="flex items-center justify-between gap-3 p-2 rounded-xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100"
                       >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <img src={img} alt={product.name} className="w-12 h-12 rounded-xl object-cover shrink-0" />
+                        <Link 
+                          href={`/${product.category?.slug || 'menu'}/${product.slug || product.id}`}
+                          className="flex items-center gap-2.5 min-w-0 group/item cursor-pointer"
+                        >
+                          <img src={img} alt={product.name} className="w-12 h-12 rounded-xl object-cover shrink-0 group-hover/item:scale-105 transition-transform" />
                           <div className="min-w-0">
-                            <h5 className="font-bold text-xs text-slate-900 truncate">{product.name}</h5>
+                            <h5 className="font-bold text-xs text-slate-900 truncate group-hover/item:text-red-600 transition-colors">{product.name}</h5>
                             <p className="text-red-600 font-extrabold text-xs mt-0.5">
                               {Number(product.price).toLocaleString('vi-VN')}đ
                             </p>
                           </div>
-                        </div>
+                        </Link>
 
                         <button
                           onClick={() => {

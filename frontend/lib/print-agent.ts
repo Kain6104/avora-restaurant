@@ -44,6 +44,8 @@ export const TOKEN_STORAGE_KEY = 'avora_print_agent_token';
 
 // In-flight & recent duplicate protection in browser memory (15s window)
 const recentPrintKeys = new Map<string, number>();
+let lastAgentCheckAt = 0;
+let cachedAgentOnline = false;
 
 export class PrintAgentClient {
   private baseUrl: string;
@@ -79,12 +81,12 @@ export class PrintAgentClient {
     endpoint: string,
     options: RequestInit & { timeoutMs?: number } = {}
   ): Promise<{ ok: boolean; status: number; data?: T; error?: string; duplicate?: boolean }> {
-    const { timeoutMs = 6000, ...fetchOptions } = options;
+    const { timeoutMs = 800, ...fetchOptions } = options;
 
     // 1. Ưu tiên thử qua cổng HTTP 9102 (không bị lỗi SSL Cert)
     try {
       const fastController = new AbortController();
-      const fastTimer = setTimeout(() => fastController.abort(), Math.min(timeoutMs, 3000));
+      const fastTimer = setTimeout(() => fastController.abort(), Math.min(timeoutMs, 400));
       const fastRes = await fetch(`http://127.0.0.1:9102${endpoint}`, {
         ...fetchOptions,
         signal: fastController.signal,
@@ -112,7 +114,7 @@ export class PrintAgentClient {
 
     // 2. Fallback sang URL cấu hình (HTTPS 9101)
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const timer = setTimeout(() => controller.abort(), Math.min(timeoutMs, 400));
 
     try {
       const url = `${this.baseUrl}${endpoint}`;
@@ -155,18 +157,27 @@ export class PrintAgentClient {
   }
 
   /**
-   * Kiểm tra trạng thái hoạt động của Print Agent
+   * Kiểm tra trạng thái hoạt động của Print Agent (siêu tốc có cache 20s)
    */
   async checkHealth(): Promise<{ ok: boolean; success: boolean; status: 'ONLINE' | 'OFFLINE'; data?: any; error?: string }> {
     if (platformBridge.isDesktop) {
       return { ok: true, success: true, status: 'ONLINE', data: { status: 'ONLINE', native: true, version: platformBridge.getVersion() } };
     }
-    const res = await this.request('/health', { method: 'GET', timeoutMs: 300 });
+
+    const now = Date.now();
+    if (now - lastAgentCheckAt < 20000 && !cachedAgentOnline) {
+      return { ok: false, success: false, status: 'OFFLINE', data: { status: 'OFFLINE', mode: 'DIRECT_WEB' } };
+    }
+
+    const res = await this.request('/health', { method: 'GET', timeoutMs: 250 });
+    lastAgentCheckAt = Date.now();
     if (res.ok && res.data?.status === 'ONLINE') {
+      cachedAgentOnline = true;
       return { ok: true, success: true, status: 'ONLINE', data: res.data };
     }
-    // Ngay cả khi không có agent, POS vẫn in trực tiếp qua trình duyệt siêu tốc
-    return { ok: true, success: true, status: 'ONLINE', data: { status: 'ONLINE', mode: 'DIRECT_WEB' } };
+
+    cachedAgentOnline = false;
+    return { ok: false, success: false, status: 'OFFLINE', data: { status: 'OFFLINE', mode: 'DIRECT_WEB' } };
   }
 
   /**
@@ -212,20 +223,25 @@ export class PrintAgentClient {
     }
 
     try {
-      let iframe = document.getElementById('avora-pos-silent-printer') as HTMLIFrameElement;
-      if (!iframe) {
-        iframe = document.createElement('iframe');
-        iframe.id = 'avora-pos-silent-printer';
-        iframe.style.position = 'fixed';
-        iframe.style.top = '-9999px';
-        iframe.style.left = '-9999px';
-        iframe.style.width = '76mm';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        iframe.style.opacity = '0';
-        iframe.style.pointerEvents = 'none';
-        document.body.appendChild(iframe);
+      // Dọn sạch iframe in cũ để ngăn chặn việc bị gán sự kiện chồng chéo gây in 2-3 lần
+      const oldIframe = document.getElementById('avora-pos-silent-printer');
+      if (oldIframe) {
+        try {
+          oldIframe.remove();
+        } catch {}
       }
+
+      const iframe = document.createElement('iframe');
+      iframe.id = 'avora-pos-silent-printer';
+      iframe.style.position = 'fixed';
+      iframe.style.top = '-9999px';
+      iframe.style.left = '-9999px';
+      iframe.style.width = '76mm';
+      iframe.style.height = '0';
+      iframe.style.border = 'none';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      document.body.appendChild(iframe);
 
       const doc = iframe.contentWindow?.document;
       if (!doc) return false;
@@ -344,19 +360,31 @@ export class PrintAgentClient {
       doc.write(printNormalizedHtml);
       doc.close();
 
+      let hasPrinted = false;
       const triggerPrint = () => {
+        if (hasPrinted) return;
+        hasPrinted = true;
         try {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
         } catch (e) {
           console.warn('[INSTANT PRINT] Focus/Print error:', e);
+        } finally {
+          setTimeout(() => {
+            try {
+              iframe.remove();
+            } catch {}
+          }, 30000);
         }
       };
 
       if (iframe.contentWindow?.document.readyState === 'complete') {
-        triggerPrint();
+        setTimeout(triggerPrint, 40);
       } else {
-        iframe.onload = triggerPrint;
+        iframe.onload = () => {
+          triggerPrint();
+          iframe.onload = null;
+        };
       }
 
       return true;
@@ -379,24 +407,53 @@ export class PrintAgentClient {
     // Làm sạch tên máy in (loại bỏ hậu tố trạng thái như ONLINE, OFFLINE)
     const cleanPrinter = (printerName || '').replace(/\s*\((ONLINE|OFFLINE|READY|ERROR)\)\s*$/i, '').trim();
 
-    // Chặn duplicate spam liên tiếp (giảm xuống 1.5s để thu ngân in lại nhanh)
+    // Nhận diện máy in ảo (Microsoft Print to PDF, XPS, OneNote, ...)
+    const isVirtualPrinter = /(pdf|onenote|xps|fax|print to)/i.test(cleanPrinter);
+    // Máy in ảo Windows tuyệt đối ép cố định 1 bản in để không bao giờ pop-up 2-3 hộp thoại Save File As
+    const finalCopies = isVirtualPrinter ? 1 : Math.max(1, Number(copies) || 1);
+
+    const now = Date.now();
+
+    // Chống duplicate spam liên tiếp (Idempotency deduplication window 5 giây)
     if (idempotencyKey) {
-      const now = Date.now();
       const last = recentPrintKeys.get(idempotencyKey);
-      if (last && now - last < 1500) {
-        return { ok: true, success: true, duplicate: true, message: 'Lệnh in đang được xử lý' };
+      if (last && now - last < 5000) {
+        return { ok: true, success: true, duplicate: true, message: 'Lệnh in đã được tiếp nhận và đang xử lý' };
       }
       recentPrintKeys.set(idempotencyKey, now);
+      // Clean up stale keys older than 60s
+      if (recentPrintKeys.size > 200) {
+        for (const [k, v] of recentPrintKeys.entries()) {
+          if (now - v > 60000) recentPrintKeys.delete(k);
+        }
+      }
+    }
+
+    // Khóa chống mở trùng hộp thoại Save PDF (Deduplication trong 10 giây cho virtual printers)
+    if (isVirtualPrinter) {
+      const lastVirtual = (this as any)._lastVirtualPrintAt || 0;
+      if (now - lastVirtual < 10000) {
+        return { ok: true, success: true, duplicate: true, message: 'Hộp thoại lưu file PDF đang được hiển thị' };
+      }
+      (this as any)._lastVirtualPrintAt = now;
     }
 
     // 1. DESKTOP NATIVE PRINT (.NET 8 WinSpool RAW / WebView2 Silent Core)
-    // Tuyệt đối không mở hộp thoại in WebView2, in trực tiếp đúng máy in đã cài đặt trong settings
-    if (platformBridge.isDesktop) {
+    const isDesktopEnv = Boolean(
+      platformBridge.isDesktop ||
+      (typeof window !== 'undefined' && (
+        window.IS_AVORA_DESKTOP ||
+        window.chrome?.webview?.hostObjects?.nativePrintService ||
+        navigator.userAgent.includes('AvoraPos')
+      ))
+    );
+
+    if (isDesktopEnv) {
       const nativeRes = await posPrintService.printHtml({
         html: htmlContent,
         printerName: cleanPrinter,
         paperSize,
-        copies,
+        copies: finalCopies,
         receiptPayload,
       });
 
@@ -416,14 +473,14 @@ export class PrintAgentClient {
       };
     }
 
-    // 2. Chạy trên trình duyệt Web thông thường: In qua Local Agent (port 9101 hoặc 9123)
-    const agentOnline = await this.checkHealth().catch(() => ({ ok: false }));
-    if (agentOnline.ok) {
+    // 2. Chạy trên trình duyệt Web thông thường: In qua Local Agent (Chỉ gọi nếu Agent thực sự ONLINE)
+    const agentOnline = await this.checkHealth().catch(() => ({ ok: false, success: false, status: 'OFFLINE' as const, data: null }));
+    if (agentOnline.ok && agentOnline.status === 'ONLINE' && agentOnline.data?.mode !== 'DIRECT_WEB') {
       const res = await posPrintService.printHtml({
         html: htmlContent,
         printerName: cleanPrinter,
         paperSize,
-        copies,
+        copies: finalCopies,
       });
       if (res.success) {
         return {
@@ -434,7 +491,7 @@ export class PrintAgentClient {
       }
     }
 
-    // 3. Fallback chỉ dùng khi KHÔNG ở Desktop và KHÔNG có agent:
+    // 3. Fallback siêu tốc: In qua trình duyệt chuẩn (< 50ms)
     const printed = this.executeInstantIframePrint(htmlContent, cleanPrinter, paperSize);
     if (printed) {
       return {
@@ -556,23 +613,30 @@ export class PrintAgentClient {
         : optionsOrPrinterName;
 
     const { printerName, purpose: testPurpose = 'PHIẾU IN THỬ NGHIỆM', paperSize: testPaper = '80mm', copies: testCopies = 1 } = opts;
+    const isVirtual = /(pdf|onenote|xps|fax|print to)/i.test(printerName || '');
 
-    // 1. Kiểm tra health trước
-    const health = await this.checkHealth();
-    if (!health.ok) {
-      return {
-        ok: false,
-        success: false,
-        state: 'AGENT_OFFLINE',
-        message: 'Print Agent offline (Không thể kết nối AVORA Print Agent tại https://localhost:9101).',
-      };
+    // Khóa chống phát lệnh in lặp lại trên máy in ảo Windows (ngăn chặn xuất hiện nhiều hộp thoại Save As)
+    if (isVirtual) {
+      const now = Date.now();
+      const lastVirtualTest = recentPrintKeys.get(`virtual_test_${printerName}`) || 0;
+      if (now - lastVirtualTest < 8000) {
+        return {
+          ok: true,
+          success: true,
+          state: 'SUCCESS',
+          message: 'Lệnh in thử đã được tiếp nhận, vui lòng lưu file trên hộp thoại Windows.',
+        };
+      }
+      recentPrintKeys.set(`virtual_test_${printerName}`, now);
     }
 
+    // 1. Nếu chạy trên Desktop (.NET 8 Bridge): Thực thi native SIÊU TỐC (< 30ms) mà không gọi HTTP 9101/9102 gây lag 7s
     if (platformBridge.isDesktop) {
       const isLabel = testPurpose.toUpperCase().includes('LABEL') || testPurpose.toUpperCase().includes('TEM');
       const testPromise = posPrintService.testPrint(printerName, isLabel ? 'LABEL' : 'RECEIPT');
+      const timeoutMs = isVirtual ? 60000 : 8000;
       const timeoutPromise = new Promise<{ success: boolean; error?: string }>((_, reject) =>
-        setTimeout(() => reject(new Error('Hết thời gian chờ phản hồi từ thiết bị in (Timeout 7s)')), 7000)
+        setTimeout(() => reject(new Error('Hết thời gian chờ phản hồi từ thiết bị in')), timeoutMs)
       );
       const res = await Promise.race([testPromise, timeoutPromise]).catch((err: any) => ({
         success: false,
@@ -584,6 +648,17 @@ export class PrintAgentClient {
         success: res.success,
         state: res.success ? 'SUCCESS' : 'PRINTER_ERROR',
         message: res.success ? `Đã in thử nghiệm thành công tới máy in native [${printerName}]!` : (res.error || 'Lỗi in thử'),
+      };
+    }
+
+    // 2. Chạy trên trình duyệt Web: Kiểm tra health trước
+    const health = await this.checkHealth();
+    if (!health.ok) {
+      return {
+        ok: false,
+        success: false,
+        state: 'AGENT_OFFLINE',
+        message: 'Print Agent offline (Không thể kết nối AVORA Print Agent tại https://localhost:9101).',
       };
     }
 

@@ -60,6 +60,7 @@ export interface PosProduct {
   isFlashSale: boolean;
   flashSalePrice?: number | null;
   unit: string;
+  allowOpenPriceOnPos?: boolean;
   imageUrl?: string | null;
   available: boolean;
   isBestSeller: boolean;
@@ -90,6 +91,7 @@ export interface PosCartItem {
   quantity: number;
   priceAtSale: number; // base + options - discount
   originalPriceAtSale: number;
+  customPrice?: number;
   discountAmount?: number;
   discountReason?: string;
   taxPercentageAtSale?: number;
@@ -146,6 +148,7 @@ export interface PosTable {
     subTotal: number;
     totalAmount: number;
     status: string;
+    paymentStatus?: string;
     kitchenStatus: string;
     itemCount: number;
     createdAt: string;

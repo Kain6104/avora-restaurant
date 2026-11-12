@@ -185,7 +185,7 @@ export class SepayService {
    * 2. Lấy thông tin thanh toán SePay VietQR cho trang thanh toán Client
    */
   async getSepayPaymentConfig(orderCode: string, userId?: string) {
-    const order = await this.prisma.order.findUnique({
+    let order = await this.prisma.order.findUnique({
       where: { orderCode },
       include: {
         user: true,
@@ -198,6 +198,23 @@ export class SepayService {
       },
     });
 
+    if (!order && typeof (this.prisma.order as any).findFirst === 'function') {
+      order = await this.prisma.order.findFirst({
+        where: {
+          OR: [{ temporaryOrderCode: orderCode }, { id: orderCode }],
+        },
+        include: {
+          user: true,
+          orderItems: {
+            include: {
+              product: true,
+              selectedOptions: { include: { optionItem: true } },
+            },
+          },
+        },
+      });
+    }
+
     if (!order) {
       throw new NotFoundException(`Không tìm thấy đơn hàng ${orderCode}`);
     }
@@ -207,23 +224,47 @@ export class SepayService {
       throw new UnauthorizedException('Bạn không có quyền truy cập vào trang thanh toán của đơn hàng này.');
     }
 
-    // Tìm cấu hình SePay đang hoạt động
+    // Tìm cấu hình chuyển khoản đang bật (TRANSFER / SEPAY / BANK_TRANSFER / VIETQR) trong DB
     const sepayMethod = await this.prisma.paymentMethod.findFirst({
       where: {
-        gatewayType: 'SEPAY',
         isActive: true,
+        gatewayType: { in: ['TRANSFER', 'SEPAY', 'BANK_TRANSFER', 'VIETQR'] },
+        bankCode: { not: null },
+        accountNumber: { not: null },
       },
       orderBy: { displayOrder: 'asc' },
     });
 
-    const bankCode = sepayMethod?.bankCode?.trim() || 'MB';
-    const accountNumber = sepayMethod?.accountNumber?.trim() || 'SEPSUSHIWA';
+    const bankCode = sepayMethod?.bankCode?.trim() || '';
+    const accountNumber = sepayMethod?.accountNumber?.trim() || '';
     const accountName = (sepayMethod?.accountName?.trim() || 'AVORA RESTAURANT').toUpperCase();
+    const hasValidBankConfig = Boolean(sepayMethod && bankCode && accountNumber);
     const amount = Math.round(order.totalAmount);
+    if (amount <= 0 && (!order.orderItems || order.orderItems.length === 0)) {
+      throw new BadRequestException('Không thể phát sinh mã thanh toán cho đơn hàng rỗng (0 món, 0đ)');
+    }
+    const isPaid = order.paymentStatus === 'PAID' || order.status === OrderStatus.COMPLETED;
+    if (!isPaid && order.paymentIntentStatus !== 'ACTIVE') {
+      await this.prisma.order.update({
+        where: { id: order.id },
+        data: {
+          paymentIntentStatus: 'ACTIVE',
+          paymentIntentCode: order.orderCode || order.temporaryOrderCode || order.id,
+          paymentIntentAmount: amount,
+          paymentIntentMethod: 'TRANSFER',
+          paymentIntentCreatedAt: new Date(),
+          paymentLockedAt: new Date(),
+          paymentStatus: order.paymentStatus === 'PAID' ? 'PAID' : 'AWAITING_PAYMENT',
+        },
+      });
+    }
     const encodedAccountName = encodeURIComponent(accountName);
-    const encodedAddInfo = encodeURIComponent(order.orderCode || order.temporaryOrderCode || order.id);
+    const displayOrderCode = order.orderCode || order.temporaryOrderCode || order.id;
+    const encodedAddInfo = encodeURIComponent(displayOrderCode);
 
-    const qrUrl = `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodedAddInfo}&accountName=${encodedAccountName}`;
+    const qrUrl = hasValidBankConfig
+      ? `https://img.vietqr.io/image/${bankCode}-${accountNumber}-compact2.png?amount=${amount}&addInfo=${encodedAddInfo}&accountName=${encodedAccountName}`
+      : '';
 
     // Format danh sách món ăn cho Dropdown
     const orderItems = (order.orderItems || []).map((item) => {
@@ -240,7 +281,8 @@ export class SepayService {
     });
 
     return {
-      orderCode: order.orderCode,
+      orderCode: displayOrderCode,
+      transferContent: displayOrderCode,
       amount,
       status: order.status,
       paymentStatus: order.paymentStatus,
@@ -249,7 +291,7 @@ export class SepayService {
       bankCode,
       accountNumber,
       accountName,
-      hasConfig: !!sepayMethod && !!sepayMethod.bankCode && !!sepayMethod.accountNumber,
+      hasConfig: hasValidBankConfig,
       orderItems,
       subTotal: order.subTotal,
       shippingFee: order.shippingFee,
@@ -296,6 +338,13 @@ export class SepayService {
   /**
    * Helper tìm đơn hàng phù hợp với cơ chế đa tầng (hỗ trợ trường hợp ngân hàng lọc bỏ dấu '-')
    */
+  async cancelPayment(orderCode: string, reason = 'Khách hàng hủy thanh toán') {
+    const order = await this.prisma.order.findFirst({ where: { OR: [{ orderCode }, { temporaryOrderCode: orderCode }, { id: orderCode }] } });
+    if (!order) throw new NotFoundException('Không tìm thấy đơn hàng');
+    const updated = await this.prisma.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED, cancelReason: reason, canceledAt: new Date(), paymentStatus: 'CANCELLED', paymentIntentStatus: 'CANCELLED' } });
+    return { success: true, message: 'Đã hủy thanh toán thành công', orderCode: updated.orderCode || orderCode, status: 'CANCELLED' };
+  }
+
   private async findMatchingOrder(orderCode: string | null, normalizedContent: string) {
     // Tầng 1: Khớp trực tiếp theo orderCode nếu regex nhận diện được
     if (orderCode) {

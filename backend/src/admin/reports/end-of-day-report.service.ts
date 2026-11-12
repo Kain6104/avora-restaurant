@@ -251,8 +251,10 @@ export class EndOfDayReportService {
       query.toHour,
     );
 
-    // 3. Khóa cứng quy tắc 7 ngày gần nhất
-    validateSevenDaysRule(parsedRange.startUtc, parsedRange.endUtc);
+    // 3. Khóa cứng quy tắc 7 ngày gần nhất (không áp dụng chặn khi tra cứu theo ca cụ thể shiftId)
+    if (!query.shiftId) {
+      validateSevenDaysRule(parsedRange.startUtc, parsedRange.endUtc);
+    }
 
     // 4. Xây dựng mệnh đề where Prisma: CHỈ LẤY ĐƠN HOÀN THÀNH
     const baseWhere: Prisma.OrderWhereInput = {

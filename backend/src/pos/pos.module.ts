@@ -11,9 +11,11 @@ import { PrintRoutingModule } from '../print-routing/print-routing.module';
 import { PrintTemplateModule } from '../print-template/print-template.module';
 import { BuffetModule } from '../buffet/buffet.module';
 import { QrOrderModule } from '../qr-order/qr-order.module';
+import { InventoryModule } from '../admin/inventory/inventory.module';
 
 import { PosPinController } from './pos-pin.controller';
 import { PosPinService } from './pos-pin.service';
+import { PosWaiterPublicController } from './pos-waiter-public.controller';
 import { getRequiredEnv } from '../common/utils/env.util';
 
 @Module({
@@ -22,6 +24,7 @@ import { getRequiredEnv } from '../common/utils/env.util';
     PrintRoutingModule,
     PrintTemplateModule,
     BuffetModule,
+    forwardRef(() => InventoryModule),
     forwardRef(() => QrOrderModule),
     forwardRef(() => NotificationModule),
     JwtModule.register({
@@ -29,7 +32,7 @@ import { getRequiredEnv } from '../common/utils/env.util';
       signOptions: { expiresIn: '7d' },
     }),
   ],
-  controllers: [PosController, PosUpdateController, PosPinController],
+  controllers: [PosController, PosUpdateController, PosPinController, PosWaiterPublicController],
   providers: [PosService, PosGateway, PosPinService],
   exports: [PosService, PosGateway, PosPinService],
 })

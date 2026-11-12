@@ -1,27 +1,154 @@
 "use client";
 
-import React, { useState, useEffect, useRef, KeyboardEvent } from 'react';
-import { Sparkles, MessageCircle, X, Send, Camera, Mic, Loader2, Menu, Trash2, User, VolumeX, HelpCircle, PhoneCall, Maximize2, MicOff, Activity, Bot, UserCircle, Flame, Gift, Salad, ShoppingCart, Coffee, RefreshCw, CreditCard, BookOpen, Package, Plus, Ticket, Tag, Clock, Lock, AlertTriangle, ChevronDown, MapPin, HeartHandshake, Smile, Zap, Paperclip, FileText, Info, QrCode, DollarSign, Store } from 'lucide-react';
+import Link from 'next/link';
+
+import React, { useState, useEffect, useRef, KeyboardEvent, useCallback } from 'react';
+import { Sparkles, MessageCircle, X, Send, Camera, Mic, Loader2, Menu, Trash2, User, VolumeX, HelpCircle, PhoneCall, Maximize2, MicOff, Activity, Bot, UserCircle, Flame, Gift, Salad, ShoppingCart, Coffee, RefreshCw, CreditCard, BookOpen, Package, Plus, Ticket, Tag, Clock, Lock, AlertTriangle, ChevronDown, MapPin, HeartHandshake, Smile, Zap, Paperclip, FileText, Info, QrCode, DollarSign, Store, Utensils, ExternalLink, Calendar, Check, History, MessageSquare, Copy, Share2, MoreVertical, CheckCircle2 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { useCart, CartItem, ServerCartSnapshot } from '../context/CartContext';
 import { toast } from 'react-hot-toast';
 import { useRouter, usePathname } from 'next/navigation';
 import { getAuthToken, getAuthHeaders, getApiBaseUrl } from '@/lib/auth';
+import { AiAnalysisProgress } from './chatbot/AiAnalysisProgress';
+import { BranchLocationMapCard } from './chatbot/BranchLocationMapCard';
 
-const renderFormattedText = (text: string) => {
-  const regex = /(\[.*?\]\(.*?\))|(\*\*.*?\*\*)/g;
-  const parts = text.split(regex).filter(Boolean);
+const renderFormattedText = (text: string, onNavigate?: (path: string) => void) => {
+  const clean = text.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F1E6}-\u{1F1FF}\u{1F600}-\u{1F64F}\u{1F680}-\u{1F6FF}]/gu, '');
+  const regex = /(\[.*?\]\(.*?\))|(\*\*.*?\*\*)|(`[^`]+`)/g;
+  const parts = clean.split(regex).filter(Boolean);
 
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={index} className="font-bold">{part.slice(2, -2)}</strong>;
+      return <strong key={index} className="font-bold text-slate-900">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      const code = part.slice(1, -1).trim();
+      const isVoucher = /^[A-Z0-9_]{3,30}$/.test(code);
+      if (isVoucher) {
+        return (
+          <button
+            key={index}
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigator.clipboard.writeText(code);
+              toast.success(`Đã sao chép mã ${code}!`);
+            }}
+            title={`Bấm để sao chép mã ${code}`}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 my-0.5 mx-1 bg-gradient-to-r from-red-50 to-amber-50 hover:from-red-100 hover:to-amber-100 text-red-700 hover:text-red-800 font-mono font-bold text-xs rounded-xl border border-red-200/90 shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-95 group align-baseline"
+          >
+            <Ticket size={12} className="text-red-500 shrink-0 group-hover:rotate-12 transition-transform" />
+            <span className="tracking-wider">{code}</span>
+            <Copy size={11} className="text-slate-400 group-hover:text-red-600 shrink-0 ml-0.5" />
+          </button>
+        );
+      }
+      return <code key={index} className="px-1.5 py-0.5 mx-0.5 bg-slate-100 text-slate-800 font-mono text-[12px] rounded border border-slate-200">{code}</code>;
     }
     if (part.startsWith('[') && part.includes('](') && part.endsWith(')')) {
       const match = part.match(/\[(.*?)\]\((.*?)\)/);
       if (match) {
+        const title = match[1];
+        const href = match[2];
+        const isMap = href.includes('google.com/maps') || href.includes('maps.google') || title.toLowerCase().includes('bản đồ');
+
+        if (isMap) {
+          return (
+            <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-1 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-[12px] sm:text-[13px] transition-colors border border-blue-200 shadow-xs">
+              <MapPin size={13} className="shrink-0" /> {title}
+            </a>
+          );
+        }
+
+        const cleanPath = href.replace(/^https?:\/\/[^\/]+/, '');
+
+        // Branch route
+        if (cleanPath.startsWith('/chi-nhanh/')) {
+          return (
+            <a
+              key={index}
+              href={cleanPath}
+              onClick={(e) => {
+                if (onNavigate) {
+                  e.preventDefault();
+                  onNavigate(cleanPath);
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 my-0.5 bg-red-50 hover:bg-red-100 text-red-700 font-bold rounded-lg text-[12px] sm:text-[13px] transition-colors border border-red-200 shadow-xs cursor-pointer align-baseline"
+            >
+              <MapPin size={12} className="shrink-0 text-red-600" />
+              <span className="underline decoration-red-300 underline-offset-2">{title}</span>
+            </a>
+          );
+        }
+
+        // Voucher routes: Only /vouchers is valid; fake /voucher/... routes become plain text
+        if (cleanPath.startsWith('/voucher/') && !cleanPath.startsWith('/vouchers')) {
+          return <span key={index} className="font-bold text-slate-800">{title}</span>;
+        }
+
+        if (cleanPath.startsWith('/vouchers')) {
+          return (
+            <a
+              key={index}
+              href={cleanPath}
+              onClick={(e) => {
+                if (onNavigate) {
+                  e.preventDefault();
+                  onNavigate(cleanPath);
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 my-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded-lg text-[12px] sm:text-[13px] transition-colors border border-amber-200 shadow-xs cursor-pointer align-baseline"
+            >
+              <Ticket size={12} className="shrink-0 text-amber-600" />
+              <span className="underline decoration-amber-400 underline-offset-2">{title}</span>
+            </a>
+          );
+        }
+
+        if (cleanPath.startsWith('/reservation')) {
+          return (
+            <a
+              key={index}
+              href={cleanPath}
+              onClick={(e) => {
+                if (onNavigate) {
+                  e.preventDefault();
+                  onNavigate(cleanPath);
+                }
+              }}
+              className="inline-flex items-center gap-1 px-2.5 py-1 my-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[12px] sm:text-[13px] transition-colors border border-emerald-200 shadow-xs cursor-pointer align-baseline"
+            >
+              <Calendar size={12} className="shrink-0 text-emerald-600" />
+              <span className="underline decoration-emerald-400 underline-offset-2">{title}</span>
+            </a>
+          );
+        }
+
+        if (href.startsWith('http')) {
+          return (
+            <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+              {title} <ExternalLink size={11} className="inline shrink-0" />
+            </a>
+          );
+        }
+
+        // Dish link or relative route
         return (
-          <a key={index} href={match[2]} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 mt-1 bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold rounded-xl text-[13px] transition-colors border border-blue-200 shadow-sm">
-            <MapPin size={14} /> {match[1]}
+          <a
+            key={index}
+            href={cleanPath}
+            onClick={(e) => {
+              if (onNavigate && cleanPath.startsWith('/')) {
+                e.preventDefault();
+                onNavigate(cleanPath);
+              }
+            }}
+            className="inline-flex items-center gap-1 px-2 py-0.5 my-0.5 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded-lg text-[12px] sm:text-[13px] transition-colors border border-red-200/80 shadow-xs cursor-pointer align-baseline"
+          >
+            <Utensils size={12} className="shrink-0 text-red-500" />
+            <span className="underline decoration-red-300 underline-offset-2">{title}</span>
           </a>
         );
       }
@@ -31,7 +158,7 @@ const renderFormattedText = (text: string) => {
 };
 
 type ChatSenderType = "USER" | "AI" | "TOOL" | "SYSTEM";
-type ChatActionType = "ADD_TO_CART" | "ADD_ALL_TO_CART" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "CLEAR_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "SELECT_ORDER_SLOT" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "HANDOFF_TO_HUMAN" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN" | "ORDER_PREVIEW" | "PLACE_ORDER";
+type ChatActionType = "ADD_TO_CART" | "ADD_ALL_TO_CART" | "ADD_ALL_SUMMARY" | "CART_SUMMARY" | "CLEAR_CART" | "SHOW_ORDER" | "CONFIRM_CANCEL" | "CONFIRM_RESERVATION" | "SHOW_PRODUCT" | "SHOW_VOUCHERS" | "NAVIGATE" | "REQUEST_LOCATION" | "SELECT_ORDER_SLOT" | "SHOW_ORDER_SUCCESS" | "STOP_VOICE" | "HANDOFF_TO_HUMAN" | "SUGGEST_VOUCHER" | "PROMPT_VOUCHER_INPUT" | "SHOW_BEAUTIFUL_ORDER" | "UPDATE_CART" | "PROMPT_PERSONALITY" | "SHOW_MAP_LINK" | "PROMPT_LOGIN" | "ORDER_PREVIEW" | "PLACE_ORDER" | "SHOW_RESERVATION_SUCCESS";
 
 const GUEST_HISTORY_STORAGE_KEY = 'avora_chat_guest_history';
 const GUEST_HISTORY_TTL_MS = 30 * 60 * 1000;
@@ -52,6 +179,72 @@ interface ChatMessage {
   actionPayload: string | null;
   createdAt: string;
   suggestedReplies?: (string | ChatSuggestion)[];
+}
+
+function downsampleTo16k(inputData: Float32Array, inputSampleRate: number): Float32Array {
+  if (inputSampleRate === 16000) {
+    return inputData;
+  }
+  const ratio = inputSampleRate / 16000;
+  const newLength = Math.round(inputData.length / ratio);
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+    let accum = 0;
+    let count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer && i < inputData.length; i++) {
+      accum += inputData[i];
+      count++;
+    }
+    result[offsetResult] = count > 0 ? accum / count : 0;
+    offsetResult++;
+    offsetBuffer = nextOffsetBuffer;
+  }
+  return result;
+}
+
+function parseSuggestionsAndCleanContent(content: string, existingSuggestions?: any[]): {
+  cleanContent: string;
+  suggestions: any[];
+} {
+  if (!content) return { cleanContent: '', suggestions: existingSuggestions || [] };
+
+  let suggestions: any[] = existingSuggestions && existingSuggestions.length > 0 ? [...existingSuggestions] : [];
+  const match = content.match(/(?:<{1,3}SUGGESTIONS>{1,3}|<SUGGESTIONS>)([\s\S]*?)(?:<\/{0,1}SUGGESTIONS>{0,3}|<\/SUGGESTIONS>|$)/i);
+
+  if (match && match[1]) {
+    try {
+      let rawJson = match[1].trim();
+      const s = rawJson.indexOf('[');
+      const e = rawJson.lastIndexOf(']');
+      if (s !== -1 && e !== -1 && e > s) {
+        rawJson = rawJson.substring(s, e + 1);
+      }
+      const parsed = JSON.parse(rawJson);
+      if (Array.isArray(parsed) && parsed.length > 0 && suggestions.length === 0) {
+        suggestions = parsed.map((item) =>
+          typeof item === 'string'
+            ? { label: item, action: 'SEND_MESSAGE', payload: item }
+            : {
+                label: item.label || item.text || 'Gợi ý',
+                action: item.action || 'SEND_MESSAGE',
+                payload: item.payload || item.label || item.text,
+              }
+        );
+      }
+    } catch (e) {
+      console.warn('Failed to parse suggestions in client:', e);
+    }
+  }
+
+  const cleanContent = content
+    .replace(/(?:<{1,3}SUGGESTIONS>{1,3}|<SUGGESTIONS>)[\s\S]*?(?:<\/{0,1}SUGGESTIONS>{0,3}|<\/SUGGESTIONS>|$)/gi, '')
+    .trim();
+
+  return { cleanContent, suggestions };
 }
 
 export function FloatingChatbot() {
@@ -87,6 +280,28 @@ export function FloatingChatbot() {
   const [showHideModal, setShowHideModal] = useState(false);
   const [isOverDropZone, setIsOverDropZone] = useState(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
+  const [isPersonalityModalOpen, setIsPersonalityModalOpen] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showCartDrawer, setShowCartDrawer] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareDuration, setShareDuration] = useState('24h');
+  const [isGeneratingShare, setIsGeneratingShare] = useState(false);
+  const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
+  const [shareTargetSessionId, setShareTargetSessionId] = useState<string | null>(null);
+  const [sessionActionMenuId, setSessionActionMenuId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<any[]>([]);
+
+  // Vô hiệu hóa cuộn trang ngoài khi đang mở modal chatbot trên mobile/desktop
+  useEffect(() => {
+    if (isOpen) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = prevOverflow;
+      };
+    }
+  }, [isOpen]);
+  const [isLoadingSessions, setIsLoadingSessions] = useState(false);
   const dragStartRef = useRef<{ x: number, y: number, b: number, r: number } | null>(null);
   // --- VOICE MODE STATES ---
   const [isVoiceMode, setIsVoiceMode] = useState(false);
@@ -120,7 +335,7 @@ export function FloatingChatbot() {
   // Silence detection
   const silenceStartRef = useRef<number | null>(null);
   const hasSpokenInTurnRef = useRef<boolean>(false);
-  const silenceTimeoutMs = 3000; // 3 seconds of silence -> commit turn
+  const silenceTimeoutMs = 1800; // 1.8 seconds of silence -> commit turn
 
   useEffect(() => {
     const savedPersonality = localStorage.getItem('avora_chat_personality');
@@ -129,7 +344,7 @@ export function FloatingChatbot() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const { addToCart, currentBranchId, cartItems, getCartItemTotal, clearCart, replaceFromServerCart } = useCart();
+  const { addToCart, removeFromCart, updateQuantity, currentBranchId, changeBranch, cartItems, getCartItemTotal, clearCart, replaceFromServerCart, setOptionsModalProduct } = useCart();
   const cartTotal = cartItems.reduce((sum: number, item: any) => sum + getCartItemTotal(item), 0);
   const cartSummary = cartItems.length > 0
     ? "Giỏ hàng hiện tại: " + cartItems.map((item: any) => `${item.quantity}x ${item.name}`).join(', ')
@@ -198,6 +413,8 @@ export function FloatingChatbot() {
               setTopProducts(products.slice(0, 5).map((p: any) => ({
                 id: p.id,
                 name: p.name,
+                slug: p.slug,
+                categorySlug: p.category?.slug,
                 price: p.flashSale ? p.flashSale.salePrice : p.price,
                 originalPrice: p.flashSale ? p.price : null,
                 img: p.imageUrl || p.images?.[0]?.url || 'https://via.placeholder.com/150',
@@ -237,8 +454,8 @@ export function FloatingChatbot() {
                 return res.json();
               })
               .then(d => {
-                if (d && d.messages) {
-                  setMessages(d.messages);
+                if (d && Array.isArray(d.messages)) {
+                  setMessages(d.messages.map((m: any) => ({ ...m, isHistorical: true })));
                 }
               })
               .catch(err => {
@@ -258,6 +475,159 @@ export function FloatingChatbot() {
         setIsChatHistoryHydrated(true);
       });
   }, [API_URL, pathname]);
+
+  const fetchSessions = useCallback(async () => {
+    try {
+      setIsLoadingSessions(true);
+      const res = await fetch(`${API_URL}/api/chatbot/sessions`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setSessions(data);
+      }
+    } catch (e) {
+      console.error('Failed to load sessions in FloatingChatbot:', e);
+    } finally {
+      setIsLoadingSessions(false);
+    }
+  }, [API_URL]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchSessions();
+    }
+  }, [isOpen, fetchSessions]);
+
+  const handleNewSession = () => {
+    setSessionId(null);
+    setMessages([]);
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem(user?.id ? 'avora_chat_session_id' : 'avora_chat_guest_session_id');
+    }
+    setShowHistoryModal(false);
+    toast.success('Đã bắt đầu cuộc trò chuyện mới');
+  };
+
+  const handleSelectSession = async (sId: string) => {
+    try {
+      setIsLoading(true);
+      setSessionId(sId);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(user?.id ? 'avora_chat_session_id' : 'avora_chat_guest_session_id', sId);
+      }
+      const res = await fetch(`${API_URL}/api/chatbot/session/${sId}`, {
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.messages)) {
+          setMessages(data.messages.map((m: any) => ({ ...m, isHistorical: true })));
+        }
+      }
+      setShowHistoryModal(false);
+    } catch (e) {
+      toast.error('Không thể tải cuộc trò chuyện');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteSession = async (sId: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/chatbot/session/${sId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        toast.success('Đã xóa cuộc trò chuyện');
+        setSessions(prev => prev.filter(s => s.id !== sId));
+        if (sessionId === sId) {
+          handleNewSession();
+        }
+      } else {
+        toast.error('Không thể xóa cuộc trò chuyện');
+      }
+    } catch (e) {
+      toast.error('Có lỗi xảy ra khi xóa');
+    }
+  };
+
+  const handleGenerateShareLink = async () => {
+    const targetSessionId = shareTargetSessionId || sessionId;
+    if (!targetSessionId && messages.length === 0) {
+      toast.error('Chưa có nội dung cuộc trò chuyện để chia sẻ');
+      return;
+    }
+    try {
+      setIsGeneratingShare(true);
+      const res = await fetch(`${API_URL}/api/chatbot/session/${targetSessionId || 'guest-session'}/share`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(),
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          duration: shareDuration,
+          maskSensitive: true,
+        }),
+      });
+      if (!res.ok) throw new Error('Không thể tạo liên kết chia sẻ');
+      const data = await res.json();
+      setGeneratedShareUrl(data.shareUrl);
+      if (typeof window !== 'undefined') {
+        navigator.clipboard.writeText(data.shareUrl);
+      }
+      toast.success('Đã sao chép liên kết chia sẻ an toàn!');
+    } catch (e: any) {
+      toast.error(e?.message || 'Lỗi khi tạo liên kết chia sẻ');
+    } finally {
+      setIsGeneratingShare(false);
+    }
+  };
+
+  // Realtime SePay Payment Notification vào Chatbot Session
+  useEffect(() => {
+    const handlePaymentSuccess = (e: any) => {
+      const detail = e.detail;
+      if (!detail) return;
+      const orderCode = detail.orderCode;
+      setMessages(prev => {
+        // Kiểm tra xem tin nhắn chúc mừng thanh toán cho đơn này đã có chưa
+        if (prev.some(m => m.actionPayload?.includes(orderCode) && m.actionType === 'SHOW_ORDER_SUCCESS' && m.content?.includes('Ting ting'))) {
+          return prev;
+        }
+        return [
+          ...prev,
+          {
+            id: `pay-succ-${Date.now()}`,
+            sessionId: sessionId || "curr-session",
+            senderType: 'AI',
+            content: detail.message || `🎉 Ting ting! AVORA đã nhận được thanh toán chuyển khoản thành công cho đơn hàng [${orderCode}] qua SePay VietQR! 👨‍🍳 Bếp đang tiến hành chuẩn bị các món ăn nóng hổi ngay cho bạn nhé! Bạn có thể kiểm tra chi tiết tại mục Đơn Hàng.`,
+            actionType: 'SHOW_ORDER_SUCCESS',
+            actionPayload: JSON.stringify({
+              orderCode: orderCode,
+              amount: detail.amount,
+              paymentStatus: 'PAID',
+            }),
+            createdAt: new Date().toISOString(),
+          }
+        ];
+      });
+      toast.success(`🎉 Đã nhận thanh toán chuyển khoản SePay đơn [${orderCode}]!`, { duration: 6000 });
+    };
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('avora_chatbot_payment_success', handlePaymentSuccess);
+      return () => {
+        window.removeEventListener('avora_chatbot_payment_success', handlePaymentSuccess);
+      };
+    }
+  }, [sessionId]);
 
   useEffect(() => {
     const hiddenUntil = localStorage.getItem('avora_chat_hidden_until');
@@ -370,10 +740,13 @@ export function FloatingChatbot() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // Focus input when opened
+  // Focus input when opened (Desktop only, never autofocus on mobile)
   useEffect(() => {
     if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+      const isMobile = typeof window !== 'undefined' && (window.innerWidth < 768 || 'ontouchstart' in window);
+      if (!isMobile) {
+        setTimeout(() => inputRef.current?.focus(), 100);
+      }
     }
   }, [isOpen]);
 
@@ -492,12 +865,20 @@ export function FloatingChatbot() {
       console.log(`[VoiceAuth] Token exists: ${!!authCookie}`);
       console.log(`[VoiceAuth] Token length: ${authCookie ? authCookie.length : 0}`);
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
       mediaStreamRef.current = stream;
       setIsVoiceMode(true);
       setVoiceState('LISTENING');
 
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtx();
       if (ctx.state === 'suspended') {
         await ctx.resume();
       }
@@ -517,31 +898,35 @@ export function FloatingChatbot() {
       let audioChunkCount = 0;
       processor.onaudioprocess = (e) => {
         audioChunkCount++;
-        if (audioChunkCount % 10 === 0) {
-          console.log(`[AudioCapture] Processed ${audioChunkCount} chunks, voiceState: ${voiceStateRef.current}`);
-        }
-
-        const inputData = e.inputBuffer.getChannelData(0);
+        const rawInput = e.inputBuffer.getChannelData(0);
 
         let sumSquare = 0;
-        for (let i = 0; i < inputData.length; i++) {
-          sumSquare += inputData[i] * inputData[i];
+        for (let i = 0; i < rawInput.length; i++) {
+          sumSquare += rawInput[i] * rawInput[i];
         }
-        const rms = Math.sqrt(sumSquare / inputData.length);
-        const level = Math.min(100, Math.floor(rms * 1000));
+        const rms = Math.sqrt(sumSquare / rawInput.length);
+        const level = Math.min(100, Math.floor(rms * 1200));
         setAudioLevel(level);
 
-        // Increase threshold when AI is playing to avoid echo triggering barge-in
-        const threshold = isPlayingRef.current ? 40 : 15;
+        // Chuẩn hóa và downsample về đúng 16.000 Hz bất kể soundcard laptop là 44.1kHz hay 48kHz
+        const currentRate = ctx.sampleRate || 16000;
+        const downsampled = downsampleTo16k(rawInput, currentRate);
+
+        // Ngưỡng phát hiện tiếng nói: 16 cho mic laptop thông thường, 55 khi bot đang phát loa
+        const threshold = isPlayingRef.current ? 55 : 16;
         const isSpeaking = level > threshold;
 
         if (isSpeaking) {
-          hasSpokenInTurnRef.current = true;
           speakChunksRef.current += 1;
           silenceStartRef.current = null;
 
-          // Barge-in: If AI is speaking, interrupt it ONLY if user speaks continuously for > 3 chunks (~300ms)
-          if (isPlayingRef.current && speakChunksRef.current > 3) {
+          // Chỉ xác nhận người dùng thật sự nói khi có ít nhất 3 chunks liên tục (~300ms)
+          if (speakChunksRef.current >= 3) {
+            hasSpokenInTurnRef.current = true;
+          }
+
+          // Barge-in: Nếu bot đang nói mà khách cướp lời liên tục >= 5 chunks (~500ms)
+          if (isPlayingRef.current && speakChunksRef.current >= 5) {
             if (playbackSourceRef.current) playbackSourceRef.current.stop();
             audioQueueRef.current = [];
             isPlayingRef.current = false;
@@ -552,10 +937,10 @@ export function FloatingChatbot() {
           }
         } else {
           speakChunksRef.current = 0;
-          if (hasSpokenInTurnRef.current) {
+          if (hasSpokenInTurnRef.current && !isPlayingRef.current) {
             if (!silenceStartRef.current) {
               silenceStartRef.current = Date.now();
-            } else if (Date.now() - silenceStartRef.current > silenceTimeoutMs && voiceStateRef.current === 'LISTENING') {
+            } else if (Date.now() - silenceStartRef.current > 1500 && voiceStateRef.current === 'LISTENING') {
               // Silence detected -> Trigger Thinking
               console.log("[Silence Detected] Committing turn");
               setVoiceState('THINKING');
@@ -566,11 +951,11 @@ export function FloatingChatbot() {
           }
         }
 
-        // Send Audio to Server
+        // Send 16kHz PCM16 Audio to Server
         if (voiceStateRef.current === 'LISTENING' || voiceStateRef.current === 'THINKING') {
-          const pcm16 = new Int16Array(inputData.length);
-          for (let i = 0; i < inputData.length; i++) {
-            const s = Math.max(-1, Math.min(1, inputData[i]));
+          const pcm16 = new Int16Array(downsampled.length);
+          for (let i = 0; i < downsampled.length; i++) {
+            const s = Math.max(-1, Math.min(1, downsampled[i]));
             pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
           }
           const buffer = new Uint8Array(pcm16.buffer);
@@ -580,7 +965,7 @@ export function FloatingChatbot() {
           }
           const base64 = btoa(binary);
           if (audioChunkCount % 10 === 0) {
-            console.log(`[VoiceWS] Sending audio chunk: ${base64.length} bytes base64`);
+            console.log(`[VoiceWS] Sending 16kHz audio chunk: ${base64.length} bytes base64`);
           }
           socketRef.current?.emit('audio_input', base64);
         }
@@ -699,6 +1084,70 @@ export function FloatingChatbot() {
         voiceGenerationRef.current = payload?.generation ?? voiceGenerationRef.current + 1;
         nextPlayTimeRef.current = 0;
         setVoiceState('LISTENING');
+      });
+
+      socket.on('transcript', (data: { role?: string; text?: string }) => {
+        const rawText = data?.text;
+        if (rawText) {
+          const senderRole: 'USER' | 'AI' = data.role === 'user' ? 'USER' : 'AI';
+          setMessages((prev) => {
+            const lastMsg = prev[prev.length - 1];
+            if (
+              lastMsg &&
+              lastMsg.id.startsWith('voice-stream-') &&
+              lastMsg.senderType === senderRole &&
+              !lastMsg.actionType
+            ) {
+              const mergedRaw = `${lastMsg.content || ''}${rawText}`;
+              const { cleanContent, suggestions } = parseSuggestionsAndCleanContent(mergedRaw, lastMsg.suggestedReplies);
+              return [
+                ...prev.slice(0, -1),
+                {
+                  ...lastMsg,
+                  content: cleanContent,
+                  suggestedReplies: suggestions.length > 0 ? suggestions : lastMsg.suggestedReplies,
+                },
+              ];
+            }
+            const { cleanContent, suggestions } = parseSuggestionsAndCleanContent(rawText);
+            return [
+              ...prev,
+              {
+                id: `voice-stream-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                sessionId: sessionId || 'temp-session',
+                senderType: senderRole,
+                content: cleanContent,
+                actionType: null,
+                actionPayload: null,
+                suggestedReplies: suggestions.length > 0 ? suggestions : undefined,
+                createdAt: new Date().toISOString(),
+              },
+            ];
+          });
+        }
+      });
+
+      socket.on('transcript_verified', (data: { text?: string; wasHallucinationPrevented?: boolean }) => {
+        const verifiedStr = data?.text;
+        if (verifiedStr) {
+          setMessages((prev) => {
+            const lastAiIndex = [...prev]
+              .map((m, i) => ({ m, i }))
+              .reverse()
+              .find((entry) => entry.m.senderType === 'AI' && entry.m.id.startsWith('voice-stream-'))?.i;
+            const { cleanContent, suggestions } = parseSuggestionsAndCleanContent(verifiedStr);
+            if (lastAiIndex !== undefined) {
+              const copy = [...prev];
+              copy[lastAiIndex] = {
+                ...copy[lastAiIndex],
+                content: cleanContent,
+                suggestedReplies: suggestions.length > 0 ? suggestions : copy[lastAiIndex].suggestedReplies,
+              };
+              return copy;
+            }
+            return prev;
+          });
+        }
       });
 
       socket.on('rich_action', (data) => {
@@ -998,7 +1447,7 @@ export function FloatingChatbot() {
                   id: `sys-paid-${Date.now()}`,
                   sessionId: sessionId || "temp-session",
                   senderType: "AI",
-                  content: `🎉 Chúc mừng quý khách! Đơn hàng [${orderCode}] đã thanh toán hoàn tất thành công qua cổng SePay. Nhà hàng Avora đang chuẩn bị món ăn thật chu đáo cho bạn.`,
+                  content: `Chúc mừng quý khách! Đơn hàng [${orderCode}] đã thanh toán hoàn tất thành công qua cổng SePay. Nhà hàng Avora đang chuẩn bị món ăn thật chu đáo cho bạn.`,
                   actionType: null,
                   actionPayload: null,
                   createdAt: new Date().toISOString()
@@ -1234,6 +1683,7 @@ export function FloatingChatbot() {
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           sessionId,
@@ -1377,17 +1827,27 @@ export function FloatingChatbot() {
       }
 
       const { productId, quantity } = payload;
-      if (!currentBranchId) {
-        toast.error('Vui lòng chọn chi nhánh trước khi thêm món');
-        return;
+      let effectiveBranch = currentBranchId || (typeof window !== 'undefined' ? (localStorage.getItem('selectedBranchId') || localStorage.getItem('currentBranchId')) : '') || 'AVO-Q1';
+
+      if (!currentBranchId && changeBranch) {
+        changeBranch(effectiveBranch);
       }
 
-      let url = `${API_URL}/api/products/by-id/${productId}`;
-      url += `?branchId=${currentBranchId}`;
-      const res = await fetch(url, { headers: { 'ngrok-skip-browser-warning': 'true' } });
+      const cleanProdId = String(productId || '').replace(/^cart-/, '').replace(/^line-/, '').replace(/-\d{10,}$/, '').trim();
+      let res = await fetch(`/api/products/by-id/${cleanProdId}?branchId=${effectiveBranch}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).catch(() => null);
+      if (!res || !res.ok) {
+        res = await fetch(`/api/products/by-id/${cleanProdId}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).catch(() => null);
+      }
+      if (!res || !res.ok) {
+        res = await fetch(`${API_URL}/api/products/by-id/${cleanProdId}`, { headers: { 'ngrok-skip-browser-warning': 'true' } }).catch(() => null);
+      }
 
-      if (res.ok) {
+      if (res && res.ok) {
         const product = await res.json();
+        if (product.optionGroups && Array.isArray(product.optionGroups) && product.optionGroups.length > 0) {
+          setOptionsModalProduct(product);
+          return;
+        }
         addToCart({
           id: product.id,
           productId: product.id,
@@ -1397,7 +1857,7 @@ export function FloatingChatbot() {
           quantity: quantity || 1,
           imageUrl: product.imageUrl || product.images?.[0]?.url || undefined,
           rawProduct: product
-        }, currentBranchId);
+        }, effectiveBranch);
       } else {
         toast.error('Không tìm thấy thông tin món ăn');
       }
@@ -1514,11 +1974,17 @@ export function FloatingChatbot() {
     }]);
   };
 
-  const displayMessages = messages.filter(m =>
-    (m.senderType === 'USER' && !m.content?.startsWith('[HỆ THỐNG:')) ||
-    m.senderType === 'AI' ||
-    m.senderType === 'SYSTEM'
-  );
+  const displayMessages = messages.filter((m) => {
+    if (m.senderType === 'USER') {
+      return typeof m.content === 'string' && m.content.trim().length > 0 && !m.content.startsWith('[HỆ THỐNG:');
+    }
+    if (m.senderType === 'AI') {
+      const hasContent = typeof m.content === 'string' && m.content.trim().length > 0;
+      const hasValidAction = Boolean(m.actionType);
+      return hasContent || hasValidAction;
+    }
+    return m.senderType === 'SYSTEM';
+  });
 
   const latestAiMessageId = [...displayMessages].reverse().find(m => m.senderType === 'AI')?.id;
 
@@ -1630,54 +2096,109 @@ export function FloatingChatbot() {
         <img src="/avt_chatbot.gif" alt="AvoBOT" className="relative z-10 w-12 h-12 rounded-full object-cover shadow-lg border border-white/20 pointer-events-none" />
       </button>
 
+      {/* Mobile Backdrop Overlay for Clean 85% Bottom Sheet UX */}
+      {isOpen && (
+        <div
+          onClick={() => setIsOpen(false)}
+          className="fixed inset-0 z-[9998] bg-black/45 backdrop-blur-[2px] transition-opacity duration-300 sm:hidden"
+          aria-hidden="true"
+        />
+      )}
+
       <div
-        className={`fixed z-[10000] flex flex-col bg-slate-50/95 backdrop-blur-xl shadow-[0_20px_60px_-15px_rgba(220,38,38,0.15)] overflow-hidden transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-90 opacity-0 pointer-events-none'} ${isExpanded ? 'inset-0 w-full h-[100dvh] rounded-none border-none' : 'bottom-[80px] sm:bottom-6 right-4 sm:right-6 w-[calc(100vw-2rem)] sm:w-[380px] h-[75dvh] sm:h-[600px] max-h-[calc(100dvh-100px)] sm:max-h-[calc(100dvh-6rem)] rounded-3xl border border-white/60'}`}
+        className={`fixed z-[10000] flex flex-col bg-slate-50/95 backdrop-blur-xl shadow-[0_20px_60px_-15px_rgba(220,38,38,0.18)] overflow-hidden transition-all duration-300 origin-bottom-right ${isOpen ? 'scale-100 opacity-100 pointer-events-auto' : 'scale-90 opacity-0 pointer-events-none'} ${isExpanded ? 'inset-0 w-full h-[100dvh] rounded-none border-none' : 'inset-x-0 bottom-0 sm:bottom-6 sm:right-6 sm:inset-x-auto w-full sm:w-[400px] h-[85dvh] max-h-[85vh] sm:h-[640px] sm:max-h-[calc(100dvh-5rem)] rounded-t-[28px] sm:rounded-3xl border-t sm:border border-white/80 shadow-2xl'}`}
       >
         {/* Header / Voice Overlay */}
         {!isVoiceMode ? (
-          <div className="flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-red-600 to-red-700 text-white shrink-0 shadow-lg relative overflow-hidden rounded-b-xl z-10">
-            {/* Background design elements */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/4"></div>
-            <div className="absolute bottom-0 left-0 w-24 h-24 bg-black opacity-10 rounded-full blur-xl translate-y-1/2 -translate-x-1/2"></div>
+          <div className="flex flex-col p-3 sm:p-4 bg-gradient-to-r from-red-600 to-red-700 text-white shrink-0 shadow-lg relative overflow-hidden rounded-t-[28px] sm:rounded-t-3xl rounded-b-xl z-10">
+            {/* Grab handle indicator for mobile sheet UX */}
+            <div className="w-10 h-1 bg-white/40 rounded-full mx-auto mb-2 sm:hidden shrink-0" />
+            
+            <div className="flex items-center justify-between">
+              {/* Background design elements */}
+              <div className="absolute top-0 right-0 w-32 h-32 bg-white opacity-5 rounded-full blur-2xl -translate-y-1/2 translate-x-1/4 pointer-events-none"></div>
+              <div className="absolute bottom-0 left-0 w-24 h-24 bg-black opacity-10 rounded-full blur-xl translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
 
-            <div className="flex items-center gap-2.5 relative z-10">
-              <div className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full shadow-md p-0.5 border-2 border-red-500/50">
-                <img src="/avt_chatbot.gif" alt="AvoBOT" className="w-full h-full rounded-full object-cover" />
-              </div>
-              <div className="flex flex-col">
-                <h3 className="font-bold text-[14px] sm:text-[15px] tracking-wide flex items-center gap-1.5">
-                  AvoBOT 
-                  {user && (
-                    <div className="relative inline-flex ml-0.5 group">
-                      <div className="absolute transition-all duration-1000 opacity-70 -inset-px bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFD700] rounded-md blur-sm group-hover:opacity-100 group-hover:-inset-1 group-hover:duration-200 animate-pulse"></div>
-                      <span className="relative inline-flex items-center justify-center px-1.5 py-0.5 bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#996515] rounded-md text-[10px] uppercase tracking-widest font-black text-amber-950 border border-yellow-300 shadow-sm overflow-hidden">
-                        <Sparkles size={10} className="mr-0.5 text-amber-900 mb-[1px]" />
-                        <span>PRO</span>
-                        {/* Hiệu ứng ánh kim quét lên trên chữ */}
-                        <div className="absolute top-0 -left-[100%] h-full w-full z-20 block transform -skew-x-12 bg-gradient-to-r from-transparent via-white to-transparent opacity-60 animate-shine pointer-events-none" />
-                      </span>
-                    </div>
-                  )}
-                </h3>
-                <p className="text-[10px] sm:text-[11px] text-red-100 font-medium flex items-center gap-1.5 mt-0.5">
-                  <span className="w-1.5 h-1.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)] animate-pulse"></span> Luôn sẵn sàng hỗ trợ
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-1 relative z-10">
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="w-7 h-7 sm:w-8 sm:h-8 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors backdrop-blur-sm"
-                title="Toàn màn hình"
+              <div 
+                onClick={() => {
+                  setIsOpen(false);
+                  router.push('/chatbot');
+                }}
+                className="flex items-center gap-2.5 relative z-10 cursor-pointer group hover:opacity-95 transition-all"
+                title="Nhấn để mở giao diện AvoBOT Workspace (/chatbot)"
               >
-                <Maximize2 size={14} className="text-white" />
-              </button>
-              <button
-                onClick={() => setIsOpen(false)}
-                className="w-8 h-8 sm:w-9 sm:h-9 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center transition-colors backdrop-blur-sm"
-              >
-                <X size={18} className="text-white" />
-              </button>
+                <div className="relative flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 bg-white rounded-full shadow-md p-0.5 border-2 border-red-500/50 group-hover:scale-105 transition-transform">
+                  <img src="/avt_chatbot.gif" alt="AvoBOT" className="w-full h-full rounded-full object-cover" />
+                </div>
+                <div className="flex flex-col">
+                  <h3 className="font-bold text-[14px] sm:text-[15px] tracking-wide flex items-center gap-1.5 group-hover:underline decoration-white/60 underline-offset-2">
+                    AvoBOT 
+                    {user && (
+                      <div className="relative inline-flex ml-0.5 group">
+                        <div className="absolute transition-all duration-1000 opacity-70 -inset-px bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#FFD700] rounded-md blur-sm group-hover:opacity-100 group-hover:-inset-1 group-hover:duration-200 animate-pulse"></div>
+                        <span className="relative inline-flex items-center justify-center px-1.5 py-0.5 bg-gradient-to-r from-[#FFD700] via-[#FDB931] to-[#996515] rounded-md text-[10px] uppercase tracking-widest font-black text-amber-950 border border-yellow-300 shadow-sm overflow-hidden">
+                          <Sparkles size={10} className="mr-0.5 text-amber-900 mb-[1px]" />
+                          <span>PRO</span>
+                          {/* Hiệu ứng ánh kim quét lên trên chữ */}
+                          <div className="absolute top-0 -left-[100%] h-full w-full z-20 block transform -skew-x-12 bg-gradient-to-r from-transparent via-white to-transparent opacity-60 animate-shine pointer-events-none" />
+                        </span>
+                      </div>
+                    )}
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] text-red-100 font-medium flex items-center gap-1.5 mt-0.5">
+                    <span className="w-1.5 h-1.5 bg-green-400 rounded-full shadow-[0_0_8px_rgba(74,222,128,0.8)] animate-pulse"></span> Luôn sẵn sàng hỗ trợ
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1 relative z-10">
+                {user && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleNewSession}
+                      className="hidden sm:flex w-7 h-7 sm:w-8 sm:h-8 bg-white/10 hover:bg-white/20 active:scale-95 rounded-full items-center justify-center transition-all backdrop-blur-sm cursor-pointer"
+                      title="Bắt đầu cuộc trò chuyện mới"
+                    >
+                      <Plus size={15} className="text-white" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        fetchSessions();
+                        setShowHistoryModal(prev => !prev);
+                      }}
+                      className="w-7 h-7 sm:w-8 sm:h-8 bg-white/10 hover:bg-white/20 active:scale-95 rounded-full flex items-center justify-center transition-all backdrop-blur-sm cursor-pointer relative"
+                      title="Lịch sử cuộc hội thoại"
+                    >
+                      <History size={14} className="text-white" />
+                      {sessions.length > 0 && (
+                        <span className="absolute -top-1 -right-1 bg-amber-400 text-slate-900 font-black text-[9px] min-w-3.5 h-3.5 px-0.5 rounded-full flex items-center justify-center shadow-xs">
+                          {sessions.length}
+                        </span>
+                      )}
+                    </button>
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    router.push('/chatbot');
+                  }}
+                  className="w-7 h-7 sm:w-8 sm:h-8 bg-white/10 hover:bg-white/20 active:scale-95 rounded-full flex items-center justify-center transition-all backdrop-blur-sm cursor-pointer"
+                  title="Mở toàn màn hình AI Workspace (/chatbot)"
+                >
+                  <Maximize2 size={13} className="text-white" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="w-7 h-7 sm:w-8 sm:h-8 bg-white/10 hover:bg-white/20 active:scale-95 rounded-full flex items-center justify-center transition-all backdrop-blur-sm cursor-pointer"
+                  title="Đóng chat"
+                >
+                  <X size={16} className="text-white" />
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -1722,6 +2243,22 @@ export function FloatingChatbot() {
               </p>
             </div>
 
+            {voiceState === 'LISTENING' && (
+              <button
+                type="button"
+                onClick={() => {
+                  setVoiceState('THINKING');
+                  socketRef.current?.emit('client_content', { turnComplete: true });
+                  silenceStartRef.current = null;
+                  hasSpokenInTurnRef.current = false;
+                }}
+                className="relative z-10 px-2.5 py-1.5 mr-1 bg-white/20 hover:bg-white/30 active:scale-95 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-all border border-white/30 flex items-center gap-1 shrink-0 whitespace-nowrap shadow-xs"
+                title="Bấm để gửi yêu cầu giọng nói ngay lập tức"
+              >
+                <Send size={12} className="sm:w-[13px] sm:h-[13px]" /> Nói xong
+              </button>
+            )}
+
             {voiceState === 'SPEAKING' && (
               <button
                 onClick={() => {
@@ -1744,6 +2281,256 @@ export function FloatingChatbot() {
             >
               <X size={16} className="sm:w-[20px] sm:h-[20px]" />
             </button>
+          </div>
+        )}
+
+        {/* Floating Conversation History Drawer - Cố định tuyệt đối trên toàn bộ body Chatbot */}
+        {showHistoryModal && (
+          <div className="absolute inset-0 top-[60px] sm:top-[68px] bottom-0 z-50 bg-white flex flex-col animate-in fade-in duration-200 rounded-b-3xl shadow-2xl border-t border-slate-100">
+            <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50 shrink-0">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4 text-red-600" />
+                <span className="font-bold text-xs sm:text-sm text-slate-800">
+                  Lịch sử hội thoại ({sessions.length})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHistoryModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Đóng lịch sử"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* + Cuộc trò chuyện mới Button */}
+            <div className="p-2 border-b border-slate-100 shrink-0">
+              <button
+                type="button"
+                onClick={handleNewSession}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold rounded-xl shadow-xs text-xs transition-all active:scale-98 cursor-pointer"
+              >
+                <Plus size={15} />
+                <span>+ Cuộc trò chuyện mới</span>
+              </button>
+            </div>
+
+            {/* Sessions List */}
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 custom-scrollbar">
+              {isLoadingSessions && sessions.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-slate-400 gap-2 text-xs">
+                  <Loader2 size={18} className="animate-spin text-red-500" />
+                  <span>Đang tải hội thoại...</span>
+                </div>
+              ) : sessions.length === 0 ? (
+                <div className="text-center py-10 px-4">
+                  <div className="w-9 h-9 rounded-full bg-red-50 text-red-500 flex items-center justify-center mx-auto mb-2">
+                    <MessageSquare size={16} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">Chưa có hội thoại nào</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">Bắt đầu trò chuyện để lưu lại lịch sử.</p>
+                </div>
+              ) : (
+                sessions.map((s) => {
+                  const isActive = s.id === sessionId;
+                  const updatedTime = new Date(s.updatedAt || s.createdAt).toLocaleDateString('vi-VN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    day: '2-digit',
+                    month: '2-digit',
+                  });
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => handleSelectSession(s.id)}
+                      className={`group relative flex items-center justify-between p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                        isActive
+                          ? 'bg-red-50/90 border-red-300 text-red-950 font-bold ring-1 ring-red-400/50 shadow-2xs'
+                          : 'bg-white border-slate-100 hover:border-slate-200 hover:bg-slate-50/80 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 pr-2">
+                        <MessageSquare size={14} className={isActive ? 'text-red-600 shrink-0' : 'text-slate-400 shrink-0'} />
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold truncate leading-tight">{s.title || 'Cuộc trò chuyện'}</div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">{updatedTime}</div>
+                        </div>
+                      </div>
+
+                      {/* Menu 3 chấm: Gộp Chia sẻ và Xóa */}
+                      <div className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setSessionActionMenuId(sessionActionMenuId === s.id ? null : s.id)}
+                          className="p-1.5 hover:bg-slate-200/80 rounded-lg text-slate-400 hover:text-slate-700 transition-all cursor-pointer"
+                          title="Tùy chọn hội thoại"
+                        >
+                          <MoreVertical size={14} />
+                        </button>
+                        {sessionActionMenuId === s.id && (
+                          <div className="absolute right-0 top-full mt-1 w-44 bg-white rounded-xl shadow-xl border border-slate-100 py-1 z-30 animate-in fade-in zoom-in-95 duration-150">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSessionActionMenuId(null);
+                                setShareTargetSessionId(s.id);
+                                setShowShareModal(true);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors text-left cursor-pointer"
+                            >
+                              <Share2 size={13} className="text-blue-600" />
+                              <span>Chia sẻ hội thoại</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSessionActionMenuId(null);
+                                handleDeleteSession(s.id);
+                              }}
+                              className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors text-left cursor-pointer"
+                            >
+                              <Trash2 size={13} />
+                              <span>Xóa cuộc trò chuyện</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Floating Mini Cart Drawer - Tương tác trực tiếp trên Chatbot */}
+        {showCartDrawer && (
+          <div className="absolute inset-x-0 bottom-0 top-[56px] sm:top-[64px] z-50 bg-white flex flex-col animate-in fade-in zoom-in-95 duration-200 rounded-b-3xl shadow-2xl border-t border-slate-100">
+            <div className="p-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/80 shrink-0">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
+                  <ShoppingCart className="w-4 h-4" />
+                </div>
+                <div>
+                  <span className="font-bold text-xs sm:text-sm text-slate-800">
+                    Giỏ hàng ({cartItems.reduce((acc, i) => acc + i.quantity, 0)} món)
+                  </span>
+                  <span className="text-[10px] text-slate-400 block">Tăng giảm số lượng, xóa hoặc chốt đơn</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCartDrawer(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Đóng giỏ hàng"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 custom-scrollbar">
+              {cartItems.length === 0 ? (
+                <div className="text-center py-12 px-4">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                    <ShoppingCart size={20} />
+                  </div>
+                  <p className="text-xs font-bold text-slate-700">Giỏ hàng đang trống</p>
+                  <p className="text-[11px] text-slate-400 mt-1">Nói cho AvoBOT biết bạn muốn ăn gì để thêm món nhé!</p>
+                </div>
+              ) : (
+                cartItems.map((item: any) => {
+                  const itemPrice = Number(item.priceAtSale ?? item.price ?? 0);
+                  const itemImg = item.imageUrl || item.image || item.product?.imageUrl || 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400';
+                  const itemName = item.name || item.product?.name || 'Món ăn';
+                  const itemOpts = item.optionsTextSnapshot || item.optionsSummary || '';
+
+                  return (
+                    <div key={item.id} className="bg-white border border-slate-200/80 rounded-2xl p-2.5 shadow-2xs flex items-start gap-2.5">
+                      <img
+                        src={itemImg}
+                        alt={itemName}
+                        onError={(e) => { (e.target as any).src = 'https://images.unsplash.com/photo-1579871494447-9811cf80d66c?w=400'; }}
+                        className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover bg-slate-100 shrink-0 border border-slate-100"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1">
+                          <h5 className="font-bold text-xs text-slate-800 truncate">{itemName}</h5>
+                          <button
+                            type="button"
+                            onClick={() => removeFromCart(item.id)}
+                            className="text-slate-400 hover:text-red-500 p-0.5 transition-colors cursor-pointer"
+                            title="Xóa món này"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                        <div className="text-[11px] font-bold text-red-600 mt-0.5">
+                          {new Intl.NumberFormat('vi-VN').format(itemPrice)}đ
+                        </div>
+                        {itemOpts && (
+                          <p className="text-[10px] text-slate-500 italic line-clamp-1 mt-0.5">{itemOpts}</p>
+                        )}
+
+                        <div className="flex items-center justify-between mt-2 pt-1 border-t border-slate-50">
+                          <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-slate-50">
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.id, Math.max(0, item.quantity - 1))}
+                              className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 text-xs font-bold cursor-pointer"
+                            >
+                              -
+                            </button>
+                            <span className="w-6 text-center text-xs font-bold text-slate-800">{item.quantity}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              className="w-6 h-6 flex items-center justify-center text-slate-600 hover:bg-slate-200 text-xs font-bold cursor-pointer"
+                            >
+                              +
+                            </button>
+                          </div>
+                          <span className="text-[11px] font-black text-slate-800">
+                            {new Intl.NumberFormat('vi-VN').format(itemPrice * item.quantity)}đ
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {cartItems.length > 0 && (
+              <div className="p-3 border-t border-slate-100 bg-slate-50/90 shrink-0 space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-slate-600">Tổng tiền tạm tính:</span>
+                  <span className="text-red-600 text-sm font-black">{new Intl.NumberFormat('vi-VN').format(cartTotal)}đ</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCartDrawer(false);
+                      handleSendMessage("Tiến hành chốt đơn và thanh toán cho các món trong giỏ");
+                    }}
+                    className="w-full py-2 px-2 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold rounded-xl text-xs shadow-xs text-center cursor-pointer transition-all active:scale-98"
+                  >
+                    Chốt đơn AI
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsOpen(false);
+                      router.push('/checkout');
+                    }}
+                    className="w-full py-2 px-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold rounded-xl text-xs text-center cursor-pointer transition-all active:scale-98"
+                  >
+                    Thanh toán (/checkout)
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1835,42 +2622,66 @@ export function FloatingChatbot() {
                 {user ? (
                   <>
                     <h4 className="font-bold text-[14px] text-red-600 mb-3 flex items-center gap-1.5"><Sparkles size={16} /> Gợi ý cho bạn</h4>
-                    <div className="flex gap-3 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-4 px-4 w-[calc(100%+2rem)]">
+                    <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-3 pt-1 snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-3 sm:-mx-4 px-3 sm:px-4 w-[calc(100%+1.5rem)] sm:w-[calc(100%+2rem)]">
                       {topProducts
                         .filter(p => !currentBranchId || !p.branches || p.branches.length === 0 || p.branches.some((b: any) => b.id === currentBranchId))
-                        .map((p, idx) => (
-                        <div key={idx} className="min-w-[150px] w-[150px] bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-shadow snap-start shrink-0 flex flex-col">
-                          <div className="w-full h-28 bg-slate-100 relative cursor-pointer" onClick={() => handleSendMessage(`Tôi muốn mua ${p.name}`)}>
-                            <img src={p.img} alt={p.name} className="w-full h-full object-cover" />
-                            {p.flashSale && (
-                              <div className="absolute top-2 left-2 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-md flex items-center gap-1">
-                                <Flame size={10} /> Flash Sale
+                        .map((p, idx) => {
+                          const catSlug = p.categorySlug || p.category?.slug || 'mon-an';
+                          const dishUrl = p.productUrl || (p.slug ? `/${catSlug}/${p.slug}` : (p.id ? `/${catSlug}/${p.id}` : '/menu'));
+                          return (
+                            <div key={idx} className="min-w-[124px] max-w-[130px] sm:min-w-[150px] sm:max-w-[150px] bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-shadow snap-start shrink-0 flex flex-col">
+                              <div 
+                                className="w-full h-20 sm:h-28 bg-slate-100 relative cursor-pointer" 
+                                onClick={() => { setIsOpen(false); router.push(dishUrl); }}
+                              >
+                                <img src={p.img} alt={p.name} className="w-full h-full object-cover" />
+                                {p.flashSale && (
+                                  <div className="absolute top-1.5 left-1.5 bg-gradient-to-r from-red-600 to-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full shadow-xs flex items-center gap-0.5">
+                                    <Flame size={9} /> Sale
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                          <div className="p-2.5 flex-1 flex flex-col">
-                            <h4 className="font-bold text-xs text-slate-800 line-clamp-2 leading-snug mb-1 min-h-[32px] cursor-pointer" onClick={() => handleSendMessage(`Tôi muốn mua ${p.name}`)}>{p.name}</h4>
-                            <div className="flex items-center gap-1.5 mt-auto mb-2.5 flex-wrap">
-                              <span className="text-red-600 font-bold text-sm">
-                                {p.price ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price) : 'Liên hệ'}
-                              </span>
-                              {p.originalPrice && p.originalPrice > p.price && (
-                                <span className="text-slate-400 text-[10px] line-through font-medium">
-                                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.originalPrice)}
-                                </span>
-                              )}
+                              <div className="p-2 sm:p-2.5 flex-1 flex flex-col">
+                                <h4 
+                                  className="font-bold text-[11px] sm:text-xs text-slate-800 line-clamp-2 leading-snug mb-1 min-h-[26px] sm:min-h-[32px] cursor-pointer hover:text-red-600 transition-colors" 
+                                  onClick={() => { setIsOpen(false); router.push(dishUrl); }}
+                                >
+                                  {p.name}
+                                </h4>
+                                <div className="flex items-center gap-1 mt-auto mb-1.5 flex-wrap">
+                                  <span className="text-red-600 font-black text-xs sm:text-sm">
+                                    {p.price ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.price) : 'Liên hệ'}
+                                  </span>
+                                  {p.originalPrice && p.originalPrice > p.price && (
+                                    <span className="text-slate-400 text-[9px] sm:text-[10px] line-through font-medium">
+                                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(p.originalPrice)}
+                                    </span>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddToCart(JSON.stringify({ productId: p.id, quantity: 1 }), 'sugg-' + p.id)}
+                                  disabled={addingToCartId === 'sugg-' + p.id || isLoading}
+                                  className="w-full mb-1 flex items-center justify-center gap-1 py-1 sm:py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10.5px] sm:text-xs font-bold transition-colors disabled:opacity-70 active:scale-95 cursor-pointer"
+                                >
+                                  {addingToCartId === 'sugg-' + p.id ? <Loader2 size={11} className="animate-spin" /> : <ShoppingCart size={11} />}
+                                  Thêm vào giỏ
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsOpen(false);
+                                    router.push(dishUrl);
+                                  }}
+                                  className="w-full flex items-center justify-center gap-1 py-1 bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] sm:text-[11px] font-semibold transition-colors active:scale-95 cursor-pointer"
+                                >
+                                  <Store size={10} className="text-red-500" />
+                                  Xem chi nhánh
+                                </button>
+                              </div>
                             </div>
-                            <button
-                              onClick={() => handleAddToCart(JSON.stringify({ productId: p.id, quantity: 1 }), 'sugg-' + p.id)}
-                              disabled={addingToCartId === 'sugg-' + p.id || isLoading}
-                              className="w-full mb-1 flex items-center justify-center gap-1.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-70"
-                            >
-                              {addingToCartId === 'sugg-' + p.id ? <Loader2 size={12} className="animate-spin" /> : <ShoppingCart size={12} />}
-                              Thêm vào giỏ
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+                          );
+                        })}
                     </div>
                   </>
                 ) : (
@@ -1906,23 +2717,52 @@ export function FloatingChatbot() {
             </div>
           )}
 
-          {displayMessages.map((msg) => (
+          {displayMessages.map((msg, index) => {
+            const hasAction = Boolean(msg.actionType) && Boolean(msg.actionPayload);
+            const hasContent = typeof msg.content === 'string' && msg.content.trim().length > 0;
+            if (!hasContent && !hasAction) return null;
+            return (
             <div key={msg.id} className={`flex gap-2 sm:gap-3 ${msg.senderType === 'USER' ? 'flex-row-reverse' : 'justify-start'} animate-in slide-in-from-bottom-2 fade-in duration-300`}>
 
               {/* Avatar */}
               {!!msg.content && (
-                <div className="shrink-0 pt-1 hidden sm:block">
+                <div className="shrink-0 pt-0.5 sm:pt-1">
                   {msg.senderType === 'USER' ? (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-400 to-orange-500 text-white flex items-center justify-center shadow-md shadow-orange-500/20">
-                      <UserCircle size={18} />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-br from-red-600 to-rose-600 text-white flex items-center justify-center shadow-xs overflow-hidden">
+                      {user?.avatarUrl || user?.avatar ? (
+                        <img
+                          src={user.avatarUrl || user.avatar}
+                          alt={user.fullName || 'User'}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            const target = e.target as HTMLElement;
+                            target.style.display = 'none';
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('svg')) {
+                              parent.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-white"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>';
+                            }
+                          }}
+                        />
+                      ) : user?.fullName ? (
+                        <span className="text-[10px] sm:text-xs font-bold uppercase">{user.fullName.charAt(0)}</span>
+                      ) : (
+                        <User size={15} className="text-white" />
+                      )}
                     </div>
                   ) : msg.senderType === 'AI' ? (
-                    <div className="w-8 h-8 rounded-full bg-white shadow-md shadow-red-600/10 p-0.5">
-                      <img src="/avt_chatbot.gif" alt="AvoBOT" className="w-full h-full rounded-full object-cover" />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white shadow-xs border border-red-100 p-0.5 flex items-center justify-center shrink-0 overflow-hidden">
+                      <img
+                        src="/avt_chatbot.gif"
+                        alt="AvoBOT"
+                        className="w-full h-full rounded-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
                     </div>
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-slate-600 text-white flex items-center justify-center shadow-md">
-                      <Bot size={16} />
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-600 text-white flex items-center justify-center shadow-xs">
+                      <Bot size={15} />
                     </div>
                   )}
                 </div>
@@ -1987,21 +2827,46 @@ export function FloatingChatbot() {
                   </div>
                 )}
 
-                {msg.senderType !== 'SYSTEM' && msg.content && (
-                  <div
-                    className={`p-3.5 sm:p-4 text-[13.5px] sm:text-[14.5px] leading-relaxed max-w-full break-words whitespace-pre-wrap ${msg.senderType === 'USER'
-                      ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white rounded-3xl rounded-tr-sm shadow-md shadow-red-600/20'
-                      : 'bg-white/95 backdrop-blur-md border border-white/60 text-slate-800 rounded-3xl rounded-tl-sm shadow-[0_4px_15px_-5px_rgba(0,0,0,0.05)]'
-                      }`}
-                  >
-                    {msg.content.split('\n').map((line, i) => (
-                      <React.Fragment key={i}>
-                        {renderFormattedText(line)}
-                        {i !== msg.content.split('\n').length - 1 && <br />}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                )}
+                {msg.senderType !== 'SYSTEM' && (() => {
+                  const { cleanContent } = parseSuggestionsAndCleanContent(msg.content, msg.suggestedReplies);
+                  if (!cleanContent) return null;
+                  const isGpsLocationMsg = msg.senderType === 'USER' && (cleanContent.startsWith('[HỆ THỐNG:') || (cleanContent.includes('vĩ độ') && cleanContent.includes('kinh độ')));
+                  if (isGpsLocationMsg) {
+                    const coordsMatch = cleanContent.match(/vĩ độ\s*([-\d.]+)\s*,\s*kinh độ\s*([-\d.]+)/i);
+                    const lat = coordsMatch ? coordsMatch[1] : '';
+                    const lng = coordsMatch ? coordsMatch[2] : '';
+                    return (
+                      <div className="p-2.5 sm:p-3 bg-gradient-to-r from-rose-600 to-red-600 text-white rounded-2xl rounded-tr-xs shadow-xs flex items-center gap-2 text-xs sm:text-[13px] font-semibold max-w-full">
+                        <div className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center shrink-0">
+                          <MapPin className="w-3.5 h-3.5 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                          <div>Đã chia sẻ vị trí của tôi</div>
+                          {lat && lng && (
+                            <div className="text-[10px] text-rose-100 font-mono font-normal">
+                              Tọa độ: {lat}, {lng}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      className={`p-3.5 sm:p-4 text-[13.5px] sm:text-[14.5px] leading-relaxed max-w-full break-words whitespace-pre-wrap ${msg.senderType === 'USER'
+                        ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white rounded-3xl rounded-tr-sm shadow-md shadow-red-600/20'
+                        : 'bg-white/95 backdrop-blur-md border border-white/60 text-slate-800 rounded-3xl rounded-tl-sm shadow-[0_4px_15px_-5px_rgba(0,0,0,0.05)]'
+                        }`}
+                    >
+                      {cleanContent.split('\n').map((line, i) => (
+                        <React.Fragment key={i}>
+                          {renderFormattedText(line, (path) => { setIsOpen(false); router.push(path); })}
+                          {i !== cleanContent.split('\n').length - 1 && <br />}
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  );
+                })()}
 
                 {/* Rich UI Actions */}
                 {msg.senderType === 'AI' && msg.actionType === 'ADD_TO_CART' && msg.actionPayload && (
@@ -2021,14 +2886,14 @@ export function FloatingChatbot() {
                   return (
                     <div className="flex flex-col gap-2 w-full min-w-0">
                       {isSuggestion && branches?.length > 0 && (
-                        <div className="bg-orange-50 border border-orange-100 p-3 rounded-xl rounded-tl-sm text-[13px] text-orange-800 shadow-sm mx-1 mt-1">
+                        <div className="bg-orange-50 border border-orange-100 p-2.5 sm:p-3 rounded-xl rounded-tl-sm text-xs text-orange-800 shadow-xs mx-1 mt-1">
                           Món này hiện không có ở chi nhánh bạn chọn, nhưng có sẵn tại <b>{branches[0].name}</b>.
                           <button
                             onClick={() => {
                               localStorage.setItem('avora_branch_id', branches[0].id);
                               window.location.reload();
                             }}
-                            className="mt-2 w-full flex items-center justify-center gap-2 py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-md shadow-orange-500/20"
+                            className="mt-2 w-full flex items-center justify-center gap-1.5 py-1.5 sm:py-2 bg-orange-500 text-white font-bold rounded-lg hover:bg-orange-600 transition-colors shadow-xs text-xs"
                           >
                             Chuyển sang chi nhánh này
                           </button>
@@ -2036,37 +2901,58 @@ export function FloatingChatbot() {
                       )}
 
                       {validProducts.length > 0 && (
-                        <div className="flex gap-3 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-2 px-2 w-full max-w-full">
-                          {validProducts.map((product: any, idx: number) => (
-                            <div key={`${product.id || 'p'}-${idx}`} className="min-w-[150px] max-w-[150px] bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-shadow snap-start shrink-0 flex flex-col">
-                              <div className="w-full h-28 bg-slate-100 relative">
-                                <img src={product.imageUrl || product.images?.[0]?.url || 'https://via.placeholder.com/150'} alt={product.name} className="w-full h-full object-cover" />
-                              </div>
-                              <div className="p-2.5 flex-1 flex flex-col">
-                                <h4 className="font-bold text-xs text-slate-800 line-clamp-2 leading-snug mb-1 min-h-[32px]">{product.name}</h4>
-                                <div className="text-red-600 font-bold text-sm mt-auto mb-2.5">
-                                  {product.price ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price) : 'Liên hệ'}
+                        <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-3 pt-1.5 snap-x snap-mandatory [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden -mx-2 px-2 w-full max-w-full">
+                          {validProducts.map((product: any, idx: number) => {
+                            const categorySlug = product.category?.slug || product.categorySlug || (typeof product.category === 'string' ? product.category : null) || 'mon-an';
+                            const dishUrl = product.productUrl || (product.slug ? `/${categorySlug}/${product.slug}` : (product.id ? `/${categorySlug}/${product.id}` : '/menu'));
+                            return (
+                              <div key={`${product.id || 'p'}-${idx}`} className="min-w-[124px] max-w-[130px] sm:min-w-[150px] sm:max-w-[150px] bg-white border border-slate-100 rounded-xl overflow-hidden shadow-xs hover:shadow-md transition-shadow snap-start shrink-0 flex flex-col">
+                                <div 
+                                  className="w-full h-20 sm:h-28 bg-slate-100 relative cursor-pointer"
+                                  onClick={() => {
+                                    setIsOpen(false);
+                                    router.push(dishUrl);
+                                  }}
+                                >
+                                  <img src={product.imageUrl || product.images?.[0]?.url || 'https://via.placeholder.com/150'} alt={product.name} className="w-full h-full object-cover" />
                                 </div>
+                                <div className="p-2 sm:p-2.5 flex-1 flex flex-col">
+                                  <h4 
+                                    className="font-bold text-[11px] sm:text-xs text-slate-800 line-clamp-2 leading-snug mb-1 min-h-[26px] sm:min-h-[32px] cursor-pointer hover:text-red-600 transition-colors"
+                                    onClick={() => {
+                                      setIsOpen(false);
+                                      router.push(dishUrl);
+                                    }}
+                                  >
+                                    {product.name}
+                                  </h4>
+                                  <div className="text-red-600 font-black text-xs sm:text-sm mt-auto mb-1.5">
+                                    {product.price ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(product.price) : 'Liên hệ'}
+                                  </div>
 
-                                <button
-                                  onClick={() => handleAddToCart(JSON.stringify({ productId: product.id, quantity: 1 }), msg.id + '-' + product.id)}
-                                  disabled={addingToCartId === msg.id + '-' + product.id || isLoading}
-                                  className="w-full mb-1.5 flex items-center justify-center gap-1.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors disabled:opacity-70"
-                                >
-                                  {addingToCartId === msg.id + '-' + product.id ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-                                  Thêm vào giỏ
-                                </button>
+                                  <button
+                                    onClick={() => handleAddToCart(JSON.stringify({ productId: product.id, quantity: 1 }), msg.id + '-' + product.id)}
+                                    disabled={addingToCartId === msg.id + '-' + product.id || isLoading}
+                                    className="w-full mb-1 flex items-center justify-center gap-1 py-1 sm:py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] sm:text-xs font-bold transition-colors disabled:opacity-70 active:scale-95"
+                                  >
+                                    {addingToCartId === msg.id + '-' + product.id ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
+                                    Thêm vào giỏ
+                                  </button>
 
-                                <button
-                                  onClick={() => handleSendMessage(`Tư vấn cho tôi món ${product.name}`)}
-                                  disabled={isLoading}
-                                  className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 rounded-lg text-[11px] font-semibold transition-colors disabled:opacity-50"
-                                >
-                                  Tư vấn món này
-                                </button>
+                                  <button
+                                    onClick={() => {
+                                      setIsOpen(false);
+                                      router.push(dishUrl);
+                                    }}
+                                    className="w-full flex items-center justify-center gap-1 py-1 bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] sm:text-[11px] font-semibold transition-colors active:scale-95 cursor-pointer"
+                                  >
+                                    <Store size={10} className="text-red-500" />
+                                    Xem chi nhánh
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -2293,13 +3179,26 @@ export function FloatingChatbot() {
                 {msg.senderType === 'AI' && msg.actionType === 'CONFIRM_RESERVATION' && msg.actionPayload && (() => {
                   try {
                     const resData = JSON.parse(msg.actionPayload);
+                    if (!resData || !resData.previewToken || !resData.reservationDate || !resData.reservationTime) {
+                      return null;
+                    }
+                    const isObsoleteReservation = displayMessages.slice(index + 1).some(
+                      (laterMsg) => laterMsg.actionType === 'SHOW_RESERVATION_SUCCESS' || laterMsg.actionType === 'CONFIRM_RESERVATION'
+                    );
                     return (
-                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-rose-200 shadow-md flex flex-col gap-3">
-                        <div className="flex items-center gap-2 text-rose-600 font-bold border-b border-slate-100 pb-2.5">
-                          <BookOpen className="w-5 h-5" />
-                          <span>XÁC NHẬN ĐẶT BÀN</span>
+                      <div className={`w-full mt-3 p-4 bg-white rounded-2xl border shadow-md flex flex-col gap-3 text-xs ${isObsoleteReservation ? 'border-slate-200 bg-slate-50/50 opacity-80' : 'border-rose-200'}`}>
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                          <div className="flex items-center gap-2 text-rose-600 font-bold">
+                            <BookOpen className="w-4 h-4" />
+                            <span>XÁC NHẬN ĐẶT BÀN</span>
+                          </div>
+                          {isObsoleteReservation && (
+                            <span className="text-[10px] bg-slate-200 text-slate-600 px-2.5 py-0.5 rounded-full font-bold">
+                              Đã xác nhận
+                            </span>
+                          )}
                         </div>
-                        <div className="flex flex-col gap-2 text-sm text-slate-700">
+                        <div className="flex flex-col gap-2 text-slate-700">
                           <div className="flex justify-between">
                             <span className="text-slate-500">Chi nhánh:</span>
                             <span className="font-bold text-slate-900">{resData.branchName || 'Chi nhánh Avora'}</span>
@@ -2321,22 +3220,106 @@ export function FloatingChatbot() {
                             <span className="font-medium text-slate-900">{resData.customerName} ({resData.customerPhone})</span>
                           </div>
                           {resData.specialRequests && (
-                            <div className="flex justify-between text-xs text-amber-700 bg-amber-50 p-2 rounded-lg">
+                            <div className="flex justify-between text-[11px] text-amber-700 bg-amber-50 p-2 rounded-lg">
                               <span>Ghi chú: {resData.specialRequests}</span>
                             </div>
                           )}
                         </div>
-                        <button
-                          onClick={() => confirmChatTransaction(
-                            'RESERVATION',
-                            resData.previewToken,
-                            'Tôi xác nhận đặt bàn thông tin trên, hãy tạo đặt bàn giúp tôi.',
+                        {!isObsoleteReservation ? (
+                          <button
+                            onClick={() => confirmChatTransaction(
+                              'RESERVATION',
+                              resData.previewToken,
+                              'Tôi xác nhận đặt bàn thông tin trên, hãy tạo đặt bàn giúp tôi.',
+                            )}
+                            disabled={isLoading}
+                            className="mt-1 w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+                          >
+                            <Sparkles size={15} /> Xác nhận đặt bàn ngay
+                          </button>
+                        ) : (
+                          <div className="w-full py-2 bg-emerald-50 text-emerald-700 rounded-xl text-center font-bold text-xs flex items-center justify-center gap-1.5 border border-emerald-200">
+                            <CheckCircle2 className="w-4 h-4" /> Đặt bàn đã được gửi thành công
+                          </div>
+                        )}
+                      </div>
+                    );
+                  } catch (e) {
+                    return null;
+                  }
+                })()}
+
+                {/* SHOW_RESERVATION_SUCCESS Card */}
+                {msg.senderType === 'AI' && msg.actionType === 'SHOW_RESERVATION_SUCCESS' && msg.actionPayload && (() => {
+                  try {
+                    const resData = JSON.parse(msg.actionPayload);
+                    return (
+                      <div className="w-full mt-3 p-4 bg-white rounded-2xl border border-emerald-200 shadow-md flex flex-col gap-3 text-xs animate-in fade-in duration-300">
+                        <div className="flex items-center justify-between border-b border-emerald-100 pb-2.5">
+                          <div className="flex items-center gap-2 text-emerald-600 font-bold">
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>ĐẶT BÀN THÀNH CÔNG</span>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                            Đã giữ chỗ
+                          </span>
+                        </div>
+                        <div className="flex flex-col gap-2 text-slate-700">
+                          <div className="flex justify-between items-center bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                            <span className="text-slate-500 font-medium">Mã đặt bàn:</span>
+                            <span className="font-mono font-extrabold text-red-600 text-sm">{resData.reservationCode}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Chi nhánh:</span>
+                            <span className="font-bold text-slate-900">{resData.branchName || 'Chi nhánh Avora'}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Thời gian:</span>
+                            <span className="font-semibold text-slate-900">
+                              {resData.reservationTime} • {resData.reservationDate}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Số lượng:</span>
+                            <span className="font-bold text-slate-900">{resData.partySize} khách</span>
+                          </div>
+                          {resData.customerName && (
+                            <div className="flex justify-between">
+                              <span className="text-slate-500">Khách hàng:</span>
+                              <span className="font-medium text-slate-900">
+                                {resData.customerName} {resData.customerPhone ? `(${resData.customerPhone})` : ''}
+                              </span>
+                            </div>
                           )}
-                          disabled={isLoading}
-                          className="mt-1 w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl shadow-md shadow-rose-600/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
+
+                          {Array.isArray(resData.preOrderedItems) && resData.preOrderedItems.length > 0 && (
+                            <div className="mt-1 pt-2 border-t border-slate-100">
+                              <div className="flex justify-between items-center font-bold text-slate-900 mb-1.5">
+                                <span>Món đặt trước ({resData.preOrderedItems.length} món):</span>
+                                <span className="text-red-600 font-extrabold">
+                                  {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(resData.preOrderTotal || 0)}
+                                </span>
+                              </div>
+                              <div className="space-y-1 bg-slate-50 p-2 rounded-xl border border-slate-100 text-[11px]">
+                                {resData.preOrderedItems.map((item: any, iIdx: number) => (
+                                  <div key={iIdx} className="flex justify-between text-slate-600">
+                                    <span className="truncate max-w-[180px]">{item.name} x{item.quantity}</span>
+                                    <span className="font-medium text-slate-800">
+                                      {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.lineTotal || (item.price * item.quantity))}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        <Link
+                          href={`/profile/reservations/${resData.reservationCode}${resData.customerPhone ? `?phone=${encodeURIComponent(resData.customerPhone)}` : ''}`}
+                          className="mt-1 w-full py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 text-center transition-all flex items-center justify-center gap-2"
                         >
-                          <Sparkles size={16} /> Xác nhận đặt bàn ngay
-                        </button>
+                          <QrCode className="w-4 h-4" /> Xem phiếu đặt bàn & Mã QR
+                        </Link>
                       </div>
                     );
                   } catch (e) {
@@ -2349,18 +3332,28 @@ export function FloatingChatbot() {
                   try {
                     const previewData = JSON.parse(msg.actionPayload);
                     const formatter = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+                    const isObsoleteOrder = displayMessages.slice(index + 1).some(
+                      (laterMsg) => laterMsg.actionType === 'SHOW_ORDER_SUCCESS' || laterMsg.actionType === 'ORDER_PREVIEW'
+                    );
                     return (
-                      <div className="w-full mt-2.5 p-3.5 bg-white rounded-2xl border border-red-200 shadow-md flex flex-col gap-2.5 text-xs animate-in fade-in duration-300">
+                      <div className={`w-full mt-2.5 p-3.5 bg-white rounded-2xl border shadow-md flex flex-col gap-2.5 text-xs animate-in fade-in duration-300 ${isObsoleteOrder ? 'border-slate-200 bg-slate-50/50 opacity-80' : 'border-red-200'}`}>
                         <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                           <div className="flex items-center gap-1.5 text-red-600 font-black tracking-wide uppercase text-[11px] sm:text-xs">
                             <ShoppingCart className="w-4 h-4" />
                             <span>Xác nhận đơn hàng</span>
                           </div>
-                          {previewData.branchName && (
-                            <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded-full font-bold truncate max-w-[150px]">
-                              {previewData.branchName}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1.5">
+                            {isObsoleteOrder && (
+                              <span className="text-[9px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full font-bold">
+                                Đã chốt đơn
+                              </span>
+                            )}
+                            {previewData.branchName && (
+                              <span className="text-[10px] bg-red-50 text-red-700 px-2 py-0.5 rounded-full font-bold truncate max-w-[150px]">
+                                {previewData.branchName}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Danh sách món ăn - Siêu nhỏ gọn */}
@@ -2442,15 +3435,77 @@ export function FloatingChatbot() {
                           </div>
                         )}
 
-                        {/* Thông tin nhận hàng */}
-                        <div className="bg-slate-50 p-2 rounded-xl text-[11px] space-y-1 text-slate-600 border border-slate-100">
-                          <div className="flex items-center gap-1.5">
-                            <MapPin size={12} className="text-red-500 shrink-0" />
-                            <span className="truncate"><b>{previewData.fulfillmentType === 'TAKEAWAY' ? 'Mang về tại:' : 'Giao hàng:'}</b> {previewData.deliveryAddress || previewData.branchName}</span>
+                                                {/* Voucher & Khuyến mãi - Tối ưu Mobile không bị cụt */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 p-2 sm:p-2.5 bg-red-50/70 border border-red-200/90 rounded-xl text-[11px]">
+                          <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                            <Ticket size={13} className="text-red-600 shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <span className="font-semibold text-slate-800">Mã ưu đãi: </span>
+                              {previewData.discountVoucherCode || previewData.shippingVoucherCode ? (
+                                <span className="font-mono font-bold text-red-600 break-words">
+                                  {[previewData.discountVoucherCode, previewData.shippingVoucherCode].filter(Boolean).join(' + ')}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 italic">Chưa áp dụng voucher</span>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5">
-                            <Clock size={12} className="text-blue-500 shrink-0" />
-                            <span><b>Khung giờ:</b> {previewData.deliverySlotTime || previewData.scheduledTime || 'Giao sớm nhất'}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleSendMessage("Gợi ý các mã giảm giá và voucher hời nhất cho đơn hàng này của tôi")}
+                            className="self-end sm:self-auto px-2 py-0.5 rounded-lg font-bold text-[10px] bg-white border border-red-300 text-red-700 hover:bg-red-100/60 transition-all shrink-0 shadow-2xs cursor-pointer"
+                          >
+                            {previewData.discountVoucherCode || previewData.shippingVoucherCode ? 'Đổi mã' : 'Áp dụng voucher'}
+                          </button>
+                        </div>
+
+                        {/* Thông tin nhận hàng - Tối ưu Mobile thấy trọn vẹn địa chỉ và khung giờ */}
+                        <div className="bg-slate-50 p-2.5 rounded-xl text-[11px] space-y-2 text-slate-600 border border-slate-200/80 shadow-2xs">
+                          {/* Full Address Row */}
+                          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-1.5 pb-2 border-b border-slate-200/60">
+                            <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                              <MapPin size={13} className="text-red-500 shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <span className="font-bold text-slate-900 block text-[10.5px] uppercase tracking-wide text-rose-700">
+                                  {previewData.fulfillmentType === 'TAKEAWAY' ? 'Mang về tại chi nhánh:' : 'Địa chỉ giao hàng tận nơi:'}
+                                </span>
+                                <p className="text-slate-800 font-medium break-words leading-relaxed mt-0.5 text-[11px] sm:text-xs">
+                                  {previewData.deliveryAddress || previewData.branchName}
+                                </p>
+                                {previewData.recipientName && (
+                                  <p className="text-[10px] text-slate-500 mt-0.5">
+                                    Người nhận: <b>{previewData.recipientName}</b> {previewData.recipientPhone ? `(${previewData.recipientPhone})` : ''}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSendMessage("Tôi muốn thay đổi địa chỉ giao hàng")}
+                              className="self-end sm:self-start text-red-600 hover:text-red-700 font-bold text-[10px] px-2 py-1 rounded-md border border-red-200 bg-white hover:bg-red-50 transition-colors shrink-0 shadow-2xs cursor-pointer"
+                            >
+                              Đổi địa chỉ
+                            </button>
+                          </div>
+
+                          {/* Delivery Slot Row */}
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                              <Clock size={13} className="text-blue-500 shrink-0" />
+                              <div className="min-w-0 flex-1">
+                                <span className="text-slate-500">Khung giờ giao: </span>
+                                <span className="font-bold text-slate-800 break-words">
+                                  {previewData.deliverySlotTime || previewData.scheduledTime || 'Giao sớm nhất (30-45 phút)'}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSendMessage("Tôi muốn chọn khung giờ giao hàng")}
+                              className="text-blue-600 hover:text-blue-700 font-bold text-[10px] px-2 py-1 rounded-md border border-blue-200 bg-white hover:bg-blue-50 transition-colors shrink-0 shadow-2xs cursor-pointer"
+                            >
+                              Đổi giờ
+                            </button>
                           </div>
                         </div>
 
@@ -2517,29 +3572,39 @@ export function FloatingChatbot() {
                           )}
                         </div>
 
-                        <button
-                          onClick={() => {
-                            const hasSlot = Boolean(previewData.operatingSlotId || previewData.deliverySlotTime);
-                            if (!hasSlot) {
-                              toast.error("Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn!");
-                              handleSendMessage("Tôi muốn chọn khung giờ giao hàng");
-                              return;
-                            }
-                            const chosenMethod = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
-                            const chosenMethodName = previewData.availablePaymentMethods?.find((m: any) => m.code === chosenMethod)?.name || chosenMethod;
-                            confirmChatTransaction(
-                              'ORDER',
-                              previewData.previewToken,
-                              `Tôi xác nhận đơn hàng trên với phương thức thanh toán [${chosenMethodName}], hãy tạo đơn giúp tôi.`,
-                              chosenMethod,
-                              previewData.pointsUsed > 0,
-                            );
-                          }}
-                          disabled={isLoading}
-                          className="mt-1 w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] text-xs"
-                        >
-                          <CreditCard size={14} /> Xác nhận đặt đơn ngay
-                        </button>
+                        {isObsoleteOrder ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="mt-1 w-full py-2 bg-slate-200 text-slate-500 font-bold rounded-xl cursor-not-allowed flex items-center justify-center gap-1.5 text-xs"
+                          >
+                            <Check size={14} /> Đơn hàng đã được tạo thành công
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              const hasSlot = Boolean(previewData.operatingSlotId || previewData.deliverySlotTime);
+                              if (!hasSlot) {
+                                toast.error("Vui lòng chọn khung giờ giao hàng trước khi xác nhận đơn!");
+                                handleSendMessage("Tôi muốn chọn khung giờ giao hàng");
+                                return;
+                              }
+                              const chosenMethod = selectedPaymentMethods[msg.id] || previewData.paymentMethod || 'COD';
+                              const chosenMethodName = previewData.availablePaymentMethods?.find((m: any) => m.code === chosenMethod)?.name || chosenMethod;
+                              confirmChatTransaction(
+                                'ORDER',
+                                previewData.previewToken,
+                                `Tôi xác nhận đơn hàng trên với phương thức thanh toán [${chosenMethodName}], hãy tạo đơn giúp tôi.`,
+                                chosenMethod,
+                                previewData.pointsUsed > 0,
+                              );
+                            }}
+                            disabled={isLoading}
+                            className="mt-1 w-full py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl shadow-md shadow-red-600/20 transition-all flex items-center justify-center gap-1.5 active:scale-[0.98] text-xs cursor-pointer"
+                          >
+                            <CreditCard size={14} /> Xác nhận đặt đơn ngay
+                          </button>
+                        )}
                       </div>
                     );
                   } catch (e) {
@@ -2577,8 +3642,8 @@ export function FloatingChatbot() {
                           disabled={isLoading}
                           className="w-full py-1.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-semibold text-xs rounded-lg shadow-xs transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]"
                         >
-                          <Zap size={13} className="shrink-0" />
-                          <span>⚡ Giao ngay (ASAP - Càng sớm càng tốt)</span>
+                          <Zap size={13} className="shrink-0 text-amber-200" />
+                          <span>Giao ngay (ASAP - Càng sớm càng tốt)</span>
                         </button>
 
                         {/* Lưới các khung giờ cụ thể */}
@@ -2614,49 +3679,38 @@ export function FloatingChatbot() {
                   }
                 })()}
 
-                {/* Request Location */}
-                {msg.senderType === 'AI' && msg.actionType === 'REQUEST_LOCATION' && (
-                  <div className="mt-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl p-4 text-emerald-900 shadow-sm flex flex-col items-center justify-center gap-3 animate-in fade-in duration-300">
-                    <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 shadow-inner">
-                      <MapPin size={24} className="animate-pulse" />
-                    </div>
-                    <div className="text-center space-y-1">
-                      <p className="text-sm font-bold text-slate-800">
-                        {(() => {
-                          try {
-                            const payload = msg.actionPayload ? JSON.parse(msg.actionPayload) : {};
-                            if (payload.reason === 'FIND_NEAREST_BRANCH') return 'Tìm chi nhánh gần bạn nhất';
-                            return 'Xác nhận vị trí nhận hàng';
-                          } catch {
-                            return 'Xác nhận vị trí nhận hàng';
-                          }
-                        })()}
-                      </p>
-                      <p className="text-xs text-slate-600">
-                        {(() => {
-                          try {
-                            const payload = msg.actionPayload ? JSON.parse(msg.actionPayload) : {};
-                            if (payload.reason === 'FIND_NEAREST_BRANCH') return 'Bấm nút bên dưới để Avora tự động định vị và tìm chi nhánh gần bạn nhất kèm đường đi.';
-                            return 'Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.';
-                          } catch {
-                            return 'Bấm nút bên dưới để Avora tự động định vị địa chỉ thực tế và tính phí giao hàng chính xác cho bạn.';
-                          }
-                        })()}
-                      </p>
-                    </div>
-                    <button
-                      disabled={sharedLocationIds.includes(msg.id) || loadingLocationIds.includes(msg.id) || isLoading || isLocating}
-                      onClick={() => handleShareLocation(msg.id)}
-                      className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 active:scale-95 text-white font-bold py-2.5 px-6 rounded-xl text-sm transition-all w-full flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-70 disabled:active:scale-100 disabled:cursor-not-allowed"
-                    >
-                      {sharedLocationIds.includes(msg.id) ? (
-                        "✓ Đã chia sẻ vị trí thành công"
-                      ) : (loadingLocationIds.includes(msg.id) || isLocating ? (
-                        <><Loader2 size={16} className="animate-spin" /> Đang định vị GPS...</>
-                      ) : (
-                        "📍 Chia sẻ vị trí của tôi"
-                      ))}
-                    </button>
+                {/* Interactive Branch Locator + 7s Auto-Fallback + Embedded Google Map */}
+                {msg.senderType === 'AI' && (msg.actionType === 'REQUEST_LOCATION' || msg.actionType === 'SHOW_MAP_LINK') && (
+                  <div className="w-full">
+                    <BranchLocationMapCard
+                      actionType={msg.actionType}
+                      actionPayload={msg.actionPayload}
+                      isHistorical={Boolean((msg as any).isHistorical)}
+                      compact={true}
+                      selectedBranchId={currentBranchId || undefined}
+                      onLocationShared={(lat, lng) => {
+                        if (isVoiceMode && socketRef.current) {
+                          socketRef.current.emit('client_content', {
+                            turns: [{ role: 'user', parts: [{ text: `[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lng}]` }] }],
+                            turnComplete: true,
+                          });
+                        } else {
+                          handleSendMessage(`[HỆ THỐNG: Vị trí của khách hàng là vĩ độ ${lat}, kinh độ ${lng}]`);
+                        }
+                      }}
+                      onSelectBranch={(bId, bName) => {
+                        if (changeBranch) changeBranch(bId);
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('currentBranchId', bId);
+                          localStorage.setItem('selectedBranchId', bId);
+                          window.dispatchEvent(new CustomEvent('branch-changed', { detail: { branchId: bId } }));
+                        }
+                        toast.success(`Đã chọn chi nhánh ${bName}`);
+                      }}
+                      onBookTable={(bName) => {
+                        handleSendMessage(`Tôi muốn đặt bàn tại chi nhánh ${bName}`);
+                      }}
+                    />
                   </div>
                 )}
 
@@ -2714,25 +3768,16 @@ export function FloatingChatbot() {
                 )}
               </div>
             </div>
-          ))}
+            );
+          })}
 
-          {/* Typing Indicator */}
+          {/* AI Analysis Progress Indicator */}
           {isLoading && (
-            <div className="flex gap-3 justify-start">
-              <div className="shrink-0 pt-1">
-                <div className="w-8 h-8 rounded-full bg-white shadow-md shadow-red-600/10 p-0.5">
-                  <img src="/avt_chatbot.gif" alt="AvoBOT" className="w-full h-full rounded-full object-cover" />
-                </div>
-              </div>
-              <div className="bg-white border border-slate-100 text-slate-500 p-3.5 rounded-2xl rounded-tl-sm shadow-sm max-w-[80%] flex flex-col gap-2">
-                <span className="text-xs font-medium text-slate-400">AvoBOT đang suy nghĩ</span>
-                <div className="flex gap-1.5 items-center h-2">
-                  <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-bounce"></div>
-                </div>
-              </div>
-            </div>
+            <AiAnalysisProgress
+              userQuery={messages.filter(m => m.senderType === 'USER').slice(-1)[0]?.content}
+              cartCount={cartItems.length}
+              compact={false}
+            />
           )}
           <div ref={messagesEndRef} />
         </div>
@@ -2787,10 +3832,10 @@ export function FloatingChatbot() {
                   onClick={() => {
                     if (suggestion.action === 'ADD_ALL' && lastMsg?.actionPayload) {
                       handleAddAllToCart(lastMsg.actionPayload, lastMsg.id);
-                    } else if (suggestion.action === 'CHECK_CART') {
-                      handleCheckCart();
+                    } else if (suggestion.action === 'CHECK_CART' || suggestion.text.toLowerCase().includes('giỏ hàng')) {
+                      setShowCartDrawer(true);
                     } else if (suggestion.action === 'VIEW_CART') {
-                      window.location.href = '/checkout';
+                      setShowCartDrawer(true);
                     } else {
                       handleSendMessage(suggestion.text);
                     }
@@ -2816,11 +3861,25 @@ export function FloatingChatbot() {
           {/* Action Menu Popover */}
           {isActionMenuOpen && (
             <div className="absolute bottom-[calc(100%-8px)] right-4 mb-3 bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.15)] border border-slate-100 p-2 z-[10001] w-64 animate-in slide-in-from-bottom-2 fade-in duration-200">
-              <button onClick={() => { setIsActionMenuOpen(false); handleDeleteHistory(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
-                <User size={18} className="text-slate-500" /> Đổi tính cách Avora
+              {user && (
+                <>
+                  <button onClick={() => { setIsActionMenuOpen(false); handleNewSession(); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
+                    <Plus size={18} className="text-red-600" /> Cuộc trò chuyện mới
+                  </button>
+                  <button onClick={() => { setIsActionMenuOpen(false); fetchSessions(); setShowHistoryModal(true); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
+                    <History size={18} className="text-amber-600" /> Lịch sử trò chuyện ({sessions.length})
+                  </button>
+                </>
+              )}
+              <button onClick={() => { setIsActionMenuOpen(false); setShowCartDrawer(true); }} className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
+                <span className="flex items-center gap-3"><ShoppingCart size={18} className="text-red-600" /> Giỏ hàng hiện tại</span>
+                {cartItems.length > 0 && <span className="bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">{cartItems.length}</span>}
               </button>
-              <button onClick={() => { setIsActionMenuOpen(false); setIsAudioEnabled(!isAudioEnabled); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
-                <VolumeX size={18} className={isAudioEnabled ? "text-red-500" : "text-slate-500"} /> {isAudioEnabled ? "Tắt đọc văn bản" : "Bật đọc văn bản"}
+              <button onClick={() => { setIsActionMenuOpen(false); setShowShareModal(true); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
+                <Share2 size={18} className="text-blue-600" /> Chia sẻ đoạn chat
+              </button>
+              <button onClick={() => { setIsActionMenuOpen(false); setIsPersonalityModalOpen(true); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
+                <User size={18} className="text-slate-500" /> Đổi tính cách Avora
               </button>
               <button onClick={() => { setIsActionMenuOpen(false); window.open('/', '_blank'); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors">
                 <HelpCircle size={18} className="text-slate-500" /> Trung tâm hỗ trợ
@@ -2831,10 +3890,14 @@ export function FloatingChatbot() {
               <button onClick={() => { setIsActionMenuOpen(false); setIsExpanded(!isExpanded); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 rounded-xl text-[13.5px] font-semibold text-slate-700 transition-colors hidden sm:flex">
                 <Maximize2 size={18} className="text-slate-500" /> {isExpanded ? "Thu nhỏ cửa sổ" : "Mở rộng toàn màn hình"}
               </button>
-              <div className="h-px bg-slate-100 my-1.5 mx-2"></div>
-              <button onClick={handleDeleteHistory} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-red-50 rounded-xl text-[13.5px] font-bold text-red-600 transition-colors">
-                <Trash2 size={18} /> Xóa lịch sử Chat
-              </button>
+              {user && (
+                <>
+                  <div className="h-px bg-slate-100 my-1.5 mx-2"></div>
+                  <button onClick={handleDeleteHistory} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-red-50 rounded-xl text-[13.5px] font-bold text-red-600 transition-colors">
+                    <Trash2 size={18} /> Xóa lịch sử Chat
+                  </button>
+                </>
+              )}
               <div className="h-px bg-slate-100 my-1.5 mx-2"></div>
               <button onClick={() => { setIsActionMenuOpen(false); setIsInfoModalOpen(true); }} className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-blue-50 rounded-xl text-[13.5px] font-semibold text-blue-600 transition-colors">
                 <Info size={18} /> Thông tin về AvoBOT
@@ -2905,6 +3968,89 @@ export function FloatingChatbot() {
         </div>
       </div>
 
+      {/* Personality Selector Modal */}
+      {isPersonalityModalOpen && (
+        <div className="fixed inset-0 z-[10002] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-sm flex flex-col shadow-2xl p-5 relative animate-in zoom-in-95 duration-200 border border-slate-100">
+            <button
+              onClick={() => setIsPersonalityModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors z-10 cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="text-center mb-4 shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-400 text-white flex items-center justify-center mx-auto mb-2 shadow-md shadow-orange-500/20 text-2xl">
+                🎭
+              </div>
+              <h3 className="text-lg font-black text-slate-800">Đổi tính cách AvoBOT</h3>
+              <p className="text-xs text-slate-500 mt-0.5">Tùy biến phong cách phản hồi theo gu của bạn</p>
+            </div>
+
+            <div className="space-y-2 mb-4">
+              {[
+                { id: 'Thân thiện', name: 'Thân thiện', icon: '😊', desc: 'Ân cần, nhiệt tình, ấm áp và chu đáo như người nhà' },
+                { id: 'Chuyên nghiệp', name: 'Chuyên nghiệp', icon: '👔', desc: 'Lịch thiệp, chuẩn mực, ngắn gọn và súc tích' },
+                { id: 'Hài hước', name: 'Hài hước', icon: '😄', desc: 'Dí dỏm, vui nhộn, mang lại nụ cười sảng khoái' },
+                { id: 'Nhanh gọn', name: 'Nhanh gọn', icon: '⚡', desc: 'Tập trung chốt đơn, siêu tốc độ và trực diện' },
+              ].map((p) => {
+                const isSelected = personality === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => {
+                      setPersonality(p.id);
+                      localStorage.setItem('avora_chat_personality', p.id);
+                      setMessages((prev) => [
+                        ...prev,
+                        {
+                          id: `sys-ack-${Date.now()}`,
+                          sessionId: sessionId || "temp-session",
+                          senderType: "SYSTEM",
+                          content: `✨ Đã chuyển tính cách AvoBOT sang "${p.name}". Em đã sẵn sàng phục vụ theo phong cách mới!`,
+                          actionType: null,
+                          actionPayload: null,
+                          createdAt: new Date().toISOString(),
+                        },
+                      ]);
+                      toast.success(`Đã đổi tính cách sang "${p.name}"`);
+                      setIsPersonalityModalOpen(false);
+                    }}
+                    className={`w-full p-3 rounded-2xl border text-left flex items-start gap-3 transition-all cursor-pointer ${
+                      isSelected
+                        ? 'border-red-500 bg-red-50/70 shadow-xs'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span className="text-2xl shrink-0 mt-0.5">{p.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <span className={`font-bold text-sm ${isSelected ? 'text-red-600' : 'text-slate-800'}`}>
+                          {p.name}
+                        </span>
+                        {isSelected && (
+                          <span className="text-[10px] font-black uppercase tracking-wider bg-red-600 text-white px-2 py-0.5 rounded-full">
+                            Đang dùng
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-500 mt-0.5 leading-snug">{p.desc}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setIsPersonalityModalOpen(false)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all text-xs cursor-pointer"
+            >
+              Đóng
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Info Modal */}
       {isInfoModalOpen && (
         <div className="fixed inset-0 z-[10002] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2953,6 +4099,104 @@ export function FloatingChatbot() {
                 Đã hiểu
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Conversation Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-[10002] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-slate-100 relative space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                  <Share2 size={16} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900">Chia sẻ cuộc trò chuyện</h4>
+                  <span className="text-[11px] text-slate-400 block">Tạo liên kết xem lại phiên chat</span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setShowShareModal(false); setGeneratedShareUrl(null); }}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Cảnh báo bảo mật quyền riêng tư */}
+            <div className="bg-amber-50/90 border border-amber-200/90 rounded-2xl p-3 text-amber-900 text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800">
+                <Lock size={13} className="text-amber-600" />
+                Bảo vệ thông tin cá nhân
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Đoạn chat được chia sẻ sẽ tự động che số điện thoại (ví dụ: <strong className="font-mono text-slate-800">083*****52</strong>) và địa chỉ nhà (ví dụ: <strong className="font-mono text-slate-800">***, Phường Ba Đình, Hà Nội</strong>) để đảm bảo quyền riêng tư của bạn.
+              </p>
+            </div>
+
+            {/* Thời hạn liên kết */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">Thời hạn liên kết tồn tại:</label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[
+                  { id: '1h', label: '1 Giờ' },
+                  { id: '24h', label: '24 Giờ' },
+                  { id: '7d', label: '7 Ngày' },
+                  { id: 'permanent', label: 'Vô hạn' },
+                ].map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setShareDuration(opt.id)}
+                    className={`py-1.5 px-1 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      shareDuration === opt.id
+                        ? 'bg-red-50 border-red-500 text-red-600 shadow-xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Nút tạo link hoặc hiển thị kết quả */}
+            {generatedShareUrl ? (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedShareUrl}
+                    className="bg-transparent text-xs text-slate-700 font-mono flex-1 outline-none truncate"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedShareUrl);
+                      toast.success('Đã sao chép liên kết chia sẻ!');
+                    }}
+                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Copy size={12} /> Sao chép
+                  </button>
+                </div>
+                <p className="text-[10px] text-emerald-600 text-center font-semibold">✓ Liên kết đã sẵn sàng để gửi cho bạn bè!</p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleGenerateShareLink}
+                disabled={isGeneratingShare}
+                className="w-full py-2.5 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold rounded-xl text-xs shadow-md shadow-red-600/20 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 transition-all active:scale-98"
+              >
+                {isGeneratingShare ? <Loader2 size={14} className="animate-spin" /> : <Share2 size={14} />}
+                <span>Tạo liên kết chia sẻ an toàn</span>
+              </button>
+            )}
           </div>
         </div>
       )}

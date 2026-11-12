@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { BranchScopeType, ScopeType } from '@prisma/client';
-import { SYSTEM_ROLE_CODES } from '../constants/permissions-registry';
+import { SYSTEM_ROLE_CODES, PERMISSIONS_CATALOG } from '../constants/permissions-registry';
 
 export interface UserBranchPermission {
   isGlobal: boolean;
@@ -65,8 +65,16 @@ export class AuthorizationService {
       return cached;
     }
 
-    // 1. Tải tất cả các Role Assignment đang active của user
-    const assignments = await this.prisma.userRoleAssignment.findMany({
+    // 1. Tải thông tin người dùng từ database để kiểm tra role trực tiếp
+    const userRecord = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, role: true, branchId: true },
+    });
+
+    const isSystemAdminByRole = userRecord?.role === 'ADMIN';
+
+    // 2. Tải tất cả các Role Assignment đang active của user
+    let assignments = await this.prisma.userRoleAssignment.findMany({
       where: {
         userId,
         isActive: true,
@@ -92,7 +100,68 @@ export class AuthorizationService {
       },
     });
 
-    // 2. Tải toàn bộ chi nhánh hiện có để hỗ trợ ALL_BRANCHES
+    // Auto-heal: Nếu user có role === 'ADMIN' trong bảng User nhưng chưa có UserRoleAssignment role ADMIN
+    const hasAdminAssignment = assignments.some((a) => a.role.code === SYSTEM_ROLE_CODES.ADMIN);
+    if (isSystemAdminByRole && !hasAdminAssignment) {
+      try {
+        const adminRole = await this.prisma.accessRole.findUnique({
+          where: { code: SYSTEM_ROLE_CODES.ADMIN },
+        });
+        if (adminRole) {
+          await this.prisma.userRoleAssignment.upsert({
+            where: {
+              userId_roleId: {
+                userId,
+                roleId: adminRole.id,
+              },
+            },
+            create: {
+              userId,
+              roleId: adminRole.id,
+              branchScope: BranchScopeType.ALL_BRANCHES,
+              isPrimary: true,
+              isActive: true,
+            },
+            update: {
+              branchScope: BranchScopeType.ALL_BRANCHES,
+              isPrimary: true,
+              isActive: true,
+            },
+          });
+
+          // Nạp lại assignments sau khi auto-heal
+          assignments = await this.prisma.userRoleAssignment.findMany({
+            where: {
+              userId,
+              isActive: true,
+              role: { isActive: true },
+            },
+            include: {
+              role: {
+                include: {
+                  permissions: {
+                    include: {
+                      permission: true,
+                    },
+                  },
+                },
+              },
+              branches: {
+                include: {
+                  branch: {
+                    select: { id: true, name: true, branchCode: true },
+                  },
+                },
+              },
+            },
+          });
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to auto-heal admin role assignment for user ${userId}:`, e);
+      }
+    }
+
+    // 3. Tải toàn bộ chi nhánh hiện có để hỗ trợ ALL_BRANCHES
     const allBranches = await this.prisma.branch.findMany({
       select: { id: true },
     });
@@ -100,11 +169,13 @@ export class AuthorizationService {
 
     const permissionMap: Record<string, { isGlobal: boolean; branchSet: Set<string> }> = {};
     const roleCodes: string[] = [];
-    let isAdmin = false;
+    let isAdmin = isSystemAdminByRole;
 
     for (const assignment of assignments) {
       const role = assignment.role;
-      roleCodes.push(role.code);
+      if (!roleCodes.includes(role.code)) {
+        roleCodes.push(role.code);
+      }
 
       if (role.code === SYSTEM_ROLE_CODES.ADMIN) {
         isAdmin = true;
@@ -144,12 +215,25 @@ export class AuthorizationService {
       }
     }
 
+    // Nếu là Admin, đảm bảo có toàn bộ quyền trong PERMISSIONS_CATALOG
+    if (isAdmin) {
+      if (!roleCodes.includes(SYSTEM_ROLE_CODES.ADMIN)) {
+        roleCodes.unshift(SYSTEM_ROLE_CODES.ADMIN);
+      }
+      for (const perm of PERMISSIONS_CATALOG) {
+        permissionMap[perm.key] = {
+          isGlobal: true,
+          branchSet: new Set(allBranchIds),
+        };
+      }
+    }
+
     // Chuyển Set sang Array
     const finalPermissions: Record<string, UserBranchPermission> = {};
     for (const [key, value] of Object.entries(permissionMap)) {
       finalPermissions[key] = {
         isGlobal: value.isGlobal || isAdmin,
-        branchIds: Array.from(value.branchSet),
+        branchIds: isAdmin ? allBranchIds : Array.from(value.branchSet),
       };
     }
 
@@ -241,6 +325,7 @@ export class AuthorizationService {
         fullName: true,
         avatarUrl: true,
         branchId: true,
+        role: true,
       },
     });
 
@@ -268,8 +353,30 @@ export class AuthorizationService {
       select: { id: true, name: true, branchCode: true },
     });
 
-    const primaryAssignment = assignments.find((a) => a.isPrimary) || assignments[0];
+    const isSystemAdmin = effective.isAdmin || user.role === 'ADMIN';
+
+    const primaryAssignment = isSystemAdmin
+      ? assignments.find((a) => a.role.code === SYSTEM_ROLE_CODES.ADMIN) || assignments.find((a) => a.isPrimary) || assignments[0]
+      : assignments.find((a) => a.isPrimary) || assignments[0];
     const primaryRole = primaryAssignment?.role;
+
+    const mappedRoles = assignments.map((a) => ({
+      id: a.role.id,
+      code: a.role.code,
+      name: a.role.name,
+      isSystem: a.role.isSystem,
+      scopeType: a.role.scopeType,
+    }));
+
+    if (isSystemAdmin && !mappedRoles.some((r) => r.code === SYSTEM_ROLE_CODES.ADMIN)) {
+      mappedRoles.unshift({
+        id: 'system-admin-role',
+        code: SYSTEM_ROLE_CODES.ADMIN,
+        name: 'Admin toàn quyền',
+        isSystem: true,
+        scopeType: ScopeType.GLOBAL,
+      });
+    }
 
     return {
       user: {
@@ -278,16 +385,12 @@ export class AuthorizationService {
         fullName: user.fullName,
         avatarUrl: user.avatarUrl,
         defaultBranchId: user.branchId,
-        role: primaryRole?.code || 'USER',
-        roleName: primaryRole?.name || (primaryRole?.code === 'ADMIN' ? 'Quản trị viên toàn quyền' : 'Khách hàng'),
+        role: isSystemAdmin ? 'ADMIN' : (primaryRole?.code || user.role || 'USER'),
+        roleName: isSystemAdmin
+          ? 'Quản trị viên toàn quyền'
+          : (primaryRole?.name || (user.role === 'ADMIN' ? 'Quản trị viên toàn quyền' : 'Nhân viên')),
       },
-      roles: assignments.map((a) => ({
-        id: a.role.id,
-        code: a.role.code,
-        name: a.role.name,
-        isSystem: a.role.isSystem,
-        scopeType: a.role.scopeType,
-      })),
+      roles: mappedRoles,
       assignments: assignments.map((a) => ({
         roleCode: a.role.code,
         roleName: a.role.name,

@@ -21,6 +21,11 @@ import {
   Layers,
   Sparkles,
   Edit3,
+  Clock,
+  Lock,
+  Unlock,
+  AlertTriangle,
+  ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { printAgent } from '@/lib/print-agent';
@@ -28,6 +33,7 @@ import { PosCartItem, PosTable, PosOrder } from './pos-types';
 import { PosDeliveryInfo } from './DeliveryAddressModal';
 import { CreateCustomerModal } from './CreateCustomerModal';
 import { EditCustomerVatModal } from './EditCustomerVatModal';
+import { MultiPaymentModal } from './MultiPaymentModal';
 
 export interface PosPaymentMethod {
   id: string;
@@ -79,6 +85,7 @@ interface PaymentModalProps {
   table: PosTable | null;
   cartItems: PosCartItem[];
   guestCount: number;
+  fullscreen?: boolean;
   orderDiscount?: {
     discountAmount: number;
     discountReason: string;
@@ -90,6 +97,7 @@ interface PaymentModalProps {
   customerPhone?: string;
   onClose: () => void;
   onCustomerUpdated?: (member: RealMember) => void;
+  onPaymentSuccess?: (data: any) => void;
   onProcessPayment: (data: {
     payments: Array<{
       paymentMethod: string;
@@ -118,6 +126,8 @@ interface PaymentModalProps {
   paperSize?: '80mm' | '58mm';
   vatPriceMode?: 'VAT_INCLUDED' | 'VAT_EXCLUDED' | string;
   branch?: any;
+  onMoveToAwaiting?: () => Promise<void> | void;
+  isDarkMode?: boolean;
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
@@ -125,6 +135,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   table,
   cartItems,
   guestCount,
+  fullscreen = false,
   orderDiscount,
   deliveryAddress,
   orderType = 'DINE_IN',
@@ -133,14 +144,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   customerPhone = '',
   onClose,
   onCustomerUpdated,
+  onPaymentSuccess,
   onProcessPayment,
   isProcessing = false,
   onPrintTempBill,
   receiptPrinterName,
   paperSize = '80mm',
-  vatPriceMode = 'VAT_EXCLUDED',
+  vatPriceMode = 'VAT_INCLUDED',
   branch,
+  onMoveToAwaiting,
+  isDarkMode = false,
 }) => {
+  const isAwaitingPayment =
+    order?.paymentStatus === 'AWAITING_PAYMENT' ||
+    order?.paymentStatus === 'PAYMENT_REQUESTED' ||
+    (order as any)?.paymentIntentStatus === 'ACTIVE';
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
   // 1. Payment Methods Dynamically from Database
@@ -212,9 +230,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   // 3. Multi-Payment (Thanh toán nhiều phương thức) State
   const [isMultiPaymentMode, setIsMultiPaymentMode] = useState(false);
+  const [isMultiConfigModalOpen, setIsMultiConfigModalOpen] = useState(false);
   const [splitAmounts, setSplitAmounts] = useState<Record<string, number>>({});
-  const [multiSecondMethodCode, setMultiSecondMethodCode] = useState<string>('SEPAY_QR');
-  const [isMultiSepayQrGenerated, setIsMultiSepayQrGenerated] = useState(false);
 
   // Edit Customer VAT Modal
   const [isEditCustomerVatOpen, setIsEditCustomerVatOpen] = useState(false);
@@ -269,7 +286,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   // Calculations
   const activeVatPriceMode =
-    (order as any)?.vatPriceModeSnapshot || vatPriceMode || 'VAT_EXCLUDED';
+    (order as any)?.vatPriceModeSnapshot || vatPriceMode || 'VAT_INCLUDED';
   const isVatIncluded = activeVatPriceMode === 'VAT_INCLUDED';
 
   const itemsSubTotal = cartItems.reduce((sum, it) => {
@@ -383,10 +400,19 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
         if (json.success && Array.isArray(json.data) && json.data.length > 0) {
           if (isMounted) {
             setPaymentMethods(json.data);
-            // Default to first active method
-            setSelectedMethodCode(json.data[0].methodCode);
+            // Ưu tiên chọn mặc định TIỀN MẶT theo yêu cầu của hệ thống
+            const defaultCash = json.data.find(
+              (m: any) =>
+                m.methodCode === 'CASH' ||
+                m.methodCode === 'COD' ||
+                m.gatewayType === 'CASH' ||
+                m.gatewayType === 'COD' ||
+                /tiền\s*mặt/i.test(m.name || '')
+            );
+            const initialCode = defaultCash ? defaultCash.methodCode : json.data[0].methodCode;
+            setSelectedMethodCode(initialCode);
             // Initialize multi-payment allocation
-            setSplitAmounts({ [json.data[0].methodCode]: grandTotal });
+            setSplitAmounts({ [initialCode]: grandTotal });
           }
         }
       } catch (err) {
@@ -406,6 +432,46 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   const isCashMethod = currentMethod?.gatewayType === 'COD' || currentMethod?.gatewayType === 'CASH' || currentMethod?.methodCode === 'COD' || currentMethod?.methodCode === 'CASH';
   const isSepayMethod = currentMethod?.gatewayType === 'SEPAY' || currentMethod?.methodCode === 'SEPAY_QR' || currentMethod?.methodCode === 'TRANSFER';
 
+  // Identify active QR method & amount in both single and multi-payment modes
+  const activeQrEntry = React.useMemo(() => {
+    if (isMultiPaymentMode) {
+      for (const [code, amt] of Object.entries(splitAmounts)) {
+        if ((amt || 0) > 0) {
+          const m = paymentMethods.find((pm) => pm.methodCode === code);
+          const c = code.toUpperCase();
+          const g = (m?.gatewayType || '').toUpperCase();
+          if (c.includes('SEPAY') || c.includes('TRANSFER') || c.includes('VIETQR') || g === 'SEPAY') {
+            return {
+              method: m || currentMethod,
+              methodCode: code,
+              amount: amt,
+            };
+          }
+        }
+      }
+      return null;
+    } else {
+      if (isSepayMethod) {
+        return {
+          method: currentMethod,
+          methodCode: selectedMethodCode,
+          amount: grandTotal,
+        };
+      }
+      return null;
+    }
+  }, [isMultiPaymentMode, splitAmounts, paymentMethods, isSepayMethod, currentMethod, selectedMethodCode, grandTotal]);
+
+  const hasActiveQr = Boolean(activeQrEntry && activeQrEntry.amount > 0);
+  const isOrderLockedByQr = Boolean(isQrGenerated && hasActiveQr);
+  const isCodeAlreadyCreated = Boolean(
+    isAwaitingPayment ||
+      (order as any)?.paymentLockedAt ||
+      order?.paymentStatus === 'PAID' ||
+      order?.status === 'COMPLETED' ||
+      isOrderLockedByQr
+  );
+
   // If member has tax info, prefill
   useEffect(() => {
     if (selectedMember && (selectedMember.taxCode || selectedMember.companyName)) {
@@ -418,7 +484,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   // QR Countdown Timer
   useEffect(() => {
-    if (isQrGenerated && isSepayMethod && !isMultiPaymentMode) {
+    if (isQrGenerated && hasActiveQr) {
       countdownTimerRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -434,14 +500,105 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     return () => {
       if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     };
-  }, [isQrGenerated, isSepayMethod, isMultiPaymentMode]);
+  }, [isQrGenerated, hasActiveQr]);
+
+  // Anti-Fake Bill Verifier (Feature 2)
+  const [isScanningBank, setIsScanningBank] = useState(false);
+  const [scanCountdown, setScanCountdown] = useState<number | null>(null);
+  const [scanWarning, setScanWarning] = useState<{
+    message: string;
+    gatewayInfo?: string;
+  } | null>(null);
+
+  const handleTriggerBankScan = async () => {
+    if (isScanningBank) return;
+    setIsScanningBank(true);
+    setScanCountdown(3);
+    setScanWarning(null);
+
+    const activeCode = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code || '';
+
+    try {
+      // 1. Gửi lệnh scan khẩn cấp tới Gateway Android
+      fetch(`${baseUrl}/api/bank-connect/v1/admin/scan-request`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          branchId: branch?.id,
+          orderId: order?.id,
+          expectedAmount: grandTotal,
+          orderCode: activeCode,
+        }),
+      }).catch(console.error);
+
+      // 2. Chạy đếm ngược 3s
+      for (let sec = 3; sec > 0; sec--) {
+        setScanCountdown(sec);
+        await new Promise((r) => setTimeout(r, 1000));
+        if (sepayStatus === 'PAID') {
+          setIsScanningBank(false);
+          setScanCountdown(null);
+          return;
+        }
+      }
+      setScanCountdown(0);
+
+      // 3. Thử kiểm tra lại trạng thái SePay
+      await checkSepayStatus();
+
+      // 4. Nếu chưa khớp, lấy thông tin Gateway để cảnh báo minh bạch
+      let gatewayStatusText = 'Chưa nhận diện thiết bị Gateway';
+      let isDevOnline = false;
+      let hasDev = false;
+      try {
+        const devRes = await fetch(`${baseUrl}/api/bank-connect/v1/admin/devices`, { credentials: 'include' });
+        const devJson = await devRes.json();
+        if (devJson.success && Array.isArray(devJson.data)) {
+          const activeDev = devJson.data.find((d: any) => d.status === 'ACTIVE') || devJson.data[0];
+          if (activeDev) {
+            hasDev = true;
+            isDevOnline = Boolean(activeDev.isOnline);
+            gatewayStatusText = `Thiết bị: ${activeDev.deviceName || 'Android Gateway'} (${isDevOnline ? 'Online' : 'Offline'}) • Pin: ${activeDev.batteryLevel ?? '--'}% • Mạng: ${activeDev.networkType || 'Wifi'}`;
+          }
+        }
+      } catch {}
+
+      if (sepayStatus !== 'PAID') {
+        const warningMessage = !hasDev
+          ? '⚠️ Chưa kết nối thiết bị nhận biến động số dư. Vui lòng đối chiếu với khách hàng hoặc kiểm tra sao kê.'
+          : !isDevOnline
+          ? '🔴 Thiết bị Gateway đang OFFLINE (Tắt nguồn hoặc Mất mạng)! Không thể nhận biến động số dư tự động.'
+          : '⚠️ Thiết bị Gateway đang kết nối, nhưng CHƯA NHẬN ĐƯỢC TIỀN biến động số dư! Yêu cầu khách kiểm tra lại giao dịch.';
+
+        setScanWarning({
+          message: warningMessage,
+          gatewayInfo: gatewayStatusText,
+        });
+        toast.error('Chưa phát hiện biến động số dư cho đơn này! Vui lòng đối chiếu với khách hàng.');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Lỗi khi kiểm tra ngân hàng');
+    } finally {
+      setIsScanningBank(false);
+      setScanCountdown(null);
+    }
+  };
+
+  // SePay QR Image Parameters (resolves both single and multi-payment)
+  const qrBankCode = activeQrEntry?.method?.bankCode || currentMethod?.bankCode || 'OCB';
+  const qrAccountNumber = activeQrEntry?.method?.accountNumber || currentMethod?.accountNumber || 'SEPSUSHIWA';
+  const qrAmount = activeQrEntry ? activeQrEntry.amount : grandTotal;
+  const orderCodeForQr = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code || 'POS';
+  // Real PNG image generated by SePay with the EXACT allocated QR amount
+  const sepayQrUrl = `https://qr.sepay.vn/img?acc=${encodeURIComponent(qrAccountNumber)}&bank=${encodeURIComponent(qrBankCode)}&amount=${qrAmount}&des=${encodeURIComponent(orderCodeForQr)}`;
 
   const handleGenerateQr = () => {
     setIsQrGenerated(true);
     setCountdown(300);
     setSepayStatus('WAITING');
-    toast.success('Đã tạo mã VietQR thanh toán!', {
-      icon: <QrCode className="w-4 h-4 text-blue-500" />,
+    toast.success(`Đã tạo mã VietQR (${qrAmount.toLocaleString('vi-VN')}đ)! Đơn hàng đã cố định giá trị.`, {
+      icon: <QrCode className="w-4 h-4 text-emerald-500" />,
     });
   };
 
@@ -451,12 +608,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     toast.success('Đã làm mới mã thanh toán!');
   };
 
-  // SePay QR Image Parameters
-  const bankCode = currentMethod?.bankCode || 'OCB';
-  const accountNumber = currentMethod?.accountNumber || 'SEPSUSHIWA';
-  const orderCodeForQr = order?.orderCode || 'POS';
-  // Real PNG image generated by SePay
-  const sepayQrUrl = `https://qr.sepay.vn/img?acc=${encodeURIComponent(accountNumber)}&bank=${encodeURIComponent(bankCode)}&amount=${grandTotal}&des=${encodeURIComponent(orderCodeForQr)}`;
+  const handleCancelQrCode = () => {
+    setIsQrGenerated(false);
+    setSepayStatus('WAITING');
+    if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+    if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+    toast('Đã hủy mã QR. Bạn có thể thay đổi đơn hàng hoặc phương thức thanh toán.', {
+      icon: '🔓',
+    });
+  };
 
   const [isPrintingTempBill, setIsPrintingTempBill] = useState(false);
 
@@ -507,8 +667,45 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     }
   };
 
+  const [isMovingToAwaiting, setIsMovingToAwaiting] = useState(false);
+
+  const handleMoveToAwaitingAndReleaseTable = async () => {
+    if (!order?.id) {
+      toast.error('Chưa có thông tin đơn hàng để chuyển chờ xác nhận');
+      return;
+    }
+    setIsMovingToAwaiting(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/pos/orders/${order.id}/await-confirmation-release-table`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Lỗi khi chuyển trạng thái đơn');
+      }
+      toast.success('Đã chuyển đơn vào hàng đợi Chờ xác nhận & giải phóng bàn thành công!', {
+        icon: <CheckCircle2 className="w-4 h-4 text-emerald-500" />,
+      });
+      if (onMoveToAwaiting) {
+        await onMoveToAwaiting();
+      }
+      onClose();
+    } catch (e: any) {
+      toast.error(e.message || 'Không thể chuyển đơn vào Chờ xác nhận');
+    } finally {
+      setIsMovingToAwaiting(false);
+    }
+  };
+
   // Final Submit
   const handleFinalSubmit = useCallback(async (transactionRefArg?: string) => {
+    if (!cartItems || cartItems.length === 0) {
+      toast.error('Đơn hàng không có món ăn nào để thanh toán!');
+      return;
+    }
+
     let payments: any[] = [];
 
     if (isMultiPaymentMode) {
@@ -578,7 +775,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
   // SePay Polling
   const checkSepayStatus = useCallback(async () => {
-    const orderCodeToCheck = order?.orderCode;
+    const orderCodeToCheck = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code;
     if (!orderCodeToCheck || !isQrGenerated) return;
 
     try {
@@ -595,19 +792,27 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             duration: 4000,
           });
 
-          // Auto-trigger completion
-          setTimeout(() => {
-            handleFinalSubmit(data.transactionCode);
-          }, 800);
+          // Nếu đơn hàng đã được backend hoàn tất (COMPLETED), gọi ngay onPaymentSuccess để đóng modal và giải phóng bàn
+          if (data.rawStatus === 'COMPLETED' || data.status === 'COMPLETED' || (data.orderCode && !data.orderCode.startsWith('TMP-'))) {
+            setTimeout(() => {
+              onPaymentSuccess?.(data);
+            }, 600);
+          } else {
+            // Auto-trigger completion
+            setTimeout(() => {
+              handleFinalSubmit(data.transactionCode);
+            }, 600);
+          }
         }
       }
     } catch (err) {
       console.error('Polling SePay status error:', err);
     }
-  }, [baseUrl, order?.orderCode, isQrGenerated, handleFinalSubmit]);
+  }, [baseUrl, order?.orderCode, (order as any)?.temporaryOrderCode, isQrGenerated, onPaymentSuccess, handleFinalSubmit]);
 
   useEffect(() => {
-    if (isSepayMethod && isQrGenerated && order?.orderCode && sepayStatus !== 'PAID' && !isMultiPaymentMode) {
+    const activeCode = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code;
+    if (hasActiveQr && isQrGenerated && activeCode && sepayStatus !== 'PAID') {
       pollTimerRef.current = setInterval(checkSepayStatus, 2500);
       return () => {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -615,7 +820,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     } else {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     }
-  }, [isSepayMethod, isQrGenerated, order?.orderCode, sepayStatus, checkSepayStatus, isMultiPaymentMode]);
+  }, [hasActiveQr, isQrGenerated, order?.orderCode, (order as any)?.temporaryOrderCode, sepayStatus, checkSepayStatus]);
 
   // Auto-Save Customer to Order when Selected or Created
   const handleSelectMember = async (member: RealMember) => {
@@ -815,47 +1020,92 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       : `Thanh toán- ${table ? table.name : order?.table?.name || 'Bàn - 1'}`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-2 sm:p-4 select-none animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden">
+    <div className={
+      fullscreen
+        ? "fixed inset-0 z-[120] w-full h-[100dvh] flex flex-col bg-white dark:bg-[#181f2c] overflow-hidden select-none animate-in fade-in duration-150"
+        : "fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4 select-none animate-in fade-in duration-150"
+    }>
+      <div className={
+        fullscreen
+          ? "w-full h-full flex flex-col overflow-hidden bg-white dark:bg-[#181f2c] text-gray-900 dark:text-slate-100"
+          : `rounded-t-3xl sm:rounded-2xl shadow-2xl border w-full max-w-6xl max-h-[92dvh] sm:max-h-[94vh] flex flex-col overflow-hidden transition-all animate-in slide-in-from-bottom duration-200 sm:animate-in sm:zoom-in-95 ${
+              isDarkMode
+                ? 'bg-[#181f2c] border-[#2c374c] text-slate-100 shadow-slate-950/80'
+                : 'bg-white border-gray-200 text-gray-900'
+            }`
+      }>
+        {/* Mobile Drag Handle */}
+        {!fullscreen && (
+          <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto my-2 sm:hidden shrink-0" />
+        )}
+
         {/* =========================================================================
             HEADER (AVORA RED BRAND ACCENT)
             ========================================================================= */}
-        <div className="px-6 py-3.5 border-b border-gray-200 flex items-center justify-between bg-white shrink-0 relative">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#da251d] text-white flex items-center justify-center font-bold shadow-xs">
+        <div className={`px-4 sm:px-6 py-3 sm:py-3.5 border-b flex items-center justify-between shrink-0 relative ${
+          fullscreen ? 'pt-[calc(0.75rem+env(safe-area-inset-top))]' : ''
+        } ${
+          isDarkMode ? 'bg-[#1e2738] border-[#2c374c] text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+        }`}>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 -ml-1 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors cursor-pointer"
+              title="Quay lại"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#da251d] text-white flex items-center justify-center font-bold shadow-xs">
               <CreditCard className="w-4 h-4" />
             </div>
-            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">AVORA POS</span>
+            <span className={`text-xs font-bold uppercase tracking-wider hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>AVORA POS</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <h2 className="text-base font-bold text-gray-900 text-center tracking-tight">
+          <div className="flex-1 min-w-0 mx-2 text-center flex flex-col items-center justify-center">
+            <h2 className={`text-sm sm:text-base font-bold tracking-tight w-full truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
               {headerTitle}
             </h2>
             {orderCodeDisplay && (
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-slate-100 text-slate-800 border border-slate-300 shadow-2xs">
+              <span className={`text-[11px] font-mono font-medium ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}>
                 #{orderCodeDisplay}
               </span>
             )}
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {!fullscreen ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className={`p-1.5 rounded-xl transition-colors cursor-pointer ${
+                isDarkMode ? 'text-slate-400 hover:text-white hover:bg-[#253046]' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              <X className="w-5 h-5" />
+            </button>
+          ) : (
+            <div className="w-8 shrink-0" />
+          )}
         </div>
 
         {/* =========================================================================
-            BODY: 3-COLUMN ADAPTIVE LAYOUT (Supports 768px-1024px and 967px side-by-side)
+            BODY: ADAPTIVE LAYOUT (Single seamless scroll on fullscreen mobile, 3-column on desktop POS)
             ========================================================================= */}
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 overflow-hidden divide-y md:divide-y-0 md:divide-x divide-slate-200 min-h-0 text-xs">
+        <div className={`flex-1 ${
+          fullscreen
+            ? 'overflow-y-auto min-h-0 p-3 sm:p-4 space-y-4 text-xs'
+            : 'grid grid-cols-1 md:grid-cols-3 overflow-hidden divide-y md:divide-y-0 md:divide-x min-h-0 text-xs'
+        } ${isDarkMode ? 'divide-[#2c374c] bg-[#181f2c]' : 'divide-slate-200 bg-white'}`}>
           {/* =========================================================================
               COLUMN 1 (Left: Customer Search + Tier, + Thêm KH, Dynamic PTTT, Multi-Method)
               ========================================================================= */}
-          <div className="p-3 sm:p-4 space-y-3.5 overflow-y-auto bg-white flex flex-col justify-between">
+          <div className={`${
+            fullscreen
+              ? 'space-y-3.5 bg-white dark:bg-[#181f2c] p-3 sm:p-4 rounded-2xl border border-slate-200/90 dark:border-[#2c374c]'
+              : 'p-3 sm:p-4 space-y-3.5 overflow-y-auto flex flex-col justify-between'
+          } ${isDarkMode ? 'bg-[#181f2c] text-slate-100' : 'bg-white text-gray-900'}`}>
             <div className="space-y-3.5">
               {/* Customer Search Bar */}
               <div className="space-y-2">
@@ -869,29 +1119,41 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       value={memberSearchQuery}
                       onChange={(e) => handleSearchMembers(e.target.value)}
                       placeholder="Tìm kiếm khách hàng theo SĐT, tên..."
-                      className="w-full pl-9 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:border-[#da251d] focus:bg-white text-xs font-medium placeholder-gray-400 transition-all"
+                      className={`w-full pl-9 pr-3 py-2 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium transition-all border ${
+                        isDarkMode
+                          ? 'bg-[#1e2738] border-[#2c374c] text-white placeholder-slate-400 focus:bg-[#253046]'
+                          : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:bg-white'
+                      }`}
                     />
                   </div>
 
                   {/* Dropdown Search Results with Membership Tiers */}
                   {memberSearchResults.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl py-1 z-30 max-h-52 overflow-y-auto">
+                    <div className={`absolute left-0 right-0 top-full mt-1 border rounded-xl shadow-xl py-1 z-30 max-h-52 overflow-y-auto ${
+                      isDarkMode
+                        ? 'bg-[#1e2738] border-[#2c374c] text-white divide-y divide-[#2c374c]'
+                        : 'bg-white border-gray-200 text-gray-900 divide-y divide-gray-50'
+                    }`}>
                       {memberSearchResults.map((m) => (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => handleSelectMember(m)}
-                          className="w-full text-left px-3 py-2 hover:bg-red-50/60 flex items-center justify-between text-xs border-b border-gray-50 last:border-0 cursor-pointer"
+                          className={`w-full text-left px-3 py-2 flex items-center justify-between text-xs cursor-pointer transition-colors ${
+                            isDarkMode
+                              ? 'hover:bg-[#253046] text-slate-100'
+                              : 'hover:bg-red-50/60 text-gray-800'
+                          }`}
                         >
                           <div>
-                            <div className="font-bold text-gray-800">{m.fullName}</div>
-                            <div className="text-[10px] text-gray-500 font-mono">
+                            <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{m.fullName}</div>
+                            <div className={`text-[10px] font-mono ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                               {m.phone || 'Chưa có SĐT'} {m.memberCode && `• ${m.memberCode}`}
                             </div>
                           </div>
                           <div className="text-right space-y-0.5">
                             {renderTierBadge(m.membershipTier)}
-                            <div className="text-[10px] font-bold text-amber-600">
+                            <div className="text-[10px] font-bold text-amber-500">
                               {m.points?.toLocaleString('vi-VN')} điểm
                             </div>
                           </div>
@@ -903,13 +1165,15 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                 {/* Selected Member Display Card with Prominent Membership Tier */}
                 {selectedMember ? (
-                  <div className="p-3 rounded-xl bg-red-50/40 border border-red-200/80 space-y-2">
+                  <div className={`p-3 rounded-xl space-y-2 border ${
+                    isDarkMode ? 'bg-red-950/20 border-red-900/50 text-slate-100' : 'bg-red-50/40 border-red-200/80 text-gray-900'
+                  }`}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
+                        <div className={`font-bold text-xs flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                           <span>{selectedMember.fullName}</span>
                         </div>
-                        <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                        <div className={`text-[10px] font-mono mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                           {selectedMember.phone || 'Chưa SĐT'} {selectedMember.memberCode && `• ${selectedMember.memberCode}`}
                         </div>
                       </div>
@@ -926,23 +1190,23 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex items-center justify-between pt-1 border-t border-red-200/60">
-                      <span className="text-[11px] text-gray-600">Hạng khách hàng:</span>
+                    <div className={`flex items-center justify-between pt-1 border-t ${isDarkMode ? 'border-red-900/40' : 'border-red-200/60'}`}>
+                      <span className={`text-[11px] ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>Hạng khách hàng:</span>
                       {renderTierBadge(selectedMember.membershipTier)}
                     </div>
 
                     <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-gray-600">Điểm tích lũy:</span>
-                      <span className="font-extrabold text-amber-700">
+                      <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Điểm tích lũy:</span>
+                      <span className="font-extrabold text-amber-500">
                         {selectedMember.points?.toLocaleString('vi-VN')} điểm
                       </span>
                     </div>
 
                     {/* VAT Info and Edit VAT Button */}
-                    <div className="flex items-center justify-between pt-1.5 border-t border-red-200/60">
-                      <div className="text-[10px] text-gray-600 truncate max-w-[170px]">
+                    <div className={`flex items-center justify-between pt-1.5 border-t ${isDarkMode ? 'border-red-900/40' : 'border-red-200/60'}`}>
+                      <div className="text-[10px] truncate max-w-[170px]">
                         {selectedMember.taxCode ? (
-                          <span className="font-mono text-slate-700 font-semibold">MST: {selectedMember.taxCode}</span>
+                          <span className={`font-mono font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>MST: {selectedMember.taxCode}</span>
                         ) : (
                           <span className="text-gray-400 italic">Chưa có thông tin VAT</span>
                         )}
@@ -950,7 +1214,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       <button
                         type="button"
                         onClick={() => setIsEditCustomerVatOpen(true)}
-                        className="px-2 py-0.5 bg-white hover:bg-red-100 border border-red-300 text-[#da251d] rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold flex items-center gap-1 transition-colors cursor-pointer border ${
+                          isDarkMode
+                            ? 'bg-[#1e2738] hover:bg-[#253046] border-[#2c374c] text-red-400'
+                            : 'bg-white hover:bg-red-100 border-red-300 text-[#da251d]'
+                        }`}
                         title="Chỉ cho phép sửa/thêm thông tin xuất hóa đơn VAT"
                       >
                         <Edit3 className="w-2.5 h-2.5" />
@@ -959,17 +1227,21 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </div>
                   </div>
                 ) : customerName && customerName !== 'Khách lẻ' && customerName !== 'Khách tại bàn' && customerName !== 'Khách mang đi' ? (
-                  <div className="p-3 rounded-xl bg-red-50/40 border border-red-200/80 space-y-1.5">
+                  <div className={`p-3 rounded-xl space-y-1.5 border ${
+                    isDarkMode ? 'bg-red-950/20 border-red-900/50 text-slate-100' : 'bg-red-50/40 border-red-200/80 text-gray-900'
+                  }`}>
                     <div className="flex items-center justify-between">
                       <div>
-                        <div className="font-bold text-gray-900 text-xs">{customerName}</div>
+                        <div className={`font-bold text-xs ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{customerName}</div>
                         {customerPhone && (
-                          <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                          <div className={`text-[10px] font-mono mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                             {customerPhone}
                           </div>
                         )}
                       </div>
-                      <span className="text-[10px] text-amber-600 font-semibold bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                        isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-600'
+                      }`}>
                         Khách hàng
                       </span>
                     </div>
@@ -980,7 +1252,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCreateCustomerOpen(true)}
-                  className="w-full py-2 px-3 border border-dashed border-red-300 hover:border-[#da251d] hover:bg-red-50/50 rounded-lg text-[#da251d] font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  className={`w-full py-2 px-3 border border-dashed rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    isDarkMode
+                      ? 'border-red-900/60 hover:border-red-500 hover:bg-red-950/30 text-red-400'
+                      : 'border-red-300 hover:border-[#da251d] hover:bg-red-50/50 text-[#da251d]'
+                  }`}
                 >
                   <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
                   <span>Thêm khách hàng</span>
@@ -990,7 +1266,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
               {/* DYNAMIC PAYMENT METHODS FROM DATABASE */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-gray-900 text-xs">Phương thức thanh toán</span>
+                  <span className={`font-bold text-xs ${isDarkMode ? 'text-slate-200' : 'text-gray-900'}`}>Phương thức thanh toán</span>
                   {isLoadingMethods && (
                     <span className="text-[10px] text-gray-400 flex items-center gap-1">
                       <RefreshCw className="w-3 h-3 animate-spin" /> Đồng bộ DB...
@@ -1001,7 +1277,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 {/* Render methods mapping directly from database */}
                 <div className="grid grid-cols-2 gap-2">
                   {paymentMethods.map((method) => {
-                    const isSelected = !isMultiPaymentMode && selectedMethodCode === method.methodCode;
+                    const isSingleSelected = !isMultiPaymentMode && selectedMethodCode === method.methodCode;
+                    const isMultiSelected = isMultiPaymentMode && (splitAmounts[method.methodCode] || 0) > 0;
+                    const isSelected = isSingleSelected || isMultiSelected;
+                    const allocatedAmt = splitAmounts[method.methodCode] || 0;
+
                     const code = method.methodCode.toUpperCase();
                     const gateway = method.gatewayType.toUpperCase();
                     const isCash = code.includes('CASH') || code.includes('COD') || gateway === 'COD' || gateway === 'CASH';
@@ -1013,19 +1293,41 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         key={method.id}
                         type="button"
                         onClick={() => {
-                          setIsMultiPaymentMode(false);
-                          setSelectedMethodCode(method.methodCode);
-                          setIsQrGenerated(false);
-                          setSepayStatus('WAITING');
+                          if (isMultiPaymentMode) {
+                            // Switch back to this single method
+                            setIsMultiPaymentMode(false);
+                            setSelectedMethodCode(method.methodCode);
+                            setSplitAmounts({ [method.methodCode]: grandTotal });
+                            setIsQrGenerated(false);
+                            setSepayStatus('WAITING');
+                            toast.success(`Đã chuyển sang thanh toán ${method.name}`);
+                          } else {
+                            setSelectedMethodCode(method.methodCode);
+                            setIsQrGenerated(false);
+                            setSepayStatus('WAITING');
+                          }
                         }}
-                        className={`relative p-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[68px] ${
-                          isSelected
-                            ? 'border-[#da251d] bg-red-50/50 text-[#da251d] ring-1 ring-[#da251d] shadow-2xs font-bold'
+                        className={`relative p-2.5 rounded-xl border flex flex-col items-center justify-center text-center transition-all cursor-pointer min-h-[72px] ${
+                          isMultiSelected
+                            ? isDarkMode
+                              ? 'border-red-500/80 bg-red-950/30 text-red-300 ring-1 ring-red-500/40 shadow-2xs font-bold'
+                              : 'border-red-500 bg-red-50/70 text-[#da251d] ring-1 ring-red-200 shadow-2xs font-bold'
+                            : isSingleSelected
+                            ? isDarkMode
+                              ? 'border-[#da251d] bg-red-950/40 text-red-400 ring-1 ring-[#da251d] shadow-2xs font-bold'
+                              : 'border-[#da251d] bg-red-50/50 text-[#da251d] ring-1 ring-[#da251d] shadow-2xs font-bold'
+                            : isDarkMode
+                            ? 'border-[#2c374c] bg-[#1e2738] hover:bg-[#253046] text-slate-200'
                             : 'border-gray-200 bg-white hover:bg-gray-50 text-gray-700'
                         }`}
                       >
-                        {/* Red checkmark badge top-right when selected */}
-                        {isSelected && (
+                        {/* Checkmark badge top-right */}
+                        {isMultiSelected && (
+                          <div className="absolute top-0 right-0 w-4 h-4 bg-[#da251d] rounded-bl-lg rounded-tr-xl flex items-center justify-center text-white">
+                            <Check className="w-2.5 h-2.5 stroke-[3]" />
+                          </div>
+                        )}
+                        {isSingleSelected && (
                           <div className="absolute top-0 right-0 w-4 h-4 bg-[#da251d] rounded-bl-lg rounded-tr-xl flex items-center justify-center text-white">
                             <Check className="w-2.5 h-2.5 stroke-[3]" />
                           </div>
@@ -1033,81 +1335,88 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
                         <div className="mb-1 flex items-center justify-center">
                           {isCash ? (
-                            <Banknote className={`w-5 h-5 ${isSelected ? 'text-[#da251d]' : 'text-emerald-600'}`} />
+                            <Banknote className={`w-5 h-5 ${isMultiSelected ? 'text-[#da251d]' : isSingleSelected ? 'text-[#da251d]' : 'text-emerald-500'}`} />
                           ) : isSepay ? (
                             <div className="flex items-center gap-1">
-                              <QrCode className={`w-4 h-4 ${isSelected ? 'text-[#da251d]' : 'text-red-600'}`} />
-                              <span className="text-[10px] font-black tracking-tight text-gray-900">
+                              <QrCode className={`w-4 h-4 ${isMultiSelected ? 'text-[#da251d]' : isSingleSelected ? 'text-[#da251d]' : 'text-red-500'}`} />
+                              <span className={`text-[10px] font-black tracking-tight ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>
                                 {method.bankCode || 'VIETQR'}
                               </span>
                             </div>
                           ) : (
-                            <CreditCard className={`w-5 h-5 ${isSelected ? 'text-[#da251d]' : 'text-blue-600'}`} />
+                            <CreditCard className={`w-5 h-5 ${isMultiSelected ? 'text-[#da251d]' : isSingleSelected ? 'text-[#da251d]' : 'text-blue-500'}`} />
                           )}
                         </div>
 
-                        <span className="text-xs leading-tight line-clamp-2 px-1">
+                        <span className="text-xs leading-tight line-clamp-1 px-1">
                           {method.name}
                         </span>
+
+                        {isMultiSelected && (
+                          <span className="text-[10px] font-mono font-black text-[#da251d] dark:text-red-400 mt-0.5">
+                            {allocatedAmt.toLocaleString('vi-VN')}đ
+                          </span>
+                        )}
                       </button>
                     );
                   })}
                 </div>
 
                 {/* Button: Thanh toán nhiều phương thức */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nextMode = !isMultiPaymentMode;
-                    setIsMultiPaymentMode(nextMode);
-                    if (nextMode) {
-                      const m1 = selectedMethodCode || paymentMethods[0]?.methodCode || 'COD';
-                      const candidate2 =
-                        paymentMethods.find(
-                          (m) =>
-                            m.methodCode !== m1 &&
-                            (m.gatewayType === 'SEPAY' ||
-                              m.methodCode.includes('SEPAY') ||
-                              m.methodCode.includes('TRANSFER'))
-                        ) ||
-                        paymentMethods.find((m) => m.methodCode !== m1) ||
-                        paymentMethods[1] ||
-                        paymentMethods[0];
-                      const m2 = candidate2 ? candidate2.methodCode : 'SEPAY_QR';
-                      setMultiSecondMethodCode(m2);
-                      const half = Math.floor(grandTotal / 2);
-                      setSplitAmounts({
-                        [m1]: half,
-                        [m2]: grandTotal - half,
-                      });
-                      setIsMultiSepayQrGenerated(false);
-                      toast('Chế độ thanh toán 2 phương thức');
-                    }
-                  }}
-                  className={`w-full py-2 px-3 rounded-lg border font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    isMultiPaymentMode
-                      ? 'border-[#da251d] bg-red-50 text-[#da251d]'
-                      : 'border-gray-200 hover:border-red-300 text-gray-700 hover:text-[#da251d] bg-white'
-                  }`}
-                >
-                  {isMultiPaymentMode ? (
-                    <>
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Quay lại thanh toán 1 phương thức</span>
-                    </>
-                  ) : (
-                    <>
-                      <Layers className="w-3.5 h-3.5 text-[#da251d]" />
+                <div className="pt-1 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsMultiConfigModalOpen(true);
+                    }}
+                    className={`w-full py-2.5 px-3 rounded-xl border font-bold text-xs flex items-center justify-between transition-all cursor-pointer shadow-xs ${
+                      isMultiPaymentMode
+                        ? isDarkMode
+                          ? 'border-red-500/80 bg-red-950/30 text-red-300 ring-1 ring-red-500/40'
+                          : 'border-red-400 bg-red-50 text-[#da251d] ring-1 ring-red-200'
+                        : isDarkMode
+                        ? 'border-[#2c374c] hover:border-red-500/50 text-slate-200 hover:text-red-300 bg-[#1e2738] hover:bg-[#253046]'
+                        : 'border-slate-200 hover:border-red-300 text-slate-700 hover:text-[#da251d] bg-slate-50 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Layers className={`w-4 h-4 ${isMultiPaymentMode ? 'text-[#da251d]' : isDarkMode ? 'text-slate-400' : 'text-slate-500'}`} />
                       <span>Thanh toán nhiều phương thức</span>
-                    </>
+                    </div>
+                    {isMultiPaymentMode ? (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-extrabold bg-[#da251d] text-white shadow-2xs">
+                        {Object.keys(splitAmounts).length} PT (Chạm để sửa)
+                      </span>
+                    ) : (
+                      <ChevronRight className={`w-4 h-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-400'}`} />
+                    )}
+                  </button>
+
+                  {isMultiPaymentMode && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMultiPaymentMode(false);
+                        const firstCode = Object.keys(splitAmounts)[0] || selectedMethodCode;
+                        setSelectedMethodCode(firstCode);
+                        setSplitAmounts({ [firstCode]: grandTotal });
+                        setIsQrGenerated(false);
+                        toast('Đã quay lại thanh toán 1 phương thức');
+                      }}
+                      className="w-full py-1 text-center text-[11px] font-semibold transition-colors cursor-pointer text-slate-500 hover:text-[#da251d] underline"
+                    >
+                      Quay lại thanh toán 1 phương thức
+                    </button>
                   )}
-                </button>
+                </div>
               </div>
 
               {/* VAT Invoice Request Section */}
-              <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200 space-y-2">
+              <div className={`p-3 rounded-xl border space-y-2 ${
+                isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-100' : 'bg-gray-50/80 border-gray-200 text-gray-800'
+              }`}>
                 <div className="flex items-center justify-between">
-                  <label className="font-bold text-gray-800 flex items-center gap-1.5 cursor-pointer">
+                  <label className={`font-bold flex items-center gap-1.5 cursor-pointer ${isDarkMode ? 'text-slate-200' : 'text-gray-800'}`}>
                     <Building2 className="w-3.5 h-3.5 text-[#da251d]" />
                     <span>Khách yêu cầu xuất hóa đơn</span>
                   </label>
@@ -1115,7 +1424,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     type="button"
                     onClick={() => setIsInvoiceRequested(!isInvoiceRequested)}
                     className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
-                      isInvoiceRequested ? 'bg-[#da251d]' : 'bg-gray-300'
+                      isInvoiceRequested ? 'bg-[#da251d]' : isDarkMode ? 'bg-slate-700' : 'bg-gray-300'
                     }`}
                   >
                     <div
@@ -1135,21 +1444,24 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           value={invoiceTaxCode}
                           onChange={(e) => setInvoiceTaxCode(e.target.value)}
                           placeholder="Mã số thuế..."
-                          className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-mono font-bold"
+                          className={`flex-1 px-2.5 py-1.5 rounded-lg outline-none focus:border-[#da251d] text-xs font-mono font-bold border ${
+                            isDarkMode
+                              ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                              : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
+                          }`}
                         />
                         <button
                           type="button"
                           disabled={isLookingUpTax || !invoiceTaxCode.trim()}
                           onClick={handleLookupTax}
-                          className="px-2.5 py-1.5 bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer shadow-xs shrink-0"
-                          title="Tìm kiếm nhanh thông tin công ty bằng MST"
+                          className="px-2.5 py-1.5 bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-lg font-bold text-[11px] flex items-center justify-center transition-colors cursor-pointer shadow-xs shrink-0 min-w-[32px]"
+                          title="Tra cứu thông tin công ty bằng MST"
                         >
                           {isLookingUpTax ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
                             <Search className="w-3.5 h-3.5" />
                           )}
-                          <span>Tìm kiếm nhanh MST</span>
                         </button>
                       </div>
                     </div>
@@ -1160,17 +1472,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         value={invoiceCompanyName}
                         onChange={(e) => setInvoiceCompanyName(e.target.value)}
                         placeholder="Tên công ty / đơn vị..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                        className={`w-full px-2.5 py-1.5 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium border ${
+                          isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
+                        }`}
                       />
                     </div>
 
                     <div>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={3}
                         value={invoiceAddress}
                         onChange={(e) => setInvoiceAddress(e.target.value)}
                         placeholder="Địa chỉ công ty trên hóa đơn..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                        className={`w-full px-2.5 py-1.5 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium border resize-y leading-relaxed ${
+                          isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
+                        }`}
                       />
                     </div>
 
@@ -1180,7 +1500,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         value={invoiceEmail}
                         onChange={(e) => setInvoiceEmail(e.target.value)}
                         placeholder="Email nhận hóa đơn..."
-                        className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium"
+                        className={`w-full px-2.5 py-1.5 rounded-lg outline-none focus:border-[#da251d] text-xs font-medium border ${
+                          isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                            : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400'
+                        }`}
                       />
                     </div>
                   </div>
@@ -1192,29 +1516,41 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           {/* =========================================================================
               COLUMN 2 (Center: Subtotal, Sử dụng điểm, Cần thanh toán, Khách trả, Tiền thừa)
               ========================================================================= */}
-          <div className="p-3 sm:p-4 space-y-3 overflow-y-auto bg-white flex flex-col justify-between">
+          <div className={`${
+            fullscreen
+              ? 'space-y-3 bg-white dark:bg-[#181f2c] p-3 sm:p-4 rounded-2xl border border-slate-200/90 dark:border-[#2c374c]'
+              : 'p-3 sm:p-4 space-y-3 overflow-y-auto flex flex-col justify-between'
+          } ${isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-gray-900'}`}>
             <div className="space-y-3">
               {/* Box 1: Tổng tiền */}
-              <div className="p-3 bg-gray-50/90 rounded-xl border border-gray-200 flex justify-between items-center">
-                <span className="font-semibold text-gray-700 text-xs">
+              <div className={`p-3 rounded-xl border flex justify-between items-center ${
+                isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-200' : 'bg-gray-50/90 border-gray-200 text-gray-700'
+              }`}>
+                <span className="font-semibold text-xs">
                   Tổng tiền ({cartItems.reduce((s, it) => s + it.quantity, 0)} món)
                 </span>
-                <span className="font-bold text-gray-900 text-sm">
+                <span className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                   {itemsSubTotal.toLocaleString('vi-VN')}đ
                 </span>
               </div>
 
               {/* Box 2: Sử dụng điểm - Chỉ hiển thị khi chi nhánh cho phép quy đổi trực tiếp */}
               {isBranchDirectDiscountAllowed && (
-                <div className="p-3 bg-gray-50/90 rounded-xl border border-gray-200 space-y-2">
+                <div className={`p-3 rounded-xl border space-y-2 ${
+                  isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-gray-50/90 border-gray-200'
+                }`}>
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="font-semibold text-gray-700 text-xs block">Sử dụng điểm</span>
+                      <span className={`font-semibold text-xs block ${isDarkMode ? 'text-slate-200' : 'text-gray-700'}`}>Sử dụng điểm</span>
                     </div>
                     <button
                       type="button"
-                      disabled={!selectedMember || (selectedMember.points || 0) <= 0}
+                      disabled={isCodeAlreadyCreated || !selectedMember || (selectedMember.points || 0) <= 0}
                       onClick={() => {
+                        if (isCodeAlreadyCreated) {
+                          toast.error('Đơn hàng đã tạo mã, giá trị đơn hàng không được phép thay đổi!');
+                          return;
+                        }
                         if (!isUsePointsEnabled) {
                           setIsUsePointsEnabled(true);
                           setPointsToUse(maxPointsUsable);
@@ -1223,9 +1559,12 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           setPointsToUse(0);
                         }
                       }}
-                      className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors cursor-pointer ${
-                        isUsePointsEnabled && selectedMember ? 'bg-[#da251d]' : 'bg-gray-300'
+                      className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors ${
+                        isCodeAlreadyCreated
+                          ? 'opacity-40 cursor-not-allowed bg-gray-300 dark:bg-slate-700'
+                          : 'cursor-pointer ' + (isUsePointsEnabled && selectedMember ? 'bg-[#da251d]' : 'bg-gray-300 dark:bg-slate-600')
                       }`}
+                      title={isCodeAlreadyCreated ? 'Đơn hàng đã tạo mã, giá trị đơn hàng không được phép thay đổi' : 'Bật/tắt sử dụng điểm'}
                     >
                       <div
                         className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
@@ -1235,19 +1574,26 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     </button>
                   </div>
 
-                  <div className="border-t border-dashed border-gray-200 pt-2 text-[11px]">
+                  {isCodeAlreadyCreated && (
+                    <div className="flex items-center gap-1.5 p-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-lg text-[11px] text-amber-800 dark:text-amber-300 font-medium select-none">
+                      <Lock className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>Đơn đã tạo mã ({orderCodeDisplay}), không cho phép sử dụng điểm vì giá trị đơn hàng đã cố định!</span>
+                    </div>
+                  )}
+
+                  <div className={`border-t border-dashed pt-2 text-[11px] ${isDarkMode ? 'border-slate-700' : 'border-gray-200'}`}>
                     {!selectedMember ? (
                       customerName && customerName !== 'Khách lẻ' && customerName !== 'Khách tại bàn' && customerName !== 'Khách mang đi' ? (
-                        <div className="flex justify-between text-gray-600">
-                          <span className="font-bold text-gray-800">{customerName}</span>
-                          <span className="text-gray-500 italic">Khách hàng (chưa tích điểm)</span>
+                        <div className={`flex justify-between ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
+                          <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{customerName}</span>
+                          <span className={`${isDarkMode ? 'text-slate-400' : 'text-gray-500'} italic`}>Khách hàng (chưa tích điểm)</span>
                         </div>
                       ) : (
-                        <span className="text-gray-400 italic">Chưa chọn khách hàng!</span>
+                        <span className={`${isDarkMode ? 'text-slate-500' : 'text-gray-400'} italic`}>Chưa chọn khách hàng!</span>
                       )
                     ) : (
                       <div className="space-y-1.5">
-                        <div className="flex justify-between text-gray-600">
+                        <div className={`flex justify-between ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
                           <span>Điểm khả dụng:</span>
                           <span className="font-bold text-amber-600">
                             {selectedMember.points?.toLocaleString('vi-VN')} điểm
@@ -1267,62 +1613,126 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
 
               {/* Order Discount */}
               {effectiveOrderDiscount > 0 && (
-                <div className="p-2.5 bg-amber-50 rounded-xl border border-amber-200 flex justify-between items-center text-xs">
-                  <span className="text-amber-800 font-medium">Giảm giá đơn:</span>
-                  <span className="font-bold text-amber-700">-{effectiveOrderDiscount.toLocaleString('vi-VN')}đ</span>
+                <div className={`p-2.5 rounded-xl border flex justify-between items-center text-xs ${
+                  isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-200' : 'bg-amber-50 border-amber-200 text-amber-800'
+                }`}>
+                  <span className="font-medium">Giảm giá đơn:</span>
+                  <span className="font-bold text-amber-500">-{effectiveOrderDiscount.toLocaleString('vi-VN')}đ</span>
                 </div>
               )}
 
               {/* Service Charge */}
               {serviceChargeTotal > 0 && (
-                <div className="p-2.5 bg-blue-50 rounded-xl border border-blue-200 flex justify-between items-center text-xs">
-                  <span className="text-blue-800 font-medium">Phụ thu dịch vụ:</span>
-                  <span className="font-bold text-blue-700">+{serviceChargeTotal.toLocaleString('vi-VN')}đ</span>
+                <div className={`p-2.5 rounded-xl border flex justify-between items-center text-xs ${
+                  isDarkMode ? 'bg-blue-950/40 border-blue-800 text-blue-200' : 'bg-blue-50 border-blue-200 text-blue-800'
+                }`}>
+                  <span className="font-medium">Phụ thu dịch vụ:</span>
+                  <span className="font-bold text-blue-400">+{serviceChargeTotal.toLocaleString('vi-VN')}đ</span>
                 </div>
               )}
 
               {/* VAT Row */}
               {computedTaxAmount > 0 && (
                 <div className={`p-2.5 rounded-xl border flex justify-between items-center text-xs ${
-                  isVatIncluded ? 'bg-gray-50 border-gray-200 text-gray-700' : 'bg-orange-50 border-orange-200 text-orange-800'
+                  isVatIncluded
+                    ? isDarkMode ? 'bg-slate-800/80 border-slate-700 text-slate-300' : 'bg-gray-50 border-gray-200 text-gray-700'
+                    : isDarkMode ? 'bg-orange-950/40 border-orange-800 text-orange-200' : 'bg-orange-50 border-orange-200 text-orange-800'
                 }`}>
                   <span className="font-medium">
                     Thuế VAT ({avgTaxRate}%{isVatIncluded ? ' - đã gồm' : ''}):
                   </span>
-                  <span className={`font-bold ${isVatIncluded ? 'text-gray-700' : 'text-orange-700'}`}>
+                  <span className={`font-bold ${isVatIncluded ? (isDarkMode ? 'text-slate-200' : 'text-gray-700') : 'text-orange-500'}`}>
                     {isVatIncluded ? '' : '+'}{computedTaxAmount.toLocaleString('vi-VN')}đ
                   </span>
                 </div>
               )}
 
               {/* Box 3: Cần thanh toán (AVORA Red Highlighted Card) */}
-              <div className="p-3.5 bg-red-50/70 rounded-xl border border-red-200 flex justify-between items-center shadow-xs">
-                <span className="font-bold text-gray-900 text-xs">Cần thanh toán</span>
+              <div className={`p-3.5 rounded-xl border flex justify-between items-center shadow-xs ${
+                isDarkMode ? 'bg-red-950/40 border-red-900/60' : 'bg-red-50/70 border-red-200'
+              }`}>
+                <span className={`font-bold text-xs ${isDarkMode ? 'text-slate-100' : 'text-gray-900'}`}>Cần thanh toán</span>
                 <span className="text-xl font-black text-[#da251d] tracking-tight">
                   {grandTotal.toLocaleString('vi-VN')}đ
                 </span>
               </div>
 
-              {/* Box 4: Khách trả */}
-              <div className="p-2.5 bg-white rounded-xl border border-gray-200 flex justify-between items-center">
-                <span className="font-semibold text-gray-700 text-xs">Khách trả</span>
+              {/* Box 4: Khách đưa */}
+              <div className={`p-2.5 rounded-xl border flex justify-between items-center ${
+                isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-white border-gray-200'
+              }`}>
+                <div className="flex items-center gap-1.5">
+                  <span className={`font-semibold text-xs ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>Khách đưa</span>
+                  {isMultiPaymentMode && (
+                    <button
+                      type="button"
+                      disabled={isOrderLockedByQr}
+                      onClick={() => {
+                        if (isOrderLockedByQr) {
+                          toast.error('Đơn hàng đã tạo mã QR thanh toán, không thể thay đổi giá trị!', {
+                            icon: <Lock className="w-4 h-4 text-amber-500" />,
+                          });
+                          return;
+                        }
+                        setIsMultiConfigModalOpen(true);
+                      }}
+                      className={`p-1 rounded transition-colors cursor-pointer ${
+                        isOrderLockedByQr
+                          ? 'text-slate-500 cursor-not-allowed opacity-50'
+                          : 'text-blue-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/40'
+                      }`}
+                      title={isOrderLockedByQr ? 'Đơn đã tạo mã QR, không thể sửa' : 'Chỉnh sửa phân bổ thanh toán'}
+                    >
+                      {isOrderLockedByQr ? <Lock className="w-3.5 h-3.5 text-amber-500" /> : <Edit3 className="w-3.5 h-3.5" />}
+                    </button>
+                  )}
+                </div>
+
                 {isCashMethod && !isMultiPaymentMode ? (
-                  <span className="font-black text-sm text-gray-900 font-mono">
+                  <span className={`font-black text-sm font-mono ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                     {cashGiven.toLocaleString('vi-VN')}đ
                   </span>
                 ) : (
-                  <span className="font-black text-sm text-gray-900 font-mono">
-                    {isMultiPaymentMode ? totalAllocated.toLocaleString('vi-VN') : grandTotal.toLocaleString('vi-VN')}đ
-                  </span>
+                  <div className="text-right">
+                    <span className={`font-black text-sm font-mono ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      {isMultiPaymentMode ? totalAllocated.toLocaleString('vi-VN') : grandTotal.toLocaleString('vi-VN')}đ
+                    </span>
+                    {isMultiPaymentMode && (
+                      <div className="text-[10px] text-blue-500 font-medium truncate max-w-[180px]">
+                        {Object.entries(splitAmounts)
+                          .filter(([_, a]) => (a || 0) > 0)
+                          .map(([code]) => paymentMethods.find((m) => m.methodCode === code)?.name || code)
+                          .join(', ')}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Box 5: Tiền thừa */}
-              <div className="px-2.5 py-2 flex justify-between items-center text-gray-700">
-                <span className="font-semibold text-xs">Tiền thừa</span>
-                <span className="font-black text-sm text-emerald-600 font-mono">
-                  {cashChange.toLocaleString('vi-VN')}đ
+              <div className={`px-2.5 py-2 flex justify-between items-center ${isDarkMode ? 'text-slate-300' : 'text-gray-700'}`}>
+                <span className="font-semibold text-xs">
+                  {isMultiPaymentMode && totalAllocated < grandTotal ? 'Còn thiếu' : 'Tiền thừa'}
                 </span>
+                {isMultiPaymentMode ? (
+                  <span className={`font-black text-sm font-mono ${
+                    totalAllocated === grandTotal
+                      ? 'text-emerald-500'
+                      : totalAllocated > grandTotal
+                      ? 'text-emerald-500'
+                      : 'text-rose-500'
+                  }`}>
+                    {totalAllocated === grandTotal
+                      ? '0đ'
+                      : totalAllocated > grandTotal
+                      ? `+${(totalAllocated - grandTotal).toLocaleString('vi-VN')}đ`
+                      : `-${(grandTotal - totalAllocated).toLocaleString('vi-VN')}đ`}
+                  </span>
+                ) : (
+                  <span className="font-black text-sm text-emerald-500 font-mono">
+                    {cashChange.toLocaleString('vi-VN')}đ
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1330,377 +1740,84 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
           {/* =========================================================================
               COLUMN 3 (Right: Bàn phím tiền mặt / VietQR Pro / Multi-Payment)
               ========================================================================= */}
-          <div className="p-3 sm:p-4 space-y-3 overflow-y-auto bg-slate-50/50 flex flex-col justify-between">
-            {isMultiPaymentMode ? (
+          <div className={`${
+            fullscreen
+              ? 'space-y-3 bg-white dark:bg-[#181f2c] p-3 sm:p-4 rounded-2xl border border-slate-200/90 dark:border-[#2c374c]'
+              : 'p-3 sm:p-4 space-y-3 overflow-y-auto flex flex-col justify-between'
+          } ${isDarkMode ? 'bg-[#181f2c] text-slate-100' : 'bg-slate-50/50 text-gray-900'}`}>
+            {hasActiveQr ? (
               /* =========================================================
-                 CASE A: MULTI-PAYMENT ALLOCATION (Thanh toán nhiều phương thức)
+                 CASE 1: SEPAY / VIETQR PRO (Ảnh 2 & Ảnh 3 Sapo - Dù là 1 hay nhiều PT)
+                 Sửa triệt để lỗi QR hiển thị không đúng: dùng chính xác qrAmount!
                  ========================================================= */
-              <div className="space-y-3 flex-1 flex flex-col justify-between overflow-y-auto">
-                <div className="space-y-2.5">
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                    <span className="font-bold text-gray-900 text-xs flex items-center gap-1.5">
-                      <Layers className="w-4 h-4 text-[#da251d]" />
-                      <span>Thanh toán 2 phương thức</span>
-                    </span>
-                    <span className="text-[10px] bg-red-100 text-[#da251d] px-2 py-0.5 rounded-full font-bold">
-                      Nhiều phương thức
-                    </span>
+              <div className="space-y-3 flex flex-col items-center text-center pt-1">
+                {/* QR Method Title Banner */}
+                <div className={`w-full px-3 py-1.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                  isDarkMode ? 'bg-[#1e2738] border-[#2c374c] text-slate-200' : 'bg-white border-slate-200 text-slate-800'
+                }`}>
+                  <div className="flex items-center gap-1.5">
+                    <QrCode className="w-4 h-4 text-red-500" />
+                    <span>{activeQrEntry?.method?.name || 'VietQR Chuyển khoản'}</span>
                   </div>
-
-                  {/* Summary progress */}
-                  <div className="p-2.5 rounded-xl bg-gray-50 border border-gray-200 space-y-1 text-xs">
-                    <div className="flex justify-between text-gray-600">
-                      <span>Cần thanh toán:</span>
-                      <span className="font-bold text-gray-900">{grandTotal.toLocaleString('vi-VN')}đ</span>
-                    </div>
-                    <div className="flex justify-between text-gray-600">
-                      <span>Đã phân bổ:</span>
-                      <span className="font-bold text-[#da251d]">{totalAllocated.toLocaleString('vi-VN')}đ</span>
-                    </div>
-                    <div className="flex justify-between pt-1 border-t border-gray-200 font-bold">
-                      <span>Còn thiếu:</span>
-                      <span className={multiRemainingNeeded === 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                        {multiRemainingNeeded === 0 ? 'Đã đủ tiền' : `${multiRemainingNeeded.toLocaleString('vi-VN')}đ`}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Method 1 Card */}
-                  <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-gray-800 flex items-center gap-1 truncate max-w-[170px]">
-                        <span className="w-4 h-4 rounded-full bg-red-100 text-[#da251d] text-[10px] font-black flex items-center justify-center shrink-0">1</span>
-                        <span className="truncate">{currentMethod?.name || selectedMethodCode}</span>
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const half = Math.floor(grandTotal / 2);
-                            setSplitAmounts((prev) => ({
-                              ...prev,
-                              [selectedMethodCode]: half,
-                              [multiSecondMethodCode]: grandTotal - half,
-                            }));
-                          }}
-                          className="text-[10px] text-gray-600 hover:text-gray-900 bg-white border border-gray-200 px-1.5 py-0.5 rounded font-medium cursor-pointer"
-                        >
-                          50%
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSplitAmounts((prev) => ({
-                              ...prev,
-                              [selectedMethodCode]: grandTotal,
-                              [multiSecondMethodCode]: 0,
-                            }));
-                          }}
-                          className="text-[10px] text-[#da251d] hover:underline font-bold cursor-pointer"
-                        >
-                          Toàn bộ
-                        </button>
-                      </div>
-                    </div>
-                    <input
-                      type="number"
-                      min="0"
-                      value={splitAmounts[selectedMethodCode] ?? ''}
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value || '0', 10));
-                        setSplitAmounts((prev) => ({
-                          ...prev,
-                          [selectedMethodCode]: val,
-                          [multiSecondMethodCode]: Math.max(0, grandTotal - val),
-                        }));
-                      }}
-                      placeholder="0đ"
-                      className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold text-right outline-none focus:border-[#da251d]"
-                    />
-                  </div>
-
-                  {/* Method 2 Card ("Chọn thêm 1 phương thức nữa") */}
-                  <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200 space-y-1.5">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="font-bold text-gray-800 flex items-center gap-1">
-                        <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 text-[10px] font-black flex items-center justify-center shrink-0">2</span>
-                        <span>Chọn thêm PT thứ 2:</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const m1Amt = splitAmounts[selectedMethodCode] || 0;
-                          const needed = Math.max(0, grandTotal - m1Amt);
-                          setSplitAmounts((prev) => ({ ...prev, [multiSecondMethodCode]: needed }));
-                        }}
-                        className="text-[10px] text-[#da251d] hover:underline font-bold cursor-pointer"
-                      >
-                        Điền còn lại
-                      </button>
-                    </div>
-
-                    {/* Dropdown to pick the 2nd method */}
-                    <select
-                      value={multiSecondMethodCode}
-                      onChange={(e) => {
-                        const newM2 = e.target.value;
-                        const prevM2 = multiSecondMethodCode;
-                        const prevM2Amt = splitAmounts[prevM2] || 0;
-                        setMultiSecondMethodCode(newM2);
-                        setIsMultiSepayQrGenerated(false);
-                        setSplitAmounts((prev) => {
-                          const updated = { ...prev };
-                          delete updated[prevM2];
-                          updated[newM2] = prevM2Amt;
-                          return updated;
-                        });
-                      }}
-                      className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold outline-none focus:border-[#da251d] text-gray-800 cursor-pointer"
-                    >
-                      {paymentMethods
-                        .filter((m) => m.methodCode !== selectedMethodCode)
-                        .map((m) => (
-                          <option key={m.id} value={m.methodCode}>
-                            {m.name}
-                          </option>
-                        ))}
-                    </select>
-
-                    <input
-                      type="number"
-                      min="0"
-                      value={splitAmounts[multiSecondMethodCode] ?? ''}
-                      onChange={(e) => {
-                        const val = Math.max(0, parseInt(e.target.value || '0', 10));
-                        setSplitAmounts((prev) => ({ ...prev, [multiSecondMethodCode]: val }));
-                      }}
-                      placeholder="0đ"
-                      className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-mono font-bold text-right outline-none focus:border-[#da251d]"
-                    />
-                  </div>
-
-                  {/* If either Method 1 or Method 2 is SePay Transfer: Show "Tạo mã QR chuyển khoản" button and QR */}
-                  {(() => {
-                    const isM1Sepay = selectedMethodCode === 'SEPAY_QR' || selectedMethodCode.includes('SEPAY') || selectedMethodCode.includes('TRANSFER');
-                    const isM2Sepay = multiSecondMethodCode === 'SEPAY_QR' || multiSecondMethodCode.includes('SEPAY') || multiSecondMethodCode.includes('TRANSFER');
-                    const sepayCode = isM1Sepay ? selectedMethodCode : isM2Sepay ? multiSecondMethodCode : null;
-                    const sepayAmt = sepayCode ? (splitAmounts[sepayCode] || 0) : 0;
-
-                    if (!sepayCode || sepayAmt <= 0) return null;
-
-                    const multiSepayQrUrl = `https://qr.sepay.vn/img?acc=${encodeURIComponent(accountNumber)}&bank=${encodeURIComponent(bankCode)}&amount=${sepayAmt}&des=${encodeURIComponent(orderCodeForQr)}`;
-
-                    return (
-                      <div className="p-3 bg-red-50/50 rounded-xl border border-red-200 space-y-2 text-center">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-gray-900 flex items-center gap-1.5">
-                            <QrCode className="w-4 h-4 text-[#da251d]" />
-                            <span>Chuyển khoản SePay</span>
-                          </span>
-                          <span className="font-mono font-bold text-[#da251d]">
-                            {sepayAmt.toLocaleString('vi-VN')}đ
-                          </span>
-                        </div>
-
-                        {!isMultiSepayQrGenerated ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setIsMultiSepayQrGenerated(true);
-                              toast.success('Đã tạo mã QR chuyển khoản!', {
-                                icon: <QrCode className="w-4 h-4 text-blue-500" />,
-                              });
-                            }}
-                            className="w-full py-2 px-3 bg-white hover:bg-red-50 border border-[#da251d] text-[#da251d] font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer active:scale-98 flex items-center justify-center gap-1.5"
-                          >
-                            <QrCode className="w-3.5 h-3.5" />
-                            <span>Tạo mã QR chuyển khoản ({sepayAmt.toLocaleString('vi-VN')}đ)</span>
-                          </button>
-                        ) : (
-                          <div className="space-y-2 pt-1 flex flex-col items-center">
-                            <div className="p-2 bg-white rounded-xl border border-gray-200 shadow-sm inline-block">
-                              <img
-                                src={multiSepayQrUrl}
-                                alt="Mã QR chuyển khoản"
-                                className="w-36 h-36 object-contain mx-auto"
-                                loading="eager"
-                              />
-                            </div>
-                            <div className="text-[11px] text-gray-500">
-                              Quét mã để chuyển khoản đúng <span className="font-bold text-gray-900">{sepayAmt.toLocaleString('vi-VN')}đ</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setIsMultiSepayQrGenerated(false);
-                                setTimeout(() => setIsMultiSepayQrGenerated(true), 50);
-                                toast.success('Đã làm mới mã QR!');
-                              }}
-                              className="text-[11px] text-[#da251d] hover:underline font-bold cursor-pointer"
-                            >
-                              Làm mới mã QR
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                  <span className="font-mono text-red-600 dark:text-red-400 font-black">
+                    {qrAmount.toLocaleString('vi-VN')}đ
+                  </span>
                 </div>
 
-                {/* Quick actions for multi-method */}
-                <div className="pt-2 border-t border-gray-100 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setSplitAmounts({})}
-                    className="flex-1 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
-                  >
-                    Xóa tất cả
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const half = Math.floor(grandTotal / 2);
-                      setSplitAmounts({
-                        [selectedMethodCode]: half,
-                        [multiSecondMethodCode]: grandTotal - half,
-                      });
-                      setIsMultiSepayQrGenerated(false);
-                    }}
-                    className="flex-1 py-1.5 bg-red-50 hover:bg-red-100 text-[#da251d] font-bold rounded-lg text-[11px] transition-colors cursor-pointer"
-                  >
-                    Chia đôi (50/50)
-                  </button>
-                </div>
-              </div>
-            ) : isCashMethod ? (
-              /* =========================================================
-                 CASE B: CASH (TIỀN MẶT) - TOUCH NUMPAD REPLACES TEXT LINES!
-                 ========================================================= */
-              <div className="space-y-2.5 flex-1 flex flex-col justify-between">
-                <div className="space-y-2">
-                  {/* Top Cash Amount Header */}
-                  <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                    <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
-                      <Banknote className="w-4 h-4 text-emerald-600" />
-                      <span>Bàn phím tiền mặt</span>
-                    </span>
-                    <span className="text-[10px] font-mono text-gray-500">Cảm ứng POS</span>
-                  </div>
-
-                  {/* Cash Given & Change Displays */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="p-2 bg-gray-50 rounded-xl border border-gray-200 text-right">
-                      <span className="text-[10px] text-gray-500 block">Khách đưa:</span>
-                      <span className="text-sm font-black text-gray-900 font-mono">
-                        {cashGiven.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-
-                    <div className="p-2 bg-emerald-50 rounded-xl border border-emerald-200 text-right">
-                      <span className="text-[10px] text-emerald-700 block font-semibold">Tiền thối lại:</span>
-                      <span className="text-sm font-black text-emerald-700 font-mono">
-                        {cashChange.toLocaleString('vi-VN')}đ
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Quick Cash Presets */}
-                  <div className="grid grid-cols-3 gap-1">
-                    {[
-                      { label: 'Đủ tiền', val: grandTotal },
-                      { label: '50.000', val: 50000 },
-                      { label: '100.000', val: 100000 },
-                      { label: '200.000', val: 200000 },
-                      { label: '500.000', val: 500000 },
-                      { label: '1.000.000', val: 1000000 },
-                    ].map((p) => (
-                      <button
-                        key={p.label}
-                        type="button"
-                        onClick={() => setCashGivenStr(p.val.toString())}
-                        className={`py-1 rounded-lg border text-[11px] font-bold transition-all cursor-pointer ${
-                          p.val === cashGiven
-                            ? 'bg-red-50 border-[#da251d] text-[#da251d]'
-                            : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-100'
-                        }`}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Touch Numpad */}
-                  <div className="grid grid-cols-3 gap-1 pt-1">
-                    {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '000', 'DEL'].map((k) => (
-                      <button
-                        key={k}
-                        type="button"
-                        onClick={() => handleNumpadPress(k)}
-                        className={`h-9 rounded-xl font-mono font-bold text-xs flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
-                          k === 'C'
-                            ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
-                            : k === 'DEL'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
-                            : k === '000'
-                            ? 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
-                            : 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-100'
-                        } ${k === 'DEL' ? 'col-span-1' : ''}`}
-                      >
-                        {k}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : isSepayMethod ? (
-              /* =========================================================
-                 CASE C: SEPAY / VIETQR PRO (Ảnh 2 & Ảnh 3)
-                 ========================================================= */
-              <div className="space-y-3 flex flex-col items-center text-center pt-2">
-
-                {/* State 1: Before "Tạo mã thanh toán" is clicked (Image 2) */}
+                {/* State 1: Trước khi bấm "Tạo mã thanh toán" (Ảnh 3 Sapo) */}
                 {!isQrGenerated ? (
-                  <div className="w-full flex flex-col items-center space-y-2">
-                    <div className="relative w-44 h-44 rounded-xl border border-gray-200 flex items-center justify-center overflow-hidden bg-gray-50 shadow-inner">
-                      {/* Ghosted QR graphic */}
-                      <div className="absolute inset-0 opacity-20 flex items-center justify-center filter blur-xs pointer-events-none">
-                        <QrCode className="w-36 h-36 text-gray-600" />
+                  <div className="w-full flex flex-col items-center space-y-2.5">
+                    <div className={`relative w-48 h-48 rounded-2xl border flex items-center justify-center overflow-hidden shadow-inner ${
+                      isDarkMode ? 'bg-[#141b27] border-[#2c374c]' : 'bg-slate-100 border-slate-200'
+                    }`}>
+                      {/* Ghosted blurred QR graphic */}
+                      <div className="absolute inset-0 opacity-15 flex items-center justify-center filter blur-xs pointer-events-none">
+                        <QrCode className={`w-40 h-40 ${isDarkMode ? 'text-slate-400' : 'text-slate-600'}`} />
                       </div>
 
-                      {/* Prominent Centered Button: [ Tạo mã thanh toán ] */}
+                      {/* Prominent Centered Button: [ Tạo mã thanh toán ] (Y hệt SAPO) */}
                       <button
                         type="button"
                         onClick={handleGenerateQr}
-                        className="relative z-10 px-4 py-2 bg-white hover:bg-red-50 border border-[#da251d] text-[#da251d] font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer transform active:scale-95"
+                        className={`relative z-10 px-5 py-2.5 border-2 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer transform active:scale-95 flex items-center gap-1.5 ${
+                          isDarkMode
+                            ? 'bg-[#1e2738] hover:bg-[#253046] border-red-500 text-red-400 hover:text-white'
+                            : 'bg-white hover:bg-red-50 border-[#da251d] text-[#da251d]'
+                        }`}
                       >
-                        Tạo mã thanh toán
+                        <QrCode className="w-4 h-4" />
+                        <span>Tạo mã thanh toán</span>
                       </button>
                     </div>
 
-                    <div className="text-xs font-semibold text-gray-800">
-                      Số tiền: <span className="font-bold text-[#da251d]">{grandTotal.toLocaleString('vi-VN')}đ</span>
+                    <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                      Số tiền: <span className="font-black text-sm text-[#da251d] font-mono">{qrAmount.toLocaleString('vi-VN')}đ</span>
                     </div>
+
+                    <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      Bấm tạo mã để hiển thị mã VietQR chính xác số tiền cần chuyển.
+                    </p>
                   </div>
                 ) : (
-                  /* State 2: After "Tạo mã thanh toán" is clicked (Image 3) */
+                  /* State 2: Sau khi bấm "Tạo mã thanh toán" (Đơn hàng bị KHÓA không được thay đổi) */
                   <div className="w-full flex flex-col items-center space-y-2">
-                    {/* Real Sharp VietQR PNG Image rendered from SePay */}
-                    <div className="p-2 bg-white rounded-xl border border-gray-200 shadow-sm inline-block">
+                    {/* Real Sharp VietQR PNG Image rendered from SePay with exact qrAmount */}
+                    <div className="p-2.5 bg-white rounded-2xl border border-gray-200 shadow-md inline-block">
                       <img
                         src={sepayQrUrl}
                         alt="VietQR Chuyển Khoản"
-                        className="w-40 h-40 object-contain mx-auto"
+                        className="w-44 h-44 object-contain mx-auto"
                         loading="eager"
                       />
                     </div>
 
-                    <div className="text-xs font-semibold text-gray-800">
-                      Số tiền: <span className="font-bold text-[#da251d]">{grandTotal.toLocaleString('vi-VN')}đ</span>
+                    <div className={`text-xs font-semibold ${isDarkMode ? 'text-slate-200' : 'text-gray-800'}`}>
+                      Số tiền: <span className="font-black text-base text-[#da251d] font-mono">{qrAmount.toLocaleString('vi-VN')}đ</span>
                     </div>
 
                     {/* Expiration Countdown */}
-                    <div className="text-xs text-gray-500">
-                      Mã sẽ hết hạn sau <span className="text-[#da251d] font-bold font-mono">{countdown}</span> giây
+                    <div className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
+                      Mã sẽ hết hạn sau <span className="text-[#da251d] font-black font-mono">{countdown}</span> giây
                     </div>
 
                     {/* Action Button: In tạm tính & mã QR */}
@@ -1708,7 +1825,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       type="button"
                       onClick={handlePrintTempBillWithQr}
                       disabled={isPrintingTempBill}
-                      className="w-full py-2 px-3 border border-red-200 bg-white hover:bg-red-50 text-[#da251d] rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                      className={`w-full py-2 px-3 border rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50 ${
+                        isDarkMode
+                          ? 'border-[#2c374c] bg-[#1e2738] hover:bg-[#253046] text-red-400'
+                          : 'border-red-200 bg-white hover:bg-red-50 text-[#da251d]'
+                      }`}
                     >
                       {isPrintingTempBill ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1718,27 +1839,97 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                       <span>{isPrintingTempBill ? 'Đang gửi lệnh in...' : 'In tạm tính & mã QR'}</span>
                     </button>
 
-                    {/* Link: Tạo mã mới */}
+                    {/* Feature 2: Anti-Fake Bill Verifier Button */}
                     <button
                       type="button"
-                      onClick={handleRegenerateQr}
-                      className="text-[#da251d] hover:underline font-bold text-xs cursor-pointer"
+                      disabled={isScanningBank}
+                      onClick={handleTriggerBankScan}
+                      className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 active:scale-98 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-60"
+                      title="Yêu cầu điện thoại AVORA Bank Connect quét ngay các thông báo ngân hàng đang có trên thanh trạng thái"
                     >
-                      Tạo mã mới
+                      {isScanningBank ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>ĐANG QUÉT THÔNG BÁO NGÂN HÀNG ({scanCountdown}s)...</span>
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 stroke-[2.5]" />
+                          <span>CHƯA THẤY TIỀN? BẤM KIỂM TRA NÓNG</span>
+                        </>
+                      )}
                     </button>
+
+                    {/* Scan Warning Banner if not found */}
+                    {scanWarning && (
+                      <div className="w-full p-2.5 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-800 text-left space-y-1.5 animate-in fade-in duration-200">
+                        <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-black text-xs">
+                          <AlertTriangle className="w-4 h-4 shrink-0" />
+                          <span>{scanWarning.message}</span>
+                        </div>
+                        <p className="text-[11px] text-rose-800/90 dark:text-rose-300 leading-relaxed font-medium">
+                          Gateway chưa nhận được thông báo biến động số dư khớp với số tiền <strong>{qrAmount.toLocaleString('vi-VN')}đ</strong>. Vui lòng đối chiếu với khách hàng.
+                        </p>
+                        {scanWarning.gatewayInfo && (
+                          <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 pt-1 border-t border-rose-100 dark:border-rose-900/50">
+                            {scanWarning.gatewayInfo}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Nút Chờ xác nhận & Giải phóng bàn */}
+                    <button
+                      type="button"
+                      onClick={handleMoveToAwaitingAndReleaseTable}
+                      disabled={isMovingToAwaiting}
+                      className="w-full py-2 px-3 bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/50 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs disabled:opacity-50"
+                    >
+                      {isMovingToAwaiting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+                      ) : (
+                        <Clock className="w-3.5 h-3.5 text-blue-600" />
+                      )}
+                      <span>Chờ xác nhận & Giải phóng bàn</span>
+                    </button>
+
+                    {/* Action buttons: Hủy mã để sửa đơn & Tạo lại mã */}
+                    <div className="flex items-center justify-between w-full pt-1 px-1 text-xs">
+                      <button
+                        type="button"
+                        onClick={handleCancelQrCode}
+                        className="text-amber-500 hover:text-amber-600 font-bold flex items-center gap-1 cursor-pointer"
+                        title="Hủy mã để cho phép chỉnh sửa lại món, điểm hoặc phương thức"
+                      >
+                        <Unlock className="w-3.5 h-3.5" />
+                        <span>Hủy mã để sửa đơn</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleRegenerateQr}
+                        className="text-[#da251d] hover:underline font-bold cursor-pointer"
+                      >
+                        Làm mới mã QR
+                      </button>
+                    </div>
                   </div>
                 )}
 
-                {/* Instructions */}
-                <div className="w-full text-left pt-1 space-y-1 text-gray-600 text-[11px]">
-                  <div className="font-bold text-gray-800">Hướng dẫn thanh toán cho người mua</div>
+                {/* Sapo-Style Instructions for Buyer */}
+                <div className={`w-full text-left pt-2 border-t space-y-1 text-[11px] ${
+                  isDarkMode ? 'border-[#2c374c] text-slate-300' : 'border-slate-200 text-gray-600'
+                }`}>
+                  <div className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                    Hướng dẫn thanh toán cho người mua
+                  </div>
                   <div>Bước 1: Mở ứng dụng thanh toán</div>
                   <div>Bước 2: Chọn thanh toán và quét mã QR</div>
                   <div>Bước 3: Hoàn thành thanh toán theo hướng dẫn</div>
                 </div>
 
-                {/* Warning Alert */}
-                <div className="w-full p-2.5 bg-amber-50 rounded-xl border border-amber-200/80 text-left text-amber-900 text-[10px] space-y-1 leading-relaxed">
+                {/* Sapo-Style Warning Alert Box */}
+                <div className="w-full p-2.5 bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-200/80 dark:border-amber-800/80 text-left text-amber-900 dark:text-amber-200 text-[10px] space-y-1 leading-relaxed">
                   <div className="flex items-start gap-1">
                     <span className="shrink-0">•</span>
                     <span>Kiểm tra kỹ và không chỉnh sửa thông tin giao dịch khi thanh toán</span>
@@ -1749,20 +1940,275 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                   </div>
                 </div>
               </div>
+            ) : isMultiPaymentMode ? (
+              /* =========================================================
+                 CASE 2: MULTI-PAYMENT WITHOUT QR (e.g. Tiền mặt + Cà thẻ)
+                 ========================================================= */
+              <div className="space-y-3 flex-1 flex flex-col justify-between overflow-y-auto">
+                <div className="space-y-2.5">
+                  <div className={`flex items-center justify-between pb-1.5 border-b ${isDarkMode ? 'border-[#2c374c]' : 'border-gray-200'}`}>
+                    <span className={`font-bold text-xs flex items-center gap-1.5 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                      <Layers className="w-4 h-4 text-blue-500" />
+                      <span>Phân bổ nhiều phương thức</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsMultiConfigModalOpen(true)}
+                      className="text-xs text-blue-500 hover:underline font-bold cursor-pointer"
+                    >
+                      Sửa phân bổ
+                    </button>
+                  </div>
+
+                  {/* Summary progress */}
+                  <div className={`p-3 rounded-xl space-y-1 text-xs border ${
+                    isDarkMode ? 'bg-[#1e2738] border-[#2c374c] text-slate-200' : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}>
+                    <div className="flex justify-between">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Cần thanh toán:</span>
+                      <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{grandTotal.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Đã phân bổ:</span>
+                      <span className="font-bold text-blue-500">{totalAllocated.toLocaleString('vi-VN')}đ</span>
+                    </div>
+                    <div className={`flex justify-between pt-1 border-t font-bold ${isDarkMode ? 'border-[#2c374c]' : 'border-slate-200'}`}>
+                      <span className={isDarkMode ? 'text-slate-300' : 'text-slate-700'}>Còn thiếu:</span>
+                      <span className={multiRemainingNeeded === 0 ? 'text-emerald-500' : 'text-rose-500'}>
+                        {multiRemainingNeeded === 0 ? 'Đã đủ tiền' : `${multiRemainingNeeded.toLocaleString('vi-VN')}đ`}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Allocated Methods Cards */}
+                  <div className="space-y-1.5">
+                    {Object.entries(splitAmounts)
+                      .filter(([_, amt]) => (amt || 0) > 0)
+                      .map(([code, amt]) => {
+                        const m = paymentMethods.find((pm) => pm.methodCode === code);
+                        return (
+                          <div
+                            key={code}
+                            className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${
+                              isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-white border-slate-200'
+                            }`}
+                          >
+                            <span className={`font-semibold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
+                              {m?.name || code}
+                            </span>
+                            <span className="font-mono font-bold text-blue-500">
+                              {amt.toLocaleString('vi-VN')}đ
+                            </span>
+                          </div>
+                        );
+                      })}
+                  </div>
+
+                  {/* Cash given & change if Cash is in the split */}
+                  {splitAmounts['COD'] || splitAmounts['CASH'] ? (
+                    <div className={`p-2.5 rounded-xl border space-y-2 ${
+                      isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-emerald-50/50 border-emerald-200'
+                    }`}>
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <Banknote className="w-4 h-4" />
+                          <span>Phần tiền mặt:</span>
+                        </span>
+                        <span className="font-mono font-bold">
+                          {((splitAmounts['COD'] || 0) + (splitAmounts['CASH'] || 0)).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs">
+                        <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Khách đưa:</span>
+                        <span className="font-bold font-mono">{cashGiven.toLocaleString('vi-VN')}đ</span>
+                      </div>
+                      <div className="flex justify-between items-center text-xs font-bold">
+                        <span className="text-emerald-600 dark:text-emerald-400">Tiền thừa:</span>
+                        <span className="text-emerald-600 dark:text-emerald-400 font-mono">
+                          {Math.max(0, cashGiven - ((splitAmounts['COD'] || 0) + (splitAmounts['CASH'] || 0))).toLocaleString('vi-VN')}đ
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMultiConfigModalOpen(true)}
+                  className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Mở bảng chỉnh sửa phân bổ (Sapo)</span>
+                </button>
+              </div>
+            ) : isCashMethod ? (
+              /* =========================================================
+                 CASE 3: CASH (TIỀN MẶT ĐƠN) - TOUCH NUMPAD
+                 ========================================================= */
+              <div className="space-y-2.5 flex-1 flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className={`flex items-center justify-between pb-1.5 border-b ${
+                    isDarkMode ? 'border-[#2c374c]' : 'border-gray-100'
+                  }`}>
+                    <span className={`font-bold text-xs flex items-center gap-1.5 ${
+                      isDarkMode ? 'text-slate-200' : 'text-gray-800'
+                    }`}>
+                      <Banknote className="w-4 h-4 text-emerald-500" />
+                      <span>Thông tin tiền mặt</span>
+                    </span>
+                    <span className={`text-[10px] font-mono ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>AVORA POS</span>
+                  </div>
+
+                  {/* Cash Given & Change Displays */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className={`p-2.5 rounded-xl border ${
+                      isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-gray-50 border-gray-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className={`text-[10px] block font-bold ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Khách đưa:</span>
+                        <button
+                          type="button"
+                          onClick={() => setCashGivenStr(grandTotal.toString())}
+                          className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-[#da251d]/10 text-[#da251d] hover:bg-[#da251d]/20 transition-colors"
+                        >
+                          Đủ tiền
+                        </button>
+                      </div>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cashGivenStr ? Number(cashGivenStr).toLocaleString('vi-VN') : ''}
+                          onChange={(e) => {
+                            const raw = e.target.value.replace(/\D/g, '');
+                            setCashGivenStr(raw);
+                          }}
+                          placeholder="0"
+                          className={`w-full text-right text-base font-black font-mono pr-5 py-1 rounded-lg border outline-none focus:border-[#da251d] ${
+                            isDarkMode ? 'bg-[#181f2c] border-[#2c374c] text-white' : 'bg-white border-gray-200 text-gray-900'
+                          }`}
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400 pointer-events-none">
+                          đ
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className={`p-2.5 rounded-xl border text-right flex flex-col justify-between ${
+                      isDarkMode ? 'bg-emerald-950/40 border-emerald-900/60' : 'bg-emerald-50 border-emerald-200'
+                    }`}>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-bold">Tiền thừa:</span>
+                      <span className="text-base font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                        {cashChange.toLocaleString('vi-VN')}đ
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* For POS Desktop (!fullscreen): Full Touch Numpad + Quick Presets */}
+                  {!fullscreen ? (
+                    <div className="space-y-1.5 pt-1">
+                      {/* Quick Cash Presets */}
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { label: 'Đúng số tiền', val: grandTotal },
+                          { label: '100.000', val: 100000 },
+                          { label: '200.000', val: 200000 },
+                          { label: '500.000', val: 500000 },
+                          { label: '1.000.000', val: 1000000 },
+                          { label: '2.000.000', val: 2000000 },
+                        ].map((p) => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => setCashGivenStr(p.val.toString())}
+                            className={`h-8 rounded-lg border text-xs font-semibold transition-all cursor-pointer ${
+                              p.val === cashGiven
+                                ? isDarkMode ? 'bg-red-950/50 border-[#da251d] text-red-400' : 'bg-red-50 border-[#da251d] text-[#da251d]'
+                                : isDarkMode ? 'bg-[#1e2738] border-[#2c374c] text-slate-200 hover:bg-[#253046]' : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Touch Numpad (Cash Keypad) - 100% trả lại cho /admin/pos */}
+                      <div className="grid grid-cols-3 gap-1 pt-1">
+                        {['1', '2', '3', '4', '5', '6', '7', '8', '9', 'C', '0', '000', 'DEL'].map((k) => (
+                          <button
+                            key={k}
+                            type="button"
+                            onClick={() => handleNumpadPress(k)}
+                            className={`h-9 rounded-xl font-mono font-bold text-xs flex items-center justify-center transition-all cursor-pointer shadow-2xs ${
+                              k === 'C'
+                                ? 'bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100'
+                                : k === 'DEL'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                                : k === '000'
+                                ? 'bg-gray-100 text-gray-800 border border-gray-200 hover:bg-gray-200'
+                                : isDarkMode
+                                ? 'bg-[#1e2738] text-slate-200 border border-[#2c374c] hover:bg-[#253046]'
+                                : 'bg-white text-gray-900 border border-gray-200 hover:bg-gray-100'
+                            } ${k === 'DEL' ? 'col-span-1' : ''}`}
+                          >
+                            {k}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Fullscreen Waiter POS mode: Compact Quick Cash Presets without the numpad grid */
+                    <div className="space-y-1">
+                      <span className={`text-[10px] font-bold block ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>Mệnh giá nhanh:</span>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { label: 'Đủ tiền', val: grandTotal },
+                          { label: '50k', val: 50000 },
+                          { label: '100k', val: 100000 },
+                          { label: '200k', val: 200000 },
+                          { label: '500k', val: 500000 },
+                          { label: '1.000k', val: 1000000 },
+                          { label: '2.000k', val: 2000000 },
+                          { label: 'Xóa', val: 0 },
+                        ].map((p) => (
+                          <button
+                            key={p.label}
+                            type="button"
+                            onClick={() => setCashGivenStr(p.val === 0 ? '' : p.val.toString())}
+                            className={`py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                              p.val !== 0 && p.val === cashGiven
+                                ? isDarkMode ? 'bg-red-950/50 border-[#da251d] text-red-400' : 'bg-red-50 border-[#da251d] text-[#da251d]'
+                                : isDarkMode ? 'bg-[#1e2738] border-[#2c374c] text-slate-200 hover:bg-[#253046]' : 'bg-white border-gray-200 text-gray-800 hover:bg-gray-100'
+                            }`}
+                          >
+                            {p.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
-              /* Other Generic Methods */
+              /* Other Generic Methods (Card, Wallet, etc.) */
               <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
-                <div className="w-14 h-14 rounded-full bg-red-50 text-[#da251d] flex items-center justify-center mx-auto shadow-inner">
+                <div className={`w-14 h-14 rounded-full flex items-center justify-center mx-auto shadow-inner ${
+                  isDarkMode ? 'bg-blue-950/50 text-blue-400' : 'bg-red-50 text-[#da251d]'
+                }`}>
                   <CreditCard className="w-8 h-8" />
                 </div>
-                <h4 className="font-bold text-gray-900 text-sm">Thanh toán: {currentMethod?.name}</h4>
-                <p className="text-gray-500 text-xs">
+                <h4 className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Thanh toán: {currentMethod?.name}
+                </h4>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                   Thực hiện thanh toán qua thiết bị POS hoặc cổng thanh toán.
                 </p>
-                <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs w-full text-left space-y-1">
+                <div className={`p-3 rounded-xl border text-xs w-full text-left space-y-1 ${
+                  isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-gray-50 border-gray-200'
+                }`}>
                   <div className="flex justify-between">
-                    <span className="text-gray-500">Cần thu:</span>
-                    <span className="font-bold text-gray-900">{grandTotal.toLocaleString('vi-VN')}đ</span>
+                    <span className={isDarkMode ? 'text-slate-400' : 'text-gray-500'}>Cần thu:</span>
+                    <span className={`font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>{grandTotal.toLocaleString('vi-VN')}đ</span>
                   </div>
                 </div>
               </div>
@@ -1775,13 +2221,54 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
             - Multi-method / Cash: Active Red Bar "XÁC NHẬN THANH TOÁN (F8)"
             - SePay: Disabled Red-Rose Bar "CHỜ XÁC NHẬN TỰ ĐỘNG"
             ========================================================================= */}
-        <div className="shrink-0">
-          {isMultiPaymentMode ? (
+        <div className={`shrink-0 border-t ${
+          fullscreen ? 'pb-[max(18px,calc(env(safe-area-inset-bottom)+10px))] select-none touch-none overscroll-none' : ''
+        } ${isDarkMode ? 'bg-[#1e2738] border-[#2c374c]' : 'bg-white border-slate-200'}`}>
+          {hasActiveQr && isQrGenerated ? (
+            /* Khi đã tạo mã QR: Thanh trạng thái chờ xác nhận tự động + Nút xác nhận thủ công F8 */
+            <div className={`flex flex-col sm:flex-row gap-2 p-2.5 ${
+              isDarkMode ? 'bg-[#1e2738]' : 'bg-slate-50'
+            }`}>
+              <button
+                type="button"
+                disabled
+                className="flex-1 bg-gradient-to-r from-[#da251d] to-rose-700 text-white py-3 px-4 font-black text-xs sm:text-sm tracking-wider flex items-center justify-center gap-2 cursor-not-allowed opacity-95 rounded-xl shadow-xs"
+              >
+                {sepayStatus === 'PAID' ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-white animate-bounce" />
+                    <span>ĐÃ NHẬN TIỀN - ĐANG HOÀN TẤT...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
+                    <span>CHỜ XÁC NHẬN TỰ ĐỘNG NGÂN HÀNG (F2)</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                disabled={isMovingToAwaiting || !cartItems?.length}
+                onClick={handleMoveToAwaitingAndReleaseTable}
+                className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 disabled:opacity-50 text-white py-3 px-4 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 rounded-xl transition-all cursor-pointer shadow-md shrink-0"
+                title="Giải phóng bàn ngay để đón khách mới, đơn chuyển vào tab Chờ xác nhận"
+              >
+                {isMovingToAwaiting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4" />
+                )}
+                <span>Chờ xác nhận & Giải phóng bàn</span>
+              </button>
+            </div>
+          ) : isMultiPaymentMode ? (
+            /* Nhiều phương thức chưa tạo QR hoặc không có QR */
             <button
               type="button"
-              disabled={isProcessing || totalAllocated < grandTotal}
+              disabled={isProcessing || !cartItems?.length || totalAllocated < grandTotal}
               onClick={() => handleFinalSubmit()}
-              className="w-full bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-300 disabled:text-gray-500 text-white py-3.5 px-4 font-black text-sm tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-99 shadow-md"
+              className="w-full bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-300 dark:disabled:bg-slate-800 disabled:text-gray-500 text-white py-3.5 px-4 font-black text-sm tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-99 shadow-md"
             >
               {isProcessing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -1789,53 +2276,54 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                 <Check className="w-5 h-5 stroke-[3]" />
               )}
               <span>
-                {totalAllocated < grandTotal
+                {!cartItems?.length
+                  ? 'ĐƠN HÀNG TRỐNG (0 MÓN)'
+                  : totalAllocated < grandTotal
                   ? `CÒN THIẾU ${(grandTotal - totalAllocated).toLocaleString('vi-VN')}đ (F8)`
                   : `XÁC NHẬN THANH TOÁN NHIỀU PHƯƠNG THỨC (${totalAllocated.toLocaleString('vi-VN')}đ) (F8)`}
               </span>
             </button>
-          ) : isSepayMethod ? (
-            /* Auto-confirm SePay: Disallow manual confirmation per requirement */
-            <button
-              type="button"
-              disabled
-              className="w-full bg-gradient-to-r from-[#da251d] to-rose-700 text-white py-3.5 px-4 font-black text-sm tracking-wider flex items-center justify-center gap-2 cursor-not-allowed opacity-95 transition-all"
-            >
-              {sepayStatus === 'PAID' ? (
-                <>
-                  <CheckCircle2 className="w-5 h-5 text-white animate-bounce" />
-                  <span>ĐÃ NHẬN THANH TOÁN SEPAY - ĐANG HOÀN TẤT...</span>
-                </>
-              ) : (
-                <>
-                  <span className="w-2.5 h-2.5 rounded-full bg-white animate-pulse" />
-                  <span>CHỜ XÁC NHẬN TỰ ĐỘNG SEPAY</span>
-                </>
-              )}
-            </button>
           ) : (
-            /* Cash / Manual payment method */
+            /* Phương thức đơn tiền mặt / thẻ thông thường */
             <button
               type="button"
-              disabled={isProcessing || (isCashMethod && cashGiven < grandTotal)}
+              disabled={isProcessing || !cartItems?.length || (isCashMethod && cashGiven < grandTotal)}
               onClick={() => handleFinalSubmit()}
-              className="w-full bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-300 disabled:text-gray-500 text-white py-3.5 px-4 font-black text-sm tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-99 shadow-md"
+              className="w-full bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-300 dark:disabled:bg-slate-800 disabled:text-gray-500 text-white py-3.5 px-4 font-black text-sm tracking-wider flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-99 shadow-md"
             >
               {isProcessing ? (
                 <Loader2 className="w-5 h-5 animate-spin" />
               ) : (
                 <Check className="w-5 h-5 stroke-[3]" />
               )}
-              <span>XÁC NHẬN THANH TOÁN (F8)</span>
+              <span>{!cartItems?.length ? 'ĐƠN HÀNG TRỐNG (0 MÓN)' : 'XÁC NHẬN THANH TOÁN (F8)'}</span>
             </button>
           )}
         </div>
       </div>
 
+      {/* Sapo-Style Multi Payment Configuration Modal */}
+      <MultiPaymentModal
+        isOpen={isMultiConfigModalOpen}
+        onClose={() => setIsMultiConfigModalOpen(false)}
+        grandTotal={grandTotal}
+        paymentMethods={paymentMethods}
+        initialSplitAmounts={splitAmounts}
+        isDarkMode={isDarkMode}
+        onApply={(newSplits) => {
+          setSplitAmounts(newSplits);
+          setIsMultiPaymentMode(true);
+          setIsQrGenerated(false);
+          setSepayStatus('WAITING');
+          toast.success('Đã áp dụng phân bổ nhiều phương thức thanh toán!');
+        }}
+      />
+
       {/* Quick Add Customer Modal */}
       {isCreateCustomerOpen && (
         <CreateCustomerModal
           onClose={() => setIsCreateCustomerOpen(false)}
+          isDarkMode={isDarkMode}
           onSuccess={(newMember) => {
             handleSelectMember(newMember);
           }}
@@ -1846,6 +2334,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       {isEditCustomerVatOpen && selectedMember && (
         <EditCustomerVatModal
           customer={selectedMember}
+          isDarkMode={isDarkMode}
           onClose={() => setIsEditCustomerVatOpen(false)}
           onSuccess={(updated) => {
             setSelectedMember(updated);

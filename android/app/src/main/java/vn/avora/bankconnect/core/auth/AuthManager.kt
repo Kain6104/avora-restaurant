@@ -24,6 +24,8 @@ class AuthManager private constructor(context: Context) {
         private const val KEY_BIOMETRIC_ENABLED = "biometric_quick_login_enabled"
         private const val KEY_LOCK_TIMEOUT_MINS = "lock_timeout_minutes"
         private const val KEY_LAST_ACTIVE_TIME = "last_active_timestamp"
+        private const val KEY_HAS_PREVIOUS_ADMIN_LOGIN = "has_previous_admin_login"
+        private const val KEY_LAST_ADMIN_EMAIL = "last_admin_email"
 
         @Volatile
         private var instance: AuthManager? = null
@@ -57,18 +59,46 @@ class AuthManager private constructor(context: Context) {
     }
 
     fun saveSession(token: String, user: AuthUser) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_TOKEN, token)
             .putString(KEY_USER_ID, user.id)
             .putString(KEY_USER_EMAIL, user.email)
             .putString(KEY_USER_NAME, user.fullName)
             .putString(KEY_USER_ROLE, user.role)
-            .apply()
+
+        val role = user.role.uppercase().trim()
+        if (role == "ADMIN" || role == "SUPER_ADMIN") {
+            editor.putBoolean(KEY_HAS_PREVIOUS_ADMIN_LOGIN, true)
+            editor.putString(KEY_LAST_ADMIN_EMAIL, user.email)
+        }
+        editor.apply()
     }
 
     fun clearSession() {
-        prefs.edit().clear().apply()
+        // Chỉ xóa token và thông tin phiên hiện tại, giữ lại cờ đã từng đăng nhập Admin và email
+        // để hỗ trợ xác thực vân tay sau này nếu tài khoản đó là Admin
+        prefs.edit()
+            .remove(KEY_TOKEN)
+            .remove(KEY_USER_ID)
+            .remove(KEY_USER_EMAIL)
+            .remove(KEY_USER_NAME)
+            .remove(KEY_USER_ROLE)
+            .remove(KEY_LAST_ACTIVE_TIME)
+            .apply()
+        memoryAppLocked = false
     }
+
+    var hasPreviousAdminLogin: Boolean
+        get() = prefs.getBoolean(KEY_HAS_PREVIOUS_ADMIN_LOGIN, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_HAS_PREVIOUS_ADMIN_LOGIN, value).apply()
+        }
+
+    var lastAdminEmail: String?
+        get() = prefs.getString(KEY_LAST_ADMIN_EMAIL, null)
+        set(value) {
+            prefs.edit().putString(KEY_LAST_ADMIN_EMAIL, value).apply()
+        }
 
     fun isAdmin(): Boolean {
         val role = prefs.getString(KEY_USER_ROLE, "") ?: ""

@@ -9,7 +9,11 @@
         AllowsTransparency="True"
         Background="Transparent"
         ShowInTaskbar="False"
-        Topmost="True">
+        Topmost="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
 
     <Window.Resources>
         <Style x:Key="MethodBtn" TargetType="Button">
@@ -54,10 +58,7 @@
         </Style>
     </Window.Resources>
 
-    <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1.5" CornerRadius="16" Padding="28">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="30" Direction="270" ShadowDepth="6" Opacity="0.18" Color="#000000" />
-        </Border.Effect>
+    <Border Background="#FFFFFF" BorderBrush="#94A3B8" BorderThickness="2" CornerRadius="14" Padding="28">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -168,11 +169,17 @@
                             </Grid>
 
                             <!-- Quick Presets -->
-                            <UniformGrid Columns="4">
-                                <Button Content="ĐỦ TIỀN" Style="{StaticResource CashPresetBtn}" Click="BtnPresetExact_Click" />
+                            <UniformGrid Columns="4" Margin="0,0,0,4">
+                                <Button Content="ĐỦ TIỀN" Style="{StaticResource CashPresetBtn}" Click="BtnPresetExact_Click" Background="#EFF6FF" Foreground="#1D4ED8"/>
+                                <Button Content="50k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetNum_Click" Tag="50000" />
                                 <Button Content="100k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetNum_Click" Tag="100000" />
                                 <Button Content="200k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetNum_Click" Tag="200000" />
+                            </UniformGrid>
+                            <UniformGrid Columns="4">
                                 <Button Content="500k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetNum_Click" Tag="500000" />
+                                <Button Content="+10k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetAdd_Click" Tag="10000" Foreground="#059669" Background="#F0FDF4"/>
+                                <Button Content="+20k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetAdd_Click" Tag="20000" Foreground="#059669" Background="#F0FDF4"/>
+                                <Button Content="+50k" Style="{StaticResource CashPresetBtn}" Click="BtnPresetAdd_Click" Tag="50000" Foreground="#059669" Background="#F0FDF4"/>
                             </UniformGrid>
                         </StackPanel>
 

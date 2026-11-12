@@ -97,9 +97,10 @@ fun ConnectionCenterScreen(
         ) {
             // 1. Android Notification Listener Service Card
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -157,9 +158,10 @@ fun ConnectionCenterScreen(
 
             // 2. VPS Production Connection Card
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -230,9 +232,10 @@ fun ConnectionCenterScreen(
 
             // 3. Queue & Reliability Diagnostics
             Card(
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(

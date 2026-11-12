@@ -7,10 +7,11 @@ import { useRouter } from 'next/navigation';
 import {
   MapPin, Phone, Clock, Navigation,
   Utensils, LocateFixed, Loader2,
-  Building2, Search
+  Building2, Search, ArrowRight
 } from 'lucide-react';
 import type { Branch, RouteInfo } from '@/src/components/RestaurantsMap';
 import { useCart } from '@/context/CartContext';
+import { getBranchUrl } from '@/lib/utils/slug';
 
 // ── Dynamic import (no SSR for Leaflet) ─────────────────────────────────────
 const RestaurantsMap = dynamic(
@@ -288,7 +289,8 @@ export default function RestaurantsPageClient({ initialBranches }: { initialBran
                 {/* Route info badge if routed */}
                 {hasRouteForThis && routeInfo && (
                   <span className="absolute top-2.5 right-2.5 flex items-center gap-1 text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-md px-1.5 py-0.5">
-                    🗺 {routeInfo.distanceKm.toFixed(1)}km · {routeInfo.durationMin}ph
+                    <Navigation className="w-2.5 h-2.5 inline mr-0.5" />
+                    {routeInfo.distanceKm.toFixed(1)}km · {routeInfo.durationMin}ph
                   </span>
                 )}
 
@@ -300,9 +302,13 @@ export default function RestaurantsPageClient({ initialBranches }: { initialBran
                       <Building2 className={`w-4 h-4 ${isSelected ? 'text-red-600' : 'text-slate-400'}`} />
                     </div>
                     <div className="flex-1 min-w-0 pr-12">
-                      <h3 className={`text-sm font-semibold truncate ${isSelected ? 'text-red-700' : 'text-slate-800'}`}>
+                      <Link
+                        href={getBranchUrl(branch)}
+                        onClick={e => e.stopPropagation()}
+                        className={`text-sm font-semibold truncate block hover:underline hover:text-red-600 transition-colors ${isSelected ? 'text-red-700' : 'text-slate-800'}`}
+                      >
                         {branch.name}
-                      </h3>
+                      </Link>
                       {(branch.street || branch.province) && (
                         <p className="text-xs text-slate-500 mt-0.5 truncate">
                           {[branch.street, branch.ward, branch.province].filter(Boolean).join(', ')}
@@ -353,19 +359,15 @@ export default function RestaurantsPageClient({ initialBranches }: { initialBran
 
                   <div className={`w-px ${isSelected ? 'bg-red-100' : 'bg-slate-100'}`} />
 
-                  {/* Google Maps */}
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${branch.name} ${branch.street || ''} ${branch.province || ''}`)}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  {/* Chi tiết chi nhánh */}
+                  <Link
+                    href={getBranchUrl(branch)}
                     onClick={e => e.stopPropagation()}
-                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium text-slate-500 hover:text-green-600 hover:bg-green-50/50 transition-colors"
+                    className="flex-1 flex items-center justify-center gap-1 py-1.5 text-[11px] font-medium text-slate-600 hover:text-red-600 hover:bg-red-50/50 transition-colors"
                   >
-                    <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                      <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z" />
-                    </svg>
-                    <span>Google</span>
-                  </a>
+                    <ArrowRight className="w-3 h-3" />
+                    <span>Chi tiết</span>
+                  </Link>
 
                   <div className={`w-px ${isSelected ? 'bg-red-100' : 'bg-slate-100'}`} />
 

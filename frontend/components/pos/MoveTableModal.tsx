@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from 'react';
-import { X, ArrowRightLeft, Users, CheckCircle2 } from 'lucide-react';
+import { ArrowRightLeft, Users } from 'lucide-react';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 import { PosTable } from './pos-types';
 
 interface MoveTableModalProps {
@@ -10,6 +11,7 @@ interface MoveTableModalProps {
   onClose: () => void;
   onConfirmMove: (targetTableId: string) => Promise<void>;
   isProcessing?: boolean;
+  isDarkMode?: boolean;
 }
 
 export const MoveTableModal: React.FC<MoveTableModalProps> = ({
@@ -18,6 +20,7 @@ export const MoveTableModal: React.FC<MoveTableModalProps> = ({
   onClose,
   onConfirmMove,
   isProcessing = false,
+  isDarkMode = false,
 }) => {
   const [selectedTargetTableId, setSelectedTargetTableId] = useState<string>('');
 
@@ -32,71 +35,21 @@ export const MoveTableModal: React.FC<MoveTableModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 max-w-md w-full overflow-hidden flex flex-col max-h-[85vh]">
-        {/* Header */}
-        <div className="p-4 border-b border-gray-200 flex items-center justify-between bg-gray-50/60">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <ArrowRightLeft className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-sm font-extrabold text-gray-900">Chuyển bàn (Move Table)</h3>
-              <p className="text-[11px] text-gray-500">
-                Chuyển toàn bộ hóa đơn từ bàn {currentTable?.name} sang bàn trống
-              </p>
-            </div>
-          </div>
+    <ResponsiveModal
+      isOpen={true}
+      onClose={onClose}
+      title="Chuyển bàn"
+      subtitle={`Chuyển hóa đơn từ ${currentTable?.name || 'bàn hiện tại'} sang bàn trống`}
+      icon={<ArrowRightLeft size={18} className="text-emerald-600" />}
+      maxWidth="md"
+      footer={
+        <div className="flex items-center justify-between gap-2.5 w-full">
           <button
             type="button"
             onClick={onClose}
-            className="text-gray-400 hover:text-gray-700 p-1.5 rounded-lg hover:bg-gray-100"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-5 space-y-3 overflow-y-auto flex-1">
-          <span className="text-xs font-bold text-gray-700">Chọn bàn đích trống:</span>
-
-          {vacantTables.length === 0 ? (
-            <div className="p-6 bg-gray-50 rounded-xl border border-gray-200 text-center text-xs text-gray-500">
-              Hiện tại không có bàn trống nào trong chi nhánh
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto pr-1">
-              {vacantTables.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  onClick={() => setSelectedTargetTableId(t.id)}
-                  className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
-                    selectedTargetTableId === t.id
-                      ? 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
-                      : 'bg-white border-gray-200 hover:bg-gray-50 text-gray-800'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-xs">
-                    <span>{t.name}</span>
-                    <span className="text-[10px] text-gray-400 flex items-center gap-0.5">
-                      <Users className="w-3 h-3" />
-                      {t.capacity}
-                    </span>
-                  </div>
-                  <span className="text-[10px] text-gray-400 mt-1 font-normal">{t.areaName}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-white"
+            className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
+              isDarkMode ? 'border-slate-700 text-slate-300 hover:bg-slate-800' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
           >
             Hủy
           </button>
@@ -104,12 +57,56 @@ export const MoveTableModal: React.FC<MoveTableModalProps> = ({
             type="button"
             disabled={!selectedTargetTableId || isProcessing}
             onClick={handleConfirm}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-xs"
+            className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
           >
-            {isProcessing ? 'Đang chuyển...' : 'XÁC NHẬN CHUYỂN BÀN'}
+            {isProcessing ? 'Đang chuyển...' : 'Xác nhận chuyển bàn'}
           </button>
         </div>
+      }
+    >
+      <div className="space-y-3 py-1">
+        <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-700'}`}>
+          Chọn bàn đích trống:
+        </span>
+
+        {vacantTables.length === 0 ? (
+          <div className={`p-6 rounded-2xl border text-center text-xs ${
+            isDarkMode ? 'bg-slate-800/50 border-slate-700 text-slate-400' : 'bg-slate-50 border-slate-200 text-slate-500'
+          }`}>
+            Hiện tại không có bàn trống nào trong chi nhánh
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto overscroll-contain p-0.5">
+            {vacantTables.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setSelectedTargetTableId(t.id)}
+                className={`p-3 rounded-2xl border text-left transition-all flex flex-col justify-between cursor-pointer active:scale-95 ${
+                  selectedTargetTableId === t.id
+                    ? isDarkMode
+                      ? 'bg-emerald-950/60 border-emerald-500 text-emerald-200 font-bold shadow-xs'
+                      : 'bg-emerald-50 border-emerald-500 text-emerald-900 font-bold shadow-xs'
+                    : isDarkMode
+                    ? 'bg-slate-800/70 border-slate-700 hover:bg-slate-750 text-slate-200'
+                    : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-800'
+                }`}
+              >
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-extrabold">{t.name}</span>
+                  <span className={`text-[10px] flex items-center gap-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                    <Users className="w-3 h-3" />
+                    {t.capacity}
+                  </span>
+                </div>
+                {t.areaName && (
+                  <span className={`text-[10px] mt-1 font-normal ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{t.areaName}</span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-    </div>
+    </ResponsiveModal>
   );
 };

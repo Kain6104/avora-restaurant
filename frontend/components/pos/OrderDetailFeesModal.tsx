@@ -26,12 +26,14 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { PosOrder, PosServiceCharge } from './pos-types';
+import ResponsiveModal from '@/components/ui/ResponsiveModal';
 
 interface OrderDetailFeesModalProps {
   order: PosOrder | null;
   onClose: () => void;
   onOrderUpdated: (updatedOrder: PosOrder) => void;
   onPayOrder?: (order: PosOrder) => void;
+  isDarkMode?: boolean;
 }
 
 export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
@@ -39,6 +41,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
   onClose,
   onOrderUpdated,
   onPayOrder,
+  isDarkMode = false,
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -53,6 +56,14 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
 
   const isSepayPaid =
     order.paymentMethod === 'SEPAY' && order.paymentStatus === 'PAID';
+
+  const isFinancialLocked =
+    order.status === 'COMPLETED' ||
+    order.status === 'CANCELLED' ||
+    order.paymentStatus === 'PAID' ||
+    order.paymentStatus === 'AWAITING_PAYMENT' ||
+    order.paymentStatus === 'PAYMENT_REQUESTED' ||
+    (order as any).paymentIntentStatus === 'ACTIVE';
 
   // VAT Invoice State
   const [taxCode, setTaxCode] = useState(order.invoiceTaxCode || '');
@@ -95,7 +106,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
             setServiceCharges(json.data);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [
     order?.id,
@@ -316,58 +327,16 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
   const displayOrderCode = order.orderCode || order.temporaryOrderCode || 'TMP';
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden border border-slate-200">
-        {/* Header */}
-        <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-white/10 flex items-center justify-center">
-              <Receipt className="w-4 h-4 text-amber-400" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-extrabold tracking-tight">
-                  {isOnline ? `Đơn hàng Online #${displayOrderCode}` : `Đơn POS #${displayOrderCode}`}
-                </span>
-                {isOnline ? (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-teal-500 text-white">
-                    <Globe className="w-2.5 h-2.5" />
-                    Đơn Online Website
-                  </span>
-                ) : (
-                  <>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-white/20 text-white">
-                      {order.table?.name || 'Đơn tại quầy'}
-                    </span>
-                    {!order.orderCode && order.temporaryOrderCode && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-slate-950">
-                        Mã tạm (Chờ thanh toán)
-                      </span>
-                    )}
-                    {order.orderCode && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-white">
-                        Hóa đơn chính thức
-                      </span>
-                    )}
-                  </>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-300">
-                Khách: <strong>{order.customerName}</strong> {order.customerPhone ? `(${order.customerPhone})` : ''} • Tạo lúc: {new Date(order.createdAt).toLocaleTimeString('vi-VN')} {new Date(order.createdAt).toLocaleDateString('vi-VN')}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-4 text-xs">
+    <>
+      <ResponsiveModal
+        isOpen={true}
+        onClose={onClose}
+        title={isOnline ? `Đơn hàng Online #${displayOrderCode}` : `Đơn POS #${displayOrderCode}`}
+        subtitle={`Khách: ${order.customerName}${order.customerPhone ? ` (${order.customerPhone})` : ''} • Tạo lúc: ${new Date(order.createdAt).toLocaleTimeString('vi-VN')}`}
+        icon={<Receipt className="w-4 h-4 text-amber-500" />}
+        maxWidth="xl"
+      >
+        <div className={`p-1 space-y-4 text-xs ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
 
           {/* ========================================================= */}
           {/* A. ĐƠN HÀNG ONLINE: TIẾN ĐỘ, PTTT THẬT, PHÍ SHIP READ-ONLY */}
@@ -375,9 +344,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
           {isOnline && (
             <>
               {/* 1. TRẠNG THÁI TIẾN ĐỘ ĐƠN HÀNG ONLINE */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+              <div className={`p-3.5 rounded-xl border space-y-2.5 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                     <PackageCheck className="w-4 h-4 text-slate-500" />
                     Trạng thái tiến độ đơn hàng Online:
                   </span>
@@ -391,11 +361,12 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                     type="button"
                     disabled={isUpdatingStatus || order.status === 'CONFIRMED' || order.status === 'COMPLETED'}
                     onClick={() => handleUpdateStatus('CONFIRMED')}
-                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      order.status === 'CONFIRMED'
-                        ? 'bg-sky-600 text-white ring-2 ring-sky-300'
+                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${order.status === 'CONFIRMED'
+                      ? 'bg-sky-600 text-white ring-2 ring-sky-300'
+                      : isDarkMode
+                        ? 'bg-slate-800 hover:bg-slate-700 text-sky-400 border border-slate-700 shadow-2xs'
                         : 'bg-white hover:bg-sky-50 text-sky-700 border border-sky-200 shadow-2xs'
-                    }`}
+                      }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Xác nhận đơn</span>
@@ -405,11 +376,12 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                     type="button"
                     disabled={isUpdatingStatus || order.status === 'PREPARING' || order.status === 'COMPLETED'}
                     onClick={() => handleUpdateStatus('PREPARING')}
-                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      order.status === 'PREPARING'
-                        ? 'bg-orange-600 text-white ring-2 ring-orange-300'
+                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${order.status === 'PREPARING'
+                      ? 'bg-orange-600 text-white ring-2 ring-orange-300'
+                      : isDarkMode
+                        ? 'bg-slate-800 hover:bg-slate-700 text-orange-400 border border-slate-700 shadow-2xs'
                         : 'bg-white hover:bg-orange-50 text-orange-700 border border-orange-200 shadow-2xs'
-                    }`}
+                      }`}
                   >
                     <ChefHat className="w-3.5 h-3.5" />
                     <span>Đang chuẩn bị</span>
@@ -419,11 +391,12 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                     type="button"
                     disabled={isUpdatingStatus || order.status === 'DELIVERING' || order.status === 'COMPLETED'}
                     onClick={() => handleUpdateStatus('DELIVERING')}
-                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      order.status === 'DELIVERING'
-                        ? 'bg-purple-600 text-white ring-2 ring-purple-300'
+                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${order.status === 'DELIVERING'
+                      ? 'bg-purple-600 text-white ring-2 ring-purple-300'
+                      : isDarkMode
+                        ? 'bg-slate-800 hover:bg-slate-700 text-purple-400 border border-slate-700 shadow-2xs'
                         : 'bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 shadow-2xs'
-                    }`}
+                      }`}
                   >
                     <Truck className="w-3.5 h-3.5" />
                     <span>Đang giao hàng</span>
@@ -433,11 +406,12 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                     type="button"
                     disabled={isUpdatingStatus || order.status === 'COMPLETED'}
                     onClick={() => handleUpdateStatus('COMPLETED')}
-                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                      order.status === 'COMPLETED'
-                        ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                    className={`py-2 px-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${order.status === 'COMPLETED'
+                      ? 'bg-emerald-600 text-white ring-2 ring-emerald-300'
+                      : isDarkMode
+                        ? 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700 shadow-2xs'
                         : 'bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-2xs'
-                    }`}
+                      }`}
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
                     <span>Đã hoàn thành</span>
@@ -446,47 +420,52 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
               </div>
 
               {/* 2. THÔNG TIN PHƯƠNG THỨC & TRẠNG THÁI THANH TOÁN THỰC TẾ */}
-              <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-2">
+              <div className={`p-3.5 rounded-xl border space-y-2 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-white border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                     <CreditCard className="w-4 h-4 text-slate-500" />
                     Phương thức & Trạng thái thanh toán của khách:
                   </span>
-                  <span className="text-xs font-extrabold px-2.5 py-0.5 rounded-md bg-slate-100 text-slate-900 border border-slate-200">
+                  <span className={`text-xs font-extrabold px-2.5 py-0.5 rounded-md border ${isDarkMode ? 'bg-slate-800 text-white border-slate-700' : 'bg-slate-100 text-slate-900 border-slate-200'
+                    }`}>
                     {order.paymentMethod || 'Chưa chọn'}
                   </span>
                 </div>
 
                 {isSepayPaid ? (
-                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-500/80 text-emerald-900 space-y-1.5">
+                  <div className={`p-3 rounded-xl border space-y-1.5 ${isDarkMode ? 'bg-emerald-950/40 border-emerald-800 text-emerald-300' : 'bg-emerald-50 border-emerald-500/80 text-emerald-900'
+                    }`}>
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 font-black text-xs text-emerald-800">
-                        <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                      <div className={`flex items-center gap-2 font-black text-xs ${isDarkMode ? 'text-emerald-400' : 'text-emerald-800'}`}>
+                        <ShieldCheck className="w-4 h-4 text-emerald-500" />
                         <span>ĐÃ THANH TOÁN TỰ ĐỘNG (SEPAY VIETQR)</span>
                       </div>
                       <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white font-black text-[10px]">
                         TIỀN ĐÃ VỀ TÀI KHOẢN
                       </span>
                     </div>
-                    <div className="grid grid-cols-2 gap-2 text-[11px] text-emerald-950 pt-1">
+                    <div className={`grid grid-cols-2 gap-2 text-[11px] pt-1 ${isDarkMode ? 'text-emerald-300' : 'text-emerald-950'}`}>
                       <div>Mã GD: <strong>{order.transactionId || 'SEPAY-AUTO'}</strong></div>
                       <div className="text-right">Thực nhận: <strong>{(order.totalAmount || 0).toLocaleString('vi-VN')} đ</strong></div>
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between">
+                  <div className={`p-3 rounded-xl border flex items-center justify-between ${isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-900'
+                    }`}>
                     <div>
-                      <div className="font-bold text-amber-900 flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                      <div className="font-bold flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                         <span>
                           {order.paymentStatus === 'PAID' ? 'Khách đã thanh toán' : 'Chưa thanh toán (Thu tiền khi giao COD)'}
                         </span>
                       </div>
-                      <p className="text-[11px] text-amber-700 mt-0.5">
+                      <p className={`text-[11px] mt-0.5 ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>
                         Tổng tiền cần thu: <strong>{(order.totalAmount || 0).toLocaleString('vi-VN')} đ</strong>
                       </p>
                     </div>
-                    <span className="px-2.5 py-1 rounded-md text-[11px] font-bold bg-amber-200/80 text-amber-900">
+                    <span className={`px-2.5 py-1 rounded-md text-[11px] font-bold ${isDarkMode ? 'bg-amber-900/60 text-amber-300' : 'bg-amber-200/80 text-amber-900'
+                      }`}>
                       {order.paymentStatus || 'PENDING'}
                     </span>
                   </div>
@@ -494,40 +473,46 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
               </div>
 
               {/* 3. PHÍ GIAO HÀNG ONLINE (READ-ONLY) */}
-              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className={`p-3.5 rounded-xl border space-y-2 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border border-slate-200'
+                }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                    <Truck className="w-4 h-4 text-slate-600" />
+                  <span className={`text-xs font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-800'}`}>
+                    <Truck className="w-4 h-4 text-slate-500" />
                     Phí giao hàng Online (Tính tự động theo tọa độ GPS):
                   </span>
-                  <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Lock className="w-3 h-3 text-slate-500" /> Khóa bất biến
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                    <Lock className="w-3 h-3 text-slate-400" /> Khóa bất biến
                   </span>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 pt-1 text-center">
-                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-500 block">Phí giao hàng gốc</span>
-                    <span className="text-xs font-bold text-slate-800">
+                  <div className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                    <span className={`text-[10px] block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Phí giao hàng gốc</span>
+                    <span className="text-xs font-bold">
                       {(order.shippingFee || 0).toLocaleString('vi-VN')} đ
                     </span>
                   </div>
-                  <div className="p-2.5 bg-white rounded-xl border border-slate-200">
-                    <span className="text-[10px] text-slate-500 block">Giảm phí ship</span>
-                    <span className="text-xs font-bold text-emerald-600">
+                  <div className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'
+                    }`}>
+                    <span className={`text-[10px] block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Giảm phí ship</span>
+                    <span className="text-xs font-bold text-emerald-500">
                       - {(order.shippingDiscount || 0).toLocaleString('vi-VN')} đ
                     </span>
                   </div>
-                  <div className="p-2.5 bg-red-50 rounded-xl border border-red-200">
-                    <span className="text-[10px] text-red-600 font-bold block">Khách thực trả</span>
-                    <span className="text-xs font-black text-red-700">
+                  <div className={`p-2.5 rounded-xl border ${isDarkMode ? 'bg-red-950/40 border-red-900/60' : 'bg-red-50 border-red-200'
+                    }`}>
+                    <span className="text-[10px] text-red-500 font-bold block">Khách thực trả</span>
+                    <span className="text-xs font-black text-red-500">
                       {Math.max(0, (order.shippingFee || 0) - (order.shippingDiscount || 0)).toLocaleString('vi-VN')} đ
                     </span>
                   </div>
                 </div>
 
-                <div className="p-2 bg-blue-50/60 border border-blue-200/80 rounded-lg text-[11px] text-blue-900 flex items-start gap-1.5">
-                  <ShieldCheck className="w-3.5 h-3.5 text-blue-600 shrink-0 mt-0.5" />
+                <div className={`p-2 rounded-lg text-[11px] flex items-start gap-1.5 border ${isDarkMode ? 'bg-blue-950/40 border-blue-900/60 text-blue-300' : 'bg-blue-50/60 border-blue-200/80 text-blue-900'
+                  }`}>
+                  <ShieldCheck className="w-3.5 h-3.5 text-blue-500 shrink-0 mt-0.5" />
                   <span>
                     Phí giao hàng được Backend tự động tính toán tại thời điểm checkout theo quãng đường di chuyển thực tế. Nhân viên/Admin tuyệt đối không được phép chỉnh sửa sau khi khách đã đặt đơn.
                   </span>
@@ -540,13 +525,14 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
           {/* B. ĐƠN HÀNG POS: PHÍ DỊCH VỤ / PHỤ THU TÙY CHỈNH          */}
           {/* ========================================================= */}
           {!isOnline && (
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className={`p-3.5 rounded-xl border space-y-3 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'
+              }`}>
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                <span className={`text-xs font-bold flex items-center gap-1.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-800'}`}>
                   <Sparkles className="w-4 h-4 text-amber-500" />
                   Phí dịch vụ & Phụ thu tùy chỉnh cho đơn POS:
                 </span>
-                <span className="text-xs font-black text-amber-700">
+                <span className="text-xs font-black text-amber-500">
                   Tổng phụ thu: +{(serviceCharges.reduce((s, c) => s + c.amount, 0)).toLocaleString('vi-VN')} đ
                 </span>
               </div>
@@ -557,35 +543,37 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                   {serviceCharges.map((sc) => (
                     <div
                       key={sc.id}
-                      className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-2 shadow-2xs"
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 shadow-2xs ${isDarkMode ? 'bg-slate-850 border-slate-700 text-white' : 'bg-white border-slate-200'
+                        }`}
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-xs text-slate-900">{sc.name}</span>
+                          <span className={`font-bold text-xs ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{sc.name}</span>
                           {sc.isTaxable && (
-                            <span className="text-[9px] bg-slate-100 text-slate-600 font-bold px-1.5 py-0.5 rounded">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${isDarkMode ? 'bg-slate-700 text-slate-300' : 'bg-slate-100 text-slate-600'
+                              }`}>
                               Có thuế VAT
                             </span>
                           )}
                         </div>
                         {sc.note && (
-                          <p className="text-[10px] text-slate-500 truncate">{sc.note}</p>
+                          <p className={`text-[10px] truncate ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>{sc.note}</p>
                         )}
-                        <span className="text-[10px] text-slate-400 block">
+                        <span className={`text-[10px] block ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                           Tạo bởi: {sc.createdByName || 'Thu ngân'} • {sc.createdAt ? new Date(sc.createdAt).toLocaleTimeString('vi-VN') : ''}
                         </span>
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className="font-black text-xs text-amber-700">
+                        <span className="font-black text-xs text-amber-500">
                           +{sc.amount.toLocaleString('vi-VN')} đ
                         </span>
-                        {order.status !== 'COMPLETED' && (
+                        {!isFinancialLocked && (
                           <button
                             type="button"
                             disabled={deletingChargeId === sc.id}
                             onClick={() => setChargeToDelete({ id: sc.id, name: sc.name })}
-                            className="w-7 h-7 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors cursor-pointer"
+                            className="w-7 h-7 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 flex items-center justify-center transition-colors cursor-pointer"
                             title="Xóa phụ thu"
                           >
                             {deletingChargeId === sc.id ? (
@@ -600,16 +588,22 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                   ))}
                 </div>
               ) : (
-                <div className="p-3 bg-white rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-[11px]">
+                <div className={`p-3 rounded-xl border border-dashed text-center text-[11px] ${isDarkMode ? 'bg-slate-850 border-slate-700 text-slate-400' : 'bg-white border-slate-200 text-slate-400'
+                  }`}>
                   Chưa có khoản phụ thu nào được thêm vào đơn này.
                 </div>
               )}
 
               {/* Quick Presets */}
-              {order.status !== 'COMPLETED' && (
+              {isFinancialLocked ? (
+                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl text-xs text-amber-500 font-semibold flex items-center gap-2">
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span>Đơn hàng đang chờ thanh toán / khóa tài chính. Không thể thêm hoặc xóa phụ phí.</span>
+                </div>
+              ) : (
                 <div className="pt-1 space-y-2">
                   <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-bold text-slate-500 mr-1">Thêm nhanh:</span>
+                    <span className={`text-[10px] font-bold mr-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Thêm nhanh:</span>
                     {[
                       { name: 'Phụ thu ngày lễ', amount: 50000 },
                       { name: 'Phí phục vụ', amount: 30000 },
@@ -621,7 +615,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                         key={preset.name}
                         type="button"
                         onClick={() => handleQuickAddPreset(preset.name, preset.amount)}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border border-slate-200 hover:border-amber-300 transition-colors cursor-pointer"
+                        className={`px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors cursor-pointer ${isDarkMode
+                          ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700 hover:border-amber-500'
+                          : 'bg-white hover:bg-amber-50 text-slate-700 hover:text-amber-800 border-slate-200 hover:border-amber-300'
+                          }`}
                       >
                         {preset.name} (+{preset.amount / 1000}k)
                       </button>
@@ -629,20 +626,24 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                   </div>
 
                   {/* Add Service Charge Form */}
-                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-2">
+                  <div className={`p-3 rounded-xl border space-y-2 ${isDarkMode ? 'bg-slate-850 border-slate-700' : 'bg-white border-slate-200'
+                    }`}>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Tên khoản phí/phụ thu:</label>
+                        <label className={`text-[10px] font-bold block mb-0.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Tên khoản phí/phụ thu:</label>
                         <input
                           type="text"
                           value={newChargeName}
                           onChange={(e) => setNewChargeName(e.target.value)}
                           placeholder="VD: Phụ thu sự kiện, phòng VIP..."
-                          className="w-full text-xs bg-white text-slate-900 border border-slate-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500"
+                          className={`w-full text-xs rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500 border ${isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                            : 'bg-white text-slate-900 border-slate-300'
+                            }`}
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold text-slate-600 block mb-0.5">Số tiền (VNĐ):</label>
+                        <label className={`text-[10px] font-bold block mb-0.5 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>Số tiền (VNĐ):</label>
                         <input
                           type="number"
                           step="1000"
@@ -650,7 +651,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                           value={newChargeAmount}
                           onChange={(e) => setNewChargeAmount(e.target.value === '' ? '' : Number(e.target.value))}
                           placeholder="50000"
-                          className="w-full text-xs font-bold text-slate-900 bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500"
+                          className={`w-full text-xs font-bold rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500 border ${isDarkMode
+                            ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                            : 'bg-white text-slate-900 border-slate-300'
+                            }`}
                         />
                       </div>
                     </div>
@@ -661,9 +665,12 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                         value={newChargeNote}
                         onChange={(e) => setNewChargeNote(e.target.value)}
                         placeholder="Ghi chú thêm (tùy chọn)..."
-                        className="flex-1 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500"
+                        className={`flex-1 text-xs rounded-lg px-2.5 py-1.5 outline-none focus:border-amber-500 border ${isDarkMode
+                          ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                          : 'bg-white text-slate-900 border-slate-300'
+                          }`}
                       />
-                      <label className="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer select-none shrink-0">
+                      <label className={`flex items-center gap-1 text-[11px] cursor-pointer select-none shrink-0 ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
                         <input
                           type="checkbox"
                           checked={newChargeTaxable}
@@ -692,7 +699,8 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
           {/* C. THUẾ & XUẤT HÓA ĐƠN VAT DOANH NGHIỆP                    */}
           {/* ========================================================= */}
           <form onSubmit={handleSaveInvoice} className="space-y-4">
-            <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className={`p-3.5 rounded-xl border space-y-3 ${isDarkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-slate-50 border-slate-200'
+              }`}>
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <input
@@ -701,7 +709,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                     onChange={(e) => setIsInvoiceRequested(e.target.checked)}
                     className="w-4 h-4 rounded text-[#da251d] focus:ring-[#da251d] accent-[#da251d]"
                   />
-                  <span className="font-bold text-xs text-slate-900 flex items-center gap-1">
+                  <span className={`font-bold text-xs flex items-center gap-1 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                     <Building2 className="w-3.5 h-3.5 text-slate-500" />
                     Khách có yêu cầu xuất hóa đơn VAT (YCXHĐCT)
                   </span>
@@ -712,7 +720,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                 <div className="space-y-2.5 pt-1 animate-in fade-in duration-150">
                   {/* Mã số thuế */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className={`block text-[11px] font-bold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Mã số thuế doanh nghiệp:
                     </label>
                     <div className="flex items-center gap-2">
@@ -721,13 +729,19 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                         value={taxCode}
                         onChange={(e) => setTaxCode(e.target.value)}
                         placeholder="VD: 0101234567"
-                        className="flex-1 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-[#da251d]"
+                        className={`flex-1 text-xs rounded-xl px-3 py-1.5 outline-none focus:border-[#da251d] border ${isDarkMode
+                          ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400'
+                          : 'bg-white text-slate-900 border-slate-300'
+                          }`}
                       />
                       <button
                         type="button"
                         onClick={handleLookupTax}
                         disabled={isLookingUpTax}
-                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0 disabled:opacity-50"
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1 cursor-pointer shrink-0 disabled:opacity-50 transition-colors ${isDarkMode
+                          ? 'bg-slate-700 hover:bg-slate-600 text-white'
+                          : 'bg-slate-800 hover:bg-slate-900 text-white'
+                          }`}
                       >
                         {isLookingUpTax ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
                         <span>Tra cứu</span>
@@ -737,7 +751,7 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
 
                   {/* Tên công ty */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className={`block text-[11px] font-bold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Tên công ty / Đơn vị:
                     </label>
                     <input
@@ -745,13 +759,16 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                       value={companyName}
                       onChange={(e) => setCompanyName(e.target.value)}
                       placeholder="CÔNG TY TNHH..."
-                      className="w-full text-xs bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-[#da251d]"
+                      className={`w-full text-xs rounded-xl px-3 py-1.5 outline-none border transition-all ${isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                        : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                        }`}
                     />
                   </div>
 
                   {/* Địa chỉ công ty */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className={`block text-[11px] font-bold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Địa chỉ trên giấy phép kinh doanh:
                     </label>
                     <input
@@ -759,13 +776,16 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                       value={taxAddress}
                       onChange={(e) => setTaxAddress(e.target.value)}
                       placeholder="Số ..., Phường ..., Quận ..., Tỉnh/Thành phố"
-                      className="w-full text-xs bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-[#da251d]"
+                      className={`w-full text-xs rounded-xl px-3 py-1.5 outline-none border transition-all ${isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                        : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                        }`}
                     />
                   </div>
 
                   {/* Email nhận hóa đơn điện tử */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    <label className={`block text-[11px] font-bold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Email nhận hóa đơn điện tử:
                     </label>
                     <input
@@ -773,7 +793,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                       value={invoiceEmail}
                       onChange={(e) => setInvoiceEmail(e.target.value)}
                       placeholder="ketoan@congty.com"
-                      className="w-full text-xs bg-white text-slate-900 border border-slate-300 rounded-xl px-3 py-1.5 outline-none focus:border-[#da251d]"
+                      className={`w-full text-xs rounded-xl px-3 py-1.5 outline-none border transition-all ${isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-[#da251d]'
+                        : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                        }`}
                     />
                   </div>
                 </div>
@@ -781,9 +804,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
             </div>
 
             {/* Footer Buttons */}
-            <div className="pt-2 flex items-center justify-between border-t border-slate-100">
+            <div className={`pt-2 flex items-center justify-between border-t ${isDarkMode ? 'border-slate-800' : 'border-slate-100'
+              }`}>
               <div>
-                <span className="text-[11px] text-slate-500 block">Tổng thanh toán:</span>
+                <span className={`text-[11px] block ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tổng thanh toán:</span>
                 <span className="text-sm font-black text-[#da251d]">
                   {(order.totalAmount || 0).toLocaleString('vi-VN')} đ
                 </span>
@@ -792,7 +816,10 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer transition-colors"
+                  className={`px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition-colors ${isDarkMode
+                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                 >
                   Đóng
                 </button>
@@ -808,40 +835,48 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
             </div>
           </form>
         </div>
-      </div>
+      </ResponsiveModal>
 
       {/* In-App Confirmation Modal for Deleting Service Charge */}
       {chargeToDelete && (
-        <div className="fixed inset-0 z-60 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-120">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-120">
-            <div className="p-5 text-center">
-              <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3 bg-rose-50 text-rose-600">
-                <Trash2 className="w-6 h-6" />
-              </div>
-              <h4 className="text-base font-black text-slate-900 mb-1.5">Xóa Khoản Phụ Thu?</h4>
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Bạn có chắc chắn muốn xóa khoản phụ thu <b className="text-slate-800">"{chargeToDelete.name}"</b> khỏi đơn hàng?
-              </p>
-            </div>
-            <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
+        <ResponsiveModal
+          isOpen={true}
+          onClose={() => setChargeToDelete(null)}
+          title="Xóa Khoản Phụ Thu?"
+          subtitle={`Xác nhận xóa phụ thu "${chargeToDelete.name}"`}
+          maxWidth="sm"
+          footer={
+            <div className="grid grid-cols-2 gap-2 w-full">
               <button
                 type="button"
                 onClick={() => setChargeToDelete(null)}
-                className="h-11 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs active:scale-98 transition-all cursor-pointer"
+                className={`py-2.5 rounded-xl border font-bold text-xs active:scale-98 transition-all cursor-pointer ${isDarkMode
+                  ? 'border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-200'
+                  : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-700'
+                  }`}
               >
                 Hủy bỏ
               </button>
               <button
                 type="button"
                 onClick={() => executeRemoveServiceCharge(chargeToDelete.id)}
-                className="h-11 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs active:scale-98 transition-all cursor-pointer shadow-xs"
+                className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs active:scale-98 transition-all cursor-pointer shadow-xs"
               >
                 Xác nhận xóa
               </button>
             </div>
+          }
+        >
+          <div className="p-4 text-center">
+            <div className="w-12 h-12 rounded-2xl mx-auto flex items-center justify-center mb-3 bg-rose-500/10 text-rose-500">
+              <Trash2 className="w-6 h-6" />
+            </div>
+            <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+              Bạn có chắc chắn muốn xóa khoản phụ thu <b className={isDarkMode ? 'text-slate-200' : 'text-slate-800'}>"{chargeToDelete.name}"</b> khỏi đơn hàng?
+            </p>
           </div>
-        </div>
+        </ResponsiveModal>
       )}
-    </div>
+    </>
   );
 };

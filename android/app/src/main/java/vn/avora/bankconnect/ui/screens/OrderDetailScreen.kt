@@ -185,9 +185,10 @@ fun OrderDetailScreen(
                         // 1. Order Header Card
                         item {
                             Card(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -318,9 +319,10 @@ fun OrderDetailScreen(
                         if (!ord.deliveryAddress.isNullOrBlank() || ord.orderType == "DELIVERY") {
                             item {
                                 Card(
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                                 ) {
                                     Column(modifier = Modifier.padding(16.dp)) {
                                         Row(
@@ -427,7 +429,8 @@ fun OrderDetailScreen(
                                 Card(
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                                 ) {
                                     Column(
                                         modifier = Modifier
@@ -548,9 +551,10 @@ fun OrderDetailScreen(
                         // 3. Complete Financial Summary Breakdown Card
                         item {
                             Card(
-                                shape = RoundedCornerShape(14.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                             ) {
                                 Column(
                                     modifier = Modifier
@@ -772,7 +776,8 @@ fun OrderDetailScreen(
                                 Card(
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = Color.White),
-                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, BorderLight)
                                 ) {
                                     Column(
                                         modifier = Modifier

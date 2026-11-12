@@ -57,9 +57,10 @@ interface PendingQrRound {
 interface QrOrderPanelProps {
   branchId: string;
   onAcceptQrOrder?: (order: any) => void;
+  isDarkMode?: boolean;
 }
 
-export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQrOrder }) => {
+export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQrOrder, isDarkMode = false }) => {
   const [rounds, setRounds] = useState<PendingQrRound[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -205,21 +206,33 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-50/70 overflow-hidden select-none">
+    <div className={`flex-1 flex flex-col overflow-hidden select-none ${
+      isDarkMode ? 'bg-slate-950 text-slate-100' : 'bg-slate-100 text-slate-800'
+    }`}>
       {/* Top Header & Settings Bar */}
-      <div className="bg-white border-b border-slate-200 px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-2xs">
+      <div className={`border-b px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 shrink-0 shadow-2xs ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
+      }`}>
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-red-50 text-[#da251d] flex items-center justify-center">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+            isDarkMode ? 'bg-red-950/50 text-red-400' : 'bg-red-50 text-[#da251d]'
+          }`}>
             <QrCode className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900">Yêu cầu gọi món qua mã QR tại bàn</h3>
-              <span className="text-xs bg-red-50 border border-red-200 text-[#da251d] font-bold px-2 py-0.5 rounded-full">
+              <h3 className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                Yêu cầu gọi món qua mã QR tại bàn
+              </h3>
+              <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                isDarkMode
+                  ? 'bg-red-950/40 border-red-900/60 text-red-300'
+                  : 'bg-red-50 border-red-200 text-[#da251d]'
+              }`}>
                 {rounds.length} lượt chờ duyệt
               </span>
             </div>
-            <p className="text-[11px] text-slate-400">
+            <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Khách quét QR gọi món sẽ hiển thị tại đây để nhân viên kiểm tra và xác nhận vào bếp
             </p>
           </div>
@@ -228,13 +241,17 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
         {/* Right Action Bar: Auto-Send Toggle + Refresh */}
         <div className="flex items-center gap-3">
           {/* Toggle Switch */}
-          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-slate-100/90 border border-slate-200">
+          <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-2xl border ${
+            isDarkMode ? 'bg-slate-850 border-slate-700' : 'bg-slate-100/90 border-slate-200'
+          }`}>
             <div className="text-right">
-              <span className="text-xs font-bold text-slate-800 block flex items-center gap-1 justify-end">
+              <span className={`text-xs font-bold block flex items-center gap-1 justify-end ${
+                isDarkMode ? 'text-slate-200' : 'text-slate-800'
+              }`}>
                 <Zap className={`w-3.5 h-3.5 ${qrAutoSendToKitchen ? 'text-amber-500 fill-amber-500' : 'text-slate-400'}`} />
                 Tự động gửi bếp
               </span>
-              <span className="text-[10px] text-slate-400">
+              <span className={`text-[10px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                 {qrAutoSendToKitchen ? 'Bật: Không cần xác nhận' : 'Tắt: Nhân viên duyệt'}
               </span>
             </div>
@@ -244,7 +261,7 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
               onClick={handleToggleAutoSend}
               disabled={isUpdatingSetting}
               className={`w-11 h-6 rounded-full transition-colors relative p-0.5 cursor-pointer disabled:opacity-50 ${
-                qrAutoSendToKitchen ? 'bg-emerald-500' : 'bg-slate-300'
+                qrAutoSendToKitchen ? 'bg-emerald-500' : isDarkMode ? 'bg-slate-700' : 'bg-slate-300'
               }`}
             >
               <div
@@ -258,7 +275,11 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
           <button
             type="button"
             onClick={() => fetchPendingRounds(true)}
-            className="w-9 h-9 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 flex items-center justify-center text-slate-600 transition-colors cursor-pointer"
+            className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300'
+                : 'border-slate-200 bg-white hover:bg-slate-50 text-slate-600'
+            }`}
             title="Làm mới danh sách"
           >
             <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -267,7 +288,7 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className={`flex-1 overflow-y-auto p-6 ${isDarkMode ? 'bg-slate-950' : 'bg-slate-100'}`}>
         {isLoading ? (
           <div className="h-full flex flex-col items-center justify-center text-slate-400 gap-2">
             <Loader2 className="w-8 h-8 animate-spin text-[#da251d]" />
@@ -275,11 +296,15 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
           </div>
         ) : rounds.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 max-w-sm mx-auto">
-            <div className="w-16 h-16 rounded-3xl bg-white border border-slate-200 flex items-center justify-center text-slate-300 mb-3 shadow-xs">
+            <div className={`w-16 h-16 rounded-3xl border flex items-center justify-center mb-3 shadow-xs ${
+              isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-600' : 'bg-white border-slate-200 text-slate-300'
+            }`}>
               <Smartphone className="w-8 h-8" />
             </div>
-            <h3 className="text-sm font-bold text-slate-700 mb-1">Không có yêu cầu gọi món nào đang chờ</h3>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <h3 className={`text-sm font-bold mb-1 ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+              Không có yêu cầu gọi món nào đang chờ
+            </h3>
+            <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
               {qrAutoSendToKitchen
                 ? 'Chi nhánh đang bật chế độ TỰ ĐỘNG GỬI BẾP. Mọi món khách gọi qua QR đã được chuyển thẳng tới bếp/KDS.'
                 : 'Khách hàng quét mã QR trên bàn sẽ xuất hiện tại đây theo thời gian thực để nhân viên duyệt.'}
@@ -297,7 +322,11 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
               return (
                 <div
                   key={round.id}
-                  className="bg-white rounded-3xl border border-red-200/90 shadow-sm p-5 flex flex-col justify-between space-y-3 relative overflow-hidden"
+                  className={`rounded-3xl border shadow-sm p-5 flex flex-col justify-between space-y-3 relative overflow-hidden ${
+                    isDarkMode
+                      ? 'bg-slate-900 border-red-950/80 text-slate-100 hover:border-red-900/80'
+                      : 'bg-white border-red-200/90 text-slate-900'
+                  }`}
                 >
                   <div className="space-y-2">
                     {/* Header: Table & Round Info */}
@@ -307,16 +336,18 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                           <span className="text-sm font-black text-[#da251d]">
                             {round.order.table?.name || `Bàn ${round.order.table?.tableCode || ''}`}
                           </span>
-                          <span className="text-[10px] bg-red-100 text-red-800 font-extrabold px-1.5 py-0.2 rounded-md">
+                          <span className={`text-[10px] font-extrabold px-1.5 py-0.2 rounded-md ${
+                            isDarkMode ? 'bg-red-950 text-red-300 border border-red-900/60' : 'bg-red-100 text-red-800'
+                          }`}>
                             Lượt #{round.roundNumber}
                           </span>
                         </div>
-                        <span className="text-xs text-slate-500 font-semibold block mt-0.5">
-                          Người gọi: <strong>{round.guestName || 'Khách tại bàn'}</strong>
+                        <span className={`text-xs font-semibold block mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                          Người gọi: <strong className={isDarkMode ? 'text-white' : 'text-slate-800'}>{round.guestName || 'Khách tại bàn'}</strong>
                         </span>
                       </div>
 
-                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono shrink-0">
+                      <span className={`text-[10px] flex items-center gap-1 font-mono shrink-0 ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
                         <Clock className="w-3 h-3" />
                         {new Date(round.createdAt).toLocaleTimeString('vi-VN', {
                           hour: '2-digit',
@@ -326,20 +357,22 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                     </div>
 
                     {/* Items List */}
-                    <div className="divide-y divide-slate-100 border-y border-slate-100 py-2 space-y-2 max-h-56 overflow-y-auto">
+                    <div className={`divide-y border-y py-2 space-y-2 max-h-56 overflow-y-auto ${
+                      isDarkMode ? 'divide-slate-800 border-slate-800' : 'divide-slate-100 border-slate-100'
+                    }`}>
                       {round.items.map((it) => (
                         <div key={it.id} className="text-xs pt-2 first:pt-0 space-y-0.5">
                           <div className="flex justify-between items-start gap-2">
                             <div>
-                              <span className="font-black text-slate-900">{it.quantity}x </span>
-                              <span className="text-slate-800 font-medium">{it.product.name}</span>
+                              <span className={`font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{it.quantity}x </span>
+                              <span className={`font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>{it.product.name}</span>
                               {it.pricingMode === 'BUFFET_INCLUDED' && (
                                 <span className="ml-1 text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-300 px-1 py-0.2 rounded font-bold">
                                   Buffet
                                 </span>
                               )}
                             </div>
-                            <span className="font-mono font-bold text-slate-900 shrink-0">
+                            <span className={`font-mono font-bold shrink-0 ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                               {it.pricingMode === 'BUFFET_INCLUDED' && it.priceAtSale === 0
                                 ? '0đ'
                                 : `${((it.priceAtSale || 0) * it.quantity).toLocaleString('vi-VN')}đ`}
@@ -347,13 +380,15 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                           </div>
 
                           {it.optionsTextSnapshot && (
-                            <p className="text-[10px] text-slate-500 pl-4">
+                            <p className={`text-[10px] pl-4 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                               Tùy chọn: {it.optionsTextSnapshot}
                             </p>
                           )}
 
                           {it.note && (
-                            <p className="text-[10px] text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md pl-4">
+                            <p className={`text-[10px] px-2 py-0.5 rounded-md pl-4 ${
+                              isDarkMode ? 'text-amber-300 bg-amber-950/40 border border-amber-900/60' : 'text-amber-800 bg-amber-50'
+                            }`}>
                               Ghi chú: "{it.note}"
                             </p>
                           )}
@@ -363,7 +398,7 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
 
                     {/* Total Price of this Round */}
                     <div className="flex justify-between items-baseline pt-1 text-xs">
-                      <span className="text-slate-500 font-medium">Tổng tiền lượt gọi:</span>
+                      <span className={`font-medium ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>Tổng tiền lượt gọi:</span>
                       <span className="font-extrabold text-sm text-[#da251d] font-mono">
                         {totalRoundPrice.toLocaleString('vi-VN')}đ
                       </span>
@@ -371,12 +406,18 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                   </div>
 
                   {/* Actions: Reject & Approve */}
-                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100">
+                  <div className={`grid grid-cols-2 gap-2 pt-3 border-t ${
+                    isDarkMode ? 'border-slate-800' : 'border-slate-100'
+                  }`}>
                     <button
                       type="button"
                       onClick={() => setRejectingRound(round)}
                       disabled={isProcessing}
-                      className="py-2.5 px-3 border border-slate-200 rounded-2xl text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50"
+                      className={`py-2.5 px-3 border rounded-2xl text-xs font-bold transition-colors flex items-center justify-center gap-1 cursor-pointer disabled:opacity-50 ${
+                        isDarkMode
+                          ? 'border-slate-700 bg-slate-800 hover:bg-slate-750 text-slate-300 hover:text-white'
+                          : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900'
+                      }`}
                     >
                       <X className="w-3.5 h-3.5" />
                       <span>Từ chối</span>
@@ -408,26 +449,38 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
       {/* Reject Reason Dialog */}
       {rejectingRound && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+          <div className={`rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4 animate-in zoom-in-95 duration-200 border ${
+            isDarkMode ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-900'
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
+              <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${
+                isDarkMode ? 'bg-rose-950/60 text-rose-400' : 'bg-rose-50 text-rose-600'
+              }`}>
                 <XCircle className="w-6 h-6" />
               </div>
               <div>
-                <h3 className="text-sm font-black text-slate-900">Từ chối lượt gọi món</h3>
-                <p className="text-xs text-slate-500">
+                <h3 className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                  Từ chối lượt gọi món
+                </h3>
+                <p className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                   {rejectingRound.order.table?.name} • Lượt #{rejectingRound.roundNumber}
                 </p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs font-bold text-slate-700 block">Lý do từ chối:</label>
+              <label className={`text-xs font-bold block ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
+                Lý do từ chối:
+              </label>
               <textarea
                 value={rejectReason}
                 onChange={(e) => setRejectReason(e.target.value)}
                 placeholder="VD: Món tạm hết nguyên liệu, khách đổi ý..."
-                className="w-full h-20 p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs focus:bg-white focus:outline-none focus:border-red-400 transition-all resize-none"
+                className={`w-full h-20 p-3 rounded-2xl text-xs outline-none transition-all resize-none border ${
+                  isDarkMode
+                    ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500 focus:border-red-400 focus:bg-slate-750'
+                    : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:bg-white focus:border-red-400'
+                }`}
               />
 
               {/* Quick suggestions */}
@@ -437,7 +490,11 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                     key={reason}
                     type="button"
                     onClick={() => setRejectReason(reason)}
-                    className="text-[10px] bg-slate-100 hover:bg-slate-200 px-2.5 py-1 rounded-lg text-slate-700 font-medium cursor-pointer"
+                    className={`text-[10px] px-2.5 py-1 rounded-lg font-medium cursor-pointer transition-colors ${
+                      isDarkMode
+                        ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
                   >
                     {reason}
                   </button>
@@ -453,7 +510,11 @@ export const QrOrderPanel: React.FC<QrOrderPanelProps> = ({ branchId, onAcceptQr
                   setRejectReason('');
                 }}
                 disabled={isProcessingId === rejectingRound.id}
-                className="py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                className={`py-2.5 rounded-2xl font-bold text-xs cursor-pointer transition-colors ${
+                  isDarkMode
+                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
               >
                 Hủy
               </button>

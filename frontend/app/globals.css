@@ -1,14 +1,48 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Đảm bảo chữ trong ô input/textarea/select luôn có độ tương phản cao, không bị trùng màu nền */
+input:where(.bg-white, .bg-gray-50, .bg-slate-50, .bg-neutral-50, .bg-gray-100, .bg-slate-100),
+textarea:where(.bg-white, .bg-gray-50, .bg-slate-50, .bg-neutral-50, .bg-gray-100, .bg-slate-100),
+select:where(.bg-white, .bg-gray-50, .bg-slate-50, .bg-neutral-50, .bg-gray-100, .bg-slate-100) {
+  color: #0f172a !important;
+}
+
+input:where(.bg-slate-800, .bg-slate-900, .bg-gray-800, .bg-gray-900, .bg-slate-950, .bg-slate-700, .bg-gray-700, .bg-slate-850),
+textarea:where(.bg-slate-800, .bg-slate-900, .bg-gray-800, .bg-gray-900, .bg-slate-950, .bg-slate-700, .bg-gray-700, .bg-slate-850),
+select:where(.bg-slate-800, .bg-slate-900, .bg-gray-800, .bg-gray-900, .bg-slate-950, .bg-slate-700, .bg-gray-700, .bg-slate-850) {
+  color: #f8fafc !important;
+}
+
+.dark input:not([class*="bg-"]),
+.dark textarea:not([class*="bg-"]),
+.dark select:not([class*="bg-"]) {
+  color: #f8fafc;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8;
+}
+
+.dark input[type="date"],
+.dark input[type="datetime-local"],
+.dark input[type="time"] {
+  color-scheme: dark;
+}
+
 @theme {
   --font-sans: var(--font-be-vietnam-pro), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-serif: var(--font-be-vietnam-pro), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 }
 
-/* Khóa phóng to thu nhỏ màn hình trên mobile như Native App */
+/* Khóa phóng to thu nhỏ màn hình và chống rubber-band bounce trên mobile như Native App */
 html, body {
   touch-action: manipulation;
   -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+  -webkit-overscroll-behavior: none;
 }
 
 @keyframes shine {
@@ -22,6 +56,31 @@ html, body {
 
 .animate-shine {
   animation: shine 2s infinite cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes avoProgressBar {
+  0% {
+    left: -40%;
+    width: 35%;
+  }
+  50% {
+    left: 30%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 35%;
+  }
+}
+
+.animate-avo-progress {
+  animation: avoProgressBar 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-avo-progress {
+    animation-duration: 3s;
+  }
 }
 
 /* Modern Sleek Minimalist Scrollbar Across App */
@@ -98,16 +157,21 @@ html, body {
 }
 
 /* Leaflet Map Tile Fixes for Tailwind CSS v4 & Next.js Modals */
-.leaflet-container {
+.leaflet-container,
+.leaflet-full-width {
   width: 100% !important;
+  min-width: 100% !important;
+  max-width: 100% !important;
   height: 100% !important;
   z-index: 0 !important;
   background-color: #f1f5f9 !important;
+  overflow: hidden !important;
 }
 
 .leaflet-container img,
 .leaflet-pane img,
-.leaflet-tile-pane img {
+.leaflet-tile-pane img,
+.leaflet-layer img {
   max-width: none !important;
   max-height: none !important;
   box-shadow: none !important;

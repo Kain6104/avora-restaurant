@@ -191,4 +191,80 @@ describe('ChatbotToolEngineService - Contextual Suggestions & Category Search', 
       expect(labels).toContain('Tiến hành chốt đơn');
     });
   });
+
+  describe('Test D: Restaurant Info FAQ & Smart Branch Locator with 7s Fallback', () => {
+    it('1. getRestaurantInfo should return FAQ details and helpful chips without querying products', async () => {
+      mockPrisma.branch.findMany.mockResolvedValue([
+        {
+          id: 'b-1',
+          name: 'Avora Landmark 81',
+          phone: '0901234567',
+          street: '720A Điện Biên Phủ',
+          ward: 'Phường 22',
+          district: 'Bình Thạnh',
+          province: 'TP.HCM',
+          latitude: 10.795,
+          longitude: 106.7218,
+          onlineOrderingEnabled: true,
+        },
+      ]);
+
+      const res = await service.executeTool('getRestaurantInfo', { topic: 'PARKING' });
+      expect(res.success).toBe(true);
+      expect(res.code).toBe('RESTAURANT_INFO_LOADED');
+      expect(res.data.amenitiesAndPolicies.parking).toContain('đỗ xe');
+      expect(mockPrisma.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('2. findNearestBranch without coordinates should return REQUEST_LOCATION with 7s autoFallbackSeconds and preloaded allBranches + embedMapUrl', async () => {
+      mockPrisma.branch.findMany.mockResolvedValue([
+        {
+          id: 'b-1',
+          name: 'Avora Landmark 81',
+          phone: '0901234567',
+          street: '720A Điện Biên Phủ',
+          ward: 'Phường 22',
+          district: 'Bình Thạnh',
+          province: 'TP.HCM',
+          latitude: 10.795,
+          longitude: 106.7218,
+          onlineOrderingEnabled: true,
+        },
+      ]);
+
+      const res = await service.executeTool('findNearestBranch', {});
+      expect(res.success).toBe(true);
+      expect(res.code).toBe('LOCATION_REQUIRED');
+      expect(res.actionType).toBe('REQUEST_LOCATION');
+      const payload = JSON.parse(res.actionPayload!);
+      expect(payload.autoFallbackSeconds).toBe(10);
+      expect(payload.allBranches).toHaveLength(1);
+      expect(payload.allBranches[0].embedMapUrl).toContain('output=embed');
+    });
+
+    it('3. findNearestBranch with coordinates should calculate Haversine distance and return NEAREST_FOUND mode', async () => {
+      mockPrisma.branch.findMany.mockResolvedValue([
+        {
+          id: 'b-1',
+          name: 'Avora Landmark 81',
+          phone: '0901234567',
+          street: '720A Điện Biên Phủ',
+          ward: 'Phường 22',
+          district: 'Bình Thạnh',
+          province: 'TP.HCM',
+          latitude: 10.795,
+          longitude: 106.7218,
+          onlineOrderingEnabled: true,
+        },
+      ]);
+
+      const res = await service.executeTool('findNearestBranch', { latitude: 10.79, longitude: 106.72 });
+      expect(res.success).toBe(true);
+      expect(res.code).toBe('NEAREST_BRANCHES_FOUND');
+      expect(res.actionType).toBe('REQUEST_LOCATION');
+      const payload = JSON.parse(res.actionPayload!);
+      expect(payload.mode).toBe('NEAREST_FOUND');
+      expect(payload.nearestBranches[0].distanceKm).toBeDefined();
+    });
+  });
 });

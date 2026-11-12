@@ -53,6 +53,7 @@ interface EndOfDayReportModalProps {
   activeShiftId?: string | null;
   currentCashierId?: string | null;
   currentCashierName?: string | null;
+  isDarkMode?: boolean;
 }
 
 export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
@@ -65,6 +66,7 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
   activeShiftId,
   currentCashierId,
   currentCashierName,
+  isDarkMode = false,
 }) => {
   // Preset lựa chọn nhanh
   const [preset, setPreset] = useState<EndOfDayPreset>('CURRENT_SHIFT');
@@ -111,6 +113,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
       const range = getPresetDateRange(newPreset, activeShiftOpenedAt);
       setFromDate(range.from);
       setToDate(range.to);
+      setMinAllowedDate(range.minAllowed);
+      setMaxAllowedDate(range.maxAllowed);
     }
   };
 
@@ -271,8 +275,15 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
-      <div className="bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 max-w-5xl w-full h-[95vh] max-h-[950px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+    <div className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-xs animate-in fade-in duration-150 select-none ${
+      isDarkMode ? 'dark bg-slate-950/80' : 'bg-slate-900/60'
+    }`}>
+      <div className={`rounded-t-3xl sm:rounded-3xl shadow-2xl border max-w-5xl w-full h-[92dvh] sm:h-[95vh] max-h-[950px] flex flex-col overflow-hidden animate-in slide-in-from-bottom duration-200 sm:animate-in sm:zoom-in-95 ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-800'
+      }`}>
+        {/* Mobile Drag Handle */}
+        <div className="w-12 h-1.5 bg-slate-300 dark:bg-slate-600 rounded-full mx-auto my-2 sm:hidden shrink-0" />
+
         {/* =========================================================================
             1. MODAL HEADER: ĐỎ AVORA #DA251D ĐẶC TRƯNG
             ========================================================================= */}
@@ -319,10 +330,12 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
         {/* =========================================================================
             2. STICKY FILTER BAR: CÁC TIÊU CHÍ LỌC THỜI GIAN & CHI NHÁNH
             ========================================================================= */}
-        <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 shrink-0 space-y-3">
+        <div className={`p-3 sm:p-4 border-b shrink-0 space-y-3 ${
+          isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'
+        }`}>
           {/* Hàng 1: Preset Buttons Nhanh */}
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-xs font-bold text-slate-500 mr-1 hidden sm:inline">
+            <span className={`text-xs font-bold mr-1 hidden sm:inline ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
               Mốc thời gian:
             </span>
             <button
@@ -331,6 +344,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 preset === 'CURRENT_SHIFT'
                   ? 'bg-[#da251d] text-white shadow-xs'
+                  : isDarkMode
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
                   : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
               }`}
             >
@@ -342,6 +357,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 preset === 'TODAY'
                   ? 'bg-[#da251d] text-white shadow-xs'
+                  : isDarkMode
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
                   : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
               }`}
             >
@@ -353,6 +370,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 preset === 'YESTERDAY'
                   ? 'bg-[#da251d] text-white shadow-xs'
+                  : isDarkMode
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
                   : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
               }`}
             >
@@ -364,6 +383,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 preset === 'LAST_7_DAYS'
                   ? 'bg-[#da251d] text-white shadow-xs'
+                  : isDarkMode
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
                   : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
               }`}
             >
@@ -375,6 +396,8 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                 preset === 'CUSTOM'
                   ? 'bg-[#da251d] text-white shadow-xs'
+                  : isDarkMode
+                  ? 'bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700'
                   : 'bg-white text-slate-700 hover:bg-slate-200/80 border border-slate-200'
               }`}
             >
@@ -387,7 +410,11 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               onClick={fetchReport}
               disabled={isLoading}
               title="Tải lại số liệu mới nhất"
-              className="ml-auto p-1.5 text-slate-500 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              className={`ml-auto p-1.5 border rounded-xl transition-colors cursor-pointer disabled:opacity-50 ${
+                isDarkMode
+                  ? 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border-slate-700'
+                  : 'bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
+              }`}
             >
               <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
@@ -397,7 +424,9 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 items-center">
             {/* Từ ngày giờ */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <label className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}>
                 <Clock className="w-3 h-3 text-slate-400" />
                 <span>Từ thời điểm:</span>
               </label>
@@ -410,13 +439,19 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                   setFromDate(e.target.value);
                   setPreset('CUSTOM');
                 }}
-                className="w-full text-xs font-bold font-mono bg-white border border-slate-300 focus:border-[#da251d] rounded-xl px-2.5 py-1.5 outline-none shadow-2xs"
+                className={`w-full text-xs font-bold font-mono rounded-xl px-2.5 py-1.5 outline-none shadow-2xs border ${
+                  isDarkMode
+                    ? 'bg-slate-800 text-white border-slate-700 focus:border-[#da251d] [color-scheme:dark]'
+                    : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                }`}
               />
             </div>
 
             {/* Đến ngày giờ */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <label className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}>
                 <Clock className="w-3 h-3 text-slate-400" />
                 <span>Đến thời điểm:</span>
               </label>
@@ -429,13 +464,19 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                   setToDate(e.target.value);
                   setPreset('CUSTOM');
                 }}
-                className="w-full text-xs font-bold font-mono bg-white border border-slate-300 focus:border-[#da251d] rounded-xl px-2.5 py-1.5 outline-none shadow-2xs"
+                className={`w-full text-xs font-bold font-mono rounded-xl px-2.5 py-1.5 outline-none shadow-2xs border ${
+                  isDarkMode
+                    ? 'bg-slate-800 text-white border-slate-700 focus:border-[#da251d] [color-scheme:dark]'
+                    : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                }`}
               />
             </div>
 
             {/* Chi nhánh */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+              <label className={`text-[11px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                isDarkMode ? 'text-slate-400' : 'text-slate-500'
+              }`}>
                 <Store className="w-3 h-3 text-slate-400" />
                 <span>Chi nhánh:</span>
               </label>
@@ -443,13 +484,17 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                 disabled={!canSwitchBranch}
                 value={selectedBranchId}
                 onChange={(e) => setSelectedBranchId(e.target.value)}
-                className={`w-full text-xs font-bold bg-white border border-slate-300 focus:border-[#da251d] rounded-xl px-2.5 py-1.5 outline-none shadow-2xs ${
+                className={`w-full text-xs font-bold rounded-xl px-2.5 py-1.5 outline-none shadow-2xs border ${
+                  isDarkMode
+                    ? 'bg-slate-800 text-white border-slate-700 focus:border-[#da251d]'
+                    : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                } ${
                   !canSwitchBranch ? 'opacity-80 cursor-not-allowed' : 'cursor-pointer'
                 }`}
               >
                 {canSwitchBranch && <option value="ALL">Tất cả chi nhánh</option>}
                 {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
+                  <option key={b.id} value={b.id} className={isDarkMode ? 'bg-slate-800 text-white' : ''}>
                     {b.name}
                   </option>
                 ))}
@@ -459,24 +504,32 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
             {/* Nguồn đơn & Toggle chi tiết */}
             <div className="flex items-center gap-2 pt-4 sm:pt-0">
               <div className="flex-1 space-y-1">
-                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                <label className={`text-[11px] font-bold uppercase tracking-wider ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-500'
+                }`}>
                   Nguồn đơn:
                 </label>
                 <select
                   value={sourceFilter}
                   onChange={(e) => setSourceFilter(e.target.value as any)}
-                  className="w-full text-xs font-bold bg-white border border-slate-300 focus:border-[#da251d] rounded-xl px-2 py-1.5 outline-none shadow-2xs cursor-pointer"
+                  className={`w-full text-xs font-bold rounded-xl px-2 py-1.5 outline-none shadow-2xs cursor-pointer border ${
+                    isDarkMode
+                      ? 'bg-slate-800 text-white border-slate-700 focus:border-[#da251d]'
+                      : 'bg-white text-slate-900 border-slate-300 focus:border-[#da251d]'
+                  }`}
                 >
-                  <option value="ALL">Tất cả nguồn</option>
-                  <option value="POS">Tại quán (POS)</option>
-                  <option value="ONLINE">Đặt Online</option>
+                  <option value="ALL" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Tất cả nguồn</option>
+                  <option value="POS" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Tại quán (POS)</option>
+                  <option value="ONLINE" className={isDarkMode ? 'bg-slate-800 text-white' : ''}>Đặt Online</option>
                 </select>
               </div>
 
               {/* Toggle chi tiết món */}
               <div className="pt-4 shrink-0">
                 <label
-                  className="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer select-none"
+                  className={`flex items-center gap-1.5 text-xs font-bold cursor-pointer select-none ${
+                    isDarkMode ? 'text-slate-300' : 'text-slate-700'
+                  }`}
                   title="Hiển thị chi tiết từng món ăn bán ra"
                 >
                   <input
@@ -495,7 +548,9 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
         {/* =========================================================================
             3. MAIN CONTENT: CUỘN NỘI BỘ, KHÔNG LÀM TOÀN TRANG BỊ SCROLL
             ========================================================================= */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar">
+        <div className={`flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 custom-scrollbar ${
+          isDarkMode ? 'bg-slate-900 text-slate-100' : 'bg-white text-slate-800'
+        }`}>
           {/* Lỗi thông báo nếu có */}
           {errorMessage && (
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm font-semibold flex items-center gap-3">
@@ -504,17 +559,29 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
             </div>
           )}
 
+          {/* Cảnh báo ca mở kéo dài hơn 24 giờ */}
+          {preset === 'CURRENT_SHIFT' && activeShiftOpenedAt && new Date().getTime() - new Date(activeShiftOpenedAt).getTime() > 24 * 60 * 60 * 1000 && (
+            <div className={`p-3.5 rounded-2xl border text-xs font-medium flex items-center gap-2.5 ${
+              isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50 border-amber-200 text-amber-800'
+            }`}>
+              <Info className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                Ca làm việc này đã mở hơn 24 giờ (từ {formatVietnamDateTime(activeShiftOpenedAt)}). Bạn có thể kiểm tra dữ liệu và bấm <strong>Kết ca</strong> tại màn hình POS để chốt ca cũ và mở ca mới cho hôm nay.
+              </span>
+            </div>
+          )}
+
           {/* Loading Skeleton nhẹ khi đang tải dữ liệu */}
           {isLoading && (
             <div className="space-y-4 animate-pulse">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[1, 2, 3, 4].map((i) => (
-                  <div key={i} className="h-24 bg-slate-100 rounded-2xl" />
+                  <div key={i} className={`h-24 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
                 ))}
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <div className="h-64 bg-slate-100 rounded-2xl" />
-                <div className="h-64 bg-slate-100 rounded-2xl" />
+                <div className={`h-64 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
+                <div className={`h-64 rounded-2xl ${isDarkMode ? 'bg-slate-800' : 'bg-slate-100'}`} />
               </div>
             </div>
           )}
@@ -524,32 +591,40 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
             <>
               {/* KHỐI 1: KPI CARDS ĐẦU BÁO CÁO */}
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                <h3 className={`text-xs font-bold uppercase tracking-wider mb-2 flex items-center gap-1.5 ${
+                  isDarkMode ? 'text-slate-400' : 'text-slate-400'
+                }`}>
                   <DollarSign className="w-4 h-4 text-[#da251d]" />
                   <span>Chỉ số tài chính trọng yếu</span>
                 </h3>
 
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                   {/* KPI 1: TỔNG THỰC THU (Nổi bật nhất) */}
-                  <div className="col-span-2 sm:col-span-1 p-4 rounded-2xl bg-gradient-to-br from-red-50 to-orange-50/60 border border-red-200 shadow-xs">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-red-600">
+                  <div className={`col-span-2 sm:col-span-1 p-4 rounded-2xl border shadow-xs ${
+                    isDarkMode
+                      ? 'bg-gradient-to-br from-red-950/40 to-slate-850 border-red-900/60'
+                      : 'bg-gradient-to-br from-red-50 to-orange-50/60 border-red-200'
+                  }`}>
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-red-500">
                       TỔNG THỰC THU
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-[#da251d] mt-1">
+                    <p className="text-xl sm:text-2xl font-black text-[#da251d] dark:text-red-400 mt-1">
                       {formatVND(data.summary.totalActualCollected)}
                     </p>
-                    <p className="text-[10px] text-slate-500 mt-1">
+                    <p className={`text-[10px] mt-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       Số tiền thực thu sau khi trừ hoàn tiền (Refund)
                     </p>
                   </div>
 
                   {/* KPI 2: TỔNG ĐƠN HOÀN THÀNH */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className={`p-4 rounded-2xl border shadow-2xs ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                  }`}>
+                    <p className={`text-[11px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       ĐƠN HOÀN THÀNH
                     </p>
                     <div className="flex items-baseline gap-2 mt-1">
-                      <span className="text-xl sm:text-2xl font-black text-slate-900">
+                      <span className={`text-xl sm:text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         {data.summary.completedOrderCount}
                       </span>
                       <span className="text-xs text-slate-400 font-bold">đơn</span>
@@ -562,11 +637,13 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                   </div>
 
                   {/* KPI 3: TỔNG THUẾ VAT */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className={`p-4 rounded-2xl border shadow-2xs ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                  }`}>
+                    <p className={`text-[11px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       TỔNG THUẾ VAT
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-indigo-700 mt-1">
+                    <p className="text-xl sm:text-2xl font-black text-indigo-500 dark:text-indigo-400 mt-1">
                       {formatVND(data.summary.totalVat)}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-1">
@@ -575,11 +652,13 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                   </div>
 
                   {/* KPI 4: DOANH THU RÒNG */}
-                  <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-2xs">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                  <div className={`p-4 rounded-2xl border shadow-2xs ${
+                    isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+                  }`}>
+                    <p className={`text-[11px] font-bold uppercase tracking-wider ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                       DOANH THU RÒNG
                     </p>
-                    <p className="text-xl sm:text-2xl font-black text-emerald-700 mt-1">
+                    <p className="text-xl sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-1">
                       {formatVND(data.summary.netSales)}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-1">
@@ -590,27 +669,35 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
 
                 {/* Hàng KPI phụ: Doanh thu gộp, Giảm giá, Phí ship, Phụ thu */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-2.5 text-xs">
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-slate-500 font-medium">Doanh thu gộp:</span>
-                    <p className="font-bold text-slate-800">
+                  <div className={`p-2.5 rounded-xl border ${
+                    isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Doanh thu gộp:</span>
+                    <p className={`font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                       {formatVND(data.summary.totalGrossSales)}
                     </p>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-slate-500 font-medium">Tổng giảm giá:</span>
-                    <p className="font-bold text-rose-600">
+                  <div className={`p-2.5 rounded-xl border ${
+                    isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Tổng giảm giá:</span>
+                    <p className="font-bold text-rose-500 dark:text-rose-400">
                       {formatVND(data.summary.totalDiscount)}
                     </p>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-slate-500 font-medium">Phí giao hàng:</span>
-                    <p className="font-bold text-slate-800">
+                  <div className={`p-2.5 rounded-xl border ${
+                    isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Phí giao hàng:</span>
+                    <p className={`font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                       {formatVND(data.summary.shippingFeeCustomerPaid)}
                     </p>
                   </div>
-                  <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-                    <span className="text-slate-500 font-medium">Hoàn tiền (Refund):</span>
-                    <p className="font-bold text-amber-600">
+                  <div className={`p-2.5 rounded-xl border ${
+                    isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <span className={isDarkMode ? 'text-slate-400 font-medium' : 'text-slate-500 font-medium'}>Hoàn tiền (Refund):</span>
+                    <p className="font-bold text-amber-500 dark:text-amber-400">
                       {formatVND(data.summary.refundTotal)}
                     </p>
                   </div>
@@ -618,26 +705,38 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               </div>
 
               {/* KHỐI 2: PHƯƠNG THỨC THANH TOÁN & RECONCILIATION */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div className={`p-4 sm:p-5 rounded-2xl border shadow-2xs space-y-3 ${
+                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+              }`}>
+                <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-3 ${
+                  isDarkMode ? 'border-slate-700' : 'border-slate-100'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <div className="w-7 h-7 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center font-bold">
                       💳
                     </div>
-                    <h4 className="text-sm font-black uppercase text-slate-900 tracking-tight">
+                    <h4 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       PHƯƠNG THỨC THANH TOÁN
                     </h4>
                   </div>
 
                   {/* Trạng thái Đối soát (Reconciliation) */}
                   {data.reconciliation.valid ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200/80">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                      isDarkMode
+                        ? 'bg-emerald-950/50 text-emerald-300 border-emerald-800'
+                        : 'bg-emerald-50 text-emerald-700 border-emerald-200/80'
+                    }`}>
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                       <span>Khớp 100% với thực thu</span>
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 text-xs font-bold border border-amber-300">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold border ${
+                      isDarkMode
+                        ? 'bg-amber-950/50 text-amber-300 border-amber-800'
+                        : 'bg-amber-50 text-amber-700 border-amber-300'
+                    }`}>
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
                       <span>
                         Chênh lệch: {formatVND(data.reconciliation.difference)}
                       </span>
@@ -647,7 +746,9 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
 
                 {/* Cảnh báo nếu có sai lệch đối soát */}
                 {data.reconciliation.warnings.length > 0 && (
-                  <div className="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-amber-900 text-xs space-y-1">
+                  <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+                    isDarkMode ? 'bg-amber-950/40 border-amber-800 text-amber-300' : 'bg-amber-50/80 border-amber-200 text-amber-900'
+                  }`}>
                     {data.reconciliation.warnings.map((w, idx) => (
                       <p key={idx} className="font-medium">
                         ⚠️ {w}
@@ -659,7 +760,11 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                 {/* Bảng kê chi tiết phương thức */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
-                    <thead className="text-[11px] font-bold text-slate-400 uppercase bg-slate-50 border-y border-slate-100">
+                    <thead className={`text-[11px] font-bold uppercase border-y ${
+                      isDarkMode
+                        ? 'text-slate-400 bg-slate-850 border-slate-700'
+                        : 'text-slate-400 bg-slate-50 border-slate-100'
+                    }`}>
                       <tr>
                         <th className="py-2 px-3">Phương thức</th>
                         <th className="py-2 px-3 text-center">Số giao dịch</th>
@@ -668,7 +773,7 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                         <th className="py-2 px-3 text-right">Thực thu</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
+                    <tbody className={`divide-y font-medium ${isDarkMode ? 'divide-slate-700' : 'divide-slate-100'}`}>
                       {data.payments.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="py-4 text-center text-slate-400 italic">
@@ -677,27 +782,29 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                         </tr>
                       ) : (
                         data.payments.map((p) => (
-                          <tr key={p.method} className="hover:bg-slate-50/70">
-                            <td className="py-2.5 px-3 font-bold text-slate-800">
+                          <tr key={p.method} className={isDarkMode ? 'hover:bg-slate-750' : 'hover:bg-slate-50/70'}>
+                            <td className={`py-2.5 px-3 font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                               {p.label}
                             </td>
                             <td className="py-2.5 px-3 text-center">{p.count}</td>
                             <td className="py-2.5 px-3 text-right font-mono font-semibold">
                               {formatVND(p.amount)}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono text-amber-600">
+                            <td className="py-2.5 px-3 text-right font-mono text-amber-500">
                               {p.refunded > 0 ? formatVND(p.refunded) : '-'}
                             </td>
-                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#da251d]">
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-[#da251d] dark:text-red-400">
                               {formatVND(p.netAmount)}
                             </td>
                           </tr>
                         ))
                       )}
                     </tbody>
-                    <tfoot className="bg-slate-50/80 font-black border-t-2 border-slate-200">
+                    <tfoot className={`font-black border-t-2 ${
+                      isDarkMode ? 'bg-slate-850 border-slate-700 text-white' : 'bg-slate-50/80 border-slate-200 text-slate-900'
+                    }`}>
                       <tr>
-                        <td className="py-2.5 px-3 uppercase text-slate-900" colSpan={2}>
+                        <td className="py-2.5 px-3 uppercase" colSpan={2}>
                           TỔNG CỘNG
                         </td>
                         <td className="py-2.5 px-3 text-right font-mono">
@@ -705,10 +812,10 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                             data.payments.reduce((sum, p) => sum + p.amount, 0),
                           )}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-amber-600">
+                        <td className="py-2.5 px-3 text-right font-mono text-amber-500">
                           {formatVND(data.summary.refundTotal)}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[#da251d]">
+                        <td className="py-2.5 px-3 text-right font-mono text-[#da251d] dark:text-red-400">
                           {formatVND(data.reconciliation.totalPaymentSum)}
                         </td>
                       </tr>
@@ -718,18 +825,22 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
               </div>
 
               {/* KHỐI 3: HÀNG HÓA BÁN RA (CATEGORY SALES & PRODUCT SALES) */}
-              <div className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200 shadow-2xs space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className={`p-4 sm:p-5 rounded-2xl border shadow-2xs space-y-3 ${
+                isDarkMode ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-200'
+              }`}>
+                <div className={`flex items-center justify-between border-b pb-3 ${
+                  isDarkMode ? 'border-slate-700' : 'border-slate-100'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-red-50 text-[#da251d] flex items-center justify-center font-bold">
+                    <div className="w-7 h-7 rounded-lg bg-red-500/10 text-[#da251d] flex items-center justify-center font-bold">
                       📦
                     </div>
-                    <h4 className="text-sm font-black uppercase text-slate-900 tracking-tight">
+                    <h4 className={`text-sm font-black uppercase tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                       HÀNG HÓA BÁN RA (TỔNG HỢP THEO NHÓM MÓN)
                     </h4>
                   </div>
 
-                  <span className="text-xs font-bold text-slate-500">
+                  <span className={`text-xs font-bold ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
                     Tổng: {data.categorySales.reduce((sum, c) => sum + c.quantitySold, 0)} phần
                   </span>
                 </div>
@@ -737,14 +848,18 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                 {/* Bảng tổng hợp theo nhóm hàng (Category) */}
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs text-left">
-                    <thead className="text-[11px] font-bold text-slate-400 uppercase bg-slate-50 border-y border-slate-100">
+                    <thead className={`text-[11px] font-bold uppercase border-y ${
+                      isDarkMode
+                        ? 'text-slate-400 bg-slate-850 border-slate-700'
+                        : 'text-slate-400 bg-slate-50 border-slate-100'
+                    }`}>
                       <tr>
                         <th className="py-2 px-3">Tên nhóm hàng</th>
                         <th className="py-2 px-3 text-center">Số lượng bán</th>
                         <th className="py-2 px-3 text-right">Doanh thu nhóm</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
+                    <tbody className={`divide-y font-medium ${isDarkMode ? 'divide-slate-700' : 'divide-slate-100'}`}>
                       {data.categorySales.length === 0 ? (
                         <tr>
                           <td colSpan={3} className="py-4 text-center text-slate-400 italic">
@@ -753,27 +868,29 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                         </tr>
                       ) : (
                         data.categorySales.map((cat) => (
-                          <tr key={cat.categoryId} className="hover:bg-slate-50/70">
-                            <td className="py-2 px-3 font-bold text-slate-800">
+                          <tr key={cat.categoryId} className={isDarkMode ? 'hover:bg-slate-750' : 'hover:bg-slate-50/70'}>
+                            <td className={`py-2 px-3 font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                               {cat.categoryName}
                             </td>
                             <td className="py-2 px-3 text-center font-bold">
                               {cat.quantitySold}
                             </td>
-                            <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                            <td className={`py-2 px-3 text-right font-mono font-bold ${isDarkMode ? 'text-slate-100' : 'text-slate-900'}`}>
                               {formatVND(cat.revenue)}
                             </td>
                           </tr>
                         ))
                       )}
                     </tbody>
-                    <tfoot className="bg-slate-50/80 font-black border-t-2 border-slate-200">
+                    <tfoot className={`font-black border-t-2 ${
+                      isDarkMode ? 'bg-slate-850 border-slate-700 text-white' : 'bg-slate-50/80 border-slate-200 text-slate-900'
+                    }`}>
                       <tr>
-                        <td className="py-2.5 px-3 uppercase text-slate-900">TỔNG CỘNG</td>
+                        <td className="py-2.5 px-3 uppercase">TỔNG CỘNG</td>
                         <td className="py-2.5 px-3 text-center font-bold">
                           {data.categorySales.reduce((sum, c) => sum + c.quantitySold, 0)}
                         </td>
-                        <td className="py-2.5 px-3 text-right font-mono text-[#da251d]">
+                        <td className="py-2.5 px-3 text-right font-mono text-[#da251d] dark:text-red-400">
                           {formatVND(
                             data.categorySales.reduce((sum, c) => sum + c.revenue, 0),
                           )}
@@ -785,14 +902,16 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
 
                 {/* Bảng chi tiết từng mặt hàng nếu được kích hoạt */}
                 {showItemDetails && data.productSales && data.productSales.length > 0 && (
-                  <div className="pt-4 border-t border-slate-200 space-y-2">
-                    <h5 className="text-xs font-black uppercase tracking-wider text-slate-700">
+                  <div className={`pt-4 border-t space-y-2 ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
+                    <h5 className={`text-xs font-black uppercase tracking-wider ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>
                       Chi tiết từng mặt hàng bán ra
                     </h5>
 
                     <div className="overflow-x-auto max-h-72 custom-scrollbar">
                       <table className="w-full text-xs text-left">
-                        <thead className="text-[10px] font-bold text-slate-400 uppercase bg-slate-100 sticky top-0 z-10">
+                        <thead className={`text-[10px] font-bold uppercase sticky top-0 z-10 ${
+                          isDarkMode ? 'text-slate-400 bg-slate-800' : 'text-slate-400 bg-slate-100'
+                        }`}>
                           <tr>
                             <th className="py-1.5 px-2.5">Mã món</th>
                             <th className="py-1.5 px-2.5">Tên món</th>
@@ -804,16 +923,16 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                             <th className="py-1.5 px-2.5 text-right">Thành tiền</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium">
+                        <tbody className={`divide-y font-medium ${isDarkMode ? 'divide-slate-700' : 'divide-slate-100'}`}>
                           {data.productSales.map((prod) => (
-                            <tr key={prod.productId} className="hover:bg-slate-50">
-                              <td className="py-1.5 px-2.5 font-mono text-slate-500">
+                            <tr key={prod.productId} className={isDarkMode ? 'hover:bg-slate-750' : 'hover:bg-slate-50'}>
+                              <td className="py-1.5 px-2.5 font-mono text-slate-400">
                                 {prod.itemCode}
                               </td>
-                              <td className="py-1.5 px-2.5 font-bold text-slate-800">
+                              <td className={`py-1.5 px-2.5 font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'}`}>
                                 {prod.name}
                               </td>
-                              <td className="py-1.5 px-2.5 text-slate-500">
+                              <td className="py-1.5 px-2.5 text-slate-400">
                                 {prod.categoryName}
                               </td>
                               <td className="py-1.5 px-2.5 text-center font-bold">
@@ -822,13 +941,13 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
                               <td className="py-1.5 px-2.5 text-right font-mono">
                                 {formatVND(prod.unitPriceSnapshot)}
                               </td>
-                              <td className="py-1.5 px-2.5 text-right font-mono text-rose-600">
+                              <td className="py-1.5 px-2.5 text-right font-mono text-rose-500">
                                 {prod.discountAmount > 0 ? formatVND(prod.discountAmount) : '-'}
                               </td>
-                              <td className="py-1.5 px-2.5 text-right font-mono text-indigo-600">
+                              <td className="py-1.5 px-2.5 text-right font-mono text-indigo-400">
                                 {prod.vatAmount > 0 ? formatVND(prod.vatAmount) : '-'}
                               </td>
-                              <td className="py-1.5 px-2.5 text-right font-mono font-bold text-slate-900">
+                              <td className={`py-1.5 px-2.5 text-right font-mono font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                                 {formatVND(prod.lineTotal)}
                               </td>
                             </tr>
@@ -853,11 +972,13 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
         {/* =========================================================================
             4. MODAL FOOTER
             ========================================================================= */}
-        <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 shrink-0">
-          <div className="text-[11px] text-slate-500">
+        <div className={`p-3 sm:p-4 border-t flex flex-wrap items-center justify-between gap-2 shrink-0 ${
+          isDarkMode ? 'bg-slate-900 border-slate-800' : 'bg-slate-50 border-slate-200'
+        }`}>
+          <div className="text-[11px] text-slate-400">
             {data && (
               <span>
-                Thời gian tạo: <strong className="text-slate-700">{data.generatedAtVn}</strong>
+                Thời gian tạo: <strong className={isDarkMode ? 'text-slate-200' : 'text-slate-700'}>{data.generatedAtVn}</strong>
               </span>
             )}
           </div>
@@ -866,7 +987,11 @@ export const EndOfDayReportModal: React.FC<EndOfDayReportModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs sm:text-sm border border-slate-200 transition-colors cursor-pointer"
+              className={`px-4 py-2 font-bold rounded-xl text-xs sm:text-sm border transition-colors cursor-pointer ${
+                isDarkMode
+                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+              }`}
             >
               Đóng
             </button>

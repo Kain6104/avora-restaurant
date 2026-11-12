@@ -296,8 +296,10 @@ fun ShiftAuditScreen(
                     // 1. Reconciliation Status Hero Card
                     item {
                         Card(
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = statusBg),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, statusFg.copy(alpha = 0.35f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
@@ -564,8 +566,9 @@ fun ShiftAuditScreen(
                                 items(discrepancies.overpaidDuplicates) { item ->
                                     Card(
                                         shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF1F2)),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECDD3))
+                                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, AvoraRedPrimary.copy(alpha = 0.4f))
                                     ) {
                                         Column(modifier = Modifier.padding(14.dp)) {
                                             Row(

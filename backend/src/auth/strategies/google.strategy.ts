@@ -6,10 +6,16 @@ import { AuthService } from '../auth.service';
 @Injectable()
 export class GoogleStrategy extends PassportStrategy(Strategy, 'google') {
   constructor(private authService: AuthService) {
+    const callbackURL =
+      process.env.GOOGLE_CALLBACK_URL ||
+      (process.env.NODE_ENV === 'production'
+        ? 'https://avorafnb.com/api/auth/google/callback'
+        : 'http://localhost:4001/api/auth/google/callback');
+
     super({
       clientID: process.env.GOOGLE_CLIENT_ID as string,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-      callbackURL: process.env.GOOGLE_CALLBACK_URL as string,
+      callbackURL: callbackURL,
       scope: ['email', 'profile'],
     });
   }

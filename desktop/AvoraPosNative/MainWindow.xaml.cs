@@ -37,7 +37,38 @@ namespace AvoraPosNative
             _apiService = new PosApiService();
             _realtimeService = new RealtimeService();
 
-            Loaded += async (s, e) => await InitializeApplicationAsync();
+            Loaded += async (s, e) =>
+            {
+                EnterFullscreen();
+                await InitializeApplicationAsync();
+            };
+        }
+
+        public void EnterFullscreen()
+        {
+            WindowState = WindowState.Normal;
+            WindowStyle = WindowStyle.None;
+            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+        }
+
+        public void MinimizeWindow()
+        {
+            WindowState = WindowState.Minimized;
+        }
+
+        public void ToggleFullscreenWindow()
+        {
+            if (WindowStyle == WindowStyle.None)
+            {
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                ResizeMode = ResizeMode.CanResize;
+                WindowState = WindowState.Normal;
+            }
+            else
+            {
+                EnterFullscreen();
+            }
         }
 
         private async Task InitializeApplicationAsync()
@@ -70,6 +101,11 @@ namespace AvoraPosNative
             loginVm.LoginSucceeded += (profile) =>
             {
                 NavigateToPosShell();
+            };
+            loginVm.RequestExit += () =>
+            {
+                _allowClose = true;
+                Application.Current.Shutdown();
             };
 
             _loginView = new LoginView { DataContext = loginVm };
@@ -110,21 +146,12 @@ namespace AvoraPosNative
             // F11: Toggle Fullscreen
             if (e.Key == Key.F11)
             {
-                if (WindowStyle == WindowStyle.None)
-                {
-                    WindowStyle = WindowStyle.SingleBorderWindow;
-                    WindowState = WindowState.Normal;
-                }
-                else
-                {
-                    WindowStyle = WindowStyle.None;
-                    WindowState = WindowState.Maximized;
-                }
+                ToggleFullscreenWindow();
                 e.Handled = true;
                 return;
             }
 
-            // Route operational shortcuts when in PosShell
+            // Route operational shortcuts when in PosShell (100% parity with /admin/pos)
             if (_shellVm != null && MainContentHost.Content is PosShellView)
             {
                 switch (e.Key)
@@ -134,31 +161,53 @@ namespace AvoraPosNative
                         e.Handled = true;
                         break;
                     case Key.F2:
-                        _shellVm.ActiveTab = "ORDER";
+                        if (_shellVm.ActiveTab == "ORDER")
+                        {
+                            _shellVm.OrderVm.SendKitchenCommand.Execute(null);
+                        }
+                        else
+                        {
+                            _shellVm.ActiveTab = "ORDER";
+                        }
                         e.Handled = true;
                         break;
                     case Key.F3:
-                        _shellVm.ActiveTab = "KITCHEN";
+                        _shellVm.ActiveTab = "ORDER";
                         e.Handled = true;
                         break;
                     case Key.F4:
-                        _shellVm.ActiveTab = "RESERVATIONS";
-                        e.Handled = true;
-                        break;
-                    case Key.F5:
                         if (_shellVm.ActiveTab == "ORDER")
                         {
                             _shellVm.OrderVm.PaymentCommand.Execute(null);
                         }
                         else
                         {
-                            _shellVm.ActiveTab = "SHIFT";
+                            _shellVm.ActiveTab = "RESERVATIONS";
                         }
                         e.Handled = true;
                         break;
-                    case Key.F6:
-                        _shellVm.ActiveTab = "SETTINGS";
+                    case Key.F9:
+                        if (_shellVm.ActiveTab == "ORDER")
+                        {
+                            _shellVm.OrderVm.SaveOrderCommand.Execute(null);
+                        }
+                        else
+                        {
+                            _shellVm.ActiveTab = "ORDERS";
+                        }
                         e.Handled = true;
+                        break;
+                    case Key.Escape:
+                        if (_shellVm.IsSettingsDrawerOpen)
+                        {
+                            _shellVm.IsSettingsDrawerOpen = false;
+                            e.Handled = true;
+                        }
+                        else if (_shellVm.ActiveTab == "ORDER")
+                        {
+                            _shellVm.ActiveTab = "TABLES";
+                            e.Handled = true;
+                        }
                         break;
                 }
             }

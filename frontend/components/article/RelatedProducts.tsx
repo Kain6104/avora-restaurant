@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { ShoppingBag, Plus, Tag, Utensils } from 'lucide-react';
 import { useCart } from '@/context/CartContext';
 import toast from 'react-hot-toast';
@@ -114,15 +115,20 @@ export default function RelatedProducts({ articleId, products }: RelatedProducts
             'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=400';
           const hasDiscount = product.originalPrice && product.originalPrice > product.price;
 
+          const prodUrl = `/${product.category?.slug || 'menu'}/${product.slug || product.id}`;
+
           return (
             <div
               key={product.id}
-              onClick={() => handleProductClick(product.id)}
               className="group bg-white rounded-2xl p-3 border border-slate-200/90 shadow-2xs hover:shadow-md hover:border-red-200 transition-all duration-200 flex flex-col justify-between min-w-[210px] max-w-[240px] sm:min-w-0 sm:max-w-none snap-start shrink-0 sm:shrink"
             >
               <div>
                 {/* Image + Discount Badge */}
-                <div className="relative aspect-4/3 rounded-xl overflow-hidden mb-2.5 bg-slate-100">
+                <Link 
+                  href={prodUrl}
+                  onClick={() => handleProductClick(product.id)}
+                  className="block relative aspect-4/3 rounded-xl overflow-hidden mb-2.5 bg-slate-100 cursor-pointer"
+                >
                   <img
                     src={imgUrl}
                     alt={product.name}
@@ -138,12 +144,18 @@ export default function RelatedProducts({ articleId, products }: RelatedProducts
                       {highlightNote}
                     </div>
                   )}
-                </div>
+                </Link>
 
                 {/* Info */}
-                <h4 className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors">
-                  {product.name}
-                </h4>
+                <Link
+                  href={prodUrl}
+                  onClick={() => handleProductClick(product.id)}
+                  className="block"
+                >
+                  <h4 className="font-bold text-xs sm:text-sm text-slate-900 line-clamp-1 group-hover:text-red-600 transition-colors cursor-pointer">
+                    {product.name}
+                  </h4>
+                </Link>
                 {product.description && (
                   <p className="text-[11px] sm:text-xs text-slate-500 line-clamp-1 mt-0.5">
                     {product.description}

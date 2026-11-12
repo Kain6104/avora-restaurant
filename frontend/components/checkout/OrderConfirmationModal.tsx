@@ -9,6 +9,7 @@ interface OrderConfirmationModalProps {
   onClose: () => void;
   onConfirm: () => void;
   isSubmitting?: boolean;
+  orderType?: 'DELIVERY' | 'TAKEAWAY';
   recipientName: string;
   phone: string;
   address: string;
@@ -23,6 +24,7 @@ export default function OrderConfirmationModal({
   onClose,
   onConfirm,
   isSubmitting = false,
+  orderType = 'DELIVERY',
   recipientName,
   phone,
   address,
@@ -81,6 +83,14 @@ export default function OrderConfirmationModal({
         {/* Gray Review Card */}
         <div className="bg-[#f8f9fa] rounded-2xl p-4 sm:p-5 border border-slate-100 text-xs sm:text-[13px] space-y-3">
           
+          {/* Hình thức nhận */}
+          <div className="flex items-start justify-between gap-2">
+            <span className="text-slate-500 shrink-0">Hình thức:</span>
+            <span className="font-extrabold text-slate-900 text-right">
+              {orderType === 'TAKEAWAY' ? '🛍️ Tự đến quán lấy (Freeship 0đ)' : '🛵 Giao hàng tận nơi'}
+            </span>
+          </div>
+
           {/* Người nhận */}
           <div className="flex items-start justify-between gap-2">
             <span className="text-slate-500 shrink-0">Người nhận:</span>
@@ -93,19 +103,19 @@ export default function OrderConfirmationModal({
             <span className="font-extrabold text-slate-900 text-right tracking-wide">{phone || 'Chưa cập nhật'}</span>
           </div>
 
-          {/* Địa chỉ giao */}
+          {/* Địa chỉ giao / Chi nhánh lấy */}
           <div className="space-y-1">
-            <span className="text-slate-500 block">Địa chỉ giao:</span>
+            <span className="text-slate-500 block">{orderType === 'TAKEAWAY' ? 'Chi nhánh nhận món:' : 'Địa chỉ giao:'}</span>
             <p className="font-extrabold text-slate-900 text-right leading-snug break-words">
-              {address || 'Chưa chọn địa chỉ'}
+              {address || (orderType === 'TAKEAWAY' ? 'Nhận tại quầy nhà hàng' : 'Chưa chọn địa chỉ')}
             </p>
           </div>
 
           <div className="border-t border-slate-200/80 my-2" />
 
-          {/* Giao lúc */}
+          {/* Khung giờ nhận */}
           <div className="flex items-start justify-between gap-2">
-            <span className="text-slate-500 shrink-0">Giao lúc:</span>
+            <span className="text-slate-500 shrink-0">{orderType === 'TAKEAWAY' ? 'Đến lấy lúc:' : 'Giao lúc:'}</span>
             <span className="font-black text-red-600 text-right">
               {deliveryTimeText || 'Sớm nhất có thể'}
             </span>

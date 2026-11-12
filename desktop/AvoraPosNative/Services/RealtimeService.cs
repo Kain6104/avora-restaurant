@@ -12,6 +12,10 @@ namespace AvoraPosNative.Services
         private string? _currentBranchId;
         private string? _currentCashierId;
 
+        private readonly HashSet<string> _processedEventIds = new();
+        private readonly Queue<string> _eventIdOrder = new();
+        private readonly object _dedupLock = new();
+
         public bool IsConnected => _client?.Connected ?? false;
 
         public event Action? Connected;
@@ -24,7 +28,151 @@ namespace AvoraPosNative.Services
         public event Action<JObject>? PaymentCompleted;
         public event Action<JObject>? ShiftUpdated;
         public event Action<JObject>? ProductAvailabilityChanged;
+        public event Action<JObject>? QrOrderUpdated;
+        public event Action<JObject>? ReservationUpdated;
+        public event Action<JObject>? AuthorizationUpdated;
+        public event Action<string, JObject>? PosNotificationReceived;
         public event Action<JObject>? PrintDispatchReceived;
+
+        private JObject? ParseSocketEnvelope(SocketIOResponse response, out JObject payload, out string eventType)
+        {
+            payload = new JObject();
+            eventType = string.Empty;
+            try
+            {
+                string raw = response.ToString();
+                if (string.IsNullOrWhiteSpace(raw)) return null;
+
+                var token = JToken.Parse(raw);
+                JObject? envelope = null;
+                if (token is JArray arr && arr.Count > 0)
+                {
+                    envelope = arr[0] as JObject;
+                }
+                else
+                {
+                    envelope = token as JObject;
+                }
+
+                if (envelope == null) return null;
+
+                string? eventId = envelope["eventId"]?.ToString() ?? envelope["id"]?.ToString();
+                if (!string.IsNullOrEmpty(eventId))
+                {
+                    lock (_dedupLock)
+                    {
+                        if (_processedEventIds.Contains(eventId))
+                        {
+                            return null; // Already handled via pos_event or named event
+                        }
+                        _processedEventIds.Add(eventId);
+                        _eventIdOrder.Enqueue(eventId);
+                        while (_eventIdOrder.Count > 250)
+                        {
+                            string oldest = _eventIdOrder.Dequeue();
+                            _processedEventIds.Remove(oldest);
+                        }
+                    }
+                }
+
+                // Filter out events explicitly for another branch if branchId is specified on envelope
+                string? envBranchId = envelope["branchId"]?.ToString() ?? envelope["payload"]?["branchId"]?.ToString();
+                if (!string.IsNullOrEmpty(envBranchId) &&
+                    !string.IsNullOrEmpty(_currentBranchId) &&
+                    _currentBranchId != "DEFAULT" &&
+                    !string.Equals(envBranchId, _currentBranchId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                eventType = envelope["type"]?.ToString() ?? envelope["eventType"]?.ToString() ?? string.Empty;
+                payload = (envelope["payload"] as JObject) ?? envelope;
+                return envelope;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[REALTIME] ParseSocketEnvelope error: {ex.Message}");
+                return null;
+            }
+        }
+
+        private void DispatchRealtimeEvent(string fallbackType, SocketIOResponse response)
+        {
+            var envelope = ParseSocketEnvelope(response, out var payload, out var parsedType);
+            if (envelope == null) return;
+
+            string type = !string.IsNullOrEmpty(parsedType) ? parsedType : fallbackType;
+
+            switch (type)
+            {
+                case "ORDER_CREATED":
+                    OrderCreated?.Invoke(payload);
+                    break;
+                case "ORDER_UPDATED":
+                    OrderUpdated?.Invoke(payload);
+                    break;
+                case "TABLE_STATUS_CHANGED":
+                case "TABLE_TRANSFERRED":
+                case "ORDER_MERGED":
+                case "ORDER_SPLIT":
+                    TableStatusChanged?.Invoke(payload);
+                    OrderUpdated?.Invoke(payload);
+                    break;
+                case "KITCHEN_TICKET_NEW":
+                    KitchenTicketNew?.Invoke(payload);
+                    break;
+                case "KITCHEN_ITEM_UPDATED":
+                case "KITCHEN_ITEM_STATUS_CHANGED":
+                case "KITCHEN_ITEM_READY":
+                    KitchenItemUpdated?.Invoke(payload);
+                    OrderUpdated?.Invoke(payload);
+                    if (type == "KITCHEN_ITEM_READY")
+                    {
+                        PosNotificationReceived?.Invoke(type, envelope);
+                    }
+                    break;
+                case "PAYMENT_COMPLETED":
+                    PaymentCompleted?.Invoke(payload);
+                    OrderUpdated?.Invoke(payload);
+                    TableStatusChanged?.Invoke(payload);
+                    break;
+                case "SHIFT_OPENED":
+                case "SHIFT_CLOSED":
+                case "SHIFT_UPDATED":
+                    ShiftUpdated?.Invoke(payload);
+                    break;
+                case "PRODUCT_AVAILABILITY_CHANGED":
+                    ProductAvailabilityChanged?.Invoke(payload);
+                    break;
+                case "QR_ORDER_ROUND_SUBMITTED":
+                case "QR_ROUND_STATUS_CHANGED":
+                case "QR_ORDER_CREATED":
+                    QrOrderUpdated?.Invoke(payload);
+                    OrderUpdated?.Invoke(payload);
+                    TableStatusChanged?.Invoke(payload);
+                    PosNotificationReceived?.Invoke(type, envelope);
+                    break;
+                case "RESERVATION_CREATED":
+                case "RESERVATION_UPDATED":
+                case "RESERVATION_CHECKED_IN":
+                    ReservationUpdated?.Invoke(payload);
+                    TableStatusChanged?.Invoke(payload);
+                    PosNotificationReceived?.Invoke(type, envelope);
+                    break;
+                case "PAYMENT_REQUESTED":
+                case "CUSTOMER_HELP_REQUESTED":
+                    TableStatusChanged?.Invoke(payload);
+                    OrderUpdated?.Invoke(payload);
+                    PosNotificationReceived?.Invoke(type, envelope);
+                    break;
+                case "AUTHORIZATION_UPDATED":
+                    AuthorizationUpdated?.Invoke(payload);
+                    break;
+                default:
+                    OrderUpdated?.Invoke(payload);
+                    break;
+            }
+        }
 
         public async Task ConnectAsync(string branchId, string cashierId)
         {
@@ -74,92 +222,51 @@ namespace AvoraPosNative.Services
                 Disconnected?.Invoke();
             };
 
-            _client.On("ORDER_CREATED", response =>
+            // Listen to universal pos_event envelope and all specific POS/QR/KDS/Reservation events
+            string[] eventNames = new[]
             {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    OrderCreated?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
+                "pos_event",
+                "ORDER_CREATED",
+                "ORDER_UPDATED",
+                "TABLE_STATUS_CHANGED",
+                "TABLE_TRANSFERRED",
+                "ORDER_MERGED",
+                "ORDER_SPLIT",
+                "KITCHEN_TICKET_NEW",
+                "KITCHEN_ITEM_UPDATED",
+                "KITCHEN_ITEM_STATUS_CHANGED",
+                "KITCHEN_ITEM_READY",
+                "PAYMENT_COMPLETED",
+                "SHIFT_OPENED",
+                "SHIFT_CLOSED",
+                "SHIFT_UPDATED",
+                "PRODUCT_AVAILABILITY_CHANGED",
+                "QR_ORDER_ROUND_SUBMITTED",
+                "QR_ROUND_STATUS_CHANGED",
+                "QR_ORDER_CREATED",
+                "RESERVATION_CREATED",
+                "RESERVATION_UPDATED",
+                "RESERVATION_CHECKED_IN",
+                "PAYMENT_REQUESTED",
+                "CUSTOMER_HELP_REQUESTED",
+                "AUTHORIZATION_UPDATED"
+            };
 
-            _client.On("ORDER_UPDATED", response =>
+            foreach (var evName in eventNames)
             {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    OrderUpdated?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("TABLE_STATUS_CHANGED", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    TableStatusChanged?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("KITCHEN_TICKET_NEW", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    KitchenTicketNew?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("KITCHEN_ITEM_UPDATED", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    KitchenItemUpdated?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("PAYMENT_COMPLETED", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    PaymentCompleted?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("SHIFT_UPDATED", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    ShiftUpdated?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
-
-            _client.On("PRODUCT_AVAILABILITY_CHANGED", response =>
-            {
-                try
-                {
-                    var envelope = JObject.Parse(response.ToString());
-                    ProductAvailabilityChanged?.Invoke(envelope["payload"] as JObject ?? envelope);
-                }
-                catch { }
-            });
+                string capturedName = evName;
+                _client.On(capturedName, response => DispatchRealtimeEvent(capturedName, response));
+            }
 
             _client.On("print_dispatch", response =>
             {
                 try
                 {
-                    var payload = JObject.Parse(response.ToString());
-                    PrintDispatchReceived?.Invoke(payload);
+                    var envelope = ParseSocketEnvelope(response, out var payload, out _);
+                    if (envelope != null)
+                    {
+                        PrintDispatchReceived?.Invoke(payload);
+                    }
                 }
                 catch { }
             });

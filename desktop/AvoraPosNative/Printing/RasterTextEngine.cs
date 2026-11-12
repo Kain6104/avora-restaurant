@@ -191,26 +191,48 @@ namespace AvoraPosNative.Printing
             byte[] header = new byte[] { 0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH };
             ms.Write(header, 0, header.Length);
 
-            for (int y = 0; y < measuredHeight; y++)
+            // Fast bitmap conversion using LockBits and byte array indexing (100x faster than GetPixel)
+            var bmpData = bmp.LockBits(
+                new Rectangle(0, 0, paddedWidthDots, measuredHeight),
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format32bppArgb);
+
+            try
             {
-                for (int xb = 0; xb < widthBytes; xb++)
+                int stride = bmpData.Stride;
+                byte[] pixelBytes = new byte[stride * measuredHeight];
+                System.Runtime.InteropServices.Marshal.Copy(bmpData.Scan0, pixelBytes, 0, pixelBytes.Length);
+
+                for (int y = 0; y < measuredHeight; y++)
                 {
-                    byte b = 0;
-                    for (int bit = 0; bit < 8; bit++)
+                    int rowOffset = y * stride;
+                    for (int xb = 0; xb < widthBytes; xb++)
                     {
-                        int x = xb * 8 + bit;
-                        if (x < paddedWidthDots)
+                        byte b = 0;
+                        for (int bit = 0; bit < 8; bit++)
                         {
-                            Color c = bmp.GetPixel(x, y);
-                            // Threshold: black dot if brightness < 150
-                            if (c.R < 150 && c.G < 150 && c.B < 150)
+                            int x = xb * 8 + bit;
+                            if (x < paddedWidthDots)
                             {
-                                b |= (byte)(0x80 >> bit);
+                                int px = rowOffset + x * 4;
+                                byte blue = pixelBytes[px];
+                                byte green = pixelBytes[px + 1];
+                                byte red = pixelBytes[px + 2];
+
+                                // Threshold: black dot if brightness < 150
+                                if (red < 150 && green < 150 && blue < 150)
+                                {
+                                    b |= (byte)(0x80 >> bit);
+                                }
                             }
                         }
+                        ms.WriteByte(b);
                     }
-                    ms.WriteByte(b);
                 }
+            }
+            finally
+            {
+                bmp.UnlockBits(bmpData);
             }
 
             // Feed 3 lines
@@ -255,7 +277,19 @@ namespace AvoraPosNative.Printing
             builder.AddDivider('-');
             builder.AddLeftRight("Tiền hàng:", $"{payload.SubTotal:N0}đ");
             if (payload.DiscountAmount > 0) builder.AddLeftRight("Giảm giá:", $"-{payload.DiscountAmount:N0}đ");
-            if (payload.TaxAmount > 0) builder.AddLeftRight("Thuế VAT:", $"{payload.TaxAmount:N0}đ");
+            if (payload.ServiceCharges != null && payload.ServiceCharges.Count > 0)
+            {
+                builder.AddLeftRight("Phí dịch vụ / Phụ thu:", $"{payload.ServiceChargeTotal:N0}đ", isBold: true);
+                foreach (var sc in payload.ServiceCharges)
+                {
+                    builder.AddLeftRight($"  + {sc.Name}", $"+{sc.Amount:N0}đ");
+                }
+            }
+            else if (payload.ServiceChargeTotal > 0)
+            {
+                builder.AddLeftRight("Phí dịch vụ / Phụ thu:", $"{payload.ServiceChargeTotal:N0}đ");
+            }
+            if (payload.TaxAmount > 0) builder.AddLeftRight("Thuế VAT (đã gồm):", $"{payload.TaxAmount:N0}đ");
             if (payload.ShippingFee > 0) builder.AddLeftRight("Phí giao hàng:", $"{payload.ShippingFee:N0}đ");
 
             builder.AddDivider('=');
@@ -271,10 +305,12 @@ namespace AvoraPosNative.Printing
                     _ => payload.PaymentMethod
                 });
 
-                if (payload.PaymentMethod == "CASH" && payload.ReceivedAmount > 0)
+                if (payload.PaymentMethod == "CASH")
                 {
-                    builder.AddLeftRight("Tiền khách đưa:", $"{payload.ReceivedAmount:N0}đ");
-                    builder.AddLeftRight("Tiền thối lại:", $"{payload.ChangeAmount:N0}đ", isBold: true);
+                    decimal received = payload.ReceivedAmount > 0 ? payload.ReceivedAmount : payload.TotalAmount;
+                    decimal change = payload.ChangeAmount > 0 ? payload.ChangeAmount : Math.Max(0, received - payload.TotalAmount);
+                    builder.AddLeftRight("Tiền khách đưa:", $"{received:N0}đ");
+                    builder.AddLeftRight("Tiền thối lại:", $"{change:N0}đ", isBold: true);
                 }
             }
 

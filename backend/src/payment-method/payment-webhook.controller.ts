@@ -1,6 +1,8 @@
 import { Controller, Post, Get, Body, Headers, Param, Query, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
+import { SkipThrottle } from '@nestjs/throttler';
 import { SepayService } from './sepay.service';
 
+@SkipThrottle()
 @Controller('payment')
 export class PaymentWebhookController {
   constructor(private readonly sepayService: SepayService) {}
@@ -30,11 +32,11 @@ export class PaymentWebhookController {
   }
 
   /**
-   * Lấy cấu hình thanh toán SePay VietQR cho trang thanh toán Client
-   * URL: GET /api/payment/sepay/config?orderCode=SW12345
+   * Lấy cấu hình thanh toán chuyển khoản / VietQR cho trang thanh toán Client
+   * URL: GET /api/payment/sepay/config?orderCode=SW12345 hoặc GET /api/payment/transfer/config?orderCode=SW12345
    */
-  @Get('sepay/config')
-  async getSepayConfig(
+  @Get(['sepay/config', 'transfer/config'])
+  async getPaymentConfig(
     @Query('orderCode') orderCode: string,
     @Request() req: any,
   ) {
@@ -49,5 +51,27 @@ export class PaymentWebhookController {
   @Get('check-status/:orderCode')
   async checkOrderStatus(@Param('orderCode') orderCode: string) {
     return this.sepayService.checkOrderStatus(orderCode);
+  }
+
+  /**
+   * API Hủy thanh toán / Hủy đơn hàng hoặc gói thuê bao
+   * URL: POST /api/payment/cancel hoặc POST /api/payment/sepay/cancel
+   */
+  @Post('cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelPayment(
+    @Body('orderCode') orderCode: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.sepayService.cancelPayment(orderCode, reason);
+  }
+
+  @Post('sepay/cancel')
+  @HttpCode(HttpStatus.OK)
+  async cancelSepayPayment(
+    @Body('orderCode') orderCode: string,
+    @Body('reason') reason?: string,
+  ) {
+    return this.sepayService.cancelPayment(orderCode, reason);
   }
 }

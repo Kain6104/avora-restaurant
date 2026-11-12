@@ -33,6 +33,7 @@ import {
   BarChart2,
   Layers,
   CreditCard,
+  FileText,
   Receipt,
   FileSpreadsheet,
   AlertTriangle,
@@ -381,6 +382,20 @@ export default function AdminFinancialReportsPage() {
               <FileSpreadsheet size={14} />
               <span>{exporting ? 'Đang xuất...' : 'Xuất Excel 8 Sheets'}</span>
             </button>
+            <Link
+              href="/admin/reports/cancellations/unpaid"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-rose-700 bg-rose-50 border border-rose-200 rounded-lg hover:bg-rose-100 transition shadow-2xs min-h-[38px]"
+            >
+              <FileText size={14} />
+              <span>Hủy Đơn Chưa Thu</span>
+            </Link>
+            <Link
+              href="/admin/reports/cancellations/paid"
+              className="inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 sm:py-2 text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition shadow-2xs min-h-[38px]"
+            >
+              <Receipt size={14} />
+              <span>Hủy Hóa Đơn Đã Thu</span>
+            </Link>
           </div>
         }
       />
@@ -805,6 +820,91 @@ export default function AdminFinancialReportsPage() {
           </div>
         </div>
       ) : null}
+
+      {/* DEDICATED CANCELLATION & REFUND RECONCILIATION CARDS */}
+      {summary && (
+        <div className="p-3.5 sm:p-4 rounded-xl border border-slate-200 bg-white shadow-2xs space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <ShieldAlert size={16} className="text-[#800020]" />
+              <h4 className="text-xs sm:text-sm font-bold text-slate-900">
+                Đối Soát Hủy Đơn & Hoàn Tiền (Cancellations & Reversals Engine)
+              </h4>
+            </div>
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              <Link
+                href="/admin/reports/cancellations/unpaid"
+                className="text-rose-700 hover:underline flex items-center gap-1"
+              >
+                <span>Báo cáo hủy chưa thu</span>
+                <ChevronRight size={13} />
+              </Link>
+              <span className="text-slate-300">|</span>
+              <Link
+                href="/admin/reports/cancellations/paid"
+                className="text-amber-700 hover:underline flex items-center gap-1"
+              >
+                <span>Báo cáo hủy đã thu</span>
+                <ChevronRight size={13} />
+              </Link>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Box 1: Unpaid Cancellation Value */}
+            <div className="p-3 rounded-lg border border-rose-200 bg-rose-50/40">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-rose-700 block mb-0.5">
+                Giá Trị Đơn Hủy Chưa Thu
+              </span>
+              <div className="text-base sm:text-lg font-black text-rose-800">
+                {formatMoney(summary.unpaidCancelledOrderValue || 0)}
+              </div>
+              <div className="text-[10px] text-rose-600 font-semibold mt-0.5 flex items-center gap-1">
+                <span>{summary.unpaidCancelledOrderCount || 0} đơn • Loại trừ 100% doanh thu</span>
+              </div>
+            </div>
+
+            {/* Box 2: Paid Invoices Cancelled */}
+            <div className="p-3 rounded-lg border border-amber-200 bg-amber-50/40">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-amber-800 block mb-0.5">
+                Giá Trị Hóa Đơn Hủy Đã Thu
+              </span>
+              <div className="text-base sm:text-lg font-black text-amber-900">
+                {formatMoney(summary.paidCancelledInvoiceValue || 0)}
+              </div>
+              <div className="text-[10px] text-amber-700 mt-0.5">
+                {summary.paidCancelledInvoiceCount || 0} HĐ • Cần hoàn tiền & điều chỉnh VAT
+              </div>
+            </div>
+
+            {/* Box 3: Actual Refund Total */}
+            <div className="p-3 rounded-lg border border-slate-200 bg-slate-50">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-slate-600 block mb-0.5">
+                Tổng Tiền Thực Tế Đã Hoàn
+              </span>
+              <div className="text-base sm:text-lg font-black text-slate-900">
+                {formatMoney(summary.totalRefundedAmount || 0)}
+              </div>
+              <div className="text-[10px] text-emerald-700 font-bold mt-0.5">
+                Đã trừ chính xác vào Thực Thu Ròng
+              </div>
+            </div>
+
+            {/* Box 4: Pending Refund */}
+            <div className="p-3 rounded-lg border border-blue-200 bg-blue-50/40">
+              <span className="text-[10px] sm:text-[11px] font-bold uppercase tracking-wider text-blue-700 block mb-0.5">
+                Tiền Hoàn Đang Chờ Xử Lý
+              </span>
+              <div className="text-base sm:text-lg font-black text-blue-900">
+                {formatMoney(summary.refundPendingAmount || 0)}
+              </div>
+              <div className="text-[10px] text-blue-600 mt-0.5">
+                Đang chờ duyệt hoặc lệnh chi két
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* NAVIGATION TABS */}
       <div className="border-b border-slate-200 overflow-x-auto scrollbar-none">

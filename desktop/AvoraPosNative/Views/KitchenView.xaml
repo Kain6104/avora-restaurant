@@ -5,6 +5,10 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignHeight="700" d:DesignWidth="1000"
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
              Background="#F8FAFC">
     
     <Grid>
@@ -49,9 +53,9 @@
                                     </Setter>
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding SelectedStation}" Value="ALL">
-                                            <Setter Property="Background" Value="#0F172A"/>
+                                            <Setter Property="Background" Value="#DA251D"/>
                                             <Setter Property="Foreground" Value="#FFFFFF"/>
-                                            <Setter Property="BorderBrush" Value="#0F172A"/>
+                                            <Setter Property="BorderBrush" Value="#DA251D"/>
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
@@ -170,10 +174,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Width="300" Margin="0,0,16,16" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="12">
-                                <Border.Effect>
-                                    <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.06" Color="#000000"/>
-                                </Border.Effect>
+                            <Border Width="310" Margin="0,0,16,16" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10">
                                 <Grid>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto"/>
@@ -182,7 +183,7 @@
                                     </Grid.RowDefinitions>
 
                                     <!-- Card Header -->
-                                    <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" CornerRadius="12,12,0,0" Padding="14,10">
+                                    <Border Grid.Row="0" Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="0,0,0,1" CornerRadius="10,10,0,0" Padding="14,10">
                                         <Grid>
                                             <StackPanel>
                                                 <TextBlock Text="{Binding TableName}" FontWeight="Black" FontSize="15" Foreground="#0F172A"/>
@@ -207,16 +208,42 @@
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
 
-                                                        <Border Grid.Column="0" Background="#EFF6FF" CornerRadius="6" Width="26" Height="26" HorizontalAlignment="Left" VerticalAlignment="Top">
-                                                            <TextBlock Text="{Binding Quantity}" FontWeight="Black" FontSize="13" Foreground="#2563EB" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="0" Background="#FEF2F2" CornerRadius="6" Width="26" Height="26" HorizontalAlignment="Left" VerticalAlignment="Top">
+                                                            <TextBlock Text="{Binding Quantity}" FontWeight="Black" FontSize="13" Foreground="#DA251D" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                         </Border>
 
                                                         <StackPanel Grid.Column="1" Margin="6,0,8,0">
                                                             <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="13" Foreground="#0F172A" TextWrapping="Wrap"/>
-                                                            <TextBlock Text="{Binding OptionsText}" FontSize="11" Foreground="#64748B" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                                       Visibility="{Binding OptionsText, Converter={x:Null}}"/>
-                                                            <TextBlock Text="{Binding Note, StringFormat='{}* {0}'}" FontSize="11" FontStyle="Italic" Foreground="#D97706" TextWrapping="Wrap" Margin="0,2,0,0"
-                                                                       Visibility="{Binding Note, Converter={x:Null}}"/>
+                                                            <TextBlock Text="{Binding OptionsText}" FontSize="11" Foreground="#64748B" TextWrapping="Wrap" Margin="0,2,0,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding OptionsText}" Value="{x:Null}">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding OptionsText}" Value="">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <TextBlock Text="{Binding Note, StringFormat='{}* {0}'}" FontSize="11" FontStyle="Italic" Foreground="#D97706" TextWrapping="Wrap" Margin="0,2,0,0">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Visibility" Value="Visible"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Note}" Value="{x:Null}">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Note}" Value="">
+                                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
                                                         </StackPanel>
 
                                                         <!-- Complete Item Button -->
@@ -240,7 +267,7 @@
                                     </ItemsControl>
 
                                     <!-- Card Footer: Complete entire ticket -->
-                                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" CornerRadius="0,0,12,12" Padding="14,10">
+                                    <Border Grid.Row="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" CornerRadius="0,0,10,10" Padding="14,10">
                                         <Button Content="✓ Hoàn thành toàn bộ phiếu"
                                                 Command="{Binding DataContext.CompleteTicketCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                 CommandParameter="{Binding}"
@@ -262,8 +289,7 @@
                 </ItemsControl>
 
                 <!-- Empty State -->
-                <Border HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,60,0,0"
-                        Visibility="{Binding TicketCount, Converter={x:Null}}">
+                <Border HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,80,0,0">
                     <Border.Style>
                         <Style TargetType="Border">
                             <Setter Property="Visibility" Value="Collapsed"/>

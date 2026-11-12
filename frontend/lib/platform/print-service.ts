@@ -154,7 +154,7 @@ class DesktopNativePrintService implements IPrintService {
     httpEndpoint: string,
     payload?: unknown
   ): Promise<T> {
-    // 1. Try direct COM object bridge with safety timeout (zero-latency)
+    // 1. Try direct COM object bridge (zero-latency in-process IPC)
     const bridge = this.nativeBridge;
     if (bridge) {
       try {
@@ -174,14 +174,17 @@ class DesktopNativePrintService implements IPrintService {
           'ApplyUpdate',
         ].includes(methodName);
 
-        if (isKnownBridgeMethod && typeof (bridge as any)[methodName] === 'function') {
-          const fn = (bridge as any)[methodName];
+        if (isKnownBridgeMethod && typeof (bridge as any)[methodName] !== 'undefined') {
           const arg = payload !== undefined ? (typeof payload === 'string' ? payload : JSON.stringify(payload)) : undefined;
           
+          // Detect virtual printer to allow adequate time for user to interact with the Save dialog
+          const isVirtual = typeof payload === 'object' && payload !== null && /(pdf|onenote|xps|fax|print to)/i.test((payload as any).printerName || '');
+
           const bridgePromise = new Promise<any>((resolve) => {
             try {
-              const res = arg !== undefined ? fn.call(bridge, arg) : fn.call(bridge);
-              Promise.resolve(res)
+              // Direct dispatch on COM host object without Function.prototype.call
+              const rawRes = arg !== undefined ? (bridge as any)[methodName](arg) : (bridge as any)[methodName]();
+              Promise.resolve(rawRes)
                 .then(resolve)
                 .catch((err) => {
                   console.warn(`Bridge call reject for ${methodName}:`, err);
@@ -193,26 +196,29 @@ class DesktopNativePrintService implements IPrintService {
             }
           });
 
+          // Timeout: generous for virtual printers (user browsing folders), snappy 10s for physical silent printing
+          const timeoutDuration = isVirtual ? 300000 : (methodName === 'PrintHtml' ? 30000 : 10000);
           const timeoutPromise = new Promise((resolve) =>
-            setTimeout(() => resolve(null), 3500)
+            setTimeout(() => resolve(null), timeoutDuration)
           );
           const resJson = await Promise.race([bridgePromise, timeoutPromise]);
           if (resJson) {
             const parsed = typeof resJson === 'string' ? JSON.parse(resJson) : (resJson as T);
-            if ((parsed as any)?.success !== false) {
-              return parsed;
-            }
+            return parsed;
           }
+          // In Desktop mode, bridge call has already been dispatched; NEVER fall back to HTTP to avoid duplicate dialogs
+          return { success: false, error: 'Lệnh in đã được chuyển tới hệ thống in Windows' } as T;
         }
       } catch (err) {
         console.warn(`Bridge call failed for ${methodName}:`, err);
+        return { success: false, error: String(err) } as T;
       }
     }
 
-    // 2. Fallback to local HTTP server hosted by C# core (http://127.0.0.1:9123)
+    // 2. Fallback to local HTTP server (http://127.0.0.1:9123) ONLY when bridge is NOT injected (e.g. browser accessing local core)
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
+      const timer = setTimeout(() => controller.abort(), 3000);
       const res = await fetch(`http://127.0.0.1:9123${httpEndpoint}`, {
         method: payload !== undefined ? 'POST' : 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -258,11 +264,30 @@ class DesktopNativePrintService implements IPrintService {
 
   async printHtml(options: PrintHtmlPayload): Promise<{ success: boolean; error?: string }> {
     const targetPrinter = options.printerName || 'Xprinter XP-350B';
+    const copies = Math.max(1, Number(options.copies) || 1);
 
-    // 1. Ưu tiên cao nhất: AVORA Print Agent HTTP cổng 9102 (SumatraPDF Silent, 100% chuẩn định dạng HTML, không lỗi SSL, in cực nét cho cả Xprinter XP-350B & XP-80C)
+    // 1. DESKTOP MODE: Native Bridge WebView2 Silent Core (PrintHtml)
+    // Tôn trọng quyền điều khiển của Desktop Core - Tuyệt đối không fallback cascade gây in lặp 2-3 lần
+    if (platformBridge.isDesktop) {
+      const bridgeRes = await this.callBridgeOrHttp<{ success: boolean; error?: string }>(
+        'PrintHtml',
+        '/print-html',
+        {
+          ...options,
+          printerName: targetPrinter,
+          copies,
+        }
+      );
+      if (bridgeRes) {
+        return bridgeRes;
+      }
+      return { success: false, error: `Máy in [${targetPrinter}] không phản hồi lệnh in` };
+    }
+
+    // 2. AVORA Print Agent HTTP cổng 9102 (SumatraPDF Silent, 100% chuẩn định dạng HTML, không lỗi SSL)
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
+      const timer = setTimeout(() => controller.abort(), 400);
       const res = await fetch('http://127.0.0.1:9102/print-html', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,7 +295,7 @@ class DesktopNativePrintService implements IPrintService {
           printerName: targetPrinter,
           htmlContent: options.html,
           paperSize: options.paperSize || '80mm',
-          copies: options.copies || 1,
+          copies,
         }),
         signal: controller.signal,
       });
@@ -283,23 +308,10 @@ class DesktopNativePrintService implements IPrintService {
       // Bỏ qua nếu agent 9102 không phản hồi
     }
 
-    // 2. Thử qua Native Bridge WebView2 Silent Core (PrintHtml)
-    const bridgeRes = await this.callBridgeOrHttp<{ success: boolean; error?: string }>(
-      'PrintHtml',
-      '/print-html',
-      {
-        ...options,
-        printerName: targetPrinter,
-      }
-    );
-    if (bridgeRes && bridgeRes.success) {
-      return bridgeRes;
-    }
-
-    // 3. Thử qua Print Agent HTTPS cổng 9101
+    // 3. Print Agent HTTPS cổng 9101 (Local Agent có xác thực)
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
+      const timer = setTimeout(() => controller.abort(), 400);
       const res = await fetch('https://localhost:9101/print-html', {
         method: 'POST',
         headers: {
@@ -310,7 +322,7 @@ class DesktopNativePrintService implements IPrintService {
           printerName: targetPrinter,
           htmlContent: options.html,
           paperSize: options.paperSize || '80mm',
-          copies: options.copies || 1,
+          copies,
         }),
         signal: controller.signal,
       });
@@ -323,20 +335,7 @@ class DesktopNativePrintService implements IPrintService {
       // Bỏ qua nếu agent 9101 không nhận
     }
 
-    // 4. Fallback cuối cùng sang WinSpool RAW (PrintReceipt) nếu là máy in hóa đơn tiêu chuẩn (XP-80C)
-    // TUYỆT ĐỐI KHÔNG gửi ESC/POS raw bytes tới máy in nhãn như Xprinter XP-350B vì sẽ làm rớt lệnh / nuốt giấy
-    const isLabelPrinter = /350b|xp-?350|tsc|label/i.test(targetPrinter);
-    if (!isLabelPrinter && options.receiptPayload) {
-      const receiptRes = await this.printReceipt({
-        ...options.receiptPayload,
-        targetPrinterId: targetPrinter,
-      });
-      if (receiptRes && receiptRes.success) {
-        return receiptRes;
-      }
-    }
-
-    return bridgeRes || { success: false, error: `Không thể in ra máy in [${targetPrinter}]` };
+    return { success: false, error: `Không thể in ra máy in [${targetPrinter}]` };
   }
 
   async printReceipt(options: PrintReceiptOptions): Promise<{ success: boolean; error?: string }> {
@@ -535,19 +534,48 @@ class LegacyWebPrintService implements IPrintService {
   }
 }
 
-let printServiceInstance: IPrintService | null = null;
+class PosPrintServiceProxy implements IPrintService {
+  private desktopService = new DesktopNativePrintService();
+  private webService = new LegacyWebPrintService();
 
-export function getPrintService(): IPrintService {
-  if (printServiceInstance) return printServiceInstance;
-
-  // Auto-detect environment (Directive 15)
-  if (platformBridge.isDesktop) {
-    printServiceInstance = new DesktopNativePrintService();
-  } else {
-    printServiceInstance = new LegacyWebPrintService();
+  private get active(): IPrintService {
+    if (typeof window !== 'undefined') {
+      const isDesktop = Boolean(
+        window.IS_AVORA_DESKTOP ||
+        window.chrome?.webview?.hostObjects?.nativePrintService ||
+        platformBridge.isDesktop ||
+        navigator.userAgent.includes('AvoraPos')
+      );
+      if (isDesktop) return this.desktopService;
+    }
+    return this.webService;
   }
 
-  return printServiceInstance;
+  getPrinters(): Promise<WindowsPrinter[]> {
+    return this.active.getPrinters();
+  }
+  printHtml(options: PrintHtmlPayload): Promise<{ success: boolean; error?: string }> {
+    return this.active.printHtml(options);
+  }
+  printReceipt(options: PrintReceiptOptions): Promise<{ success: boolean; error?: string }> {
+    return this.active.printReceipt(options);
+  }
+  printKitchenTicket(options: PrintKitchenTicketOptions): Promise<{ success: boolean; error?: string }> {
+    return this.active.printKitchenTicket(options);
+  }
+  printLabel(options: PrintLabelOptions): Promise<{ success: boolean; error?: string }> {
+    return this.active.printLabel(options);
+  }
+  openCashDrawer(printerName?: string): Promise<{ success: boolean; error?: string }> {
+    return this.active.openCashDrawer(printerName);
+  }
+  testPrint(printerName: string, type: 'RECEIPT' | 'LABEL'): Promise<{ success: boolean; error?: string }> {
+    return this.active.testPrint(printerName, type);
+  }
 }
 
-export const posPrintService = getPrintService();
+export const posPrintService: IPrintService = new PosPrintServiceProxy();
+
+export function getPrintService(): IPrintService {
+  return posPrintService;
+}

@@ -5,7 +5,8 @@ import {
   Menu, Search, X, Bell, ChevronDown, User, LogOut, MapPin, Phone,
   Truck, Gift, Download, Heart, ChevronRight, Home, ClipboardList, Star, ShoppingCart,
   Mic, Scan, Clock, Crown, UtensilsCrossed, Package, Store, CalendarCheck, Newspaper, Info,
-  Zap, Flame, LayoutDashboard, ShieldCheck, ChefHat, Bookmark, CheckCircle2, Ticket
+  Zap, Flame, LayoutDashboard, ShieldCheck, ChefHat, Bookmark, CheckCircle2, Ticket, Compass, Loader2,
+  CheckCheck, Check, Sparkles, Repeat
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
@@ -14,6 +15,7 @@ import { useWishlist } from '@/context/WishlistContext';
 import { useNotification } from '@/contexts/NotificationContext';
 import { toast } from 'react-hot-toast';
 import { logoutUser, getAuthHeaders, getApiBaseUrl, getAuthToken, saveAuthSession } from '@/lib/auth';
+import CategoryAvatar from '@/components/category/CategoryAvatar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -132,7 +134,7 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<any>(() => initialBranches?.[0] || null);
   const [mobileCatExpanded, setMobileCatExpanded] = useState(false);
-  const { notifications, unreadCount, markAsRead } = useNotification();
+  const { notifications, unreadCount, markAsRead, markAllAsRead } = useNotification();
   const [isNotificationOpen, setIsNotificationOpen] = useState(false);
   const notificationRef = useRef<HTMLDivElement>(null);
   const mobileNotificationRef = useRef<HTMLDivElement>(null);
@@ -140,6 +142,9 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   const router = useRouter();
   const pathname = usePathname();
   const [branchSearchQuery, setBranchSearchQuery] = useState('');
+  const [isLocatingBranch, setIsLocatingBranch] = useState(false);
+  const [hasActiveFlashSale, setHasActiveFlashSale] = useState(false);
+  const [branchDistances, setBranchDistances] = useState<Record<string, number>>({});
   const { cartItems, changeBranch, currentBranchId, isBranchModalOpen, setIsBranchModalOpen, branchModalProduct, setBranchModalProduct, setConfirmDialog } = useCart();
   const { favoritesCount } = useWishlist();
   const totalItems = cartItems.reduce((acc, item) => acc + item.quantity, 0);
@@ -147,6 +152,68 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  /* ── First visit branch prompt if branches > 2 ── */
+  useEffect(() => {
+    if (typeof window !== 'undefined' && initialBranches && initialBranches.length > 2) {
+      const hasPrompted = localStorage.getItem('avora_branch_first_prompted');
+      if (!hasPrompted) {
+        localStorage.setItem('avora_branch_first_prompted', 'true');
+        const timer = setTimeout(() => {
+          setIsBranchModalOpen(true);
+        }, 800);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [initialBranches, setIsBranchModalOpen]);
+
+  /* ── Calculate Haversine distance in km ── */
+  const calculateDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+    const R = 6371; // Earth radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return parseFloat((R * c).toFixed(1));
+  };
+
+  const handleFindNearestBranch = () => {
+    if (typeof window === 'undefined') return;
+    if (!navigator.geolocation) {
+      toast.error('Trình duyệt không hỗ trợ định vị GPS');
+      return;
+    }
+    setIsLocatingBranch(true);
+    const toastId = toast.loading('Đang xác định vị trí của bạn...');
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setIsLocatingBranch(false);
+        toast.dismiss(toastId);
+        toast.success('Đã tìm thấy vị trí!');
+        const userLat = pos.coords.latitude;
+        const userLng = pos.coords.longitude;
+
+        const distMap: Record<string, number> = {};
+        (initialBranches || []).forEach((b: any) => {
+          if (b.latitude && b.longitude) {
+            const d = calculateDistanceKm(userLat, userLng, Number(b.latitude), Number(b.longitude));
+            distMap[b.id] = d;
+          }
+        });
+        setBranchDistances(distMap);
+      },
+      (err) => {
+        setIsLocatingBranch(false);
+        toast.dismiss(toastId);
+        toast.error('Không thể lấy vị trí thiết bị. Vui lòng cấp quyền vị trí cho trình duyệt.');
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
 
   /* ── init branch ── */
   useEffect(() => {
@@ -298,11 +365,22 @@ export default function Header({ initialCategories = [], initialBranches = [], i
     }
   };
 
-  /* ── fetch suggestions ── */
+  /* ── fetch suggestions & active flash sale ── */
   useEffect(() => {
     fetch(`${API_URL}/api/products/search/suggestions`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
       .then(r => r.json()).then(d => setSuggestions(d)).catch(() => { });
-  }, []);
+
+    fetch(`${API_URL}/api/promotions/flash-sale/current`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && data.id) {
+          setHasActiveFlashSale(true);
+        } else {
+          setHasActiveFlashSale(false);
+        }
+      })
+      .catch(() => setHasActiveFlashSale(false));
+  }, [API_URL]);
 
   /* ── quick search ── */
   useEffect(() => {
@@ -358,41 +436,144 @@ export default function Header({ initialCategories = [], initialBranches = [], i
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const formatRelativeNotifTime = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const mins = Math.floor(diff / 60000);
+      if (mins < 1) return 'Vừa xong';
+      if (mins < 60) return `${mins}p trước`;
+      const hours = Math.floor(mins / 60);
+      if (hours < 24) return `${hours}h trước`;
+      const days = Math.floor(hours / 24);
+      if (days < 7) return `${days} ngày trước`;
+      return new Date(dateStr).toLocaleDateString('vi-VN');
+    } catch {
+      return '';
+    }
+  };
+
   const renderNotificationDropdown = (isMobile = false) => {
     if (!isNotificationOpen) return null;
     return (
-      <div className={`absolute top-[calc(100%+8px)] ${isMobile ? 'right-0 w-[300px]' : '-right-10 md:right-0 w-[320px]'} bg-white shadow-2xl rounded-xl border border-slate-100 z-50 overflow-hidden`}>
-        <div className="px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="font-bold text-slate-800 text-sm">Thông báo mới nhận</h3>
-        </div>
-        <div className="max-h-[300px] overflow-y-auto">
-          {notifications.length === 0 ? (
-            <div className="p-6 text-center text-slate-500 text-sm">Chưa có thông báo nào</div>
-          ) : (
-            notifications.slice(0, 5).map(notif => (
-              <div 
-                key={notif.id} 
-                onClick={() => handleNotificationClick(notif)}
-                className={`px-4 py-3 border-b border-slate-50 cursor-pointer transition-colors ${!notif.isRead ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}`}
-              >
-                <div className="flex gap-3">
-                  <div className="w-10 h-10 rounded-full shrink-0 flex items-center justify-center bg-white shadow-sm border border-slate-100 overflow-hidden">
-                    {notif.type === 'ORDER' ? <ClipboardList className="w-5 h-5 text-blue-500" /> : 
-                     notif.type === 'PROMOTION' ? <Gift className="w-5 h-5 text-red-500" /> : 
-                     <Bell className="w-5 h-5 text-amber-500" />}
-                  </div>
-                  <div className="flex-1 min-w-0 text-left">
-                    <h4 className={`text-sm line-clamp-1 ${!notif.isRead ? 'font-bold text-slate-800' : 'font-medium text-slate-600'}`}>{notif.title}</h4>
-                    <p className="text-xs text-slate-500 line-clamp-2 mt-0.5">{notif.content}</p>
-                  </div>
-                </div>
-              </div>
-            ))
+      <div className={`absolute top-[calc(100%+8px)] ${isMobile ? 'right-0 w-[310px]' : '-right-10 md:right-0 w-[340px] sm:w-[360px]'} bg-white/95 backdrop-blur-md shadow-2xl rounded-2xl border border-slate-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150`}>
+        {/* Header */}
+        <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+              <Bell className="w-3.5 h-3.5" />
+            </div>
+            <h3 className="font-bold text-slate-800 text-xs sm:text-sm">Thông báo</h3>
+            {unreadCount > 0 && (
+              <span className="bg-red-600 text-white text-[10px] font-black px-1.5 py-0.2 rounded-full leading-tight">
+                {unreadCount} mới
+              </span>
+            )}
+          </div>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                markAllAsRead();
+                toast.success('Đã đánh dấu tất cả là đã đọc!');
+              }}
+              title="Đánh dấu tất cả đã đọc"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-red-600 hover:text-red-700 hover:bg-red-50/80 transition-colors cursor-pointer"
+            >
+              <CheckCheck className="w-3.5 h-3.5" />
+              <span>Đọc hết</span>
+            </button>
           )}
         </div>
-        <div className="p-2 border-t border-slate-100 bg-slate-50">
-          <Link href="/notifications" onClick={() => setIsNotificationOpen(false)} className="block w-full text-center text-sm text-red-600 font-bold hover:underline py-1.5">
-            Xem tất cả
+
+        {/* List */}
+        <div className="max-h-[320px] overflow-y-auto custom-scrollbar divide-y divide-slate-100/80">
+          {notifications.length === 0 ? (
+            <div className="p-8 text-center flex flex-col items-center justify-center gap-2">
+              <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center">
+                <Bell className="w-5 h-5 opacity-60" />
+              </div>
+              <p className="text-xs text-slate-500 font-medium">Hiện chưa có thông báo nào</p>
+            </div>
+          ) : (
+            notifications.slice(0, 6).map((notif) => {
+              const notifTime = formatRelativeNotifTime(notif.createdAt);
+              const isUnread = !notif.isRead;
+              const isOrder = notif.type === 'ORDER';
+              const isPromo = notif.type === 'PROMOTION';
+
+              return (
+                <div
+                  key={notif.id}
+                  onClick={() => handleNotificationClick(notif)}
+                  className={`group relative p-2.5 sm:p-3 cursor-pointer transition-all flex items-start gap-2.5 ${
+                    isUnread
+                      ? 'bg-red-50/30 hover:bg-red-50/70 border-l-[3px] border-l-red-500'
+                      : 'hover:bg-slate-50/80 border-l-[3px] border-l-transparent'
+                  }`}
+                >
+                  {/* Icon */}
+                  <div className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center shadow-2xs border ${
+                    isOrder ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                    isPromo ? 'bg-rose-50 text-rose-600 border-rose-100' :
+                    'bg-amber-50 text-amber-600 border-amber-100'
+                  }`}>
+                    {isOrder ? <ClipboardList className="w-4 h-4" /> :
+                     isPromo ? <Gift className="w-4 h-4" /> :
+                     <Bell className="w-4 h-4" />}
+                  </div>
+
+                  {/* Body */}
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className="flex items-center justify-between gap-1">
+                      <h4 className={`text-xs truncate ${isUnread ? 'font-bold text-slate-900 group-hover:text-red-600' : 'font-medium text-slate-700'}`}>
+                        {notif.title}
+                      </h4>
+                      {isUnread && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5 leading-snug">
+                      {notif.content}
+                    </p>
+                    <div className="flex items-center justify-between gap-2 mt-1 pt-0.5 text-[10px] text-slate-400">
+                      <span>{notifTime}</span>
+                      {isUnread && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markAsRead(notif.id);
+                            toast.success('Đã đánh dấu đã đọc');
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-0.5 text-slate-500 hover:text-red-600 hover:underline px-1 py-0.5 rounded cursor-pointer"
+                          title="Đánh dấu đã đọc"
+                        >
+                          <Check className="w-3 h-3 text-red-500" />
+                          <span>Đã đọc</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-3 py-2 border-t border-slate-100 bg-slate-50/70 flex items-center justify-between">
+          <span className="text-[10px] text-slate-400 font-medium">
+            {notifications.length > 0 ? `${notifications.length} thông báo` : ''}
+          </span>
+          <Link
+            href="/notifications"
+            onClick={() => setIsNotificationOpen(false)}
+            className="inline-flex items-center gap-1 text-xs text-red-600 font-bold hover:text-red-700 hover:underline"
+          >
+            <span>Xem tất cả</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </Link>
         </div>
       </div>
@@ -537,9 +718,9 @@ export default function Header({ initialCategories = [], initialBranches = [], i
               </button>
             </div>
 
-            {/* Branch Search Input */}
-            <div className="p-3 border-b border-slate-100 bg-slate-50/70">
-              <div className="relative">
+            {/* Branch Search Input & GPS Nearest Button */}
+            <div className="p-3 border-b border-slate-100 bg-slate-50/70 flex flex-col sm:flex-row gap-2">
+              <div className="relative flex-1">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
@@ -554,6 +735,19 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                   </button>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={handleFindNearestBranch}
+                disabled={isLocatingBranch}
+                className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer active:scale-95 disabled:opacity-70 whitespace-nowrap"
+              >
+                {isLocatingBranch ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Compass className="w-3.5 h-3.5" />
+                )}
+                <span>Tìm chi nhánh gần nhất</span>
+              </button>
             </div>
 
             {branchModalProduct && (
@@ -575,9 +769,20 @@ export default function Header({ initialCategories = [], initialBranches = [], i
               
               {(() => {
                 const rawBranches = (branchModalProduct ? branchModalProduct.branches : initialBranches) || [];
-                const branchList = rawBranches.map((branchRef: any) => {
+                let branchList = rawBranches.map((branchRef: any) => {
                   return branchModalProduct ? initialBranches?.find((ib: any) => ib.id === branchRef.id) : branchRef;
                 }).filter(Boolean);
+
+                // Sort by distance if distances are available
+                const hasDistances = Object.keys(branchDistances).length > 0;
+                if (hasDistances) {
+                  branchList = [...branchList].sort((a: any, b: any) => {
+                    const distA = branchDistances[a.id] !== undefined ? branchDistances[a.id] : 99999;
+                    const distB = branchDistances[b.id] !== undefined ? branchDistances[b.id] : 99999;
+                    return distA - distB;
+                  });
+                }
+
                 const filtered = branchList.filter((b: any) => {
                   if (!branchSearchQuery.trim()) return true;
                   const q = branchSearchQuery.toLowerCase();
@@ -596,8 +801,11 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                   );
                 }
 
-                return filtered.map((b: any) => {
+                return filtered.map((b: any, bIdx: number) => {
                   const isSelected = selectedBranch?.id === b.id;
+                  const dist = branchDistances[b.id];
+                  const isNearest = hasDistances && bIdx === 0 && dist !== undefined;
+
                   return (
                     <div
                       key={b.id}
@@ -613,7 +821,7 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <p className={`font-bold text-sm leading-tight ${isSelected ? 'text-red-600' : 'text-slate-800'}`}>
                               {b.name}
                             </p>
@@ -621,6 +829,17 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                               Mở cửa
                             </span>
+                            {isNearest && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
+                                ⭐ Gần bạn nhất
+                              </span>
+                            )}
+                            {dist !== undefined && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-200">
+                                <Compass className="w-3 h-3" />
+                                Cách bạn {dist.toLocaleString('vi-VN')} km
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
                             <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
@@ -852,11 +1071,17 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                         <img
                           src={user.avatarUrl || user.avatar}
                           alt={user.fullName || 'User'}
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                            if (fallback) fallback.style.display = 'flex';
+                          }}
                           className="w-full h-full object-cover"
                         />
-                      ) : (
-                        <User className="w-4 h-4 text-red-600" />
-                      )}
+                      ) : null}
+                      <div className="w-full h-full bg-red-100 text-red-700 font-bold text-xs flex items-center justify-center" style={{ display: (user.avatarUrl || user.avatar) ? 'none' : 'flex' }}>
+                        {(user.fullName || 'U').charAt(0).toUpperCase()}
+                      </div>
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
@@ -922,7 +1147,10 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                   )}
                 </div>
               ) : (
-                <Link href="/login" className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold transition-colors text-sm shadow-sm">
+                <Link
+                  href={pathname && pathname !== '/login' ? `/login?redirect=${encodeURIComponent(pathname)}` : '/login'}
+                  className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-full font-bold transition-colors text-sm shadow-sm"
+                >
                   Đăng nhập
                 </Link>
               )}
@@ -966,7 +1194,15 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                           onClick={() => setIsMegaMenuOpen(false)}
                           className={`flex items-center gap-3 px-4 py-2.5 transition-colors text-xs font-semibold ${activeCategory === cat.id ? 'bg-white text-red-600 font-bold border-l-[3px] border-red-600 shadow-2xs' : 'text-slate-600 hover:bg-white border-l-[3px] border-transparent'}`}
                         >
-                          <img src={cat.image || cat.imageUrl || 'https://images.unsplash.com/photo-1553621042-f6e147245754?w=400'} className="w-6 h-6 rounded-full object-cover shrink-0" />
+                          <div className="w-6 h-6 rounded-full shrink-0 overflow-hidden flex items-center justify-center">
+                            <CategoryAvatar
+                              image={cat.image || cat.imageUrl}
+                              name={cat.name}
+                              slug={cat.slug}
+                              className="w-full h-full rounded-full"
+                              iconClassName="w-3.5 h-3.5"
+                            />
+                          </div>
                           <span className="line-clamp-1">{cat.name}</span>
                         </Link>
                       ))}
@@ -1001,18 +1237,15 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                 )}
               </div>
 
-              {/* Nav links */}
-              <nav className="flex items-center gap-2 sm:gap-3 lg:gap-5 xl:gap-6 text-xs lg:text-[13px] xl:text-[14px] font-bold text-slate-700 whitespace-nowrap">
+              {/* Nav links (Optimized with horizontal scrolling for smaller screens, smart Flash Sale display) */}
+              <nav className="flex items-center gap-2 sm:gap-3 lg:gap-4 xl:gap-5 text-xs lg:text-[13px] xl:text-[14px] font-bold text-slate-700 whitespace-nowrap overflow-x-auto no-scrollbar scroll-smooth flex-nowrap shrink py-1">
                 {[
                   { label: 'Trang chủ', href: '/' },
                   { label: 'Thực đơn', href: '/menu' },
-                  { label: 'Combo', href: '/combo' },
-                  { label: 'Flash Sale', href: '/flash-sale', isHot: true, icon: Zap },
+                  ...(hasActiveFlashSale ? [{ label: 'Flash Sale', href: '/flash-sale', isHot: true, badgeText: 'Hot', icon: Zap }] : []),
                   { label: 'Nhà hàng', href: '/restaurants' },
-                  { label: 'Đặt bàn', href: '/booking', isHot: true, icon: CalendarCheck },
                   { label: 'Tin tức & Ưu đãi', href: '/news' },
-                  { label: 'Về chúng tôi', href: '#' },
-                ].map(({ label, href, isHot, icon: Icon }: any) => {
+                ].map(({ label, href, isHot, isSpecial, badgeText, icon: Icon }: any) => {
                   const isActive = href === '/' ? pathname === '/' : pathname?.startsWith(href);
                   return (
                     <Link
@@ -1020,13 +1253,15 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                       href={href}
                       className={`relative h-[46px] flex items-center hover:text-red-600 transition-colors whitespace-nowrap px-1 group ${
                         isActive ? 'text-red-600 font-extrabold' : 'text-slate-700'
-                      } ${isHot ? 'text-amber-600 font-extrabold flex items-center gap-1' : ''}`}
+                      } ${isHot ? 'text-amber-600 font-extrabold flex items-center gap-1' : ''} ${isSpecial ? 'text-indigo-600 font-extrabold flex items-center gap-1' : ''}`}
                     >
-                      {Icon && <Icon className={`w-3.5 h-3.5 ${isHot ? 'text-amber-500 fill-amber-500 animate-pulse' : 'text-amber-500'}`} />}
+                      {Icon && <Icon className={`w-3.5 h-3.5 ${isHot ? 'text-amber-500 fill-amber-500 animate-pulse' : (isSpecial ? 'text-indigo-500' : 'text-slate-500')}`} />}
                       <span>{label}</span>
-                      {isHot && (
-                        <span className="bg-gradient-to-r from-red-600 to-amber-500 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full animate-pulse uppercase tracking-wider ml-0.5">
-                          Hot
+                      {(isHot || isSpecial) && (
+                        <span className={`text-white text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider ml-0.5 ${
+                          isSpecial ? 'bg-gradient-to-r from-indigo-600 to-purple-600 shadow-xs' : 'bg-gradient-to-r from-red-600 to-amber-500 animate-pulse'
+                        }`}>
+                          {badgeText || (isHot ? 'Hot' : 'Mới')}
                         </span>
                       )}
                       {isActive && (
@@ -1180,8 +1415,20 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                 <p className="text-white font-bold text-sm mb-0.5">Chào mừng đến Avora!</p>
                 <p className="text-slate-400 text-xs mb-3">Đăng nhập để tích điểm & nhận ưu đãi</p>
                 <div className="grid grid-cols-2 gap-1.5">
-                  <Link href="/login" onClick={() => setIsMobileMenuOpen(false)} className="bg-[#da251d] text-white font-bold text-xs text-center py-2 rounded-xl shadow-sm">Đăng nhập</Link>
-                  <Link href="/register" onClick={() => setIsMobileMenuOpen(false)} className="bg-white/10 text-white font-bold text-xs text-center py-2 rounded-xl">Đăng ký</Link>
+                  <Link
+                    href={pathname && pathname !== '/login' ? `/login?redirect=${encodeURIComponent(pathname)}` : '/login'}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="bg-[#da251d] text-white font-bold text-xs text-center py-2 rounded-xl shadow-sm"
+                  >
+                    Đăng nhập
+                  </Link>
+                  <Link
+                    href={pathname && pathname !== '/login' ? `/register?redirect=${encodeURIComponent(pathname)}` : '/register'}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className="bg-white/10 text-white font-bold text-xs text-center py-2 rounded-xl"
+                  >
+                    Đăng ký
+                  </Link>
                 </div>
               </div>
             )}
@@ -1241,13 +1488,11 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                 ...(mounted && user && (user.role === 'ADMIN' || user.role === 'MANAGER' || user.role === 'CHEF')
                   ? [{ label: 'Trang Quản Trị Hệ Thống', href: '/admin', icon: LayoutDashboard, color: 'bg-slate-900 text-amber-400 font-bold' }]
                   : []),
-                { label: 'Flash Sale Giờ Vàng', href: '/flash-sale', icon: Zap, color: 'bg-amber-100 text-amber-700 font-bold' },
+                ...(hasActiveFlashSale ? [{ label: 'Flash Sale Giờ Vàng', href: '/flash-sale', icon: Zap, color: 'bg-amber-100 text-amber-700 font-bold' }] : []),
                 { label: 'Thực đơn món ăn', href: '/menu', icon: UtensilsCrossed, color: 'bg-red-50 text-[#da251d]' },
-                { label: 'Combo ưu đãi', href: '/combo', icon: Package, color: 'bg-amber-50 text-amber-600' },
                 { label: 'Món ăn yêu thích', href: '/favorites?tab=dishes', icon: Heart, color: 'bg-rose-50 text-rose-600' },
                 { label: 'Tích điểm VIP', href: '/loyalty', icon: Crown, color: 'bg-yellow-50 text-amber-700' },
                 { label: 'Hệ thống nhà hàng', href: '/restaurants', icon: Store, color: 'bg-emerald-50 text-emerald-600' },
-                { label: 'Đặt bàn tiệc', href: '/booking', icon: CalendarCheck, color: 'bg-amber-50 text-amber-600' },
                 { label: 'Tin tức & Ưu đãi', href: '/news', icon: Newspaper, color: 'bg-purple-50 text-purple-600' },
                 { label: 'Bài viết đã lưu', href: '/favorites?tab=articles', icon: Bookmark, color: 'bg-rose-50 text-rose-600' },
                 { label: 'Về chúng tôi', href: '#', icon: Info, color: 'bg-cyan-50 text-cyan-600' },

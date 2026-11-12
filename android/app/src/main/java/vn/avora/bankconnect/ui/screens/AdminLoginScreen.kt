@@ -69,7 +69,8 @@ fun AdminLoginScreen(
 
     val authManager = remember { AuthManager.getInstance(context) }
     val isBiometricAvailable = remember { BiometricAuthManager.isAvailable(context) }
-    val canUseBiometric = authManager.isLoggedIn && authManager.isBiometricEnabled && isBiometricAvailable
+    val hasPriorAdmin = authManager.hasPreviousAdminLogin && !authManager.lastAdminEmail.isNullOrBlank()
+    val canUseBiometric = hasPriorAdmin && isBiometricAvailable && authManager.isBiometricEnabled
 
     // Google Sign-In Setup (Web Client ID from backend)
     val googleWebClientId = "13079540543-14tec9eo9kecs7q3jpjq33j1hj2cs14h.apps.googleusercontent.com"
@@ -81,16 +82,124 @@ fun AdminLoginScreen(
     }
     val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
 
+    // ĐĂNG NHẬP NHANH ADMIN: CHỈ ÁP DỤNG KHI TRƯỚC ĐÓ CÓ TỪNG LOGIN TÀI KHOẢN ADMIN RỒI
+    fun performQuickAdminLoginWithBiometric(adminEmail: String? = null) {
+        val targetEmail = adminEmail ?: authManager.lastAdminEmail
+        if (!authManager.hasPreviousAdminLogin || targetEmail.isNullOrBlank()) {
+            Toast.makeText(
+                context,
+                "Chưa có tài khoản Quản trị viên nào từng đăng nhập trên thiết bị. Vui lòng đăng nhập bằng Email/Mật khẩu hoặc Google lần đầu tiên!",
+                Toast.LENGTH_LONG
+            ).show()
+            errorMessage = "Yêu cầu đăng nhập tài khoản Quản trị viên lần đầu tiên trước khi dùng vân tay."
+            return
+        }
+
+        focusManager.clearFocus()
+        val fragmentActivity = context as? FragmentActivity
+        if (fragmentActivity == null) {
+            Toast.makeText(context, "Thiết bị không hỗ trợ Activity xác thực sinh trắc học", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (!BiometricAuthManager.isAvailable(context)) {
+            Toast.makeText(context, "Vui lòng cài đặt khóa màn hình vân tay hoặc mã PIN trên máy để sử dụng tính năng này", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        BiometricAuthManager.showBiometricPrompt(
+            activity = fragmentActivity,
+            title = "Xác thực Quản trị viên AVORA",
+            subtitle = "Sử dụng vân tay hoặc mật mã thiết bị để mở khóa",
+            description = "Xác nhận danh tính Quản trị viên ($targetEmail) trước khi đăng nhập quyền Admin",
+            onSuccess = {
+                // Đã vượt qua vân tay / mã máy thành công -> Tiến hành cấp phiên Admin
+                isLoading = true
+                errorMessage = null
+                coroutineScope.launch {
+                    try {
+                        val api = NetworkClient.getApiService(context)
+                        val response = api.quickAdminLogin(QuickLoginRequest(targetEmail))
+
+                        if (response.isSuccessful && response.body() != null) {
+                            val body = response.body()!!
+                            val token = body.accessToken ?: body.token
+                            val user = body.user
+
+                            if (token.isNullOrBlank() || user == null) {
+                                errorMessage = "Không thể tạo phiên đăng nhập Quản trị viên."
+                                isLoading = false
+                                return@launch
+                            }
+
+                            val role = user.role.uppercase().trim()
+                            if (role != "ADMIN" && role != "SUPER_ADMIN") {
+                                errorMessage = "Tài khoản không có quyền Quản trị viên (Role: $role)."
+                                isLoading = false
+                                return@launch
+                            }
+
+                            authManager.saveSession(
+                                token = token,
+                                user = AuthUser(
+                                    id = user.id,
+                                    email = user.email,
+                                    fullName = user.fullName,
+                                    role = role
+                                )
+                            )
+
+                            authManager.isBiometricEnabled = true
+                            authManager.unlockApp()
+
+                            isLoading = false
+                            Toast.makeText(context, "Xác thực danh tính & Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                            onLoginSuccess()
+                        } else {
+                            errorMessage = "Đăng nhập nhanh thất bại (HTTP ${response.code()})."
+                            isLoading = false
+                        }
+                    } catch (e: Exception) {
+                        errorMessage = "Không thể kết nối máy chủ: ${e.message}"
+                        isLoading = false
+                    }
+                }
+            },
+            onError = { code, msg ->
+                errorMessage = "Xác thực vân tay/mã máy thất bại: $msg"
+            },
+            onCancel = {
+                // Người dùng hủy, không cho đăng nhập
+            }
+        )
+    }
+
     fun triggerBiometricUnlock() {
         val fragmentActivity = context as? FragmentActivity ?: return
+        val priorEmail = authManager.lastAdminEmail
+        if (!hasPriorAdmin || priorEmail.isNullOrBlank()) {
+            Toast.makeText(
+                context,
+                "Chưa có tài khoản Quản trị viên nào từng đăng nhập trên thiết bị. Vui lòng đăng nhập bằng Email/Mật khẩu hoặc Google lần đầu tiên để kích hoạt vân tay.",
+                Toast.LENGTH_LONG
+            ).show()
+            errorMessage = "Yêu cầu đăng nhập tài khoản Quản trị viên lần đầu tiên trước khi dùng vân tay."
+            return
+        }
+
         BiometricAuthManager.showBiometricPrompt(
             activity = fragmentActivity,
             title = "Mở khóa Quản trị viên AVORA",
             subtitle = "Sử dụng vân tay hoặc mã PIN thiết bị",
-            description = "Xác nhận danh tính Quản trị viên để mở khóa Gateway",
+            description = "Xác nhận danh tính Quản trị viên ($priorEmail) để mở khóa Gateway",
             onSuccess = {
-                Toast.makeText(context, "Mở khóa thành công!", Toast.LENGTH_SHORT).show()
-                onLoginSuccess()
+                if (authManager.isLoggedIn && authManager.isAdmin()) {
+                    authManager.unlockApp()
+                    Toast.makeText(context, "Mở khóa thành công!", Toast.LENGTH_SHORT).show()
+                    onLoginSuccess()
+                } else {
+                    performQuickAdminLoginWithBiometric(priorEmail)
+                }
             },
             onError = { code, msg ->
                 errorMessage = "Xác thực sinh trắc học thất bại: $msg"
@@ -214,87 +323,6 @@ fun AdminLoginScreen(
         googleSignInClient.signOut().addOnCompleteListener {
             googleSignInLauncher.launch(googleSignInClient.signInIntent)
         }
-    }
-
-    // ĐĂNG NHẬP NHANH ADMIN: BẮT BUỘC PHẢI XÁC THỰC VÂN TAY / PIN CỦA THIẾT BỊ ĐỂ TRÁNH NHÂN VIÊN VÀO
-    fun performQuickAdminLoginWithBiometric(adminEmail: String = "phatmydang@gmail.com") {
-        focusManager.clearFocus()
-        val fragmentActivity = context as? FragmentActivity
-        if (fragmentActivity == null) {
-            Toast.makeText(context, "Thiết bị không hỗ trợ Activity xác thực sinh trắc học", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        if (!BiometricAuthManager.isAvailable(context)) {
-            Toast.makeText(context, "Vui lòng cài đặt khóa màn hình vân tay hoặc mã PIN trên máy để sử dụng tính năng này", Toast.LENGTH_LONG).show()
-            return
-        }
-
-        BiometricAuthManager.showBiometricPrompt(
-            activity = fragmentActivity,
-            title = "Xác thực Quản trị viên AVORA",
-            subtitle = "Sử dụng vân tay hoặc mật mã thiết bị để mở khóa",
-            description = "Bắt buộc xác thực danh tính chủ máy trước khi đăng nhập quyền Admin",
-            onSuccess = {
-                // Đã vượt qua vân tay / mã máy thành công -> Tiến hành cấp phiên Admin
-                isLoading = true
-                errorMessage = null
-                coroutineScope.launch {
-                    try {
-                        val api = NetworkClient.getApiService(context)
-                        val response = api.quickAdminLogin(QuickLoginRequest(adminEmail))
-
-                        if (response.isSuccessful && response.body() != null) {
-                            val body = response.body()!!
-                            val token = body.accessToken ?: body.token
-                            val user = body.user
-
-                            if (token.isNullOrBlank() || user == null) {
-                                errorMessage = "Không thể tạo phiên đăng nhập Quản trị viên."
-                                isLoading = false
-                                return@launch
-                            }
-
-                            val role = user.role.uppercase().trim()
-                            if (role != "ADMIN" && role != "SUPER_ADMIN") {
-                                errorMessage = "Tài khoản không có quyền Quản trị viên (Role: $role)."
-                                isLoading = false
-                                return@launch
-                            }
-
-                            authManager.saveSession(
-                                token = token,
-                                user = AuthUser(
-                                    id = user.id,
-                                    email = user.email,
-                                    fullName = user.fullName,
-                                    role = role
-                                )
-                            )
-
-                            authManager.isBiometricEnabled = true
-                            authManager.unlockApp()
-
-                            isLoading = false
-                            Toast.makeText(context, "Xác thực danh tính & Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                            onLoginSuccess()
-                        } else {
-                            errorMessage = "Đăng nhập nhanh thất bại (HTTP ${response.code()})."
-                            isLoading = false
-                        }
-                    } catch (e: Exception) {
-                        errorMessage = "Không thể kết nối máy chủ: ${e.message}"
-                        isLoading = false
-                    }
-                }
-            },
-            onError = { code, msg ->
-                errorMessage = "Xác thực vân tay/mã máy thất bại: $msg"
-            },
-            onCancel = {
-                // Người dùng hủy, không cho đăng nhập
-            }
-        )
     }
 
     fun performLogin() {
@@ -455,51 +483,6 @@ fun AdminLoginScreen(
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
-
-                    // Biometric Unlock if already logged in previously
-                    if (canUseBiometric) {
-                        Button(
-                            onClick = { triggerBiometricUnlock() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(44.dp),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF0F766E),
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Fingerprint,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Mở khóa bằng Vân tay / PIN",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.5.sp
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFFE2E8F0))
-                            Text(
-                                text = "  HOẶC  ",
-                                color = Color(0xFF94A3B8),
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            HorizontalDivider(modifier = Modifier.weight(1f), color = Color(0xFFE2E8F0))
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                    }
 
                     // Input Email / Phone
                     OutlinedTextField(
@@ -688,63 +671,80 @@ fun AdminLoginScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // ĐĂNG NHẬP NHANH ADMIN (YÊU CẦU XÁC THỰC VÂN TAY / PIN THIẾT BỊ)
-                    OutlinedButton(
-                        onClick = { performQuickAdminLoginWithBiometric("phatmydang@gmail.com") },
-                        enabled = !isLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color(0xFFFEF2F2),
-                            contentColor = AvoraRedPrimary
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFECACA))
+                    // YÊU CẦU 4: NÚT LOGIN GOOGLE VÀ NÚT VÂN TAY (CHỈ ICON) NẰM CÙNG 1 DÒNG
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Fingerprint,
-                            contentDescription = null,
-                            tint = AvoraRedPrimary,
-                            modifier = Modifier.size(17.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Đăng nhập nhanh Admin (Vân tay / PIN)",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = AvoraRedPrimary
-                        )
-                    }
+                        // Google Sign-In Button
+                        OutlinedButton(
+                            onClick = { startGoogleSignIn() },
+                            enabled = !isLoading,
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = Color.White,
+                                contentColor = Color(0xFF334155)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_google_logo),
+                                contentDescription = "Google Logo",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Tiếp tục với Google",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.5.sp,
+                                color = Color(0xFF334155)
+                            )
+                        }
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    // Google Sign-In Button
-                    OutlinedButton(
-                        onClick = { startGoogleSignIn() },
-                        enabled = !isLoading,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(44.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = Color.White,
-                            contentColor = Color(0xFF334155)
-                        ),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFCBD5E1))
-                    ) {
-                        Image(
-                            painter = painterResource(id = R.drawable.ic_google_logo),
-                            contentDescription = "Google Logo",
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Tiếp tục với Google",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.5.sp,
-                            color = Color(0xFF334155)
-                        )
+                        // Biometric Fingerprint Icon-Only Button
+                        OutlinedButton(
+                            onClick = {
+                                if (!hasPriorAdmin) {
+                                    Toast.makeText(
+                                        context,
+                                        "Chưa có tài khoản Quản trị viên nào từng đăng nhập trên thiết bị. Vui lòng đăng nhập bằng Email hoặc Google lần đầu tiên để kích hoạt vân tay!",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                    errorMessage = "Yêu cầu đăng nhập tài khoản Quản trị viên lần đầu tiên trước khi dùng vân tay."
+                                } else if (!isBiometricAvailable) {
+                                    Toast.makeText(
+                                        context,
+                                        "Thiết bị chưa cài đặt vân tay hoặc mã PIN bảo mật trong Cài đặt máy.",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                } else {
+                                    triggerBiometricUnlock()
+                                }
+                            },
+                            enabled = !isLoading,
+                            modifier = Modifier.size(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(0.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (hasPriorAdmin) Color(0xFFFEF2F2) else Color(0xFFF1F5F9),
+                                contentColor = if (hasPriorAdmin) AvoraRedPrimary else Color(0xFF94A3B8)
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (hasPriorAdmin) Color(0xFFFECACA) else Color(0xFFE2E8F0)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Fingerprint,
+                                contentDescription = "Đăng nhập bằng Vân tay / PIN",
+                                tint = if (hasPriorAdmin) AvoraRedPrimary else Color(0xFF94A3B8),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
                     }
                 }
             }

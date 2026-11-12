@@ -11,6 +11,7 @@ import { Server, Socket } from 'socket.io';
 import { Logger, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ChatbotService } from './chatbot.service';
+import { MenuGroundingService, GroundedMenuContext } from './menu-grounding.service';
 import { ALL_CHATBOT_TOOL_DECLARATIONS } from './chatbot-tool-declarations';
 import { PrismaService } from '../prisma/prisma.service';
 import WebSocket from 'ws';
@@ -34,6 +35,8 @@ interface VoiceContext {
   branchId: string;
   isExecutingTool?: boolean;
   audioGeneration: number;
+  lastUserQuery?: string;
+  lastGroundTruth?: GroundedMenuContext;
 }
 
 @WebSocketGateway({ namespace: '/voice-chat', cors: { origin: allowedVoiceOrigins, credentials: true } })
@@ -50,7 +53,36 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
     private readonly jwtService: JwtService,
     private readonly chatbotService: ChatbotService,
     private readonly prisma: PrismaService,
+    private readonly menuGroundingService: MenuGroundingService,
   ) {}
+
+  /**
+   * Xác thực thực đơn và chống bịa món cho Voice Chatbot (Đồng bộ 100% nguyên tắc với Text Chatbot)
+   */
+  public async verifyAndGroundVoiceTurn(
+    userQuery: string,
+    rawAiResponse: string,
+    branchId?: string,
+  ) {
+    const analysis = this.menuGroundingService.analyzeUserQuery(userQuery || '');
+    const groundTruth = await this.menuGroundingService.getGroundTruthMenuContext(analysis, branchId);
+    const enforcement = await this.menuGroundingService.verifyAndEnforceGrounding(
+      rawAiResponse,
+      groundTruth,
+      branchId,
+    );
+    const verifiedText =
+      typeof this.chatbotService?.sanitizeAndVerifyLinks === 'function'
+        ? await this.chatbotService.sanitizeAndVerifyLinks(enforcement.verifiedText)
+        : enforcement.verifiedText;
+    return {
+      analysis,
+      groundTruth,
+      verifiedText,
+      verifiedProducts: enforcement.verifiedProducts,
+      wasHallucinationPrevented: enforcement.wasHallucinationPrevented,
+    };
+  }
 
   async handleConnection(client: Socket) {
     try {
@@ -111,7 +143,7 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         sessionIdQuery,
         guestSessionToken,
       );
-      let persistedContext: { currentBranchId?: string; cart?: Array<{ priceAtSale: number; quantity: number }> } = {};
+      let persistedContext: { currentBranchId?: string; cart?: Array<{ productName?: string; name?: string; priceAtSale: number; quantity: number }> } = {};
       if (voiceSession.contextData) {
         try {
           persistedContext = JSON.parse(voiceSession.contextData);
@@ -121,16 +153,58 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
       }
 
       const cartSummaryStr = client.handshake.query?.cartSummary as string;
-      const cartSummary = cartSummaryStr ? decodeURIComponent(cartSummaryStr) : '';
+      let cartSummary = cartSummaryStr ? decodeURIComponent(cartSummaryStr) : '';
       const cartTotalStr = client.handshake.query?.cartTotal as string;
-      const cartTotal = cartTotalStr ? parseFloat(cartTotalStr) : cartSummary && !cartSummary.includes('trống') ? 1 : 0;
+      let cartTotal = cartTotalStr ? parseFloat(cartTotalStr) : cartSummary && !cartSummary.includes('trống') ? 1 : 0;
+
+      // Hydrate cart from persisted session context if client query had no cart summary
+      if ((!cartSummary || cartSummary.includes('trống')) && Array.isArray(persistedContext.cart) && persistedContext.cart.length > 0) {
+        cartSummary = persistedContext.cart
+          .map((item) => `${item.quantity}x ${item.productName || item.name || 'Món'}`)
+          .join(', ');
+        cartTotal = persistedContext.cart.reduce((sum, item) => sum + Number(item.priceAtSale || 0) * Number(item.quantity || 1), 0);
+      }
+
       if (cartSummary || cartTotal > 0) {
         userContext += ` [THÔNG TIN GIỎ HÀNG: ${cartSummary || 'Có món trong giỏ'}, Tổng tiền: ${cartTotal.toLocaleString('vi-VN')}đ, cartTotal = ${cartTotal}]`;
       } else {
         userContext += ` [THÔNG TIN GIỎ HÀNG: Giỏ hàng trống, cartTotal = 0]`;
       }
 
-      const branchId = persistedContext.currentBranchId || (client.handshake.query?.branchId as string) || '';
+      // Hydrate recent conversation memory from database so Voice AI remembers text chat context
+      try {
+        const recentDbMessages = await this.prisma.chatMessage.findMany({
+          where: {
+            sessionId: voiceSession.sessionId,
+            senderType: { in: ['USER', 'AI'] },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 6,
+          select: { senderType: true, content: true },
+        });
+        const validRecent = recentDbMessages
+          .reverse()
+          .filter((m) => m.content && m.content.trim().length > 0);
+        if (validRecent.length > 0) {
+          const memorySnippet = validRecent
+            .map((m) => `${m.senderType === 'USER' ? 'Khách' : 'AI'}: ${m.content.trim().slice(0, 220)}`)
+            .join(' | ');
+          userContext += ` [NGỮ CẢNH HỘI THOẠI GẦN ĐÂY]: ${memorySnippet}`;
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to hydrate voice session messages: ${err}`);
+      }
+
+      let branchId = persistedContext.currentBranchId || (client.handshake.query?.branchId as string) || '';
+      if (!branchId) {
+        try {
+          const defaultBranch = await this.prisma.branch.findFirst({
+            where: { onlineOrderingEnabled: true },
+            orderBy: { createdAt: 'asc' },
+          });
+          if (defaultBranch) branchId = defaultBranch.id;
+        } catch {}
+      }
       if (branchId) {
         try {
           const branch = await this.prisma.branch.findUnique({ where: { id: branchId } });
@@ -167,8 +241,7 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
         }
       });
 
-      const envKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || '';
-      const apiKey = envKeys.split(',')[0]?.trim();
+      const { key: apiKey, index: apiKeyIndex } = this.chatbotService.getActiveApiKey();
       if (!apiKey) {
         client.emit('error', 'Server missing Gemini API Key');
         client.disconnect();
@@ -180,6 +253,26 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 
       ws.on('open', () => {
         this.logger.log(`Connected to Gemini Live API for client ${client.id}`);
+        const now = new Date();
+        const vnDateFormatter = new Intl.DateTimeFormat('vi-VN', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          weekday: 'long',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const vnISODateFormatter = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        });
+        const todayStr = vnISODateFormatter.format(now);
+        const tomorrowStr = vnISODateFormatter.format(new Date(now.getTime() + 86400000));
+        const formattedNowVN = vnDateFormatter.format(now);
+
         const setupMessage = {
           setup: {
             model: 'models/gemini-3.1-flash-live-preview',
@@ -190,22 +283,38 @@ export class ChatbotGateway implements OnGatewayConnection, OnGatewayDisconnect 
 Bạn giao tiếp qua điện thoại/giọng nói trực tiếp với khách hàng.
 Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang trò chuyện với khách, lịch sự, hiếu khách, dễ nghe. ${userContext}
 
+[THỜI GIAN THỰC TẾ HIỆN TẠI (VIỆT NAM GMT+7)]:
+- Thời gian hiện tại: ${formattedNowVN}.
+- Ngày hôm nay: ${todayStr}.
+- Ngày mai: ${tomorrowStr}.
+- Luôn sử dụng đúng ngày hiện tại hoặc ngày mai khi gọi các công cụ giao hàng, đặt bàn!
+
+[QUY TẮC CHỐNG BỊA MÓN (ZERO HALLUCINATION)]:
+- BẮT BUỘC gọi tool searchMenu khi khách hỏi gợi ý món, bán chạy hay thực đơn. TUYỆT ĐỐI KHÔNG tự bịa tên món ăn không có trong thực đơn của nhà hàng!
+
 [QUY TẮC CHECKOUT & ĐẶT MÓN TỐI ƯU]:
 0. CHỌN MÓN & TÙY CHỌN (OPTIONS):
 - Khi khách nói "cho tôi món đó", "lấy món này", "món vừa gợi ý": Gọi ngay \`addToCart\` với tên món vừa nhắc tới.
 - Khi thêm món vào giỏ: Cứ gọi \`addToCart\` với tên món, máy chủ sẽ tự động chọn tùy chọn mặc định (Regular size, 100% đường đá) nếu khách không nói rõ; nếu khách nêu tùy chọn, truyền vào \`optionNames\`.
 
 1. CHI NHÁNH & TÌM CHI NHÁNH GẦN NHẤT:
-- Khi khách hỏi tìm chi nhánh gần nhất ("tìm chi nhánh gần nhất", "chi nhánh nào gần tôi"): Nếu chưa có GPS, gọi \`findNearestBranch\` để hệ thống gửi nút "📍 Chia sẻ vị trí của tôi" vào khung chat.
+- Khi khách hỏi tìm chi nhánh gần nhất ("tìm chi nhánh gần nhất", "chi nhánh nào gần tôi", "các chi nhánh của quán"): Nếu chưa có GPS, gọi \`findNearestBranch\` để hệ thống gửi thẻ xin vị trí GPS kèm bản đồ và đếm ngược 7 giây vào khung chat.
 - Khi nhận được tọa độ GPS từ hệ thống (Vị trí của khách hàng là vĩ độ X, kinh độ Y): Nếu khách tìm chi nhánh, gọi \`findNearestBranch\`; nếu khách đặt giao hàng, gọi \`validateDeliveryAddress\`.
 - Sử dụng luôn chi nhánh hiện tại của khách đã có trong ngữ cảnh. Không bắt chọn lại!
 
-2. ĐỊA CHỈ GIAO HÀNG & PHÍ SHIP:
-- Nếu khách giao hàng mà chưa có địa chỉ: Hướng dẫn khách bấm nút "📍 Chia sẻ vị trí của tôi" trên khung chat.
+1B. HỎI THÔNG TIN CHUNG, TIỆN ÍCH NHÀ HÀNG & KHẢ NĂNG CỦA TRỢ LÝ AI:
+- Khi khách hỏi: "bạn có thể làm được gì", giờ mở cửa, chỗ đậu xe ô tô, phòng VIP, ghế trẻ em, tổ chức sinh nhật, xuất hóa đơn đỏ VAT, tích điểm thành viên:
+  + TUYỆT ĐỐI KHÔNG GỌI \`searchMenu\` và KHÔNG ĐƯỢC trả lời "Hiện tại AVORA chưa có món... trong thực đơn"!
+  + Gọi \`getRestaurantInfo\` với \`topic\` tương ứng và trả lời ngắn gọn, lịch sự.
+
+2. HÌNH THỨC PHỤC VỤ (GIAO HÀNG HOẶC TỰ ĐẾN LẤY):
+- NẾU KHÁCH NÓI "tự đến lấy", "mang về", "qua quán lấy", "takeaway", "lấy tại quán": BẮT BUỘC gọi \`previewOrder\` với \`fulfillmentType: 'TAKEAWAY'\`. Phí ship TỰ ĐỘNG = 0đ, TUYỆT ĐỐI KHÔNG bắt khách chia sẻ vị trí hay hỏi địa chỉ nhận hàng!
+- NẾU KHÁCH GIAO HÀNG (DELIVERY) mà chưa có địa chỉ: Hướng dẫn khách bấm nút "📍 Chia sẻ vị trí của tôi" trên khung chat.
 - Khi nhận được tin nhắn vị trí từ hệ thống (Vị trí của khách hàng là vĩ độ X, kinh độ Y), BẮT BUỘC gọi ngay \`validateDeliveryAddress\` để máy chủ tự động quy đổi địa chỉ và tính phí giao hàng chính xác!
 
-3. KHUNG GIỜ GIAO HÀNG (SLOTS):
-- BẮT BUỘC gọi \`getAvailableOrderSlots\`. Nếu khách nói giờ cụ thể (VD: "11h45", "12h trưa", "7h tối"), truyền \`requestedTime\` vào tool để hệ thống tự chọn slot gần nhất. Luôn hỗ trợ "Giao ngay (ASAP 30-45 phút)".
+3. KHUNG GIỜ NHẬN ĐƠN (SLOTS):
+- BẮT BUỘC gọi \`getAvailableOrderSlots\`. Máy chủ sẽ tự động tính toán chi nhánh và khung giờ khả dụng cho ngày hôm nay hoặc ngày mai. Luôn có khung giờ khả dụng, TUYỆT ĐỐI KHÔNG báo lỗi khung giờ!
+- Nếu khách nói giờ cụ thể (VD: "11h45", "12h trưa", "7h tối"), truyền \`requestedTime\` vào tool để hệ thống tự chọn slot gần nhất. Luôn hỗ trợ "Giao ngay (ASAP 30-45 phút)".
 
 4. TINH GỌN THÔNG TIN:
 - Tận dụng họ tên và SĐT có sẵn trong hồ sơ, không hỏi lại.
@@ -219,6 +328,8 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
 
 [QUY TẮC BẤT DI BẤT DỊCH]:
 - Xưng "em", gọi khách là "quý khách". TUYỆT ĐỐI KHÔNG lặp lại tên/username của khách gây phiền toái.
+- NGUYÊN TẮC BẮT BUỘC SỐ 1 - KHÔNG BAO GIỜ BỊA THỰC ĐƠN: TUYỆT ĐỐI KHÔNG khẳng định một món có bán nếu không tìm thấy trong kết quả gọi searchMenu. Nếu khách hỏi món không có trong thực đơn, BẮT BUỘC phản hồi lịch sự từ chối: "Hiện tại AVORA chưa có món này trong thực đơn. Bạn có thể cho mình biết bạn thích món có nguyên liệu hoặc hương vị nào để mình gợi ý những món đang có tại nhà hàng nhé."
+- KHI ĐẶT ĐƠN THANH TOÁN CHUYỂN KHOẢN SEPAY: Nhắc khách hoàn tất quét mã QR SePay, và ngay khi thanh toán thành công bếp sẽ bắt đầu chế biến nóng sốt và giao tận nơi (không nói bếp đang nấu sẵn khi chưa thanh toán).
 - TUYỆT ĐỐI KHÔNG tự bịa giá tiền, mã voucher, món ăn hay số bàn.
 - Trả lời ngắn gọn, súc tích (1-2 câu ngắn), thích hợp cho đàm thoại giọng nói.
 - TUYỆT ĐỐI KHÔNG đọc JSON, tên hàm, mã code hoặc thông báo kỹ thuật ra giọng nói.
@@ -261,12 +372,54 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
           }
 
           if (msg.serverContent) {
+            const context = this.userContexts.get(client.id);
+
+            // Kiểm tra real-time input audio transcription từ Gemini Live (lời nói người dùng)
+            const inTrans = msg.serverContent.inputAudioTranscription?.text || msg.serverContent.inputTranscription?.text;
+            if (inTrans) {
+              client.emit('transcript', { role: 'user', text: inTrans });
+              if (context) {
+                (context as any).currentUserTurnText = ((context as any).currentUserTurnText || '') + inTrans;
+              }
+            }
+
+            // Kiểm tra real-time output audio transcription từ Gemini Live
+            const outTrans = msg.serverContent.outputAudioTranscription?.text || msg.serverContent.outputTranscription?.text;
+            if (outTrans) {
+              // Flush user spoken transcript to DB before AI turn starts
+              if (context && (context as any).currentUserTurnText && (context as any).currentUserTurnText.trim() && context.sessionId) {
+                const userSpoken = (context as any).currentUserTurnText.trim();
+                (context as any).lastUserQuery = userSpoken;
+                (context as any).currentUserTurnText = '';
+                this.prisma.chatMessage
+                  .create({
+                    data: {
+                      sessionId: context.sessionId,
+                      senderType: 'USER',
+                      content: userSpoken,
+                    },
+                  })
+                  .catch((err) => this.logger.error('Failed to save User spoken text to database:', err));
+              }
+
+              client.emit('transcript', { role: 'model', text: outTrans });
+              if (context) {
+                (context as any).currentAiTurnText = ((context as any).currentAiTurnText || '') + outTrans;
+              }
+            }
+
             const modelTurn = msg.serverContent.modelTurn;
             if (modelTurn && modelTurn.parts) {
               for (const part of modelTurn.parts) {
+                if (part.text) {
+                  const textData = part.text;
+                  client.emit('transcript', { role: 'model', text: textData });
+                  if (context) {
+                    (context as any).currentAiTurnText = ((context as any).currentAiTurnText || '') + textData;
+                  }
+                }
                 if (part.inlineData && part.inlineData.mimeType.startsWith('audio/')) {
                   const audioData = part.inlineData.data;
-                  const context = this.userContexts.get(client.id);
                   client.emit('audio_output', {
                     data: audioData,
                     generation: context?.audioGeneration || 0,
@@ -275,7 +428,70 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
               }
             }
             if (msg.serverContent.turnComplete) {
-              const context = this.userContexts.get(client.id);
+              if (context && (context as any).currentUserTurnText && (context as any).currentUserTurnText.trim() && context.sessionId) {
+                const userSpoken = (context as any).currentUserTurnText.trim();
+                (context as any).lastUserQuery = userSpoken;
+                (context as any).currentUserTurnText = '';
+                try {
+                  await this.prisma.chatMessage.create({
+                    data: {
+                      sessionId: context.sessionId,
+                      senderType: 'USER',
+                      content: userSpoken,
+                    },
+                  });
+                } catch (saveErr) {
+                  this.logger.error('Failed to save User spoken text to database:', saveErr);
+                }
+              }
+
+              if (context && (context as any).currentAiTurnText && (context as any).currentAiTurnText.trim() && context.sessionId) {
+                const turnText = (context as any).currentAiTurnText.trim();
+                (context as any).currentAiTurnText = '';
+                const lastUserQuery = (context as any).lastUserQuery || '';
+                const verified = await this.verifyAndGroundVoiceTurn(
+                  lastUserQuery,
+                  turnText,
+                  context.branchId,
+                );
+                if (verified.wasHallucinationPrevented) {
+                  client.emit('transcript_verified', {
+                    role: 'model',
+                    text: verified.verifiedText,
+                    wasHallucinationPrevented: true,
+                  });
+                  client.emit('rich_action', {
+                    content: verified.verifiedText,
+                    actionType: verified.verifiedProducts.length > 0 ? 'SHOW_PRODUCT' : null,
+                    actionPayload:
+                      verified.verifiedProducts.length > 0
+                        ? JSON.stringify({
+                            products: verified.verifiedProducts.slice(0, 4).map((p) => ({
+                              id: p.id,
+                              name: p.name,
+                              slug: p.slug,
+                              price: p.flashSalePrice || p.price,
+                              originalPrice: p.price,
+                              category: p.categoryName,
+                            })),
+                          })
+                        : null,
+                    suggestedReplies: ['Xem thực đơn chi tiết', 'Gợi ý món bán chạy nhất'],
+                  });
+                }
+                try {
+                  await this.prisma.chatMessage.create({
+                    data: {
+                      sessionId: context.sessionId,
+                      senderType: 'AI',
+                      content: verified.verifiedText,
+                    },
+                  });
+                } catch (saveErr) {
+                  this.logger.error('Failed to save AI spoken text to database:', saveErr);
+                }
+              }
+
               if (context?.isExecutingTool) {
                 this.logger.log(`Gemini turn complete for ${client.id} ignored because tool is executing`);
               } else {
@@ -288,12 +504,28 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
           // Xử lý Tool Calling thời gian thực từ Gemini Live
           if (msg.toolCall && msg.toolCall.functionCalls) {
             const context = this.userContexts.get(client.id);
-            if (context) context.isExecutingTool = true;
+            if (context) {
+              context.isExecutingTool = true;
+              if ((context as any).currentUserTurnText && (context as any).currentUserTurnText.trim() && context.sessionId) {
+                const userSpoken = (context as any).currentUserTurnText.trim();
+                (context as any).lastUserQuery = userSpoken;
+                (context as any).currentUserTurnText = '';
+                this.prisma.chatMessage
+                  .create({
+                    data: {
+                      sessionId: context.sessionId,
+                      senderType: 'USER',
+                      content: userSpoken,
+                    },
+                  })
+                  .catch((err) => this.logger.error('Failed to save User spoken text before tool call:', err));
+              }
+            }
             const functionResponses: any[] = [];
 
             for (const functionCall of msg.toolCall.functionCalls) {
               this.logger.log(`[Voice] Received function call: ${functionCall.name}`);
-              client.emit('tool_call', { name: functionCall.name });
+              client.emit('tool_call', { name: functionCall.name, args: functionCall.args });
 
               // Gọi qua ChatbotService (được uỷ quyền trực tiếp tới ChatbotToolEngineService)
               const result = await this.chatbotService.executeToolCall(
@@ -313,6 +545,23 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
                   actionPayload: result.lastActionPayload || null,
                   suggestedReplies: result.suggestedReplies || null,
                 });
+
+                // Lưu lại hành động của AI vào Database để không bao giờ mất lịch sử chốt đơn
+                if (context?.sessionId) {
+                  try {
+                    await this.prisma.chatMessage.create({
+                      data: {
+                        sessionId: context.sessionId,
+                        senderType: 'AI',
+                        content: result.content || (result.lastActionType === 'ORDER_PREVIEW' ? 'Bản xem trước đơn hàng' : result.lastActionType === 'SHOW_ORDER_SUCCESS' ? 'Xác nhận đặt hàng thành công' : ''),
+                        actionType: (result.lastActionType as any) || null,
+                        actionPayload: result.lastActionPayload || null,
+                      },
+                    });
+                  } catch (saveErr) {
+                    this.logger.error('Failed to save AI tool action to database:', saveErr);
+                  }
+                }
               }
 
               functionResponses.push({
@@ -340,7 +589,11 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
       });
 
       ws.on('close', (code, reason) => {
-        this.logger.log(`Gemini Live disconnected for client ${client.id} - Code: ${code}, Reason: ${reason.toString()}`);
+        const reasonStr = reason.toString();
+        this.logger.log(`Gemini Live disconnected for client ${client.id} - Code: ${code}, Reason: ${reasonStr}`);
+        if (code !== 1000) {
+          this.chatbotService.reportApiKeyError(apiKeyIndex, { status: code === 1008 ? 429 : 503, message: reasonStr });
+        }
         client.emit('voice_error', {
           code: 'UPSTREAM_CLOSED',
           message: `Gemini closed (Code: ${code})`,
@@ -351,6 +604,7 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
 
       ws.on('error', (err) => {
         this.logger.error(`Gemini WS Error for ${client.id}:`, err);
+        this.chatbotService.reportApiKeyError(apiKeyIndex, err);
       });
 
       this.geminiConnections.set(client.id, ws);
@@ -421,12 +675,28 @@ Giọng điệu: Ngắn gọn, tự nhiên như nhân viên nhà hàng đang tr�
       const content = this.validateClientContent(body);
       const text = content.turns?.flatMap((turn) => turn.parts.map((part) => part.text)).join(' ');
       if (text) {
+        (context as any).lastUserQuery = text;
         const persistedContent = /vÄ© Ä‘á»™|kinh Ä‘á»™|latitude|longitude/i.test(text)
           ? '[Voice location shared]'
           : text;
         await this.prisma.chatMessage.create({
           data: { sessionId: context.sessionId, senderType: 'USER', content: persistedContent },
         });
+
+        // Pre-ground text turns sent in Voice mode with MenuGroundingService
+        try {
+          const queryAnalysis = this.menuGroundingService.analyzeUserQuery(text);
+          const groundTruth = await this.menuGroundingService.getGroundTruthMenuContext(
+            queryAnalysis,
+            context.branchId,
+          );
+          const groundingBlock = this.menuGroundingService.buildGroundingInstruction(groundTruth);
+          if (groundingBlock && content.turns && content.turns[0]?.parts?.[0]) {
+            content.turns[0].parts[0].text = `${text}${groundingBlock}`;
+          }
+        } catch (groundErr) {
+          this.logger.warn(`Failed to pre-ground voice client_content: ${groundErr}`);
+        }
       }
       upstream.send(JSON.stringify({ clientContent: content }));
       client.emit('client_content_ack', { accepted: true, sessionId: context.sessionId });

@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PromotionService } from '../promotion/promotion.service';
+import { toCleanSlug } from '../common/utils/slug.util';
 
 @Injectable()
 export class HomeService {
@@ -26,7 +27,7 @@ export class HomeService {
         orderBy: { displayOrder: 'asc' },
       }),
       this.prisma.product.findMany({
-        where: { isBestSeller: true, available: true },
+        where: { isBestSeller: true, available: true, id: { notIn: ['prod-ai-meal-architect'] } },
         include: { 
           category: true,
           optionGroups: { include: { optionItems: true } },
@@ -35,7 +36,7 @@ export class HomeService {
         take: 20,
       }),
       this.prisma.product.findMany({
-        where: { isAiRecommended: true, available: true },
+        where: { isAiRecommended: true, available: true, id: { notIn: ['prod-ai-meal-architect'] } },
         include: { 
           category: true,
           optionGroups: { include: { optionItems: true } },
@@ -73,7 +74,7 @@ export class HomeService {
   }
 
   async getBranches() {
-    return this.prisma.branch.findMany({
+    const list = await this.prisma.branch.findMany({
       select: {
         id: true,
         name: true,
@@ -91,8 +92,109 @@ export class HomeService {
         pointRedeemRate: true,
         isLoyaltyOnlineEnabled: true,
         loyaltyEarnRateOnline: true,
+        reservationEnabled: true,
+        capacity: true,
       },
       orderBy: { createdAt: 'asc' },
     });
+
+    return list.map(b => ({
+      ...b,
+      slug: toCleanSlug(b.name),
+    }));
+  }
+
+  async getBranchDetail(slugOrId: string) {
+    const branches = await this.prisma.branch.findMany({
+      select: {
+        id: true,
+        name: true,
+        branchCode: true,
+        street: true,
+        ward: true,
+        district: true,
+        province: true,
+        phone: true,
+        email: true,
+        latitude: true,
+        longitude: true,
+        openTime: true,
+        closeTime: true,
+        onlineOrderingEnabled: true,
+        reservationEnabled: true,
+        capacity: true,
+        restaurantAreas: { select: { id: true, name: true } },
+        specialHours: true,
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slugOrId);
+    const target = branches.find(b =>
+      (isUUID && b.id === slugOrId) ||
+      toCleanSlug(b.name) === slugOrId ||
+      (b.branchCode && b.branchCode.toLowerCase() === slugOrId.toLowerCase())
+    );
+
+    if (!target) {
+      throw new NotFoundException(`Chi nhánh không tồn tại: ${slugOrId}`);
+    }
+
+    const slug = toCleanSlug(target.name);
+    const now = new Date();
+
+    // 1. Món ăn đang phục vụ tại chi nhánh
+    const branchProducts = await this.prisma.product.findMany({
+      where: {
+        available: true,
+        id: { notIn: ['prod-ai-meal-architect'] },
+        OR: [
+          { branches: { some: { id: target.id } } },
+          { branches: { none: {} } },
+        ],
+      },
+      include: {
+        category: { select: { id: true, name: true, slug: true } },
+      },
+      orderBy: [{ isBestSeller: 'desc' }, { soldQuantity: 'desc' }],
+          });
+
+    // 2. Voucher ưu đãi áp dụng cho chi nhánh
+    const vouchers = await this.prisma.voucher.findMany({
+      where: {
+        isActive: true,
+        startDate: { lte: now },
+        endDate: { gte: now },
+        OR: [
+          { branches: { some: { id: target.id } } },
+          { branches: { none: {} } },
+        ],
+      },
+      select: {
+        id: true,
+        code: true,
+        title: true,
+        description: true,
+        discountType: true,
+        discountValue: true,
+        maxDiscount: true,
+        minOrderValue: true,
+        startDate: true,
+        endDate: true,
+      },
+      take: 12,
+    });
+
+    const enrichedProducts = await this.promotionService.enrichProductsWithFlashSale(branchProducts);
+
+    return {
+      branch: {
+        ...target,
+        slug,
+      },
+      menuItems: enrichedProducts,
+      products: enrichedProducts,
+      vouchers,
+    };
   }
 }

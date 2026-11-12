@@ -17,6 +17,7 @@ interface ItemDiscountModalProps {
   onClose: () => void;
   onApplyDiscount: (itemId: string, discountAmount: number, discountReason: string) => void;
   onRemoveDiscount: (itemId: string) => void;
+  isDarkMode?: boolean;
 }
 
 const QUICK_PERCENTAGES = [5, 10, 15, 20, 30, 50];
@@ -34,6 +35,7 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
   onClose,
   onApplyDiscount,
   onRemoveDiscount,
+  isDarkMode = false,
 }) => {
   if (!item) return null;
 
@@ -73,16 +75,22 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none">
-      <div className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-full max-w-md overflow-hidden flex flex-col">
+      <div className={`rounded-2xl shadow-2xl border w-full max-w-md overflow-hidden flex flex-col ${
+        isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-gray-200 text-gray-900'
+      }`}>
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between bg-amber-50/60">
+        <div className={`px-5 py-4 border-b flex items-center justify-between ${
+          isDarkMode ? 'border-slate-800 bg-slate-900/90' : 'border-gray-100 bg-amber-50/60'
+        }`}>
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center font-bold">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold ${
+              isDarkMode ? 'bg-amber-950/50 text-amber-400' : 'bg-amber-100 text-amber-600'
+            }`}>
               <Tag className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-gray-900">Giảm giá món ăn</h3>
-              <p className="text-[11px] text-gray-500 truncate max-w-[260px]">
+              <h3 className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>Giảm giá món ăn</h3>
+              <p className={`text-[11px] truncate max-w-[260px] ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>
                 {item.product.name} (x{item.quantity})
               </p>
             </div>
@@ -90,7 +98,9 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+            className={`p-1 rounded-lg transition-colors ${
+              isDarkMode ? 'text-slate-400 hover:text-white hover:bg-slate-800' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+            }`}
           >
             <X className="w-4 h-4" />
           </button>
@@ -99,15 +109,17 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
         {/* Body */}
         <div className="p-5 space-y-4 text-xs">
           {/* Price Preview Card */}
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-200/80 flex items-center justify-between">
+          <div className={`p-3 rounded-xl border flex items-center justify-between ${
+            isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-gray-50 border-gray-200/80'
+          }`}>
             <div>
-              <span className="text-gray-400 text-[11px] block">Giá gốc:</span>
-              <span className="font-semibold text-gray-700 line-through">
+              <span className={`text-[11px] block ${isDarkMode ? 'text-slate-400' : 'text-gray-400'}`}>Giá gốc:</span>
+              <span className={`font-semibold line-through ${isDarkMode ? 'text-slate-400' : 'text-gray-700'}`}>
                 {originalUnitPrice.toLocaleString('vi-VN')}đ
               </span>
             </div>
             <div className="text-right">
-              <span className="text-emerald-600 text-[11px] block font-bold">
+              <span className="text-emerald-500 text-[11px] block font-bold">
                 Sau giảm giá (-{calculatedDiscount.toLocaleString('vi-VN')}đ):
               </span>
               <span className="font-extrabold text-[#da251d] text-base">
@@ -118,14 +130,18 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
 
           {/* Discount Type Toggle */}
           <div>
-            <label className="block text-gray-700 font-bold mb-1.5">Hình thức giảm giá:</label>
-            <div className="grid grid-cols-2 gap-2 bg-gray-100 p-1 rounded-xl">
+            <label className={`block font-bold mb-1.5 ${isDarkMode ? 'text-slate-200' : 'text-gray-700'}`}>Hình thức giảm giá:</label>
+            <div className={`grid grid-cols-2 gap-2 p-1 rounded-xl ${isDarkMode ? 'bg-slate-800' : 'bg-gray-100'}`}>
               <button
                 type="button"
                 onClick={() => setDiscountType('PERCENT')}
                 className={`py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all ${
                   discountType === 'PERCENT'
-                    ? 'bg-white text-[#da251d] shadow-xs'
+                    ? isDarkMode
+                      ? 'bg-slate-700 text-red-400 shadow-xs'
+                      : 'bg-white text-[#da251d] shadow-xs'
+                    : isDarkMode
+                    ? 'text-slate-400 hover:text-slate-200'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -137,7 +153,11 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                 onClick={() => setDiscountType('FIXED')}
                 className={`py-1.5 rounded-lg font-bold flex items-center justify-center gap-1.5 transition-all ${
                   discountType === 'FIXED'
-                    ? 'bg-white text-[#da251d] shadow-xs'
+                    ? isDarkMode
+                      ? 'bg-slate-700 text-red-400 shadow-xs'
+                      : 'bg-white text-[#da251d] shadow-xs'
+                    : isDarkMode
+                    ? 'text-slate-400 hover:text-slate-200'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
@@ -157,9 +177,13 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                   max="100"
                   value={percentVal || ''}
                   onChange={(e) => setPercentVal(Number(e.target.value))}
-                  className="w-full text-center text-lg font-extrabold py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-all text-[#da251d]"
+                  className={`w-full text-center text-lg font-extrabold py-2 rounded-xl outline-none transition-all text-[#da251d] border ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 focus:border-[#da251d] focus:bg-slate-750'
+                      : 'bg-gray-50 border-gray-200 focus:border-[#da251d] focus:bg-white'
+                  }`}
                 />
-                <span className="font-bold text-gray-500 text-sm">%</span>
+                <span className={`font-bold text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>%</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {QUICK_PERCENTAGES.map((pct) => (
@@ -170,6 +194,8 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all text-[11px] ${
                       percentVal === pct
                         ? 'bg-[#da251d] text-white border-[#da251d]'
+                        : isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750'
                         : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
@@ -187,9 +213,13 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                   step="5000"
                   value={fixedVal || ''}
                   onChange={(e) => setFixedVal(Number(e.target.value))}
-                  className="w-full text-center text-lg font-extrabold py-2 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-[#da251d] focus:bg-white transition-all text-[#da251d]"
+                  className={`w-full text-center text-lg font-extrabold py-2 rounded-xl outline-none transition-all text-[#da251d] border ${
+                    isDarkMode
+                      ? 'bg-slate-800 border-slate-700 focus:border-[#da251d] focus:bg-slate-750'
+                      : 'bg-gray-50 border-gray-200 focus:border-[#da251d] focus:bg-white'
+                  }`}
                 />
-                <span className="font-bold text-gray-500 text-sm">đ</span>
+                <span className={`font-bold text-sm ${isDarkMode ? 'text-slate-400' : 'text-gray-500'}`}>đ</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {[10000, 20000, 50000, 100000].map((amt) => (
@@ -200,6 +230,8 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                     className={`px-2.5 py-1 rounded-lg border font-bold transition-all text-[11px] ${
                       fixedVal === amt
                         ? 'bg-[#da251d] text-white border-[#da251d]'
+                        : isDarkMode
+                        ? 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-750'
                         : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'
                     }`}
                   >
@@ -210,9 +242,9 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
             </div>
           )}
 
-          {/* Mandatory Reason (Bắt buộc kèm lý do) */}
-          <div className="pt-2 border-t border-gray-100">
-            <label className="block text-gray-700 font-bold mb-1.5 flex items-center gap-1">
+          {/* Mandatory Reason */}
+          <div className={`pt-2 border-t ${isDarkMode ? 'border-slate-800' : 'border-gray-100'}`}>
+            <label className={`block font-bold mb-1.5 flex items-center gap-1 ${isDarkMode ? 'text-slate-200' : 'text-gray-700'}`}>
               <span>Lý do giảm giá:</span>
               <span className="text-rose-500">* (Bắt buộc)</span>
             </label>
@@ -226,7 +258,11 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
                     onClick={() => setSelectedReason(isSelected ? '' : r)}
                     className={`px-2.5 py-1 rounded-lg border text-[11px] font-medium transition-all ${
                       isSelected
-                        ? 'border-amber-500 bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-500'
+                        ? isDarkMode
+                          ? 'border-amber-500 bg-amber-950/60 text-amber-300 font-bold ring-1 ring-amber-500'
+                          : 'border-amber-500 bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-500'
+                        : isDarkMode
+                        ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-750'
                         : 'border-gray-200 hover:bg-gray-50 text-gray-700'
                     }`}
                   >
@@ -241,18 +277,26 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
               onChange={(e) => setCustomReason(e.target.value)}
               placeholder="Ghi chú thêm lý do chi tiết (nếu có)..."
               rows={2}
-              className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white text-xs resize-none"
+              className={`w-full p-2.5 rounded-xl outline-none text-xs resize-none border transition-all ${
+                isDarkMode
+                  ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-400 focus:border-amber-500 focus:bg-slate-750'
+                  : 'bg-gray-50 border-gray-200 text-gray-800 placeholder-gray-400 focus:border-amber-500 focus:bg-white'
+              }`}
             />
           </div>
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-3.5 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
+        <div className={`px-5 py-3.5 border-t flex items-center justify-between ${
+          isDarkMode ? 'border-slate-800 bg-slate-900/90' : 'border-gray-100 bg-gray-50/50'
+        }`}>
           {item.discountAmount ? (
             <button
               type="button"
               onClick={handleRemove}
-              className="px-3 py-2 text-rose-600 hover:bg-rose-50 rounded-xl font-bold transition-colors text-xs flex items-center gap-1"
+              className={`px-3 py-2 text-rose-500 rounded-xl font-bold transition-colors text-xs flex items-center gap-1 ${
+                isDarkMode ? 'hover:bg-rose-950/40' : 'hover:bg-rose-50'
+              }`}
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Xóa giảm giá</span>
@@ -265,7 +309,9 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100 font-semibold transition-colors text-xs"
+              className={`px-4 py-2 rounded-xl font-semibold transition-colors text-xs ${
+                isDarkMode ? 'text-slate-400 hover:bg-slate-800' : 'text-gray-600 hover:bg-gray-100'
+              }`}
             >
               Hủy
             </button>
@@ -273,7 +319,7 @@ export const ItemDiscountModal: React.FC<ItemDiscountModalProps> = ({
               type="button"
               disabled={calculatedDiscount <= 0 || !finalReason}
               onClick={handleConfirm}
-              className="px-5 py-2 rounded-xl bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-200 disabled:text-gray-400 text-white font-bold transition-all shadow-xs text-xs flex items-center gap-1.5"
+              className="px-5 py-2 rounded-xl bg-[#da251d] hover:bg-[#b81d16] disabled:bg-gray-300 disabled:text-gray-500 text-white font-bold transition-all shadow-xs text-xs flex items-center gap-1.5"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Áp dụng giảm giá</span>

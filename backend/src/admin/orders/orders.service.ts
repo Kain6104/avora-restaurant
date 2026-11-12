@@ -1,13 +1,16 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { OrderStatus, Prisma } from '@prisma/client';
 import { OrderService as CoreOrderService } from '../../order/order.service';
+import { OrderAuditService } from '../../common/services/order-audit.service';
+import { OrderEditabilityPolicy } from '../../common/policies/order-editability.policy';
 
 @Injectable()
 export class OrdersService {
   constructor(
     private prisma: PrismaService,
-    private coreOrderService: CoreOrderService
+    private coreOrderService: CoreOrderService,
+    private orderAuditService: OrderAuditService,
   ) {}
 
   async findAll(params: {
@@ -52,28 +55,13 @@ export class OrdersService {
       where.branchId = branchId;
     }
 
-    // 2. Phân loại Tab & Loại bỏ các đơn POS chưa thanh toán
+    // 2. Phân loại Tab (Hiển thị đầy đủ cả đơn POS đang phục vụ, đã thanh toán và đã hủy)
+    where.isDeleted = false;
     if (tab === 'POS') {
       where.orderSource = 'POS';
-      // Đơn POS phải đã thanh toán (loại bỏ đơn còn trong bàn/mang đi/giao hàng mà chưa thanh toán)
-      where.OR = [
-        { paymentStatus: 'PAID' },
-        { status: OrderStatus.COMPLETED },
-      ];
     } else if (tab === 'ONLINE') {
       // Đơn online: WEB, QR_ORDER, CHATBOT, VOICE, ADMIN...
       where.orderSource = { not: 'POS' };
-    } else {
-      // Tab ALL: hiển thị tất cả nhưng loại bỏ các đơn POS còn chưa thanh toán
-      where.NOT = [
-        {
-          AND: [
-            { orderSource: 'POS' },
-            { paymentStatus: { not: 'PAID' } },
-            { status: { not: OrderStatus.COMPLETED } },
-          ],
-        },
-      ];
     }
 
     // 3. Trạng thái đơn hàng
@@ -124,6 +112,7 @@ export class OrdersService {
       andList.push({
         OR: [
           { orderCode: { contains: q } },
+          { temporaryOrderCode: { contains: q } },
           { customerName: { contains: q } },
           { customerPhone: { contains: q } },
           { cashierName: { contains: q } },
@@ -205,22 +194,11 @@ export class OrdersService {
 
     // Helper build tab condition
     const buildTabWhere = (t: string): Prisma.OrderWhereInput => {
-      const w: Prisma.OrderWhereInput = { ...baseWhere };
+      const w: Prisma.OrderWhereInput = { ...baseWhere, isDeleted: false };
       if (t === 'POS') {
         w.orderSource = 'POS';
-        w.OR = [{ paymentStatus: 'PAID' }, { status: OrderStatus.COMPLETED }];
       } else if (t === 'ONLINE') {
         w.orderSource = { not: 'POS' };
-      } else {
-        w.NOT = [
-          {
-            AND: [
-              { orderSource: 'POS' },
-              { paymentStatus: { not: 'PAID' } },
-              { status: { not: OrderStatus.COMPLETED } },
-            ],
-          },
-        ];
       }
       return w;
     };
@@ -310,7 +288,7 @@ export class OrdersService {
       include: {
         orderItems: {
           include: {
-            product: { select: { name: true, price: true, imageUrl: true } },
+            product: { select: { id: true, name: true, price: true, imageUrl: true, slug: true } },
           },
         },
         branch: { select: { name: true, street: true, ward: true, district: true, province: true, pointRedeemRate: true } },
@@ -319,6 +297,14 @@ export class OrdersService {
         voucher: { select: { code: true, title: true, discountType: true, discountValue: true } },
         shippingVoucher: { select: { code: true, title: true, discountType: true, discountValue: true } },
         serviceCharges: true,
+        payments: {
+          include: { refunds: true },
+          orderBy: { createdAt: 'desc' },
+        },
+        cancellation: {
+          include: { refunds: true },
+        },
+        bankTransactions: true,
       },
     });
 
@@ -334,7 +320,121 @@ export class OrdersService {
       order.isViewedByAdmin = true;
     }
 
-    return order;
+    // Resolve actor snapshots from User table if missing
+    let creatorInfo: any = null;
+    let cancellerInfo: any = null;
+    let modifierInfo: any = null;
+    let cashierInfo: any = null;
+
+    const userIdsToLookup = [
+      order.userId,
+      order.createdById,
+      order.canceledBy,
+      order.updatedById,
+      order.cashierId,
+    ].filter((uid): uid is string => Boolean(uid && uid.length > 10 && uid !== 'POS_STAFF' && uid !== 'CUSTOMER'));
+
+    if (userIdsToLookup.length > 0) {
+      const resolvedUsers = await this.prisma.user.findMany({
+        where: { id: { in: Array.from(new Set(userIdsToLookup)) } },
+        select: { id: true, fullName: true, email: true, role: true, avatarUrl: true, branchId: true },
+      });
+      const uMap = new Map(resolvedUsers.map((u) => [u.id, u]));
+
+      const cId = order.createdById || order.userId;
+      if (cId && uMap.has(cId)) creatorInfo = uMap.get(cId);
+
+      if (order.canceledBy && uMap.has(order.canceledBy)) cancellerInfo = uMap.get(order.canceledBy);
+      if (order.updatedById && uMap.has(order.updatedById)) modifierInfo = uMap.get(order.updatedById);
+      if (order.cashierId && uMap.has(order.cashierId)) cashierInfo = uMap.get(order.cashierId);
+    }
+
+    const editability = OrderEditabilityPolicy.evaluate(order);
+
+    return {
+      ...order,
+      creatorInfo: creatorInfo || (order.createdByName ? { fullName: order.createdByName, role: order.createdByRole } : null),
+      cancellerInfo: cancellerInfo || (order.canceledByName ? { fullName: order.canceledByName, role: order.canceledByRole } : null),
+      modifierInfo: modifierInfo || (order.updatedByName ? { fullName: order.updatedByName } : null),
+      cashierInfo: cashierInfo || (order.cashierName ? { fullName: order.cashierName } : null),
+      editability,
+    };
+  }
+
+  async getTimeline(id: string, branchIdScope?: string, category?: string) {
+    const order = await this.findOne(id, branchIdScope);
+    return this.orderAuditService.getTimeline(order.id, { category, includeSensitive: true });
+  }
+
+  async cancelOrder(
+    id: string,
+    reason: string,
+    actor: { id: string; fullName?: string; email?: string; role?: string },
+    branchIdScope?: string,
+  ) {
+    const order = await this.findOne(id, branchIdScope);
+    return this.coreOrderService.cancelOrder(
+      order.orderCode || order.temporaryOrderCode || order.id,
+      reason,
+      { kind: 'ADMIN', user: actor },
+    );
+  }
+
+  async deletePermanently(
+    id: string,
+    reason: string,
+    confirmOrderCode: string,
+    actor: { id: string; fullName?: string; email?: string; role?: string },
+    branchIdScope?: string,
+  ) {
+    throw new BadRequestException(
+      'Thao tác xóa vĩnh viễn đã bị vô hiệu hóa khỏi quy trình vận hành hệ thống AVORA để đảm bảo tính toàn vẹn dữ liệu tài chính và kiểm toán. ' +
+      'Vui lòng sử dụng tính năng "HỦY ĐƠN CHƯA THANH TOÁN" đối với đơn chưa thu tiền, hoặc "HỦY HÓA ĐƠN ĐÃ THANH TOÁN" đối với đơn đã thu tiền.',
+    );
+  }
+
+  async restoreOrder(
+    id: string,
+    actor: { id: string; fullName?: string; email?: string; role?: string },
+    branchIdScope?: string,
+  ) {
+    const order = await this.findOne(id, branchIdScope);
+    if (!order.isDeleted) {
+      throw new BadRequestException('Đơn hàng không ở trạng thái bị xóa');
+    }
+
+    const actualCode = order.orderCode || order.temporaryOrderCode;
+
+    return await this.prisma.$transaction(async (tx) => {
+      const res = await tx.order.update({
+        where: { id: order.id },
+        data: {
+          isDeleted: false,
+          restoredAt: new Date(),
+          restoredBy: actor.id,
+          restoredByName: actor.fullName || actor.email,
+        },
+      });
+
+      await this.orderAuditService.log(
+        {
+          orderId: order.id,
+          orderCode: actualCode,
+          action: 'ORDER_RESTORED',
+          category: 'ADMIN',
+          actorId: actor.id,
+          actorName: actor.fullName || actor.email,
+          actorRole: actor.role || 'ADMIN',
+          branchId: order.branchId,
+          reason: 'Khôi phục đơn hàng từ trạng thái lưu trữ',
+          oldValue: { isDeleted: true },
+          newValue: { isDeleted: false },
+        },
+        tx,
+      );
+
+      return res;
+    });
   }
 
   async getUnreadCount(branchIdScope?: string) {
@@ -365,9 +465,10 @@ export class OrdersService {
     const order = await this.findOne(id, branchIdScope);
 
     // Chống gian lận: Nếu đơn hàng đã được SePay tự động xác nhận tiền về tài khoản ngân hàng, KHÔNG CHO PHÉP SỬA THỦ CÔNG!
-    if (order.paymentMethod === 'SEPAY' && order.paymentStatus === 'PAID' && paymentStatus !== 'PAID') {
+    const isGatewayPaid = order.paymentStatus === 'PAID' && (['SEPAY', 'TRANSFER', 'BANK_TRANSFER', 'VNPAY', 'MOMO', 'PAYOS'].includes((order.paymentMethod || '').toUpperCase()) || Boolean(order.transactionId));
+    if (isGatewayPaid && paymentStatus !== 'PAID') {
       throw new ForbiddenException(
-        'Đơn hàng này đã được hệ thống SePay tự động xác nhận tiền về tài khoản ngân hàng. Nghiêm cấm nhân viên sửa đổi thủ công trạng thái thanh toán để tránh gian lận, thất thoát!',
+        'Đơn hàng này đã được hệ thống Bank Gateway / Ngân hàng tự động xác nhận tiền về tài khoản. Đã khóa bảo mật nghiêm ngặt để bảo vệ dữ liệu doanh thu và chống gian lận!',
       );
     }
 

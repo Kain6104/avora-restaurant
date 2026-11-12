@@ -89,9 +89,34 @@ class BankNotificationListenerService : NotificationListenerService() {
         private const val DEDUPE_WINDOW_MS = 6000L // 6 giây chống double notification
 
         /**
+         * Thu hồi liên kết hoặc hủy ghép nối thiết bị ngay lập tức tại local,
+         * ngắt kết nối Socket và chặn hoàn toàn việc đọc/phát giọng nói thông báo.
+         */
+        suspend fun handleDeviceRevokedOrUnpaired(
+            context: android.content.Context,
+            reason: String = "Thiết bị đã bị Quản trị viên thu hồi liên kết trên /admin/bank-connect"
+        ) {
+            try {
+                val db = AppDatabase.getInstance(context)
+                db.configDao().set(ConfigEntity("is_paired", "false"))
+                db.configDao().set(ConfigEntity("revoked_reason", reason))
+                vn.avora.bankconnect.core.crypto.KeyStoreManager.deleteKey()
+                BankGatewaySocketManager.disconnect()
+                Log.w(TAG, "[REVOKED] Đã hủy trạng thái ghép nối thiết bị: $reason")
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khi xử lý thu hồi thiết bị: ${e.message}")
+            }
+        }
+
+        /**
          * Kích hoạt quét khẩn cấp active notifications từ bên ngoài (POS trigger scan)
          */
         suspend fun triggerManualScan(context: android.content.Context, scanJobId: String): Pair<Int, Int> {
+            val db = AppDatabase.getInstance(context)
+            val isPaired = db.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+            if (!isPaired) {
+                return Pair(0, 0)
+            }
             val service = currentInstance
             if (service == null || !isConnected) {
                 val api = NetworkClient.getApiService(context)
@@ -134,11 +159,16 @@ class BankNotificationListenerService : NotificationListenerService() {
             database.configDao().set(ConfigEntity("listener_connected", "true"))
             database.configDao().set(ConfigEntity("listener_last_connected_at", System.currentTimeMillis().toString()))
 
-            // Feature 6: Tự động quét bù active notifications ngay khi service vừa kết nối lại
-            catchUpActiveNotifications()
+            val isPaired = database.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+            if (isPaired) {
+                // Feature 6: Tự động quét bù active notifications ngay khi service vừa kết nối lại
+                catchUpActiveNotifications()
 
-            // Kết nối lại WebSocket tới POS Gateway
-            BankGatewaySocketManager.initialize(applicationContext)
+                // Kết nối lại WebSocket tới POS Gateway
+                BankGatewaySocketManager.initialize(applicationContext)
+            } else {
+                Log.w(TAG, "Thiết bị chưa ghép nối hoặc đã bị thu hồi: tạm ngưng đọc thông báo và không kết nối Socket.")
+            }
         }
     }
 
@@ -162,6 +192,9 @@ class BankNotificationListenerService : NotificationListenerService() {
      * Feature 6: Quét bù toàn bộ active notifications còn trên thanh trạng thái
      */
     private suspend fun catchUpActiveNotifications(): Int {
+        val isPaired = database.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+        if (!isPaired) return 0
+
         val active = try { activeNotifications } catch (e: Exception) { null } ?: return 0
         var newCount = 0
         for (sbn in active) {
@@ -179,6 +212,9 @@ class BankNotificationListenerService : NotificationListenerService() {
      * Feature 2: Thực hiện quét khẩn cấp active notifications và báo cáo kết quả lên VPS
      */
     suspend fun performActiveScanAndReport(scanJobId: String): Pair<Int, Int> {
+        val isPaired = database.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+        if (!isPaired) return Pair(0, 0)
+
         val active = try { activeNotifications } catch (e: Exception) { null } ?: emptyArray()
         var newCount = 0
         for (sbn in active) {
@@ -216,6 +252,13 @@ class BankNotificationListenerService : NotificationListenerService() {
      * Xử lý và phân tích một StatusBarNotification với đầy đủ 3 tầng deduplication
      */
     private suspend fun processStatusBarNotification(sbn: StatusBarNotification): Boolean {
+        // BẮT BUỘC: Nếu thiết bị chưa ghép nối hoặc đã bị thu hồi trên /admin/bank-connect,
+        // chặn tuyệt đối việc đọc/phân tích thông báo, phát âm thanh giọng nói và lưu DB.
+        val isPaired = database.configDao().get("is_paired")?.toBooleanStrictOrNull() ?: false
+        if (!isPaired) {
+            return false
+        }
+
         val packageName = sbn.packageName ?: return false
         val extras = sbn.notification?.extras ?: return false
 
@@ -423,6 +466,14 @@ class BankNotificationListenerService : NotificationListenerService() {
                 val body = response.body()!!
                 Log.i(TAG, "[✓] VPS đã xác nhận ACK cho event ${entity.eventId}. Trạng thái: ${body.status}")
                 database.transactionDao().markSynced(entity.eventId, body.status, body.orderId)
+            } else if (response.code() == 401 || response.code() == 403) {
+                val errorMsg = response.errorBody()?.string() ?: "Thiết bị đã bị thu hồi hoặc chưa đăng ký (HTTP ${response.code()})"
+                Log.w(TAG, "[REVOKED] Máy chủ từ chối xác thực thiết bị (${response.code()}): $errorMsg")
+                database.transactionDao().markFailed(entity.eventId, "Thiết bị đã bị thu hồi liên kết")
+                handleDeviceRevokedOrUnpaired(
+                    applicationContext,
+                    "Thiết bị đã bị thu hồi liên kết trên /admin/bank-connect. Vui lòng ghép nối lại."
+                )
             } else {
                 val errorMsg = response.errorBody()?.string() ?: "HTTP ${response.code()}"
                 Log.e(TAG, "[!] VPS trả về lỗi: $errorMsg. Lên lịch retry qua WorkManager")

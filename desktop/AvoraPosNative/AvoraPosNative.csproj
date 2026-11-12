@@ -9,9 +9,9 @@
     <ApplicationTitle>AVORA POS Native</ApplicationTitle>
     <AssemblyName>AvoraPosNative</AssemblyName>
     <RootNamespace>AvoraPosNative</RootNamespace>
-    <Version>1.0.0</Version>
-    <AssemblyVersion>1.0.0.0</AssemblyVersion>
-    <FileVersion>1.0.0.0</FileVersion>
+    <Version>1.0.1</Version>
+    <AssemblyVersion>1.0.1.0</AssemblyVersion>
+    <FileVersion>1.0.1.0</FileVersion>
     <Authors>AVORA Restaurant Solutions</Authors>
     <Company>AVORA</Company>
     <Product>AVORA POS Native</Product>
@@ -29,7 +29,14 @@
     <Resource Include="avora_logo_desktop.ico" />
     <Resource Include="Assets\avora_logo_desktop.ico" />
     <Resource Include="Assets\avora_logo_desktop.png" />
+    <Resource Include="Assets\avora_logo_ngang.png" />
     <Resource Include="Assets\restaurant_bg.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
   <ItemGroup>

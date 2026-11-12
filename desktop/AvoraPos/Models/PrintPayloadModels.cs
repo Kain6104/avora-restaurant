@@ -16,6 +16,12 @@ namespace AvoraPos.Models
         public bool IsBuffetIncluded { get; set; }
     }
 
+    public class ServiceChargeItemPayload
+    {
+        public string Name { get; set; } = "Phụ thu";
+        public decimal Amount { get; set; }
+    }
+
     public class ReceiptPrintPayload
     {
         public string OrderId { get; set; } = string.Empty;
@@ -47,6 +53,7 @@ namespace AvoraPos.Models
         public string? VoucherCode { get; set; }
         public decimal PointsDiscountAmount { get; set; }
         public decimal ServiceChargeTotal { get; set; }
+        public List<ServiceChargeItemPayload> ServiceCharges { get; set; } = new List<ServiceChargeItemPayload>();
         public decimal TaxAmount { get; set; }
         public decimal ShippingFee { get; set; }
         public decimal TotalAmount { get; set; }

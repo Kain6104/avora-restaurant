@@ -62,32 +62,32 @@ export const ProductReviewCard: React.FC<ProductReviewCardProps> = ({
     .toUpperCase();
 
   return (
-    <article className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-100 shadow-2xs transition-shadow hover:shadow-xs">
+    <article className="p-3 sm:p-5 rounded-2xl bg-white border border-slate-100 shadow-2xs transition-shadow hover:shadow-xs">
       {/* Header card: User info & rating */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
+      <div className="flex items-start justify-between gap-2.5 sm:gap-4">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Avatar */}
           {review.user?.avatarUrl ? (
             <img
               src={review.user.avatarUrl}
               alt={review.user.fullName || 'Khách hàng'}
-              className="w-10 h-10 rounded-full object-cover border border-amber-200/80 shrink-0"
+              className="w-7 h-7 sm:w-10 sm:h-10 rounded-full object-cover border border-amber-200/80 shrink-0"
             />
           ) : (
-            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 font-bold text-xs flex items-center justify-center border border-amber-200 shrink-0">
+            <div className="w-7 h-7 sm:w-10 sm:h-10 rounded-full bg-amber-100 text-amber-800 font-bold text-[10px] sm:text-xs flex items-center justify-center border border-amber-200 shrink-0">
               {userInitials || 'AV'}
             </div>
           )}
 
           <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-bold text-slate-900 text-sm">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-bold text-slate-900 text-xs sm:text-sm">
                 {review.user?.fullName || 'Khách hàng AVORA'}
               </span>
 
               {/* Membership Tier Badge */}
               {review.user?.membershipTier?.name && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] sm:text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
                   {review.user.membershipTier.name}
                 </span>
               )}
@@ -99,12 +99,12 @@ export const ProductReviewCard: React.FC<ProductReviewCardProps> = ({
               />
             </div>
 
-            <div className="flex items-center gap-2 mt-1">
+            <div className="flex items-center gap-1.5 mt-0.5">
               <RatingStars rating={review.rating} size="sm" />
-              <span className="text-xs font-black text-amber-500 font-mono">
+              <span className="text-[11px] font-black text-amber-500 font-mono">
                 {review.rating.toFixed(1)}★
               </span>
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-[10px] sm:text-xs text-slate-400 font-mono">
                 • {formattedDate}
               </span>
             </div>

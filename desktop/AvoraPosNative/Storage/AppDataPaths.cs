@@ -10,6 +10,7 @@ namespace AvoraPosNative.Storage
     /// - Config: %LOCALAPPDATA%\AVORA POS Native\Config\
     /// - Logs: %LOCALAPPDATA%\AVORA POS Native\Logs\
     /// - Updates: %LOCALAPPDATA%\AVORA POS Native\Updates\
+    /// - Avatars: %LOCALAPPDATA%\AVORA POS Native\Avatars\
     /// </summary>
     public static class AppDataPaths
     {
@@ -22,6 +23,7 @@ namespace AvoraPosNative.Storage
         public static string ConfigDir => Ensure(Path.Combine(Root, "Config"));
         public static string LogsDir => Ensure(Path.Combine(Root, "Logs"));
         public static string UpdatesDir => Ensure(Path.Combine(Root, "Updates"));
+        public static string AvatarsDir => Ensure(Path.Combine(Root, "Avatars"));
 
         public static string DatabasePath => Path.Combine(DataDir, "avora_pos_native.db");
 

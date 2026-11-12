@@ -18,6 +18,7 @@ namespace AvoraPosNative.Dialogs
         public MoveTableDialog(PosTable currentTable, List<PosTable> allTables)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             _currentTable = currentTable;
             txtCurrentTable.Text = $"Từ bàn: {currentTable.Name} ({currentTable.AreaName})";
 

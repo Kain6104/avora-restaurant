@@ -83,10 +83,40 @@ namespace AvoraPos
                 {
                     ShowWindow(hWnd, SW_RESTORE);
                     SetForegroundWindow(hWnd);
+                    Shutdown(0);
+                    return;
                 }
+                else
+                {
+                    // Existing process has no window (orphaned zombie in Task Manager)
+                    // Automatically terminate the windowless zombie and take over!
+                    try
+                    {
+                        var currentProc = System.Diagnostics.Process.GetCurrentProcess();
+                        var procs = System.Diagnostics.Process.GetProcessesByName(currentProc.ProcessName);
+                        foreach (var p in procs)
+                        {
+                            if (p.Id != currentProc.Id)
+                            {
+                                p.Kill();
+                                p.WaitForExit(1000);
+                            }
+                        }
 
-                Shutdown(0);
-                return;
+                        _instanceMutex?.Dispose();
+                        _instanceMutex = new Mutex(true, MutexName, out createdNew);
+                        if (!createdNew)
+                        {
+                            Shutdown(0);
+                            return;
+                        }
+                    }
+                    catch
+                    {
+                        Shutdown(0);
+                        return;
+                    }
+                }
             }
 
             // Start named pipe server for subsequent instances / deep links
@@ -154,8 +184,13 @@ namespace AvoraPos
                 PersistentPrintQueueManager.Instance.Stop();
                 if (_instanceMutex != null)
                 {
-                    _instanceMutex.ReleaseMutex();
+                    try
+                    {
+                        _instanceMutex.ReleaseMutex();
+                    }
+                    catch { }
                     _instanceMutex.Dispose();
+                    _instanceMutex = null;
                 }
             }
             catch
@@ -163,6 +198,13 @@ namespace AvoraPos
                 // Non-fatal
             }
             base.OnExit(e);
+
+            // Force kill this process and any lingering background threads so NO zombie process remains in Task Manager
+            try
+            {
+                Environment.Exit(0);
+            }
+            catch { }
         }
     }
 }

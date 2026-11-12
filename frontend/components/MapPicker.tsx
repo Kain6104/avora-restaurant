@@ -4,6 +4,15 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import {
+  MAP_TILE_URL,
+  MAP_TILE_SUBDOMAINS,
+  MAP_TILE_ATTRIBUTION,
+  MAP_MAX_ZOOM,
+  setupLeafletDefaultIcons,
+} from '@/lib/map-config';
+
+setupLeafletDefaultIcons(L);
 
 // Modern Custom SVG Restaurant/Customer Marker Icon
 const customIcon = L.divIcon({
@@ -115,12 +124,11 @@ export default function MapPicker({ position, onChange }: MapPickerProps) {
         scrollWheelZoom={true}
         style={{ height: '100%', width: '100%', minHeight: '250px' }}
       >
-        {/* CARTO Voyager: Fast, crisp, beautiful vector-styled tiles with no rate limiting */}
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
+          attribution={MAP_TILE_ATTRIBUTION}
+          url={MAP_TILE_URL}
+          subdomains={MAP_TILE_SUBDOMAINS}
+          maxZoom={MAP_MAX_ZOOM}
         />
         <MapResizerAndController center={center} />
         <LocationMarker position={position} onChange={onChange} />

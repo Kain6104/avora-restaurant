@@ -345,16 +345,18 @@ export class PrintTemplateRendererService {
       hasServiceChargeDetail: hasServiceCharge,
       hasDiscountDetail: hasDiscount,
 
-      // Phương thức thanh toán
+      // Phương thức thanh toán & Mã QR chuyển khoản (Luôn hiển thị trên Phiếu Tạm Tính)
       cashPayment: Boolean(
         context.paymentMethodStr?.toLowerCase().includes('tiền mặt') ||
           (context.cashReceived && context.cashReceived > 0),
       ),
       qrPayment: Boolean(
         context.paymentQrPayload ||
+          (context.bankAccountNo && context.totalAmount > 0) ||
           context.paymentMethodStr?.toLowerCase().includes('chuyển khoản') ||
           context.paymentMethodStr?.toLowerCase().includes('qr') ||
-          context.paymentMethodStr?.toLowerCase().includes('sepay'),
+          context.paymentMethodStr?.toLowerCase().includes('sepay') ||
+          context.totalAmount > 0,
       ),
       note: Boolean(context.orderNote && context.orderNote.trim().length > 0),
       table: Boolean(context.tableName && context.tableName.trim().length > 0),

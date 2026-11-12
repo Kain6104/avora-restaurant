@@ -5,7 +5,10 @@ import {
   OrderStatus,
   ServingType,
   PointTransactionSource,
-  DiscountType
+  DiscountType,
+  DayOfWeek,
+  SlotOrderType,
+  SlotStatus,
 } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -373,7 +376,75 @@ async function main() {
     });
   }
 
-  console.log('🎉 Seeding hoàn tất! Dữ liệu của 120 món ăn kèm Option Topping đầy đủ.');
+  console.log('11. Đang tạo Khung giờ hoạt động (Operating Slots) cho toàn bộ chi nhánh...');
+  const allDays = [
+    DayOfWeek.MONDAY,
+    DayOfWeek.TUESDAY,
+    DayOfWeek.WEDNESDAY,
+    DayOfWeek.THURSDAY,
+    DayOfWeek.FRIDAY,
+    DayOfWeek.SATURDAY,
+    DayOfWeek.SUNDAY,
+  ];
+
+  for (const b of branches) {
+    for (const d of allDays) {
+      // 1. All-day express delivery slot
+      await prisma.operatingSlot.create({
+        data: {
+          branchId: b.id,
+          dayOfWeek: d,
+          orderType: SlotOrderType.DELIVERY,
+          startTime: '00:00',
+          endTime: '23:59',
+          maxOrders: 500,
+          leadTimeMinutes: 0,
+          isActive: true,
+          status: SlotStatus.OPEN,
+        },
+      });
+
+      // 2. All-day express takeaway slot
+      await prisma.operatingSlot.create({
+        data: {
+          branchId: b.id,
+          dayOfWeek: d,
+          orderType: SlotOrderType.TAKEAWAY,
+          startTime: '00:00',
+          endTime: '23:59',
+          maxOrders: 500,
+          leadTimeMinutes: 0,
+          isActive: true,
+          status: SlotStatus.OPEN,
+        },
+      });
+
+      // 3. Regular lunch & dinner meal slots
+      const mealSlots = [
+        { start: '11:00', end: '12:30' },
+        { start: '12:30', end: '14:00' },
+        { start: '17:30', end: '19:00' },
+        { start: '19:00', end: '20:30' },
+      ];
+      for (const m of mealSlots) {
+        await prisma.operatingSlot.create({
+          data: {
+            branchId: b.id,
+            dayOfWeek: d,
+            orderType: SlotOrderType.DELIVERY,
+            startTime: m.start,
+            endTime: m.end,
+            maxOrders: 50,
+            leadTimeMinutes: 15,
+            isActive: true,
+            status: SlotStatus.OPEN,
+          },
+        });
+      }
+    }
+  }
+
+  console.log('🎉 Seeding hoàn tất! Dữ liệu của 120 món ăn kèm Option Topping và Operating Slots đầy đủ.');
 }
 
 main()

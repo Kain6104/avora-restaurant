@@ -18,7 +18,7 @@ namespace AvoraPosNative.Storage
             get
             {
                 EnsureLoaded();
-                return _apiBaseUrl ?? "http://127.0.0.1:4001";
+                return _apiBaseUrl ?? "https://avorafnb.com";
             }
         }
 
@@ -27,7 +27,7 @@ namespace AvoraPosNative.Storage
             get
             {
                 EnsureLoaded();
-                return _wsBaseUrl ?? "http://127.0.0.1:4001";
+                return _wsBaseUrl ?? "https://avorafnb.com";
             }
         }
 
@@ -66,7 +66,7 @@ namespace AvoraPosNative.Storage
                 if (_isLoaded) return;
 
                 // 1. Defaults
-                string defaultBase = "http://127.0.0.1:4001";
+                string defaultBase = "https://avorafnb.com";
                 _apiBaseUrl = defaultBase;
                 _wsBaseUrl = defaultBase;
 

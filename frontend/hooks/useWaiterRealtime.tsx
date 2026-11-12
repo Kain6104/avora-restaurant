@@ -4,15 +4,19 @@ import { useWaiterStore } from '../store/useWaiterStore';
 import toast from 'react-hot-toast';
 import { mutate } from 'swr';
 import { db } from '@/lib/offline/db';
+import { syncEngine } from '@/lib/offline/syncEngine';
 import { Bell, Utensils, ChefHat, AlertTriangle } from 'lucide-react';
 
 export function useWaiterRealtime(token?: string, branchId?: string, userId?: string) {
   const socketRef = useRef<Socket | null>(null);
   const setOffline = useWaiterStore((state) => state.setOffline);
+  const setNetworkState = useWaiterStore((state) => state.setNetworkState);
   const lastTableToastRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {
     if (!branchId) return;
+
+    syncEngine.setActiveBranch(branchId);
 
     const socketUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -28,22 +32,25 @@ export function useWaiterRealtime(token?: string, branchId?: string, userId?: st
     socketRef.current = socket;
 
     socket.on('connect', async () => {
-      setOffline(false);
+      setNetworkState('ONLINE');
+      syncEngine.setNetworkState('ONLINE');
       socket.emit('join_branch', { branchId, cashierId: userId });
       
-      // Attempt to sync offline queue on reconnect
-      const pendingCommands = await db.offlineCommands.where('syncState').equals('PENDING').toArray();
-      if (pendingCommands.length > 0) {
-        toast.loading(`Đang đồng bộ ${pendingCommands.length} thay đổi...`, { id: 'offline-sync' });
-        for (const cmd of pendingCommands) {
-          await db.offlineCommands.update(cmd.id!, { syncState: 'COMPLETED' });
-        }
-        toast.success('Đã đồng bộ xong dữ liệu.', { id: 'offline-sync' });
-      }
+      // Trigger delta sync and process any offline queue
+      syncEngine.triggerBackgroundSync();
+      syncEngine.processOfflineQueue();
+    });
+
+    socket.on('connect_error', () => {
+      const state = navigator.onLine ? 'SERVER_UNAVAILABLE' : 'OFFLINE';
+      setNetworkState(state);
+      syncEngine.setNetworkState(state);
     });
 
     socket.on('disconnect', (reason) => {
-      setOffline(true);
+      const state = navigator.onLine ? 'SERVER_UNAVAILABLE' : 'OFFLINE';
+      setNetworkState(state);
+      syncEngine.setNetworkState(state);
       if (reason === 'io server disconnect') {
         socket.connect();
       }
@@ -76,6 +83,7 @@ export function useWaiterRealtime(token?: string, branchId?: string, userId?: st
       
       // Invalidate and re-fetch table sessions and table list
       mutate((key: any) => typeof key === 'string' && key.startsWith('/api/pos/tables'));
+      syncEngine.triggerBackgroundSync();
     });
 
     socket.on('ORDER_UPDATED', (envelope: any) => {
@@ -86,6 +94,15 @@ export function useWaiterRealtime(token?: string, branchId?: string, userId?: st
 
       // Invalidate and re-fetch orders, tables, and sessions
       mutate((key: any) => typeof key === 'string' && (key.startsWith('/api/pos/tables') || key.startsWith('/api/pos/orders')));
+      syncEngine.triggerBackgroundSync();
+    });
+
+    socket.on('PRODUCT_AVAILABILITY_CHANGED', async (envelope: any) => {
+      const payload = envelope?.payload || envelope;
+      if (payload.productId) {
+        await db.products.update(payload.productId, { available: payload.available });
+      }
+      mutate((key: any) => typeof key === 'string' && key.startsWith('/api/pos/products'));
     });
 
     socket.on('ORDER_CREATED', (envelope: any) => {

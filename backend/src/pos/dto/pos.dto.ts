@@ -586,6 +586,10 @@ export class SendTableItemsDto {
   @IsString()
   note?: string;
 
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
+
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PosOrderItemDto)

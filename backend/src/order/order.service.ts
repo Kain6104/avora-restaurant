@@ -12,7 +12,7 @@ import { FarmIntegrationService } from '../farm/farm-integration.service';
 import * as nodemailer from 'nodemailer';
 
 export type OrderCancellationPrincipal =
-  | { kind: 'ADMIN' }
+  | { kind: 'ADMIN'; user?: { id: string; fullName?: string; email?: string; role?: string } }
   | { kind: 'USER'; userId: string }
   | { kind: 'GUEST'; phone: string };
 
@@ -25,6 +25,46 @@ export interface ChatbotVoucherValidationResult {
 
 @Injectable()
 export class OrderService {
+  async ensureArchitectProduct(client: any = this.prisma) {
+    let master = await client.product.findFirst({
+      where: {
+        OR: [
+          { id: 'prod-ai-meal-architect' },
+          { slug: 'ai-meal-architect' },
+        ],
+      },
+    });
+
+    if (!master) {
+      const cat = await client.category.findFirst({ orderBy: { displayOrder: 'asc' } });
+      try {
+        master = await client.product.create({
+          data: {
+            id: 'prod-ai-meal-architect',
+            itemCode: 'ARCH-001',
+            name: '[AI Architect™] Đĩa Ăn Độc Bản',
+            slug: 'ai-meal-architect',
+            price: 0,
+            description: 'Đĩa ăn dinh dưỡng tùy chỉnh cá nhân hóa được tạo bởi AI Architect Mixer.',
+            imageUrl: 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=800',
+            available: true,
+            categoryId: cat?.id || 'cat-general',
+          },
+        });
+      } catch (e) {
+        master = await client.product.findFirst({
+          where: {
+            OR: [
+              { id: 'prod-ai-meal-architect' },
+              { slug: 'ai-meal-architect' },
+            ],
+          },
+        });
+      }
+    }
+    return master;
+  }
+
   private readonly logger = new Logger(OrderService.name);
 
   constructor(
@@ -331,13 +371,64 @@ export class OrderService {
     const now = new Date();
 
     for (const cartItem of cartItems) {
-      const product = productMap.get(cartItem.productId);
-      if (!product) throw new BadRequestException(`Product not found: ${cartItem.productId}`);
+      let isCustomArchitect =
+        Boolean(cartItem.isCustomRecipe) ||
+        (typeof cartItem.name === 'string' && (cartItem.name.includes('AI Architect') || cartItem.name.includes('Đĩa Cơm') || cartItem.name.includes('Đĩa Ăn'))) ||
+        cartItem.productId === 'prod-ai-meal-architect' ||
+        cartItem.productId === 'ai-meal-architect' ||
+        String(cartItem.id || '').startsWith('custom-architect-') ||
+        String(cartItem.productId || '').includes('architect');
+
+      let product = productMap.get(cartItem.productId);
+      if (!product && !isCustomArchitect) {
+        try {
+          const ing = await (this.prisma as any).architectIngredient?.findFirst({
+            where: { OR: [{ id: cartItem.productId }, { code: cartItem.productId }] },
+          });
+          if (ing) {
+            isCustomArchitect = true;
+          }
+        } catch {}
+      }
+
+      if (!product && !isCustomArchitect) {
+        const itemName = String(cartItem.name || '').toLowerCase();
+        if (itemName.includes('architect') || itemName.includes('đĩa cơm') || itemName.includes('đĩa ăn') || itemName.includes('tùy chỉnh') || itemName.includes('chuẩn form') || itemName.includes('fit & healthy')) {
+          isCustomArchitect = true;
+        }
+      }
+
+      if (isCustomArchitect) {
+        const customPrice = Math.max(0, Math.round(Number(cartItem.priceAtSale ?? cartItem.price ?? 0)));
+        if (!product) {
+          const archMaster = await this.ensureArchitectProduct(this.prisma);
+          product = {
+            ...archMaster,
+            price: customPrice > 0 ? customPrice : Number(archMaster?.price || 0),
+            name: cartItem.name || archMaster?.name || '[AI Architect™] Đĩa Ăn Độc Bản',
+          };
+          productMap.set(cartItem.productId, product as any);
+        } else {
+          product = {
+            ...product,
+            price: customPrice > 0 ? customPrice : product.price,
+            name: cartItem.name || product.name,
+          };
+          productMap.set(cartItem.productId, product as any);
+        }
+      }
+      if (!product) {
+        throw new BadRequestException(`Món ăn trong giỏ hàng (mã ${cartItem.productId}) hiện không còn kinh doanh tại nhà hàng. Vui lòng kiểm tra lại giỏ hàng nhé!`);
+      }
+        if (!product.available) throw new BadRequestException(`Món "${product.name}" hiện đang tạm hết hàng.`);
 
       let itemOptionsAdjustment = 0;
       for (const optionId of cartItem.optionItemIds || []) {
         const optionItem = optionItemMap.get(optionId);
-        if (!optionItem) throw new BadRequestException(`Option not found: ${optionId}`);
+        if (!optionItem) {
+          if (isCustomArchitect) continue;
+          throw new BadRequestException(`Option not found: ${optionId}`);
+        }
         itemOptionsAdjustment += optionItem.priceAdjustment;
       }
 
@@ -603,20 +694,64 @@ export class OrderService {
       throw new BadRequestException('Mã giảm giá món ăn và mã freeship không được trùng nhau');
     }
 
-    // Bắt buộc phải chọn khung giờ giao hàng
-    if (!operatingSlotId || !deliveryDate) {
-      throw new BadRequestException('Vui lòng chọn khung giờ giao hàng trước khi đặt đơn.');
+    const isTakeaway = orderType === 'TAKE_AWAY' || orderType === 'TAKEAWAY';
+
+    // Xác định ngày nhận hàng chuẩn theo múi giờ Việt Nam
+    let effectiveDeliveryDate = deliveryDate;
+    if (!effectiveDeliveryDate) {
+      effectiveDeliveryDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(new Date());
     }
-    const chosenSlot = await this.prisma.operatingSlot.findUnique({ where: { id: operatingSlotId } });
+
+    let chosenSlot: any = null;
+    if (operatingSlotId) {
+      chosenSlot = await this.prisma.operatingSlot.findUnique({ where: { id: operatingSlotId } });
+    }
+
+    // Auto-fallback thông minh nếu slot truyền lên không còn tồn tại hoặc chưa chọn kịp
     if (!chosenSlot || !chosenSlot.isActive) {
-      throw new BadRequestException('Khung giờ đã chọn không tồn tại hoặc đã bị đóng.');
+      const targetBranchId = branchId || (await this.prisma.branch.findFirst({ where: { onlineOrderingEnabled: true } }))?.id;
+      if (targetBranchId) {
+        chosenSlot = await this.prisma.operatingSlot.findFirst({
+          where: {
+            branchId: targetBranchId,
+            orderType: isTakeaway ? SlotOrderType.TAKEAWAY : SlotOrderType.DELIVERY,
+            isActive: true,
+          },
+          orderBy: { startTime: 'asc' },
+        });
+        if (!chosenSlot) {
+          chosenSlot = await this.prisma.operatingSlot.findFirst({
+            where: { branchId: targetBranchId, isActive: true },
+            orderBy: { startTime: 'asc' },
+          });
+        }
+      }
     }
 
     // 1. Fetch User and Address securely
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
-    if (!user) throw new BadRequestException('User not found');
+    let user = await this.prisma.user.findUnique({ where: { id: userId }, include: { membershipTier: true } });
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: { email: 'guest@avorafnb.com' },
+        include: { membershipTier: true },
+      });
+      if (!user) {
+        user = await this.prisma.user.create({
+          data: {
+            email: 'guest@avorafnb.com',
+            fullName: 'Khách Hàng',
+            role: 'USER',
+          },
+          include: { membershipTier: true },
+        });
+      }
+    }
 
-    const isTakeaway = orderType === 'TAKE_AWAY' || orderType === 'TAKEAWAY';
     let address: any = null;
     if (addressId) {
       address = await this.prisma.address.findFirst({ where: { id: addressId, userId } });
@@ -674,31 +809,75 @@ export class OrderService {
             throw new BadRequestException(`Combo "${combo.name}" đã hết số lượng phục vụ`);
           }
 
+          if (!combo.items || combo.items.length === 0) {
+            throw new BadRequestException(`Combo "${combo.name}" chưa được cấu hình món thành phần`);
+          }
+
+          const comboQty = Math.max(1, Math.floor(Number(cartItem.quantity || 1)));
           const comboPrice = Math.round(combo.price);
-          subTotal += comboPrice * cartItem.quantity;
+          const comboLineTotal = comboPrice * comboQty;
+          subTotal += comboLineTotal;
 
-          const comboItemsDescription = combo.items.map(i => `${i.quantity}x ${i.product.name}`).join(', ');
-          const firstProductId = combo.items[0]?.productId || cartItem.productId;
-
-          orderItemsData.push({
-            productId: firstProductId,
-            quantity: cartItem.quantity,
-            priceAtSale: comboPrice,
-            originalPriceAtSale: combo.originalPrice || comboPrice,
-            optionsTextSnapshot: `[Combo: ${combo.name}] Gồm: ${comboItemsDescription}${cartItem.note ? ` | Ghi chú: ${cartItem.note}` : ''}`,
-            isFlashSaleItem: false,
-            flashSaleId: null,
-          });
+          const expandedItems = this.expandComboToOrderItems(combo, comboQty, comboLineTotal, cartItem.note, productMap);
+          orderItemsData.push(...expandedItems);
 
           await tx.combo.update({
             where: { id: combo.id },
-            data: { usedCount: { increment: cartItem.quantity } }
+            data: { usedCount: { increment: comboQty } }
           });
           continue;
         }
 
-        const product = productMap.get(cartItem.productId);
-        if (!product) throw new BadRequestException(`Product not found: ${cartItem.productId}`);
+        let isCustomArchitect =
+          Boolean(cartItem.isCustomRecipe) ||
+          (typeof cartItem.name === 'string' && (cartItem.name.includes('AI Architect') || cartItem.name.includes('Đĩa Cơm') || cartItem.name.includes('Đĩa Ăn'))) ||
+          cartItem.productId === 'prod-ai-meal-architect' ||
+          cartItem.productId === 'ai-meal-architect' ||
+          String(cartItem.id || '').startsWith('custom-architect-') ||
+          String(cartItem.productId || '').includes('architect');
+
+        let product = productMap.get(cartItem.productId);
+        if (!product && !isCustomArchitect) {
+          try {
+            const ing = await (tx as any).architectIngredient?.findFirst({
+              where: { OR: [{ id: cartItem.productId }, { code: cartItem.productId }] },
+            });
+            if (ing) {
+              isCustomArchitect = true;
+            }
+          } catch {}
+        }
+
+        if (!product && !isCustomArchitect) {
+          const itemName = String(cartItem.name || '').toLowerCase();
+          if (itemName.includes('architect') || itemName.includes('đĩa cơm') || itemName.includes('đĩa ăn') || itemName.includes('tùy chỉnh') || itemName.includes('chuẩn form') || itemName.includes('fit & healthy')) {
+            isCustomArchitect = true;
+          }
+        }
+
+        if (isCustomArchitect) {
+          const customPrice = Math.max(0, Math.round(Number(cartItem.priceAtSale ?? cartItem.price ?? 0)));
+          if (!product) {
+            const archMaster = await this.ensureArchitectProduct(tx);
+            product = {
+              ...(archMaster as any),
+              price: customPrice > 0 ? customPrice : Number(archMaster?.price || 0),
+              name: cartItem.name || archMaster?.name || '[AI Architect™] Đĩa Ăn Độc Bản',
+            };
+            productMap.set(cartItem.productId, product as any);
+          } else {
+            product = {
+              ...product,
+              price: customPrice > 0 ? customPrice : product.price,
+              name: cartItem.name || product.name,
+            };
+            productMap.set(cartItem.productId, product as any);
+          }
+        }
+
+        if (!product) {
+        throw new BadRequestException(`Món ăn trong giỏ hàng (mã ${cartItem.productId}) hiện không còn kinh doanh tại nhà hàng. Vui lòng kiểm tra lại giỏ hàng nhé!`);
+      }
 
         let itemOptionsAdjustment = 0;
         const itemOptionsData: any[] = [];
@@ -706,7 +885,10 @@ export class OrderService {
 
         for (const optionId of cartItem.optionItemIds || []) {
           const optionItem = optionItemMap.get(optionId);
-          if (!optionItem) throw new BadRequestException(`Option not found: ${optionId}`);
+          if (!optionItem) {
+          if (isCustomArchitect) continue;
+          throw new BadRequestException(`Option not found: ${optionId}`);
+        }
 
           itemOptionsAdjustment += optionItem.priceAdjustment;
           itemOptionsData.push({
@@ -852,13 +1034,16 @@ export class OrderService {
       const branch = await tx.branch.findUnique({ where: { id: orderBranchId } });
       const branchCode = branch?.branchCode || 'AVO1';
 
-      const branchLat = branch?.latitude ?? 21.028511;
-      const branchLng = branch?.longitude ?? 105.854444;
+      const branchLat = branch?.latitude;
+      const branchLng = branch?.longitude;
+      if (typeof branchLat !== 'number' || typeof branchLng !== 'number' || isNaN(branchLat) || isNaN(branchLng)) {
+        throw new BadRequestException(`Chi nhánh "${branch?.name || orderBranchId}" chưa được cấu hình tọa độ định vị hợp lệ.`);
+      }
+
       let destLat = address?.latitude;
       let destLng = address?.longitude;
-      if (destLat === null || destLat === undefined || destLng === null || destLng === undefined) {
-        destLat = branchLat + 0.025;
-        destLng = branchLng + 0.025;
+      if (!isTakeaway && (destLat === null || destLat === undefined || destLng === null || destLng === undefined || isNaN(destLat) || isNaN(destLng))) {
+        throw new BadRequestException('Địa chỉ nhận hàng chưa có tọa độ ghim trên bản đồ. Vui lòng chọn địa chỉ đã ghim vị trí hoặc cập nhật lại địa chỉ.');
       }
 
       let route: any = null;
@@ -1069,8 +1254,8 @@ export class OrderService {
       }
 
       let normalizedPaymentMethod = paymentMethod.toUpperCase().trim();
-      if (normalizedPaymentMethod === 'TRANSFER' || normalizedPaymentMethod === 'SEPAY' || normalizedPaymentMethod === 'CHUYEN_KHOAN') {
-        normalizedPaymentMethod = 'SEPAY_QR';
+      if (normalizedPaymentMethod === 'CHUYEN_KHOAN') {
+        normalizedPaymentMethod = 'TRANSFER';
       }
 
       const pMethod = await tx.paymentMethod.findFirst({
@@ -1156,9 +1341,9 @@ export class OrderService {
           shippingVoucherCodeSnapshot: appliedShippingVoucher?.code || null,
           isVoucherRefunded: false,
           pointsUsed: pointsUsedInt,
-          operatingSlotId: operatingSlotId || null,
-          deliveryDate: deliveryDate ? new Date(deliveryDate) : null,
-          deliverySlotSnapshot: deliverySlotSnapshot || null,
+          operatingSlotId: chosenSlot?.id || operatingSlotId || null,
+          deliveryDate: effectiveDeliveryDate ? new Date(effectiveDeliveryDate) : (deliveryDate ? new Date(deliveryDate) : null),
+          deliverySlotSnapshot: deliverySlotSnapshot || (chosenSlot ? `${chosenSlot.startTime} - ${chosenSlot.endTime}` : null),
           isInvoiceRequested: vatInfo?.isInvoiceRequested || false,
           invoiceCompanyName: vatInfo?.invoiceCompanyName,
           invoiceTaxCode: vatInfo?.invoiceTaxCode,
@@ -1374,11 +1559,19 @@ export class OrderService {
   }
 
   async checkOrderStatus(orderCode: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { orderCode },
+    const cleanCode = (orderCode || '').trim();
+    const order = await this.prisma.order.findFirst({
+      where: {
+        OR: [
+          { orderCode: cleanCode },
+          { temporaryOrderCode: cleanCode },
+          { id: cleanCode },
+        ],
+      },
       select: {
         id: true,
         orderCode: true,
+        temporaryOrderCode: true,
         status: true,
         paymentStatus: true,
         transactionId: true,
@@ -1393,7 +1586,9 @@ export class OrderService {
     const isPaid = order.paymentStatus === 'PAID' || order.status === OrderStatus.COMPLETED;
 
     return {
-      orderCode: order.orderCode,
+      id: order.id,
+      orderCode: order.orderCode || order.temporaryOrderCode,
+      temporaryOrderCode: order.temporaryOrderCode,
       status: isPaid ? 'PAID' : order.status,
       rawStatus: order.status,
       paymentStatus: order.paymentStatus,
@@ -1721,5 +1916,89 @@ export class OrderService {
     }
 
     return txResult;
+  }
+
+  /**
+   * Strategy A (Phase 3.3): Expand promotional Combo into component OrderItems with exact proportional
+   * price allocation (zero rounding drift) so kitchen routing, inventory deduction, and Food Cost are exact.
+   */
+  private expandComboToOrderItems(
+    combo: { id: string; name: string; items: Array<{ productId: string; quantity: number; product: any }> },
+    comboQty: number,
+    comboLineTotal: number,
+    note: string | undefined,
+    productMap: Map<string, any>,
+  ) {
+    const components = combo.items.map((ci) => {
+      const totalQty = Math.max(1, Math.floor(Number(ci.quantity || 1))) * comboQty;
+      const unitRetail = Math.max(0, Math.round(Number(ci.product?.price || 0)));
+      if (ci.product) {
+        productMap.set(ci.productId, ci.product);
+      }
+      return { ci, totalQty, unitRetail, retailLine: unitRetail * totalQty };
+    });
+
+    const totalRetail = components.reduce((s, c) => s + c.retailLine, 0);
+    let remaining = comboLineTotal;
+    const result: any[] = [];
+
+    for (let idx = 0; idx < components.length; idx++) {
+      const comp = components[idx];
+      const isLast = idx === components.length - 1;
+      const allocatedLine = isLast
+        ? remaining
+        : totalRetail > 0
+        ? Math.round((comboLineTotal * comp.retailLine) / totalRetail)
+        : Math.round(comboLineTotal / components.length);
+      remaining -= allocatedLine;
+
+      const baseUnit = Math.floor(allocatedLine / comp.totalQty);
+      const unitRem = allocatedLine - baseUnit * comp.totalQty;
+      const optionLabel = `[Combo: ${combo.name}] (${comp.ci.quantity}x/combo)${note ? ` | Ghi chú: ${note}` : ''}`;
+
+      if (unitRem === 0 || comp.totalQty === 1) {
+        const unitPrice = comp.totalQty === 1 ? allocatedLine : baseUnit;
+        result.push({
+          productId: comp.ci.productId,
+          quantity: comp.totalQty,
+          priceAtSale: unitPrice,
+          originalPriceAtSale: comp.unitRetail || unitPrice,
+          discountAmount: Math.max(0, (comp.unitRetail - unitPrice) * comp.totalQty),
+          discountReason: comp.unitRetail > unitPrice ? `Combo ${combo.name}` : null,
+          promotionSource: `COMBO:${combo.id}`,
+          optionsTextSnapshot: optionLabel,
+          isFlashSaleItem: false,
+          flashSaleId: null,
+        });
+      } else {
+        result.push({
+          productId: comp.ci.productId,
+          quantity: comp.totalQty - 1,
+          priceAtSale: baseUnit,
+          originalPriceAtSale: comp.unitRetail || baseUnit,
+          discountAmount: Math.max(0, (comp.unitRetail - baseUnit) * (comp.totalQty - 1)),
+          discountReason: comp.unitRetail > baseUnit ? `Combo ${combo.name}` : null,
+          promotionSource: `COMBO:${combo.id}`,
+          optionsTextSnapshot: optionLabel,
+          isFlashSaleItem: false,
+          flashSaleId: null,
+        });
+        const lastUnitPrice = baseUnit + unitRem;
+        result.push({
+          productId: comp.ci.productId,
+          quantity: 1,
+          priceAtSale: lastUnitPrice,
+          originalPriceAtSale: comp.unitRetail || lastUnitPrice,
+          discountAmount: Math.max(0, comp.unitRetail - lastUnitPrice),
+          discountReason: comp.unitRetail > lastUnitPrice ? `Combo ${combo.name}` : null,
+          promotionSource: `COMBO:${combo.id}`,
+          optionsTextSnapshot: optionLabel,
+          isFlashSaleItem: false,
+          flashSaleId: null,
+        });
+      }
+    }
+
+    return result;
   }
 }

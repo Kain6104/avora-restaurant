@@ -133,6 +133,7 @@ fun QrScannerScreen(
                 }
 
                 val deviceName = "${Build.MANUFACTURER} ${Build.MODEL}"
+                val appVersionName = vn.avora.bankconnect.core.update.OtaUpdateManager.getInstalledAppInfo(context).versionName
 
                 // 3. Gửi yêu cầu ghép nối lên VPS
                 val api = NetworkClient.getApiService(context)
@@ -141,7 +142,7 @@ fun QrScannerScreen(
                         pairingCode = pairingCode,
                         deviceId = deviceId,
                         deviceName = deviceName,
-                        appVersion = "1.0.0",
+                        appVersion = appVersionName,
                         publicKeyPem = publicKeyPem
                     )
                 )
@@ -149,9 +150,11 @@ fun QrScannerScreen(
                 if (response.isSuccessful && response.body()?.success == true) {
                     val body = response.body()!!
                     db.configDao().set(ConfigEntity("is_paired", "true"))
+                    db.configDao().set(ConfigEntity("revoked_reason", ""))
                     db.configDao().set(ConfigEntity("device_id", body.deviceId))
                     db.configDao().set(ConfigEntity("paired_at", body.pairedAt))
                     db.configDao().set(ConfigEntity("device_name", deviceName))
+                    vn.avora.bankconnect.core.service.BankGatewaySocketManager.initialize(context)
 
                     withContext(Dispatchers.Main) {
                         isPairing = false

@@ -22,6 +22,7 @@ namespace AvoraPosNative.Dialogs
         public NumericKeypadDialog(string title = "Nhập Số Tiền", decimal initialValue = 0, decimal min = 0, decimal max = 999999999)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             txtTitle.Text = title;
             _currentDigits = initialValue > 0 ? ((long)initialValue).ToString() : "0";
             UpdateDisplay();

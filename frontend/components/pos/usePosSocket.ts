@@ -16,6 +16,15 @@ interface UsePosSocketOptions {
   onKitchenTicketNew?: (ticket: any) => void;
   onKitchenItemUpdated?: (item: any) => void;
   onPaymentCompleted?: (data: { order: any; payment: any }) => void;
+  onOrderPaid?: (data: {
+    orderId: string;
+    orderCode?: string;
+    temporaryOrderCode?: string;
+    status: string;
+    transactionCode?: string;
+    amount?: number;
+    tableId?: string;
+  }) => void;
   onShiftUpdated?: (shift: any) => void;
   onProductAvailabilityChanged?: (data: { productId: string; available: boolean }) => void;
   onSyncSnapshot?: () => void;
@@ -23,6 +32,8 @@ interface UsePosSocketOptions {
   onPrintDispatch?: (payload: any) => void;
   onAccessRevoked?: (data: { userId?: string; reason?: string }) => void;
   onForceLogout?: (data: { userId?: string; reason?: string }) => void;
+  onBankDeviceHealthUpdate?: (data: any) => void;
+  onOverpaidDuplicateAlert?: (data: any) => void;
 }
 
 export function usePosSocket(options: UsePosSocketOptions) {
@@ -36,6 +47,7 @@ export function usePosSocket(options: UsePosSocketOptions) {
     onKitchenTicketNew,
     onKitchenItemUpdated,
     onPaymentCompleted,
+    onOrderPaid,
     onShiftUpdated,
     onProductAvailabilityChanged,
     onSyncSnapshot,
@@ -43,6 +55,8 @@ export function usePosSocket(options: UsePosSocketOptions) {
     onPrintDispatch,
     onAccessRevoked,
     onForceLogout,
+    onBankDeviceHealthUpdate,
+    onOverpaidDuplicateAlert,
   } = options;
 
   const socketRef = useRef<Socket | null>(null);
@@ -151,6 +165,14 @@ export function usePosSocket(options: UsePosSocketOptions) {
       onPaymentCompleted?.(envelope.payload);
     });
 
+    socket.on('payment_completed', (data: any) => {
+      onPaymentCompleted?.(data);
+    });
+
+    socket.on('pos_order_paid', (data: any) => {
+      onOrderPaid?.(data);
+    });
+
     socket.on('SHIFT_OPENED', (envelope: PosEventEnvelope) => {
       onShiftUpdated?.(envelope.payload);
     });
@@ -169,6 +191,18 @@ export function usePosSocket(options: UsePosSocketOptions) {
 
     socket.on('FORCE_LOGOUT', (payload: any) => {
       onForceLogout?.(payload);
+    });
+
+    socket.on('BANK_DEVICE_HEALTH_UPDATE', (payload: any) => {
+      onBankDeviceHealthUpdate?.(payload);
+    });
+
+    socket.on('bank.device.heartbeat', (payload: any) => {
+      onBankDeviceHealthUpdate?.(payload);
+    });
+
+    socket.on('OVERPAID_DUPLICATE_ALERT', (payload: any) => {
+      onOverpaidDuplicateAlert?.(payload);
     });
 
     return () => {

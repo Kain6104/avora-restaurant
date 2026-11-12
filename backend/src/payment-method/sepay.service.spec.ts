@@ -1,3 +1,4 @@
+import { NotificationGateway } from '../notification/notification.gateway';
 import { Test, TestingModule } from '@nestjs/testing';
 import { SepayService } from './sepay.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -34,6 +35,7 @@ describe('SepayService', () => {
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
+        { provide: NotificationGateway, useValue: { sendToUser: jest.fn(), sendToRole: jest.fn(), sendToAll: jest.fn() } },
         SepayService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: NotificationService, useValue: mockNotificationService },

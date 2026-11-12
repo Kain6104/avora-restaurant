@@ -71,6 +71,20 @@ namespace AvoraPosNative.Services
             }
         }
 
+        public static async Task OpenCashDrawerAsync(string? printerTarget = null)
+        {
+            string target = !string.IsNullOrWhiteSpace(printerTarget) ? printerTarget : GetDefaultPrinter();
+            if (string.IsNullOrWhiteSpace(target)) return;
+
+            var connType = target.StartsWith("tcp://", StringComparison.OrdinalIgnoreCase)
+                ? PrinterConnectionType.TCP_LAN_RAW
+                : PrinterConnectionType.USB_WINDOWS_SPOOLER;
+
+            // Standard ESC/POS Cash Drawer Pulse (ESC p 0 25 250)
+            byte[] pulseBytes = new byte[] { 0x1B, 0x70, 0x00, 0x19, 0xFA };
+            await PersistentPrintQueue.Instance.EnqueuePrintJobAsync(target, target, connType, pulseBytes, "AVORA CASH DRAWER");
+        }
+
         private static string GetDefaultPrinter()
         {
             var printers = WinSpoolNative.GetInstalledPrinters();

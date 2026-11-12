@@ -11,6 +11,7 @@ import { useCart } from '../../context/CartContext';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import CategoryAvatar from '@/components/category/CategoryAvatar';
 import { getAuthHeaders, getApiBaseUrl, getAuthToken } from '@/lib/auth';
+import { getProductSoldCount } from '@/lib/utils/product-utils';
 
 interface HomeClientProps {
   banners: any[];
@@ -595,7 +596,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     {/* Gradient overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                     <div className="absolute top-2 left-2 flex flex-col gap-1 z-10">
-                      {item.badge && <span className="bg-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm uppercase">{item.badge}</span>}
+                      {item.badge && isNaN(Number(item.badge)) && <span className="bg-red-600 text-white text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm uppercase">{item.badge}</span>}
                       {item.flashSalePrice ? (
                         <span className="bg-yellow-400 text-yellow-900 text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
                           -{Math.round((1 - item.flashSalePrice / item.price) * 100)}%
@@ -619,14 +620,14 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     <div className="flex items-center gap-1.5 mb-2 text-[10px] text-slate-500 flex-wrap">
                       <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                       <span className="text-slate-300">•</span>
-                      <span>{(item.name.length * 5) % 50 + 10} đã bán</span>
+                      <span>Đã bán {getProductSoldCount(item)}</span>
                     </div>
-                    <div className="mt-auto flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-red-600 font-black text-sm md:text-base leading-none">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
-                        {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
+                    <div className="mt-auto flex items-center justify-between gap-1.5 sm:gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-red-600 font-black text-xs sm:text-sm md:text-base leading-none truncate">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                        {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[9.5px] sm:text-[10px] line-through mt-0.5 truncate">{item.price.toLocaleString('vi-VN')}đ</p>}
                       </div>
-                      <AddToCartButton item={item} className="w-8 h-8 md:w-9 md:h-9 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
+                      <AddToCartButton item={item} className="w-7 h-7 sm:w-8 sm:h-8 md:w-9 md:h-9 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
                     </div>
                   </div>
                 </div>
@@ -724,7 +725,7 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
             <div key={item.id} className="bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 hover:border-red-100 transition-all duration-300 border border-slate-100/80 group flex flex-col">
               <Link href={`/${item.category?.slug || item.categoryId}/${item.slug}`} className="relative aspect-square overflow-hidden bg-[#FAF9F6] block flex items-center justify-center p-2">
                 <img src={item.imageUrl} alt={item.name} className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-500" />
-                {item.badge && <span className="absolute top-2 left-2 bg-green-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase z-10">{item.badge}</span>}
+                {item.badge && isNaN(Number(item.badge)) && <span className="absolute top-2 left-2 bg-green-600 text-white text-[9px] font-bold px-2 py-0.5 rounded-full uppercase z-10">{item.badge}</span>}
                 <button className="absolute top-2 right-2 w-7 h-7 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 z-10">
                   <Heart className="w-3.5 h-3.5 text-slate-400 hover:text-red-500" />
                 </button>
@@ -736,12 +737,12 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 <div className="mb-2">
                   <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
                 </div>
-                <div className="mt-auto flex items-center justify-between gap-2">
-                  <div>
-                    <p className="text-red-600 font-black text-sm md:text-base leading-none">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
-                    {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
+                <div className="mt-auto flex items-center justify-between gap-1.5 sm:gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-red-600 font-black text-xs sm:text-sm md:text-base leading-none truncate">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                    {(item.flashSalePrice ? true : !!item.oldPrice) && <p className="text-slate-400 text-[9.5px] sm:text-[10px] line-through mt-0.5 truncate">{item.price.toLocaleString('vi-VN')}đ</p>}
                   </div>
-                  <AddToCartButton item={item} className="w-8 h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
+                  <AddToCartButton item={item} className="w-7 h-7 sm:w-8 sm:h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0 hover:shadow-md hover:shadow-red-600/30" />
                 </div>
               </div>
             </div>
@@ -779,12 +780,12 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                   <div className="flex items-center text-[10px] text-yellow-400 mb-2 font-medium gap-0.5">
                     <Star className="w-3 h-3 fill-yellow-400" /> <span className="text-slate-600">4.{(item.name.length % 5) + 5}</span>
                   </div>
-                  <div className="mt-auto flex items-center justify-between gap-1">
-                    <div>
-                      <p className="text-red-600 font-black text-sm">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
-                      {item.flashSalePrice && <p className="text-slate-400 text-[10px] line-through mt-0.5">{item.price.toLocaleString('vi-VN')}đ</p>}
+                  <div className="mt-auto flex items-center justify-between gap-1.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-red-600 font-black text-xs sm:text-sm leading-none truncate">{(item.flashSalePrice || item.price).toLocaleString('vi-VN')}đ</p>
+                      {item.flashSalePrice && <p className="text-slate-400 text-[9.5px] line-through mt-0.5 truncate">{item.price.toLocaleString('vi-VN')}đ</p>}
                     </div>
-                    <AddToCartButton item={item} className="w-7 h-7 md:w-8 md:h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0" />
+                    <AddToCartButton item={item} className="w-6 h-6 sm:w-7 sm:h-7 md:w-8 md:h-8 bg-red-50 hover:bg-red-600 border border-red-200 hover:border-red-600 text-red-600 hover:text-white rounded-full flex items-center justify-center transition-all duration-300 shadow-sm shrink-0" />
                   </div>
                 </div>
               </div>

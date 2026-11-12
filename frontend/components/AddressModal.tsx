@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   LocateFixed,
@@ -12,10 +13,10 @@ import {
   Briefcase,
   Navigation,
   Search,
-  Check,
   Sparkles,
   Loader2,
   Compass,
+  AlertCircle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
@@ -37,7 +38,7 @@ export interface Address {
 interface AddressModalProps {
   address?: Address | null;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (savedAddress?: Address) => void;
 }
 
 type AddressTag = 'home' | 'work' | 'other';
@@ -46,7 +47,10 @@ type AddressTag = 'home' | 'work' | 'other';
 function cleanStreetDetailValue(val?: string | null): string {
   if (!val) return '';
   const cleaned = val.replace(/^\[(Nhà riêng|Văn phòng|Khác)\]\s*/i, '').trim();
-  if (cleaned.toLowerCase() === 'vị trí hiện tại' || cleaned.toLowerCase().startsWith('vị trí hiện tại')) {
+  if (
+    cleaned.toLowerCase() === 'vị trí hiện tại' ||
+    cleaned.toLowerCase().startsWith('vị trí hiện tại')
+  ) {
     return '';
   }
   return cleaned;
@@ -61,18 +65,28 @@ function cleanVietnameseWard(rawWard?: string, rawDistrict?: string, isCommune?:
   if (!w) return '';
 
   // Remove duplicate parts e.g. "An Nhơn, An Nhơn" -> "An Nhơn"
-  const parts = w.split(',').map(s => s.trim()).filter(Boolean);
+  const parts = w.split(',').map((s) => s.trim()).filter(Boolean);
   const uniqueParts: string[] = [];
   for (const part of parts) {
     const cleanPart = part.replace(/^(phường|xã|thị trấn|p\.|x\.|tt\.)\s+/i, '').trim();
-    if (!uniqueParts.some(u => u.toLowerCase() === cleanPart.toLowerCase() || u.toLowerCase() === part.toLowerCase())) {
+    if (
+      !uniqueParts.some(
+        (u) =>
+          u.toLowerCase() === cleanPart.toLowerCase() ||
+          u.toLowerCase() === part.toLowerCase()
+      )
+    ) {
       uniqueParts.push(part);
     }
   }
   w = uniqueParts[0] || w;
 
   const lower = w.toLowerCase();
-  if (lower.startsWith('phường ') || lower.startsWith('xã ') || lower.startsWith('thị trấn ')) {
+  if (
+    lower.startsWith('phường ') ||
+    lower.startsWith('xã ') ||
+    lower.startsWith('thị trấn ')
+  ) {
     return w.charAt(0).toUpperCase() + w.slice(1);
   }
   if (lower.startsWith('p. ') || lower.startsWith('p.')) {
@@ -98,11 +112,18 @@ function cleanVietnameseWard(rawWard?: string, rawDistrict?: string, isCommune?:
 }
 
 export default function AddressModal({ address, onClose, onSuccess }: AddressModalProps) {
+  const [mounted, setMounted] = useState(false);
+
   // Infer initial tag from streetDetail or default to 'home'
   const inferInitialTag = (): AddressTag => {
     if (!address?.streetDetail) return 'home';
     const lower = address.streetDetail.toLowerCase();
-    if (lower.startsWith('[văn phòng]') || lower.startsWith('[công ty]') || lower.includes('văn phòng') || lower.includes('công ty')) {
+    if (
+      lower.startsWith('[văn phòng]') ||
+      lower.startsWith('[công ty]') ||
+      lower.includes('văn phòng') ||
+      lower.includes('công ty')
+    ) {
       return 'work';
     }
     if (lower.startsWith('[nhà riêng]') || lower.startsWith('[nhà]')) {
@@ -115,23 +136,31 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
   const [formData, setFormData] = useState({
     recipientName: address?.recipientName || '',
     phone: address?.phone || '',
-    province: address?.province || '',
+    province: address?.province || 'Thành phố Hồ Chí Minh',
     ward: address?.ward ? cleanVietnameseWard(address.ward) : '',
     streetDetail: cleanStreetDetailValue(address?.streetDetail),
     isDefault: address ? address.isDefault : false,
-    latitude: address?.latitude || 10.762622,
-    longitude: address?.longitude || 106.660172,
+    latitude: address?.latitude ?? 10.762622,
+    longitude: address?.longitude ?? 106.660172,
   });
 
   const [loading, setLoading] = useState(false);
   const [locating, setLocating] = useState(false);
-  
-  // Search place on map
+
+  // Search places via Photon (/api/geocode)
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Array<{ display_name: string; lat: string; lon: string }>>([]);
+  const [searchResults, setSearchResults] = useState<
+    Array<{ display_name: string; lat: string; lon: string; provider?: string }>
+  >([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [showSearchResults, setShowSearchResults] = useState(false);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Auto-fill recipient name & phone from current user if creating new address
   useEffect(() => {
@@ -140,7 +169,7 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
         const userStr = localStorage.getItem('user');
         if (userStr) {
           const u = JSON.parse(userStr);
-          setFormData(prev => ({
+          setFormData((prev) => ({
             ...prev,
             recipientName: prev.recipientName || u.fullName || u.name || '',
             phone: prev.phone || u.phone || '',
@@ -150,39 +179,65 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     }
   }, [address]);
 
-  // Handle location search via OpenStreetMap Nominatim
+  // Clean up search timeout and abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+      if (searchAbortRef.current) searchAbortRef.current.abort();
+    };
+  }, []);
+
+  // Search places with Photon API via /api/geocode (debounced & cancellable)
   const handleSearchPlace = (query: string) => {
     setSearchQuery(query);
+    setSearchError(null);
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
 
     if (!query || query.trim().length < 2) {
       setSearchResults([]);
       setShowSearchResults(false);
+      setIsSearching(false);
       return;
     }
 
     setIsSearching(true);
     searchTimeoutRef.current = setTimeout(async () => {
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+      }
+      searchAbortRef.current = new AbortController();
+
       try {
         const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-            query.trim()
-          )}&countrycodes=vn&limit=5&accept-language=vi`
+          `/api/geocode?q=${encodeURIComponent(query.trim())}`,
+          { signal: searchAbortRef.current.signal }
         );
         if (res.ok) {
           const data = await res.json();
-          setSearchResults(data || []);
+          setSearchResults(Array.isArray(data) ? data : []);
           setShowSearchResults(true);
+          if (Array.isArray(data) && data.length === 0) {
+            setSearchError('Không tìm thấy địa chỉ phù hợp. Bạn có thể nhập địa chỉ chi tiết và kéo ghim trên bản đồ.');
+          }
+        } else {
+          setSearchError('Dịch vụ tìm kiếm tạm thời không phản hồi. Vui lòng nhập địa chỉ bên dưới.');
         }
-      } catch (err) {
-        console.error('Search place error:', err);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Search place error:', err);
+          setSearchError('Lỗi kết nối khi tìm địa chỉ.');
+        }
       } finally {
         setIsSearching(false);
       }
-    }, 450);
+    }, 380);
   };
 
-  const handleSelectSearchResult = (result: { display_name: string; lat: string; lon: string }) => {
+  const handleSelectSearchResult = (result: {
+    display_name: string;
+    lat: string;
+    lon: string;
+  }) => {
     const lat = parseFloat(result.lat);
     const lng = parseFloat(result.lon);
     setShowSearchResults(false);
@@ -190,79 +245,32 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     autoFillAddressFromCoords(lat, lng);
   };
 
-  const autoFillAddressFromCoords = async (latitude: number, longitude: number, toastId?: string) => {
-    setFormData(prev => ({ ...prev, latitude, longitude }));
+  const autoFillAddressFromCoords = async (
+    latitude: number,
+    longitude: number,
+    toastId?: string
+  ) => {
+    setFormData((prev) => ({ ...prev, latitude, longitude }));
 
-    // 1. Try BigDataCloud Reverse Geocoding
     try {
-      const bdcRes = await fetch(
-        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=vi`
-      );
-      if (bdcRes.ok) {
-        const bdcData = await bdcRes.json();
-        const province = bdcData.principalSubdivision || bdcData.countryName || '';
-        let ward = '';
-        let isCommune = false;
-        let streetDetail = '';
-
-        if (Array.isArray(bdcData.localityInfo?.administrative)) {
-          const adminList = bdcData.localityInfo.administrative;
-
-          const wardObj = adminList.find((a: any) =>
-            a.adminLevel === 8 ||
-            a.description?.toLowerCase().includes('phường') ||
-            a.description?.toLowerCase().includes('xã') ||
-            a.description?.toLowerCase().includes('thị trấn') ||
-            a.name?.toLowerCase().startsWith('phường') ||
-            a.name?.toLowerCase().startsWith('xã')
-          );
-          if (wardObj) {
-            ward = wardObj.name;
-            isCommune = wardObj.description?.toLowerCase().includes('xã') || wardObj.name?.toLowerCase().startsWith('xã');
-          }
-
-          const streetObj = adminList.find((a: any) =>
-            a.adminLevel >= 9 ||
-            a.description?.toLowerCase().includes('đường') ||
-            a.name?.toLowerCase().startsWith('đường')
-          );
-          if (streetObj) streetDetail = streetObj.name;
-        }
-
-        if (!streetDetail && bdcData.localityInfo?.informative) {
-          const streetObj = bdcData.localityInfo.informative.find((a: any) =>
-            a.description?.toLowerCase().includes('đường') ||
-            a.name?.toLowerCase().startsWith('đường')
-          );
-          if (streetObj) streetDetail = streetObj.name;
-        }
-
-        const finalWard = cleanVietnameseWard(ward || bdcData.locality, undefined, isCommune);
-        const cleanStreet = cleanStreetDetailValue(streetDetail);
-
-        if (province || finalWard) {
-          setFormData(prev => ({
-            ...prev,
-            province: province || prev.province,
-            ward: finalWard || prev.ward,
-            streetDetail: cleanStreet || cleanStreetDetailValue(prev.streetDetail),
-          }));
-          if (toastId) toast.success('Đã xác định vị trí thành công!', { id: toastId });
-          return;
-        }
-      }
-    } catch (e) {}
-
-    // 2. Try OpenStreetMap Nominatim
-    try {
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=vi&addressdetails=1`
-      );
+      const res = await fetch(`/api/geocode?lat=${latitude}&lon=${longitude}`);
       if (res.ok) {
         const data = await res.json();
         const addr = data.address || {};
-        const province = addr.province || addr.city || addr.state || '';
-        const rawWard = addr.ward || addr.quarter || addr.suburb || addr.neighbourhood || addr.village || '';
+        const province =
+          addr.province ||
+          addr.city ||
+          addr.state ||
+          addr.principalSubdivision ||
+          'Thành phố Hồ Chí Minh';
+        const rawWard =
+          addr.ward ||
+          addr.quarter ||
+          addr.suburb ||
+          addr.neighbourhood ||
+          addr.village ||
+          addr.locality ||
+          '';
         const isCommune = !!(addr.village || (rawWard && rawWard.toLowerCase().includes('xã')));
         const finalWard = cleanVietnameseWard(rawWard, addr.district, isCommune);
 
@@ -273,23 +281,30 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
         let streetDetail = [houseNumber, road].filter(Boolean).join(' ') || amenity || '';
         streetDetail = cleanStreetDetailValue(streetDetail);
 
-        setFormData(prev => ({
+        setFormData((prev) => ({
           ...prev,
           province: province || prev.province,
           ward: finalWard || prev.ward,
           streetDetail: streetDetail || cleanStreetDetailValue(prev.streetDetail),
         }));
-        if (toastId) toast.success('Đã xác định vị trí thành công!', { id: toastId });
+
+        if (toastId) {
+          toast.success('Đã xác định vị trí và điền địa chỉ!', { id: toastId });
+        }
         return;
       }
-    } catch (e) {}
+    } catch (e) {
+      console.warn('Reverse geocoding error:', e);
+    }
 
-    if (toastId) toast.success('Đã cập nhật tọa độ trên bản đồ', { id: toastId });
+    if (toastId) {
+      toast.success('Đã cập nhật tọa độ trên bản đồ!', { id: toastId });
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleMapChange = (lat: number, lng: number) => {
@@ -297,7 +312,7 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
   };
 
   const handleToggleDefault = () => {
-    setFormData(prev => ({ ...prev, isDefault: !prev.isDefault }));
+    setFormData((prev) => ({ ...prev, isDefault: !prev.isDefault }));
   };
 
   // Quick fill user profile info
@@ -307,7 +322,7 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
       if (userStr) {
         const u = JSON.parse(userStr);
         if (u.fullName || u.phone) {
-          setFormData(prev => ({
+          setFormData((prev) => ({
             ...prev,
             recipientName: u.fullName || u.name || prev.recipientName,
             phone: u.phone || prev.phone,
@@ -327,19 +342,27 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     }
 
     setLocating(true);
-    const toastId = toast.loading('Đang lấy vị trí GPS hiện tại...');
+    const toastId = toast.loading('Đang lấy vị trí GPS từ thiết bị...');
 
     navigator.geolocation.getCurrentPosition(
-      position => {
+      (position) => {
         const { latitude, longitude } = position.coords;
         setLocating(false);
         autoFillAddressFromCoords(latitude, longitude, toastId);
       },
-      error => {
+      (error) => {
         setLocating(false);
-        toast.error('Không thể lấy vị trí. Vui lòng cấp quyền truy cập vị trí.', { id: toastId });
+        let msg = 'Không thể lấy vị trí hiện tại.';
+        if (error.code === error.PERMISSION_DENIED) {
+          msg = 'Bạn đã từ chối quyền truy cập vị trí. Vui lòng cho phép quyền trong cài đặt trình duyệt hoặc nhập địa chỉ thủ công.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          msg = 'Tín hiệu vị trí không khả dụng. Vui lòng thử lại hoặc ghim vị trí trên bản đồ.';
+        } else if (error.code === error.TIMEOUT) {
+          msg = 'Hết thời gian chờ phản hồi GPS. Vui lòng thử lại hoặc nhập thủ công.';
+        }
+        toast.error(msg, { id: toastId, duration: 4000 });
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
@@ -359,8 +382,24 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
       return;
     }
 
+    // Validate coordinates
+    if (
+      typeof formData.latitude !== 'number' ||
+      typeof formData.longitude !== 'number' ||
+      isNaN(formData.latitude) ||
+      isNaN(formData.longitude) ||
+      Math.abs(formData.latitude) > 90 ||
+      Math.abs(formData.longitude) > 180 ||
+      (formData.latitude === 0 && formData.longitude === 0)
+    ) {
+      toast.error('Vui lòng chọn hoặc ghim vị trí hợp lệ trên bản đồ');
+      return;
+    }
+
     setLoading(true);
-    const loadingToast = toast.loading(address ? 'Đang cập nhật địa chỉ...' : 'Đang lưu địa chỉ mới...');
+    const loadingToast = toast.loading(
+      address ? 'Đang cập nhật địa chỉ...' : 'Đang lưu địa chỉ mới...'
+    );
 
     try {
       const url = address ? `/api/addresses/${address.id}` : '/api/addresses';
@@ -391,10 +430,14 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
       });
 
       if (res.ok) {
-        toast.success(address ? 'Cập nhật địa chỉ thành công! ✨' : 'Thêm địa chỉ thành công! 🎉', {
-          id: loadingToast,
-        });
-        onSuccess();
+        const savedData = await res.json().catch(() => null);
+        const resolvedAddress = savedData?.data || savedData || { ...payload, id: address?.id };
+
+        toast.success(
+          address ? 'Cập nhật địa chỉ thành công! ✨' : 'Thêm địa chỉ thành công! 🎉',
+          { id: loadingToast }
+        );
+        onSuccess(resolvedAddress);
         onClose();
       } else {
         const errData = await res.json().catch(() => ({}));
@@ -407,8 +450,10 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
+  if (!mounted) return null;
+
+  const modalContent = (
+    <div className="fixed inset-0 z-[100000] flex items-end sm:items-center justify-center p-0 sm:p-4 overflow-y-auto">
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity animate-in fade-in duration-200"
@@ -492,11 +537,10 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
                 </button>
               </div>
 
-              {/* Quick Fill Button */}
               <button
                 type="button"
                 onClick={handleFillFromProfile}
-                className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2.5 py-1 rounded-lg transition-colors shrink-0 active:scale-95"
+                className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200/80 px-2 py-1 rounded-lg transition-colors active:scale-95"
                 title="Lấy tên và số điện thoại từ tài khoản"
               >
                 <Sparkles size={12} />
@@ -612,7 +656,7 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
               <div className="flex items-center justify-between gap-2">
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <Compass size={14} className="text-red-600" />
-                  Ghim vị trí trên bản đồ
+                  Ghim vị trí trên bản đồ (để tính phí ship chính xác)
                 </label>
 
                 {/* GPS Trigger Button */}
@@ -627,20 +671,24 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
                 </button>
               </div>
 
-              {/* Place search box for Map */}
+              {/* Place search box for Map (Photon Search) */}
               <div className="relative">
                 <div className="relative flex items-center">
                   <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-                    {isSearching ? <Loader2 size={13} className="animate-spin text-red-600" /> : <Search size={13} />}
+                    {isSearching ? (
+                      <Loader2 size={13} className="animate-spin text-red-600" />
+                    ) : (
+                      <Search size={13} />
+                    )}
                   </div>
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={e => handleSearchPlace(e.target.value)}
+                    onChange={(e) => handleSearchPlace(e.target.value)}
                     onFocus={() => {
                       if (searchResults.length > 0) setShowSearchResults(true);
                     }}
-                    placeholder="Tìm địa danh, tòa nhà trên bản đồ..."
+                    placeholder="Tìm địa danh, tòa nhà, đường phố bằng Photon..."
                     className="w-full pl-8 pr-7 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none transition-all placeholder:text-slate-400"
                   />
                   {searchQuery && (
@@ -650,6 +698,7 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
                         setSearchQuery('');
                         setSearchResults([]);
                         setShowSearchResults(false);
+                        setSearchError(null);
                       }}
                       className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-slate-600"
                     >
@@ -658,18 +707,26 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
                   )}
                 </div>
 
+                {/* Search Feedback / Error */}
+                {searchError && (
+                  <div className="mt-1 flex items-start gap-1.5 text-[11px] text-amber-600 bg-amber-50 px-2 py-1 rounded-md border border-amber-200/60">
+                    <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                    <span>{searchError}</span>
+                  </div>
+                )}
+
                 {/* Search Auto-complete Dropdown */}
                 {showSearchResults && searchResults.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-[1100] max-h-40 overflow-y-auto custom-scrollbar">
+                  <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl shadow-lg border border-slate-100 py-1 z-[1100] max-h-48 overflow-y-auto custom-scrollbar">
                     {searchResults.map((item, idx) => (
                       <button
                         key={idx}
                         type="button"
                         onClick={() => handleSelectSearchResult(item)}
-                        className="w-full text-left px-3 py-1.5 hover:bg-red-50 flex items-start gap-2 text-[11px] text-slate-700 transition-colors border-b border-slate-50 last:border-0"
+                        className="w-full text-left px-3 py-2 hover:bg-red-50 flex items-start gap-2 text-[11px] text-slate-700 transition-colors border-b border-slate-50 last:border-0"
                       >
-                        <MapPin size={12} className="text-red-500 shrink-0 mt-0.5" />
-                        <span className="line-clamp-1">{item.display_name}</span>
+                        <MapPin size={13} className="text-red-500 shrink-0 mt-0.5" />
+                        <span className="line-clamp-2 leading-relaxed">{item.display_name}</span>
                       </button>
                     ))}
                   </div>
@@ -677,11 +734,19 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
               </div>
 
               {/* Leaflet Map Frame */}
-              <div className="h-[180px] sm:h-[200px] w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
+              <div className="h-[200px] sm:h-[220px] w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
                 <MapPicker
                   position={{ lat: formData.latitude, lng: formData.longitude }}
                   onChange={handleMapChange}
                 />
+              </div>
+
+              {/* Selected coordinates badge */}
+              <div className="flex items-center justify-between text-[11px] text-slate-500 px-1">
+                <span>Tọa độ đã chọn:</span>
+                <span className="font-mono text-slate-700 font-semibold">
+                  {formData.latitude.toFixed(6)}, {formData.longitude.toFixed(6)}
+                </span>
               </div>
             </div>
 
@@ -736,4 +801,6 @@ export default function AddressModal({ address, onClose, onSuccess }: AddressMod
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 }

@@ -107,6 +107,14 @@ namespace AvoraPosNative.Printing
             });
         }
 
+        public void NotifyAllWorkers()
+        {
+            foreach (var kvp in _printerWorkers)
+            {
+                kvp.Value.NotifyNewJob();
+            }
+        }
+
         private async Task RecoverUnfinishedJobsAsync()
         {
             try
@@ -114,11 +122,26 @@ namespace AvoraPosNative.Printing
                 using var conn = new SqliteConnection(LocalDatabase.ConnectionString);
                 await conn.OpenAsync();
 
+                // 1. Mark jobs that were interrupted while PRINTING as UNKNOWN to prevent double-printing
+                using var unknownCmd = conn.CreateCommand();
+                unknownCmd.CommandText = @"
+                    UPDATE print_jobs 
+                    SET status = 'UNKNOWN', 
+                        error = 'Ứng dụng đóng đột ngột khi đang gửi lệnh in. Cần kiểm tra hóa đơn trước khi in lại.'
+                    WHERE status = 'PRINTING';
+                ";
+                int interruptedCount = await unknownCmd.ExecuteNonQueryAsync();
+                if (interruptedCount > 0)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[PRINT QUEUE] Marked {interruptedCount} interrupted jobs as UNKNOWN");
+                }
+
+                // 2. Only recover strictly QUEUED jobs
                 using var cmd = conn.CreateCommand();
                 cmd.CommandText = @"
                     SELECT DISTINCT printer_id 
                     FROM print_jobs 
-                    WHERE status IN ('QUEUED', 'PRINTING') AND attempts < 5;
+                    WHERE status = 'QUEUED' AND attempts < 5;
                 ";
 
                 using var reader = await cmd.ExecuteReaderAsync();

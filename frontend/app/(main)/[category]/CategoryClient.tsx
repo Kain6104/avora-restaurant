@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
+import { getProductSoldCount } from '@/lib/utils/product-utils';
 import { ChevronRight, Heart, Star, SlidersHorizontal, Check, Leaf, Ban, ChefHat, LayoutGrid, List, X } from 'lucide-react';
 import AddToCartButton from '../../../components/AddToCartButton';
 import { useCart } from '../../../context/CartContext';
@@ -59,7 +60,9 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
     });
 
     // Sorting
-    if (sortOption === 'price_asc') {
+    if (sortOption === 'default') {
+      result.sort((a: any, b: any) => getProductSoldCount(b) - getProductSoldCount(a));
+    } else if (sortOption === 'price_asc') {
       result.sort((a: any, b: any) => (a.discountedPrice || a.price) - (b.discountedPrice || b.price));
     } else if (sortOption === 'price_desc') {
       result.sort((a: any, b: any) => (b.discountedPrice || b.price) - (a.discountedPrice || a.price));
@@ -241,8 +244,10 @@ export default function CategoryClient({ category, categorySlug }: CategoryClien
                       <h3 className="font-bold text-[#3E2723] text-[13px] md:text-[14px] leading-tight mb-1 line-clamp-2 group-hover:text-[#E55B32] transition-colors">{item.name}</h3>
                     </Link>
 
-                    <div className="mb-3">
+                    <div className="mb-3 flex items-center gap-1.5 flex-wrap">
                       <ProductRatingBadge avgRating={item.avgRating} ratingCount={item.ratingCount} size="sm" />
+                      <span className="text-slate-300">•</span>
+                      <span className="text-[11px] text-slate-400">Đã bán {getProductSoldCount(item)}</span>
                     </div>
 
                     <div className="mt-auto flex items-center justify-between">

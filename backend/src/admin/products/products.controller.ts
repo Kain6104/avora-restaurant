@@ -84,12 +84,19 @@ export class ProductsController {
     if (!file || !file.buffer) {
       throw new BadRequestException('Vui lòng chọn file Excel để tải lên!');
     }
-    const summary = await this.productsExcelService.importProductsFromExcel(file.buffer, mode || 'UPSERT');
-    return {
-      success: true,
-      data: summary,
-      message: `Nhập dữ liệu thành công: Tạo mới ${summary.createdCount} món, cập nhật ${summary.updatedCount} món.`,
-    };
+    try {
+      const summary = await this.productsExcelService.importProductsFromExcel(file.buffer, mode || 'UPSERT');
+      return {
+        success: true,
+        data: summary,
+        message: `Nhập dữ liệu thành công: Tạo mới ${summary.createdCount} món, cập nhật ${summary.updatedCount} món.`,
+      };
+    } catch (error: any) {
+      console.error('[ProductsController] importExcel error:', error);
+      throw new BadRequestException(
+        error?.message || 'Có lỗi xảy ra trong quá trình xử lý file Excel. Vui lòng kiểm tra lại cấu trúc dữ liệu!'
+      );
+    }
   }
 
   @Get(':id')

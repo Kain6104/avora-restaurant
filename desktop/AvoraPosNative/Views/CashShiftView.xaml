@@ -5,7 +5,11 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignHeight="700" d:DesignWidth="1000"
-             Background="#F8FAFC">
+             UseLayoutRounding="True"
+             SnapsToDevicePixels="True"
+             TextOptions.TextFormattingMode="Display"
+             TextOptions.TextRenderingMode="ClearType"
+             Background="#F1F5F9">
     
     <Grid>
         <Grid.RowDefinitions>
@@ -107,10 +111,7 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- Đầu ca -->
-                        <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
-                            </Border.Effect>
+                        <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="16">
                             <StackPanel>
                                 <TextBlock Text="Tiền đầu ca" FontSize="12" Foreground="#64748B"/>
                                 <TextBlock Text="{Binding OpeningBalanceText}" FontSize="20" FontWeight="Black" Foreground="#0F172A" Margin="0,6,0,0"/>
@@ -118,10 +119,7 @@
                         </Border>
 
                         <!-- Doanh thu tiền mặt -->
-                        <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
-                            </Border.Effect>
+                        <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="16">
                             <StackPanel>
                                 <TextBlock Text="Thu tiền mặt" FontSize="12" Foreground="#64748B"/>
                                 <TextBlock Text="{Binding TotalCashText}" FontSize="20" FontWeight="Black" Foreground="#16A34A" Margin="0,6,0,0"/>
@@ -129,10 +127,7 @@
                         </Border>
 
                         <!-- Chuyển khoản QR -->
-                        <Border Grid.Column="4" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16">
-                            <Border.Effect>
-                                <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
-                            </Border.Effect>
+                        <Border Grid.Column="4" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="16">
                             <StackPanel>
                                 <TextBlock Text="Thu QR / Thẻ / CK" FontSize="12" Foreground="#64748B"/>
                                 <TextBlock Text="{Binding TotalCardTransferText}" FontSize="20" FontWeight="Black" Foreground="#2563EB" Margin="0,6,0,0"/>
@@ -141,10 +136,7 @@
                     </Grid>
 
                     <!-- Summary & Close Shift action -->
-                    <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="24">
-                        <Border.Effect>
-                            <DropShadowEffect BlurRadius="8" ShadowDepth="2" Opacity="0.04" Color="#000000"/>
-                        </Border.Effect>
+                    <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="24">
                         <StackPanel>
                             <TextBlock Text="BẢNG TỔNG HỢP KIỂM KÊ KÉT TIỀN" FontWeight="Bold" FontSize="15" Foreground="#0F172A" Margin="0,0,0,16"/>
 
@@ -203,10 +195,7 @@
                         </Style>
                     </StackPanel.Style>
 
-                    <Border Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="28">
-                        <Border.Effect>
-                            <DropShadowEffect BlurRadius="10" ShadowDepth="2" Opacity="0.05" Color="#000000"/>
-                        </Border.Effect>
+                    <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="10" Padding="28">
                         <StackPanel>
                             <TextBlock Text="🚀 BẮT ĐẦU CA LÀM VIỆC MỚI" FontWeight="Black" FontSize="18" Foreground="#0F172A"/>
                             <TextBlock Text="Khai báo số tiền mặt ban đầu có trong két để bắt đầu bán hàng và nhận đơn."

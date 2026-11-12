@@ -72,6 +72,12 @@ namespace AvoraPosNative.Models
         public string? Note { get; set; }
     }
 
+    public class ServiceChargeJobItem
+    {
+        public string Name { get; set; } = "Phụ thu";
+        public decimal Amount { get; set; }
+    }
+
     public class PrintJobPayload
     {
         public string JobId { get; set; } = Guid.NewGuid().ToString();
@@ -87,6 +93,8 @@ namespace AvoraPosNative.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public List<PrintJobItem> Items { get; set; } = new();
         public decimal SubTotal { get; set; }
+        public decimal ServiceChargeTotal { get; set; }
+        public List<ServiceChargeJobItem> ServiceCharges { get; set; } = new();
         public decimal DiscountAmount { get; set; }
         public decimal TaxAmount { get; set; }
         public decimal ShippingFee { get; set; }

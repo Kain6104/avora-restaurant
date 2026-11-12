@@ -10,6 +10,7 @@ namespace AvoraPosNative.Dialogs
         public GuestCountDialog(int currentCount = 2, string? tableName = null)
         {
             InitializeComponent();
+            DialogHelper.CenterOnMainWindow(this);
             GuestCount = currentCount > 0 ? currentCount : 2;
             txtGuestCount.Text = GuestCount.ToString();
             if (!string.IsNullOrEmpty(tableName))

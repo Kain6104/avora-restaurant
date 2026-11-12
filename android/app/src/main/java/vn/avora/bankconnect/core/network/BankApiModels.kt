@@ -413,6 +413,31 @@ data class SimpleApiResponse(
     val message: String? = null
 )
 
+data class CleanupUnmatchedResponse(
+    val success: Boolean = false,
+    val count: Int = 0,
+    val archivedIds: List<String> = emptyList(),
+    val archivedEventIds: List<String> = emptyList(),
+    val message: String? = null
+)
+
+data class AppVersionData(
+    val packageName: String = "vn.avora.bankconnect",
+    val versionName: String = "1.0.4",
+    val versionCode: Int = 5,
+    val fileSize: Long = 0L,
+    val sha256: String = "",
+    val downloadUrl: String = "https://avorafnb.com/api/bank-connect/v1/app/download-latest",
+    val staticDownloadUrl: String? = "https://avorafnb.com/downloads/avora-bank-connect.apk",
+    val releaseNotes: String? = null,
+    val releasedAt: String? = null
+)
+
+data class AppVersionResponse(
+    val success: Boolean = false,
+    val data: AppVersionData? = null
+)
+
 // 11. Remote Bank Transactions
 data class RemoteBankTransactionItem(
     val id: String,

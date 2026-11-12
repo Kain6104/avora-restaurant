@@ -23,6 +23,158 @@ namespace AvoraPosNative.Services
 
         public bool IsAuthenticated => !string.IsNullOrEmpty(CurrentSession?.Token);
 
+        public async Task<(string? deviceId, string? deviceSecret)> EnsureDeviceHandshakeAsync()
+        {
+            var (deviceId, deviceSecret) = SecureSessionManager.GetDeviceCredential();
+            if (!string.IsNullOrEmpty(deviceId) && !string.IsNullOrEmpty(deviceSecret))
+            {
+                return (deviceId, deviceSecret);
+            }
+
+            try
+            {
+                string hwId = DeviceIdentifier.GetHardwareFingerprint();
+                var payload = new
+                {
+                    deviceId = hwId,
+                    machineName = Environment.MachineName
+                };
+                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                var res = await _httpClient.PostAsync($"{BackendUrl}/api/pos/device/handshake", content);
+                if (res.IsSuccessStatusCode)
+                {
+                    string body = await res.Content.ReadAsStringAsync();
+                    var json = JObject.Parse(body);
+                    string? newId = json["deviceId"]?.ToString();
+                    string? newSecret = json["deviceSecret"]?.ToString();
+                    if (!string.IsNullOrEmpty(newId) && !string.IsNullOrEmpty(newSecret))
+                    {
+                        SecureSessionManager.SaveDeviceCredential(newId, newSecret);
+                        return (newId, newSecret);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DEVICE HANDSHAKE] Error: {ex.Message}");
+            }
+
+            return (null, null);
+        }
+
+        public async Task<(bool Success, string? Error, int RetryAfterSeconds, UserProfile? Profile)> LoginWithPinAsync(string pin)
+        {
+            if (string.IsNullOrWhiteSpace(pin) || pin.Length != 4)
+            {
+                return (false, "Mã PIN phải gồm đúng 4 chữ số.", 0, null);
+            }
+
+            try
+            {
+                var (deviceId, deviceSecret) = await EnsureDeviceHandshakeAsync();
+
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{BackendUrl}/api/pos/auth/pin/login");
+                if (!string.IsNullOrEmpty(deviceId))
+                {
+                    request.Headers.Add("x-pos-device-id", deviceId);
+                }
+                if (!string.IsNullOrEmpty(deviceSecret))
+                {
+                    request.Headers.Add("x-pos-device-secret", deviceSecret);
+                }
+
+                var payload = new { pin };
+                request.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                string responseBody = await response.Content.ReadAsStringAsync();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string errorMsg = "Mã PIN không chính xác.";
+                    int retryAfter = 0;
+                    try
+                    {
+                        var errJson = JObject.Parse(responseBody);
+                        string? code = errJson["code"]?.ToString();
+                        string? msg = errJson["message"]?.ToString();
+                        retryAfter = errJson["retryAfter"]?.Value<int>() ?? 0;
+
+                        if (code == "POS_PIN_RATE_LIMITED" && retryAfter > 0)
+                        {
+                            return (false, $"Bạn đã nhập sai quá số lần. Vui lòng thử lại sau {retryAfter} giây.", retryAfter, null);
+                        }
+
+                        if (!string.IsNullOrEmpty(msg)) errorMsg = msg;
+                    }
+                    catch { }
+
+                    return (false, errorMsg, retryAfter, null);
+                }
+
+                var result = JObject.Parse(responseBody);
+                string? token = result["access_token"]?.ToString();
+                var userObj = result["user"] as JObject;
+
+                if (string.IsNullOrEmpty(token))
+                {
+                    return (false, "Không nhận được token xác thực từ máy chủ.", 0, null);
+                }
+
+                if (userObj != null)
+                {
+                    string uId = userObj["id"]?.ToString() ?? string.Empty;
+                    string uName = userObj["fullName"]?.ToString() ?? userObj["email"]?.ToString() ?? "Nhân viên POS";
+                    string uEmail = userObj["email"]?.ToString() ?? string.Empty;
+                    string? uAvatar = userObj["avatarUrl"]?.ToString();
+
+                    var remembered = new RememberedAccount
+                    {
+                        UserId = uId,
+                        FullName = uName,
+                        Email = uEmail,
+                        AvatarUrl = uAvatar,
+                        LastLoginAt = DateTime.UtcNow
+                    };
+                    SecureSessionManager.SaveRememberedAccount(remembered);
+
+                    if (!string.IsNullOrEmpty(uAvatar))
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            string? cached = await SecureSessionManager.CacheAvatarAsync(uId, uAvatar);
+                            if (!string.IsNullOrEmpty(cached))
+                            {
+                                remembered.CachedAvatarPath = cached;
+                                SecureSessionManager.SaveRememberedAccount(remembered);
+                            }
+                        });
+                    }
+                }
+
+                var (valid, validateErr, profile) = await ValidateAndSaveTokenAsync(token);
+                return (valid, validateErr, 0, profile);
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Không thể kết nối đến máy chủ AVORA: {ex.Message}", 0, null);
+            }
+        }
+
+        public async Task<bool> CheckServerConnectionAsync()
+        {
+            try
+            {
+                using var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(3));
+                var res = await _httpClient.GetAsync($"{BackendUrl}/api/health", cts.Token);
+                return res.IsSuccessStatusCode;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public async Task<(bool Success, string? Error, UserProfile? Profile)> LoginWithEmailAsync(string email, string password)
         {
             try
@@ -243,7 +395,15 @@ namespace AvoraPosNative.Services
 
                 profile.HasPosAccess = true;
                 CurrentUser = profile;
-                SecureSessionManager.SaveSession(token, profile.Id, profile.FullName, profile.Email, profile.Role, body);
+                SecureSessionManager.SaveSession(
+                    token,
+                    profile.Id,
+                    profile.FullName,
+                    profile.Email,
+                    profile.Role,
+                    body,
+                    profile.CurrentBranchId,
+                    profile.CurrentBranchName);
                 CurrentSession = SecureSessionManager.LoadSession();
 
                 return (true, null, profile);

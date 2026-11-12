@@ -316,8 +316,19 @@ namespace AvoraPos.NativePrint
                 builder.AddLeftRight(label, $"-{p.OrderDiscountAmount:N0}đ");
             }
             if (p.PointsDiscountAmount > 0) builder.AddLeftRight("Đổi điểm tích lũy:", $"-{p.PointsDiscountAmount:N0}đ");
-            if (p.ServiceChargeTotal > 0) builder.AddLeftRight("Phí dịch vụ:", $"{p.ServiceChargeTotal:N0}đ");
-            if (p.TaxAmount > 0) builder.AddLeftRight("Thuế VAT:", $"{p.TaxAmount:N0}đ");
+            if (p.ServiceCharges != null && p.ServiceCharges.Count > 0)
+            {
+                builder.AddLeftRight("Phí dịch vụ / Phụ thu:", $"{p.ServiceChargeTotal:N0}đ", isBold: true);
+                foreach (var sc in p.ServiceCharges)
+                {
+                    builder.AddLeftRight($"  + {sc.Name}", $"+{sc.Amount:N0}đ");
+                }
+            }
+            else if (p.ServiceChargeTotal > 0)
+            {
+                builder.AddLeftRight("Phí dịch vụ / Phụ thu:", $"{p.ServiceChargeTotal:N0}đ");
+            }
+            if (p.TaxAmount > 0) builder.AddLeftRight("Thuế VAT (đã gồm):", $"{p.TaxAmount:N0}đ");
             if (p.ShippingFee > 0) builder.AddLeftRight("Phí giao hàng:", $"{p.ShippingFee:N0}đ");
 
             builder.AddDivider('=');
@@ -335,8 +346,10 @@ namespace AvoraPos.NativePrint
 
                 if (p.PaymentMethod == "CASH")
                 {
-                    builder.AddLeftRight("Tiền khách đưa:", $"{p.AmountReceived:N0}đ");
-                    builder.AddLeftRight("Tiền thừa trả lại:", $"{p.ChangeAmount:N0}đ", isBold: true);
+                    decimal received = p.AmountReceived > 0 ? p.AmountReceived : p.TotalAmount;
+                    decimal change = p.ChangeAmount > 0 ? p.ChangeAmount : Math.Max(0, received - p.TotalAmount);
+                    builder.AddLeftRight("Tiền khách đưa:", $"{received:N0}đ");
+                    builder.AddLeftRight("Tiền thừa trả lại:", $"{change:N0}đ", isBold: true);
                 }
 
                 if (p.PointsEarned.HasValue && p.PointsEarned.Value > 0)

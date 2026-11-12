@@ -779,7 +779,7 @@ export class ProductsExcelService {
 
       const priceRaw = this.getCellValue(row, headerMap, ['giá bán', 'gia ban', 'price']);
       const price = this.parseNumber(priceRaw, 0);
-      if (price <= 0) {
+      if (price < 0 || isNaN(price)) {
         summary.errors.push({
           row: r,
           sheet: 'Danh sách món ăn',
@@ -1137,7 +1137,7 @@ export class ProductsExcelService {
         });
       }
 
-      // Thực hiện lưu Option Groups cho từng Product
+      // Thực hiện lưu / đồng bộ Option Groups và Option Items cho từng Product (Reconciliation an toàn, không vi phạm FK)
       for (const [code, groups] of productOptionsMap.entries()) {
         let productId = productMapByCode.get(code);
         if (!productId) {
@@ -1149,35 +1149,139 @@ export class ProductsExcelService {
         }
         if (!productId) continue;
 
-        // Xóa option cũ của món và ghi đè mới để đồng bộ sạch sẽ
-        await this.prisma.optionGroup.deleteMany({
+        // Lấy danh sách nhóm & món tùy chọn hiện tại trong DB
+        const existingGroups = await this.prisma.optionGroup.findMany({
           where: { productId },
+          include: { optionItems: true },
         });
 
-        for (const [gName, groupData] of groups.entries()) {
-          const createdGroup = await this.prisma.optionGroup.create({
-            data: {
-              productId,
-              name: groupData.name,
-              isRequired: groupData.isRequired,
-              multipleChoice: groupData.multipleChoice,
-              minSelect: groupData.minSelect,
-              maxSelect: groupData.maxSelect,
-              displayOrder: groupData.groupOrder,
-              optionItems: {
-                create: groupData.items.map((item) => ({
+        const existingGroupsByName = new Map<string, typeof existingGroups[0]>();
+        for (const eg of existingGroups) {
+          existingGroupsByName.set(eg.name.trim().toLowerCase(), eg);
+        }
+
+        const handledGroupIds = new Set<string>();
+
+        for (const [, groupData] of groups.entries()) {
+          const normGroupName = groupData.name.trim().toLowerCase();
+          const matchedGroup = existingGroupsByName.get(normGroupName);
+
+          let currentGroupId: string;
+          const existingItemsByName = new Map<string, any>();
+
+          if (matchedGroup) {
+            currentGroupId = matchedGroup.id;
+            handledGroupIds.add(currentGroupId);
+            // Cập nhật cấu hình nhóm
+            await this.prisma.optionGroup.update({
+              where: { id: currentGroupId },
+              data: {
+                isRequired: groupData.isRequired,
+                multipleChoice: groupData.multipleChoice,
+                minSelect: groupData.minSelect,
+                maxSelect: groupData.maxSelect,
+                displayOrder: groupData.groupOrder,
+              },
+            });
+            for (const it of matchedGroup.optionItems) {
+              existingItemsByName.set(it.name.trim().toLowerCase(), it);
+            }
+          } else {
+            // Tạo mới nhóm
+            const created = await this.prisma.optionGroup.create({
+              data: {
+                productId,
+                name: groupData.name,
+                isRequired: groupData.isRequired,
+                multipleChoice: groupData.multipleChoice,
+                minSelect: groupData.minSelect,
+                maxSelect: groupData.maxSelect,
+                displayOrder: groupData.groupOrder,
+              },
+            });
+            currentGroupId = created.id;
+            handledGroupIds.add(currentGroupId);
+          }
+
+          summary.optionGroupsSynced++;
+
+          // Đồng bộ các option item thuộc nhóm này
+          const handledItemIds = new Set<string>();
+
+          for (const item of groupData.items) {
+            const normItemName = item.name.trim().toLowerCase();
+            const matchedItem = existingItemsByName.get(normItemName);
+
+            if (matchedItem) {
+              handledItemIds.add(matchedItem.id);
+              await this.prisma.optionItem.update({
+                where: { id: matchedItem.id },
+                data: {
+                  priceAdjustment: item.priceAdjustment,
+                  isDefault: item.isDefault,
+                  available: item.available,
+                  maxQuantity: item.maxQuantity,
+                  displayOrder: item.itemOrder,
+                },
+              });
+            } else {
+              const createdItem = await this.prisma.optionItem.create({
+                data: {
+                  optionGroupId: currentGroupId,
                   name: item.name,
                   priceAdjustment: item.priceAdjustment,
                   isDefault: item.isDefault,
                   available: item.available,
                   maxQuantity: item.maxQuantity,
                   displayOrder: item.itemOrder,
-                })),
-              },
-            },
-          });
-          summary.optionGroupsSynced++;
-          summary.optionItemsSynced += groupData.items.length;
+                },
+              });
+              handledItemIds.add(createdItem.id);
+            }
+            summary.optionItemsSynced++;
+          }
+
+          // Xóa hoặc vô hiệu hóa các item cũ trong nhóm nếu không còn trong file Excel
+          if (matchedGroup) {
+            for (const oldItem of matchedGroup.optionItems) {
+              if (!handledItemIds.has(oldItem.id)) {
+                try {
+                  await this.prisma.optionItem.delete({ where: { id: oldItem.id } });
+                } catch {
+                  // Nếu dính ràng buộc khóa ngoại (OrderItemOption), đổi sang available: false
+                  await this.prisma.optionItem.update({
+                    where: { id: oldItem.id },
+                    data: { available: false },
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // Xử lý các nhóm cũ của món không còn xuất hiện trong file Excel
+        for (const oldGroup of existingGroups) {
+          if (!handledGroupIds.has(oldGroup.id)) {
+            for (const oldItem of oldGroup.optionItems) {
+              try {
+                await this.prisma.optionItem.delete({ where: { id: oldItem.id } });
+              } catch {
+                await this.prisma.optionItem.update({
+                  where: { id: oldItem.id },
+                  data: { available: false },
+                });
+              }
+            }
+            try {
+              await this.prisma.optionGroup.delete({ where: { id: oldGroup.id } });
+            } catch {
+              // Nhóm có item dính FK, đưa về không bắt buộc để không chặn order
+              await this.prisma.optionGroup.update({
+                where: { id: oldGroup.id },
+                data: { isRequired: false, minSelect: 0 },
+              });
+            }
+          }
         }
       }
     }

@@ -438,13 +438,13 @@ export class PrintRoutingService {
       const snap: any = original.snapshotData;
       const ticketData: KitchenTicketData = {
         branchName: original.branch.name,
-        stationName: original.station.name,
+        stationName: original.station?.name || 'Bếp',
         orderCode: snap.orderCode || 'REPRINT',
         tableName: snap.tableName,
         eventType: 'REPRINT',
         reprintReason: params.reason,
         sentAt: new Date(),
-        paperWidth: original.printer.paperSize === '58mm' ? '58mm' : '80mm',
+        paperWidth: original.printer?.paperSize === '58mm' ? '58mm' : '80mm',
         items: (snap.items || []).map((i: any) => ({
           name: i.name,
           quantity: i.quantity,

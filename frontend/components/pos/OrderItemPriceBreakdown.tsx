@@ -28,7 +28,7 @@ export const OrderItemPriceBreakdown: React.FC<OrderItemPriceBreakdownProps> = (
     <div className={`text-left ${className}`}>
       {/* 1. Added By & Added Time (Thêm bởi: [Tên nhân viên] | HH:mm dd/MM/yyyy) */}
       {showAddedBy && (
-        <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium leading-tight select-text mt-0.5">
+        <div className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-300 font-medium leading-tight select-text mt-0.5">
           {breakdown.addedByFormatted}
         </div>
       )}
@@ -36,14 +36,14 @@ export const OrderItemPriceBreakdown: React.FC<OrderItemPriceBreakdownProps> = (
       {/* 2. Options Breakdown (Giá món + từng Option căn thẳng hàng dọc tuyệt đối ở mép phải) */}
       {breakdown.hasOptions && (
         <div
-          className={`mt-1.5 space-y-0.5 border-l-2 border-red-200/80 pl-2 text-slate-600 ${
+          className={`mt-1.5 space-y-0.5 border-l-2 border-red-300/80 dark:border-red-500/60 pl-2 text-slate-600 dark:text-slate-300 ${
             isCompact ? 'text-[10px]' : 'text-[11px]'
           }`}
         >
           {/* Base Product Price */}
           <div className="flex items-center justify-between gap-3">
-            <span className="truncate text-slate-600">Giá món:</span>
-            <span className="shrink-0 font-mono tabular-nums text-right font-semibold text-slate-800 min-w-[75px]">
+            <span className="truncate text-slate-600 dark:text-slate-300">Giá món:</span>
+            <span className="shrink-0 font-mono tabular-nums text-right font-semibold text-slate-800 dark:text-slate-100 min-w-[75px]">
               +{formatVnd(breakdown.baseProductPrice)}
             </span>
           </div>
@@ -51,10 +51,10 @@ export const OrderItemPriceBreakdown: React.FC<OrderItemPriceBreakdownProps> = (
           {/* Each Option (Paid or 0đ) */}
           {breakdown.options.map((opt, idx) => (
             <div key={idx} className="flex items-center justify-between gap-3">
-              <span className="truncate text-slate-600">{opt.name}:</span>
+              <span className="truncate text-slate-600 dark:text-slate-300">{opt.name}:</span>
               <span
                 className={`shrink-0 font-mono tabular-nums text-right font-semibold min-w-[75px] ${
-                  opt.price > 0 ? 'text-slate-800' : 'text-slate-500'
+                  opt.price > 0 ? 'text-slate-800 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'
                 }`}
               >
                 +{formatVnd(opt.price)}

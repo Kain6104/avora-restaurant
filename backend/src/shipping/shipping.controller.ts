@@ -13,18 +13,25 @@ export class ShippingController {
       addressId?: string;
       destinationLat?: number;
       destinationLng?: number;
+      lat?: number;
+      lng?: number;
       subTotal?: number;
+      subtotal?: number;
       shippingVoucherCode?: string;
     },
     @Req() req: any,
   ) {
     const user = req.user || null;
+    const destLat = body.destinationLat ?? body.lat;
+    const destLng = body.destinationLng ?? body.lng;
+    const sub = body.subTotal ?? body.subtotal ?? 0;
+
     const data = await this.shippingFeeService.getShippingQuote({
-      branchId: body.branchId,
+      branchId: body.branchId ? String(body.branchId) : undefined,
       addressId: body.addressId,
-      destinationLat: body.destinationLat ? Number(body.destinationLat) : undefined,
-      destinationLng: body.destinationLng ? Number(body.destinationLng) : undefined,
-      subTotal: body.subTotal ? Number(body.subTotal) : 0,
+      destinationLat: destLat !== undefined && destLat !== null ? Number(destLat) : undefined,
+      destinationLng: destLng !== undefined && destLng !== null ? Number(destLng) : undefined,
+      subTotal: Number(sub) || 0,
       shippingVoucherCode: body.shippingVoucherCode,
       user,
     });

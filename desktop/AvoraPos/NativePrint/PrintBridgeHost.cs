@@ -325,14 +325,14 @@ namespace AvoraPos.NativePrint
                 string fullUrl = url.Trim();
                 if (fullUrl.StartsWith("/"))
                 {
-                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "http://localhost:4000";
+                    string baseWeb = Environment.GetEnvironmentVariable("AVORA_POS_URL") ?? "https://avorafnb.com";
                     if (Uri.TryCreate(baseWeb, UriKind.Absolute, out var baseUri))
                     {
                         fullUrl = $"{baseUri.Scheme}://{baseUri.Authority}{fullUrl}";
                     }
                     else
                     {
-                        fullUrl = $"http://localhost:4000{fullUrl}";
+                        fullUrl = $"https://avorafnb.com{fullUrl}";
                     }
                 }
 
@@ -449,14 +449,51 @@ namespace AvoraPos.NativePrint
                     _httpListener.Prefixes.Add("http://127.0.0.1:9123/");
                     _httpListener.Start();
 
-                    while (_httpListener.IsListening)
+                    while (_httpListener != null && _httpListener.IsListening)
                     {
-                        var context = await _httpListener.GetContextAsync();
-                        ProcessHttpRequest(context);
+                        HttpListenerContext context;
+                        try
+                        {
+                            context = await _httpListener.GetContextAsync();
+                        }
+                        catch (HttpListenerException)
+                        {
+                            break;
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            break;
+                        }
+                        catch
+                        {
+                            break;
+                        }
+
+                        _ = Task.Run(() => ProcessHttpRequest(context));
                     }
                 }
                 catch { }
             });
+        }
+
+        public void Stop()
+        {
+            try
+            {
+                if (_httpListener != null)
+                {
+                    if (_httpListener.IsListening)
+                    {
+                        _httpListener.Stop();
+                    }
+                    _httpListener.Close();
+                    _httpListener = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[PrintBridgeHost] Stop exception: {ex.Message}");
+            }
         }
 
         private async void ProcessHttpRequest(HttpListenerContext ctx)

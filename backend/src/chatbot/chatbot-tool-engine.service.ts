@@ -4,7 +4,7 @@ import { ReservationService } from '../reservation/reservation.service';
 import { OrderService } from '../order/order.service';
 import { OrderPricingService } from '../pricing/order-pricing.service';
 import { ShippingFeeService } from '../shipping/shipping-fee.service';
-import { OperatingSlotService } from '../operating-slot/operating-slot.service';
+import { OperatingSlotService, normalizeDateToYYYYMMDD } from '../operating-slot/operating-slot.service';
 import { PaymentMethodService } from '../payment-method/payment-method.service';
 import { ReservationSource } from '@prisma/client';
 import {
@@ -22,6 +22,7 @@ import {
   isChatbotToolName,
   validateChatbotToolCommand,
 } from './dto/chatbot-tool-args.dto';
+import { ChatbotCacheRegistry, ChatbotCacheScope } from './chatbot-cache.registry';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -39,7 +40,25 @@ export class ChatbotToolEngineService {
     private readonly shippingFeeService: ShippingFeeService,
     private readonly operatingSlotService: OperatingSlotService,
     private readonly paymentMethodService: PaymentMethodService,
-  ) {}
+  ) {
+    ChatbotCacheRegistry.register((scope) => {
+      this.invalidateCache(scope);
+    });
+  }
+
+  public invalidateCache(scope: ChatbotCacheScope = 'ALL'): void {
+    if (scope === 'ALL' || scope === 'BRANCH' || scope === 'MENU') {
+      this.cachedAllBranches = null;
+      this.cachedBranchesExpiresAt = 0;
+    }
+  }
+
+  public getCacheStats() {
+    return {
+      hasBranchesCache: Boolean(this.cachedAllBranches && this.cachedBranchesExpiresAt > Date.now()),
+      registryVersion: ChatbotCacheRegistry.getVersion(),
+    };
+  }
 
   private createConfirmation(payload: unknown) {
     const previewToken = crypto.randomBytes(32).toString('base64url');
@@ -274,25 +293,43 @@ export class ChatbotToolEngineService {
     }
 
     if (!ctx.cart) ctx.cart = [];
-    if (clientCartItems && Array.isArray(clientCartItems) && clientCartItems.length > 0 && ctx.cart.length === 0) {
-      ctx.cart = clientCartItems.map((item: any) => ({
-        lineId: item.lineId || item.id || crypto.randomUUID(),
-        productId: item.productId || item.id,
-        productName: item.productName || item.name || 'Món ăn',
-        quantity: item.quantity || 1,
-        basePrice: item.originalPrice || item.price || item.priceAtSale || 0,
-        priceAtSale: item.price || item.priceAtSale || 0,
-        selectedOptions: (item.selectedOptions || []).map((o: any) => ({
-          optionGroupId: o.groupId || o.optionGroupId || '',
-          optionGroupName: o.groupName || o.optionGroupName || '',
+    if (clientCartItems && Array.isArray(clientCartItems)) {
+      const groupedMap = new Map<string, any>();
+      for (const item of clientCartItems) {
+        const rawId = String(item.productId || item.id || '');
+        const prodId = rawId.replace(/^cart-/, '').replace(/-\d{10,}$/, '').trim();
+        const selectedOptions = (item.selectedOptions || []).map((o: any) => ({
+          optionGroupId: o.groupId || o.optionGroupId || o.optionGroup?.id || '',
+          optionGroupName: o.groupName || o.optionGroupName || o.optionGroup?.name || '',
           optionItemId: o.optionItemId || o.id || '',
           optionItemName: o.optionItemName || o.name || '',
-          extraPrice: o.extraPrice || o.price || 0,
-        })),
-        note: item.note || item.notes || '',
-        isFlashSale: Boolean(item.isFlashSale || item.flashSale),
-        flashSaleId: item.flashSaleId,
-      }));
+          extraPrice: Number(o.extraPrice || o.price || o.priceAdjustment || 0),
+        }));
+        const optKey = selectedOptions.map((o: any) => o.optionItemId).sort().join('|');
+        const note = (item.note || item.notes || '').trim();
+        const isFs = Boolean(item.isFlashSale || item.flashSale);
+        const dedupeKey = `${prodId}#${optKey}#${note}#${isFs}`;
+        const qty = Math.max(1, Number(item.quantity) || 1);
+
+        const existing = groupedMap.get(dedupeKey);
+        if (existing) {
+          existing.quantity += qty;
+        } else {
+          groupedMap.set(dedupeKey, {
+            lineId: item.lineId || item.id || `line-${prodId}`,
+            productId: prodId,
+            productName: item.productName || item.name || 'Món ăn',
+            quantity: qty,
+            basePrice: Number(item.originalPrice || item.price || item.priceAtSale || 0),
+            priceAtSale: Number(item.price || item.priceAtSale || 0),
+            selectedOptions,
+            note: note || undefined,
+            isFlashSale: isFs,
+            flashSaleId: item.flashSaleId,
+          });
+        }
+      }
+      ctx.cart = Array.from(groupedMap.values());
     }
 
     const policyError = this.enforceToolPolicy(command, userId);
@@ -321,6 +358,9 @@ export class ChatbotToolEngineService {
           break;
         case 'findNearestBranch':
           result = await this.toolFindNearestBranch(command.args);
+          break;
+        case 'getRestaurantInfo':
+          result = await this.toolGetRestaurantInfo(command.args);
           break;
 
         // 2. Menu & Products
@@ -393,10 +433,10 @@ export class ChatbotToolEngineService {
           result = await this.toolPlaceOrder(command.args, ctx, userId);
           break;
         case 'checkOrder':
-          result = await this.toolCheckOrder(command.args, userId);
+          result = await this.toolCheckOrder(command.args, userId, ctx);
           break;
         case 'cancelOrder':
-          result = await this.toolCancelOrder(command.args, userId);
+          result = await this.toolCancelOrder(command.args, userId, ctx);
           break;
 
         // 7. Table Reservation
@@ -467,39 +507,96 @@ export class ChatbotToolEngineService {
   }
 
   // =========================================================================
-  // 1. CHI NHÁNH & VỊ TRÍ
+  // 1. CHI NHÁNH, BẢN ĐỒ TƯƠNG TÁC & TRI THỨC NHÀ HÀNG
   // =========================================================================
+
+  private cachedAllBranches: any[] | null = null;
+  private cachedBranchesExpiresAt = 0;
+
+  private formatBranchForMapCard(b: any, distanceKm?: number) {
+    const slug = (b.slug || b.name || '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    const address = [b.street, b.ward, b.district, b.province].filter(Boolean).join(', ');
+    const hasCoords = typeof b.latitude === 'number' && typeof b.longitude === 'number';
+    const mapQuery = hasCoords
+      ? `${b.latitude},${b.longitude}`
+      : encodeURIComponent(`${b.name} ${address}`);
+
+    return {
+      id: b.id,
+      name: b.name,
+      slug,
+      branchUrl: `/chi-nhanh/${slug}`,
+      branchCode: b.branchCode,
+      phone: b.phone || '1900 6868',
+      address: address || 'Hệ thống nhà hàng AVORA',
+      street: b.street,
+      ward: b.ward,
+      district: b.district,
+      province: b.province,
+      openTime: b.openTime || '10:00',
+      closeTime: b.closeTime || '22:00',
+      latitude: b.latitude ?? null,
+      longitude: b.longitude ?? null,
+      reservationEnabled: b.reservationEnabled ?? true,
+      onlineOrderingEnabled: b.onlineOrderingEnabled ?? true,
+      distanceKm: distanceKm !== undefined ? Number(distanceKm.toFixed(2)) : undefined,
+      distanceType: distanceKm !== undefined ? 'HAVERSINE_ESTIMATE' : undefined,
+      googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${mapQuery}`,
+      embedMapUrl: `https://maps.google.com/maps?q=${mapQuery}&t=&z=15&ie=UTF8&iwloc=&output=embed`,
+    };
+  }
+
+  private async getAllFormattedBranchesCached(): Promise<any[]> {
+    const now = Date.now();
+    if (this.cachedAllBranches && this.cachedBranchesExpiresAt > now) {
+      return this.cachedAllBranches;
+    }
+    const rawBranches =
+      (await this.prisma.branch.findMany({
+        orderBy: { name: 'asc' },
+      })) || [];
+    const formatted = rawBranches.map((b) => this.formatBranchForMapCard(b));
+    this.cachedAllBranches = formatted;
+    this.cachedBranchesExpiresAt = now + 5 * 60 * 1000;
+    return formatted;
+  }
 
   private async toolListBranches(args: ChatbotToolArgsMap['listBranches']): Promise<ChatbotToolResult> {
     const where: any = {};
     if (args.reservationOnly) where.reservationEnabled = true;
     if (args.deliveryOnly) where.onlineOrderingEnabled = true;
 
-    const branches = await this.prisma.branch.findMany({
-      where,
-      select: {
-        id: true,
-        name: true,
-        branchCode: true,
-        phone: true,
-        street: true,
-        ward: true,
-        district: true,
-        province: true,
-        openTime: true,
-        closeTime: true,
-        reservationEnabled: true,
-        onlineOrderingEnabled: true,
-      },
-      orderBy: { name: 'asc' },
-    });
+    const rawBranches =
+      (await this.prisma.branch.findMany({
+        where,
+        orderBy: { name: 'asc' },
+      })) || [];
+
+    const branches = rawBranches.map((b) => this.formatBranchForMapCard(b));
 
     return {
       success: true,
       code: 'BRANCH_LIST_LOADED',
       message: `Tìm thấy ${branches.length} chi nhánh hoạt động.`,
       data: { branches },
-      content: `Nhà hàng Avora hiện có ${branches.length} chi nhánh đang hoạt động.`,
+      actionType: 'REQUEST_LOCATION',
+      actionPayload: JSON.stringify({
+        reason: 'FIND_NEAREST_BRANCH',
+        autoFallbackSeconds: 10,
+        allBranches: branches,
+      }),
+      suggestedReplies: [
+        '📍 Chia sẻ vị trí của tôi',
+        { label: 'Đặt bàn trước', action: 'SEND_MESSAGE', payload: 'Tôi muốn đặt bàn tại nhà hàng' },
+        { label: 'Xem thực đơn bán chạy', action: 'SEND_MESSAGE', payload: 'Gợi ý các món bán chạy nhất' },
+      ],
+      content: `Nhà hàng Avora hiện có ${branches.length} chi nhánh đang hoạt động. Bạn có thể bấm nút định vị bên dưới để tìm cơ sở gần bạn nhất (hoặc hệ thống sẽ tự động hiển thị danh sách chi nhánh kèm bản đồ sau 7 giây nhé)!`,
     };
   }
 
@@ -521,26 +618,42 @@ export class ChatbotToolEngineService {
       };
     }
 
+    const formattedBranch = this.formatBranchForMapCard(branch);
+    const allBranches = await this.getAllFormattedBranchesCached();
+
     return {
       success: true,
       code: 'BRANCH_DETAIL_LOADED',
       message: `Thông tin chi nhánh ${branch.name}`,
-      data: { branch },
-      content: `Chi nhánh ${branch.name}: ${branch.street}, ${branch.ward}, ${branch.province}. Giờ mở cửa: ${branch.openTime} - ${branch.closeTime}. SĐT: ${branch.phone}.`,
+      data: { branch: formattedBranch },
+      actionType: 'REQUEST_LOCATION',
+      actionPayload: JSON.stringify({
+        reason: 'FIND_NEAREST_BRANCH',
+        mode: 'STATIC_BRANCHES',
+        selectedBranchId: formattedBranch.id,
+        allBranches: allBranches.length > 0 ? allBranches : [formattedBranch],
+      }),
+      content: `Chi nhánh [${formattedBranch.name}](${formattedBranch.branchUrl}): ${formattedBranch.address}. Giờ mở cửa: ${formattedBranch.openTime} - ${formattedBranch.closeTime}. Hotline: ${formattedBranch.phone}.`,
     };
   }
 
   private async toolFindNearestBranch(args: ChatbotToolArgsMap['findNearestBranch']): Promise<ChatbotToolResult> {
     const { latitude, longitude } = args;
+    const allBranches = await this.getAllFormattedBranchesCached();
+
     if (!latitude || !longitude) {
       return {
         success: true,
         code: 'LOCATION_REQUIRED',
         actionType: 'REQUEST_LOCATION',
-        actionPayload: JSON.stringify({ reason: 'FIND_NEAREST_BRANCH' }),
+        actionPayload: JSON.stringify({
+          reason: 'FIND_NEAREST_BRANCH',
+          autoFallbackSeconds: 10,
+          allBranches,
+        }),
         suggestedReplies: ['📍 Chia sẻ vị trí của tôi'],
         message: 'Vui lòng chia sẻ vị trí để tìm chi nhánh gần bạn nhất.',
-        content: 'Để tìm chi nhánh Avora gần bạn nhất và hướng dẫn chỉ đường chính xác, bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới nhé!',
+        content: 'Để tìm chi nhánh Avora gần bạn nhất kèm bản đồ chỉ đường chính xác, bạn vui lòng bấm nút **"Chia sẻ vị trí của tôi"** bên dưới nhé! (Nếu không bật định vị, danh sách tất cả chi nhánh và bản đồ sẽ tự động hiển thị sau 7 giây).',
       };
     }
 
@@ -549,35 +662,90 @@ export class ChatbotToolEngineService {
     });
 
     if (branches.length === 0) {
-      return { success: false, code: 'NO_BRANCH_WITH_GPS', message: 'Chưa có chi nhánh nào cấu hình tọa độ GPS.' };
+      return {
+        success: true,
+        code: 'BRANCH_LIST_LOADED',
+        actionType: 'REQUEST_LOCATION',
+        actionPayload: JSON.stringify({
+          reason: 'FIND_NEAREST_BRANCH',
+          mode: 'STATIC_BRANCHES',
+          allBranches,
+        }),
+        message: 'Danh sách chi nhánh hệ thống Avora.',
+        content: 'Dưới đây là danh sách các chi nhánh của hệ thống nhà hàng Avora kèm bản đồ chỉ đường chi tiết:',
+      };
     }
 
     const withDist = branches.map((b) => {
       const dist = this.calculateHaversine(latitude, longitude, b.latitude!, b.longitude!);
-      return { ...b, distanceKm: dist };
+      return this.formatBranchForMapCard(b, dist);
     });
 
-    withDist.sort((a, b) => a.distanceKm - b.distanceKm);
-    const top = withDist.slice(0, 3).map((b) => ({
-      id: b.id,
-      name: b.name,
-      address: `${b.street || ''}, ${b.ward || ''}, ${b.province || ''}`.replace(/^, /, ''),
-      distanceKm: Number(b.distanceKm.toFixed(2)),
-      estimatedMinutes: Math.ceil(b.distanceKm * 2.5),
-      phone: b.phone,
-      openTime: b.openTime,
-      closeTime: b.closeTime,
-      googleMapsUrl: `https://www.google.com/maps/search/?api=1&query=${b.latitude},${b.longitude}`,
-    }));
+    withDist.sort((a, b) => (a.distanceKm || 999) - (b.distanceKm || 999));
+    const top = withDist.slice(0, 3);
 
     return {
       success: true,
       code: 'NEAREST_BRANCHES_FOUND',
       message: `Đã tìm thấy ${top.length} chi nhánh gần bạn nhất.`,
-      data: { nearestBranches: top },
-      actionType: 'SHOW_MAP_LINK',
-      actionPayload: top[0]?.googleMapsUrl,
-      content: `Chi nhánh gần bạn nhất là ${top[0].name} (cách khoảng ${top[0].distanceKm}km).`,
+      data: { nearestBranches: top, allBranches: withDist },
+      actionType: 'REQUEST_LOCATION',
+      actionPayload: JSON.stringify({
+        reason: 'FIND_NEAREST_BRANCH',
+        mode: 'NEAREST_FOUND',
+        userLocation: { latitude, longitude },
+        nearestBranches: top,
+        allBranches: withDist,
+        googleMapsUrl: top[0]?.googleMapsUrl,
+      }),
+      suggestedReplies: [
+        { label: `Đặt bàn tại ${top[0].name}`, action: 'SEND_MESSAGE', payload: `Tôi muốn đặt bàn tại chi nhánh ${top[0].name}` },
+        { label: `Xem thực đơn ${top[0].name}`, action: 'SEND_MESSAGE', payload: `Gợi ý các món bán chạy tại ${top[0].name}` },
+      ],
+      content: `Chi nhánh gần bạn nhất là [${top[0].name}](${top[0].branchUrl}) (khoảng cách ước tính **~${top[0].distanceKm} km**). Quý khách có thể xem vị trí ghim trực tiếp trên bản đồ tương tác bên dưới nhé!`,
+    };
+  }
+
+  private async toolGetRestaurantInfo(args: ChatbotToolArgsMap['getRestaurantInfo']): Promise<ChatbotToolResult> {
+    const rawTopic = (args.topic || 'GENERAL').toUpperCase();
+    const allBranches = await this.getAllFormattedBranchesCached();
+
+    const knowledgeData = {
+      brandName: 'AVORA Restaurant - Tinh hoa Ẩm thực Nhật Bản & Á Âu Hiện Đại',
+      openingHours: '10:00 - 22:00 tất cả các ngày trong tuần (kể cả Lễ, Tết)',
+      hotline: allBranches[0]?.phone || '1900 6868',
+      branchCount: allBranches.length || 5,
+      branchesSummary: allBranches.map((b) => `${b.name} (${b.address})`),
+      capabilities: [
+        'Tư vấn thực đơn chuẩn xác 100% theo sở thích, chế độ ăn (Chay, Healthy, Keto) và cảnh báo dị ứng.',
+        'Thiết kế mâm tiệc / combo nhiều món tự động cân đối theo ngân sách và số lượng thực khách.',
+        'Đặt món giao hàng tận nơi (tự động định vị GPS tính phí ship) hoặc Nhận tại quán (Takeaway miễn phí ship).',
+        'Săn và áp dụng đồng thời 2 mã ưu đãi (1 Voucher giảm món + 1 Voucher Freeship) kèm trừ điểm thưởng thành viên.',
+        'Đặt bàn giữ chỗ trước theo khung giờ thực tế, chọn vị trí ngồi (Phòng VIP, bàn cửa sổ, sân vườn) và ghi chú trang trí tiệc.',
+        'Định vị chi nhánh gần nhất kèm Bản đồ tương tác trực tiếp ngay trong khung chat.',
+        'Đàm thoại trực tiếp bằng Giọng nói AI thời gian thực (Voice AI).',
+      ],
+      amenitiesAndPolicies: {
+        parking: 'Tất cả chi nhánh AVORA đều có bãi đỗ xe máy miễn phí và khu vực đỗ xe ô tô rộng rãi, an toàn có nhân viên bảo vệ hướng dẫn.',
+        vipRoom: 'Hệ thống có phòng VIP riêng tư sang trọng sức chứa từ 6 đến 30 khách, trang bị âm thanh/màn hình phục vụ tiếp khách, họp mặt gia đình và tiệc sinh nhật.',
+        birthdaySupport: 'Hỗ trợ trang trí bàn tiệc sinh nhật, kỷ niệm cơ bản miễn phí khi quý khách đặt bàn trước và ghi chú yêu cầu.',
+        babyAndFamily: 'Cung cấp miễn phí ghế ngồi ăn dặm an toàn cho trẻ em (Baby Chair), dụng cụ ăn uống cho bé và có các món cháo/cơm/mỳ không cay phù hợp cho bé.',
+        vatInvoice: 'Hỗ trợ xuất hóa đơn điện tử GTGT (VAT 10%) hợp lệ ngay trong ngày. Quý khách có thể điền thông tin công ty/mã số thuế khi thanh toán hoặc báo nhân viên thu ngân.',
+        wifiAndPayment: 'Miễn phí Wi-Fi tốc độ cao. Hỗ trợ thanh toán tiền mặt (COD), chuyển khoản VietQR SePay tự động, thẻ ngân hàng (Visa/Mastercard/NAPAS), MoMo và VNPay.',
+        loyaltyProgram: 'Khách hàng đăng ký thành viên được tích điểm trên mọi đơn hàng và nâng hạng thẻ (Thành viên, Bạc, Vàng, Kim Cương) để trừ trực tiếp tiền mặt cho các lần dùng bữa tiếp theo.',
+      },
+    };
+
+    return {
+      success: true,
+      code: 'RESTAURANT_INFO_LOADED',
+      message: `Đã tải thông tin dịch vụ & tiện ích AVORA (Chủ đề: ${rawTopic}).`,
+      data: knowledgeData,
+      suggestedReplies: [
+        { label: 'Gợi ý món bán chạy nhất', action: 'SEND_MESSAGE', payload: 'Gợi ý cho tôi các món đang bán chạy nhất tại nhà hàng' },
+        { label: 'Tìm chi nhánh gần tôi', action: 'SEND_MESSAGE', payload: 'Tìm chi nhánh AVORA gần tôi nhất' },
+        { label: 'Đặt bàn giữ chỗ', action: 'SEND_MESSAGE', payload: 'Tôi muốn đặt bàn trước tại nhà hàng' },
+      ],
     };
   }
 
@@ -599,273 +767,771 @@ export class ChatbotToolEngineService {
   // 2. THỰC ĐƠN & SẢN PHẨM (PRODUCT & OPTIONS)
   // =========================================================================
 
-  private async toolSearchMenu(args: ChatbotToolArgsMap['searchMenu'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
-    const where: any = { available: true };
-    const effectiveBranchId = args.branchId || ctx.currentBranchId;
-    if (effectiveBranchId) {
-      where.branches = { some: { id: effectiveBranchId } };
-    }
-
-    const rawQuery = args.query ? args.query.trim() : '';
+  /**
+   * Bộ ghép mâm ăn / combo đa danh mục theo ngân sách và số người từ Database thật
+   */
+  private async buildMultiCategoryCombo(
+    rawQuery: string,
+    explicitBudget: number | undefined,
+    effectiveBranchId: string | undefined,
+    ctx: ChatSessionContext,
+  ): Promise<ChatbotToolResult | null> {
     const q = rawQuery.toLowerCase();
-    const isHotQuery = ['bestseller', 'bán chạy', 'hot', 'nổi bật', 'gợi ý'].some((w) => q.includes(w));
 
-    // Bóc tách tên danh mục nếu khách gửi câu kiểu: "Gợi ý món trong danh mục Sushi & Maki"
-    const catPrefixRegex = /^(?:gợi ý|tìm|xem|cho tôi|danh sách)?\s*(?:các|những)?\s*món\s*(?:ăn)?\s*(?:trong|thuộc)?\s*(?:danh mục|loại)?\s*[:\-]?\s*/i;
-    let categorySearchTerm = args.category ? args.category.trim() : '';
-    if (!categorySearchTerm && catPrefixRegex.test(rawQuery)) {
-      categorySearchTerm = rawQuery.replace(catPrefixRegex, '').trim();
+    // 1. Nhận diện các nhóm danh mục ẩm thực trong câu hỏi
+    const categoryGroupMap = [
+      { key: 'Sashimi', pattern: /(?:sashimi|hải sản tươi|cá sống)/i, slugs: ['sashimi', 'set-sushi', 'take-away'] },
+      { key: 'Cơm & Mỳ', pattern: /(?:cơm|mỳ|mì|udon|soba|cuốn|roll)/i, slugs: ['com-my', 'com-cuon', 'sushi'] },
+      { key: 'Món phụ & Salad', pattern: /(?:món phụ|phụ|salad|khai vị|dùng kèm|ăn kèm)/i, slugs: ['salad', 'khai-vi'] },
+      { key: 'Nước uống', pattern: /(?:nước|đồ uống|uống|trà|nước ép|soft drink|juice)/i, slugs: ['nuoc-ep-trai-cay', 'tra', 'soft-drink'] },
+      { key: 'Món chính & Lẩu', pattern: /(?:món chính|lẩu|hotpot|combo|thịt nướng)/i, slugs: ['mon-chinh', 'lau', 'combo'] },
+      { key: 'Tráng miệng', pattern: /(?:tráng miệng|dessert|chè|bánh)/i, slugs: ['trang-mieng'] },
+    ];
+
+    const matchedGroups = categoryGroupMap.filter((g) => g.pattern.test(q));
+
+    // Nhận diện ngân sách trong câu: ví dụ 500k -> 500000, 500.000 -> 500000, 1 triệu -> 1000000
+    let detectedBudget = explicitBudget ? Number(explicitBudget) : 0;
+    if (!detectedBudget) {
+      const budgetMatchK = q.match(/(\d+(?:[.,]\d+)?)\s*(?:k|nghìn|ngàn)/i);
+      const budgetMatchTrieu = q.match(/(\d+(?:[.,]\d+)?)\s*(?:tr|triệu)/i);
+      const budgetMatchVnd = q.match(/(\d{2,3}(?:[.,]\d{3})+)\s*(?:đ|vnd|dong)?/i);
+
+      if (budgetMatchK) {
+        detectedBudget = parseFloat(budgetMatchK[1].replace(',', '.')) * 1000;
+      } else if (budgetMatchTrieu) {
+        detectedBudget = parseFloat(budgetMatchTrieu[1].replace(',', '.')) * 1000000;
+      } else if (budgetMatchVnd) {
+        detectedBudget = parseInt(budgetMatchVnd[1].replace(/[.,]/g, ''), 10);
+      }
     }
 
-    // Đối chiếu xem từ khóa có trùng khớp với danh mục nào trong DB không
-    let targetCategory: any = null;
-    if (categorySearchTerm) {
-      targetCategory = await this.prisma.category.findFirst({
+    // Nhận diện số lượng món yêu cầu
+    const dishCountMatch = q.match(/(\d+)\s*món/i);
+    const targetDishCount = dishCountMatch ? parseInt(dishCountMatch[1], 10) : (matchedGroups.length >= 3 ? matchedGroups.length : 0);
+
+    // Nhận diện số người ăn
+    const peopleCountMatch = q.match(/(\d+)\s*(?:người|khách|bạn|ng)/i);
+    const peopleCount = peopleCountMatch ? parseInt(peopleCountMatch[1], 10) : 0;
+
+    // Chỉ kích hoạt chế độ ghép combo đa nhóm nếu có >= 2 nhóm danh mục HOẶC (có ngân sách + số món >= 3)
+    if (matchedGroups.length < 2 && !(detectedBudget > 0 && targetDishCount >= 3)) {
+      return null;
+    }
+
+    const excludedWords = ['khăn lạnh', 'mù tạt', 'nước tương', 'đũa', 'gừng'];
+    const whereBase: any = {
+      available: true,
+      price: { gte: 25000 },
+      NOT: excludedWords.map((w) => ({ name: { contains: w } })),
+    };
+    if (effectiveBranchId) {
+      whereBase.branches = { some: { id: effectiveBranchId } };
+    }
+
+    // Lấy các sản phẩm từ database cho các nhóm
+    const selectedDishes: any[] = [];
+    const usedProductIds = new Set<string>();
+
+    for (const group of matchedGroups) {
+      const prods = await this.prisma.product.findMany({
         where: {
-          OR: [
-            { name: { contains: categorySearchTerm } },
-            { slug: { contains: categorySearchTerm.toLowerCase() } },
-          ],
+          ...whereBase,
+          category: { slug: { in: group.slugs } },
         },
-      });
-    }
-
-    if (!targetCategory && q && !isHotQuery) {
-      targetCategory = await this.prisma.category.findFirst({
-        where: {
-          OR: [
-            { name: { contains: q } },
-            { slug: { contains: q } },
-          ],
-        },
-      });
-    }
-
-    if (targetCategory) {
-      where.categoryId = targetCategory.id;
-    } else if (!isHotQuery && q) {
-      where.OR = [
-        { name: { contains: q } },
-        { description: { contains: q } },
-        { category: { name: { contains: q } } },
-        { category: { slug: { contains: q } } },
-      ];
-    }
-
-    if (args.budget && Number(args.budget) > 0) {
-      where.price = { lte: Number(args.budget) };
-    }
-
-    const products = await this.prisma.product.findMany({
-      where,
-      include: {
-        category: { select: { name: true, slug: true } },
-        optionGroups: {
-          include: {
-            optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } },
+        include: {
+          category: { select: { name: true, slug: true } },
+          optionGroups: {
+            include: { optionItems: { where: { available: true } } },
           },
         },
-        FlashSaleItem: {
-          where: {
-            flashSale: { status: 'ACTIVE', startTime: { lte: new Date() }, endTime: { gte: new Date() } },
-          },
-          include: { flashSale: true },
-        },
-      },
-      take: 8,
-    });
-
-    const now = new Date();
-    const formatted = products.map((p) => {
-      const activeFs = p.FlashSaleItem?.find((fs) => {
-        return fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold;
+        orderBy: [{ isBestSeller: 'desc' }, { soldQuantity: 'desc' }, { price: 'asc' }],
+        take: 10,
       });
 
-      const requiredGroups = p.optionGroups
-        .filter((g) => g.isRequired)
-        .map((g) => ({
-          name: g.name,
-          choices: g.optionItems.map((i) => `${i.name} (+${i.priceAdjustment.toLocaleString('vi-VN')}đ)`),
-        }));
-
-      return {
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        flashSalePrice: activeFs ? activeFs.flashSalePrice : null,
-        isFlashSale: Boolean(activeFs),
-        category: p.category?.name || 'Món',
-        imageUrl: p.imageUrl,
-        hasRequiredOptions: requiredGroups.length > 0,
-        requiredOptionsNotice:
-          requiredGroups.length > 0
-            ? `Cần chọn: ${requiredGroups.map((rg) => `${rg.name} (${rg.choices.join(', ')})`).join('; ')}`
-            : null,
-      };
-    });
-
-    if (ctx && formatted.length > 0) {
-      ctx.lastSuggestedProducts = formatted.map((p) => ({ id: p.id, name: p.name }));
-    }
-
-    // Xây dựng gợi ý thông minh theo ngữ cảnh thực tế
-    const suggestions: (string | ChatbotSuggestion)[] = [];
-    if (formatted.length > 0) {
-      const topDish = formatted[0];
-      suggestions.push({
-        label: `Thêm ${topDish.name} vào giỏ`,
-        action: 'ADD_TO_CART',
-        payload: { productName: topDish.name, productId: topDish.id },
-        entityId: topDish.id,
-      });
-
-      if (formatted.length > 1) {
-        suggestions.push({
-          label: `Gợi ý món ăn kèm`,
-          action: 'SEND_MESSAGE',
-          payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${topDish.name}`,
-        });
-      }
-
-      if (args.budget) {
-        suggestions.push({
-          label: 'Gợi ý món ăn khác',
-          action: 'SEND_MESSAGE',
-          payload: 'Gợi ý thêm một lựa chọn khác cùng tầm giá',
-        });
-      } else {
-        suggestions.push({
-          label: 'Gợi ý theo ngân sách',
-          action: 'SEND_MESSAGE',
-          payload: 'Gợi ý cho tôi bữa ăn dưới 150.000đ',
-        });
-      }
-    } else {
-      suggestions.push({
-        label: 'Xem toàn bộ danh mục thực đơn',
-        action: 'SEND_MESSAGE',
-        payload: 'Liệt kê các danh mục thực đơn của quán',
-      });
-      suggestions.push({
-        label: 'Gợi ý món bán chạy nhất',
-        action: 'SEND_MESSAGE',
-        payload: 'Món nào đang bán chạy nhất?',
-      });
-    }
-
-    return {
-      success: true,
-      code: 'MENU_SEARCH_COMPLETED',
-      message: `Tìm thấy ${formatted.length} món phù hợp.`,
-      data: { products: formatted },
-      actionType: 'SHOW_PRODUCT',
-      actionPayload: JSON.stringify({ products: formatted }),
-      suggestedReplies: suggestions.slice(0, 3),
-    };
-  }
-
-  private async toolGetProductDetail(args: ChatbotToolArgsMap['getProductDetail'], ctx?: ChatSessionContext): Promise<ChatbotToolResult> {
-    let product: any = null;
-    const includeConfig = {
-      category: true,
-      optionGroups: {
-        include: { optionItems: { where: { available: true } } },
-      },
-      FlashSaleItem: {
-        where: { flashSale: { status: 'ACTIVE' } },
-        include: { flashSale: true },
-      },
-      branches: { select: { id: true } },
-    };
-
-    if (args.productId) {
-      product = await this.prisma.product.findUnique({
-        where: { id: args.productId },
-        include: includeConfig,
-      });
-    } else if (args.productName) {
-      const q = args.productName.trim();
-      product = await this.prisma.product.findFirst({
-        where: { name: { contains: q } },
-        include: includeConfig,
-      });
-
-      if (!product) {
-        const words = q.split(/\s+/).filter((w) => w.length > 1);
-        if (words.length > 0) {
-          product = await this.prisma.product.findFirst({
-            where: {
-              AND: words.map((w) => ({ name: { contains: w } })),
-            },
-            include: includeConfig,
-          });
+      if (prods.length > 0) {
+        // Chọn món chưa dùng
+        const available = prods.filter((p) => !usedProductIds.has(p.id));
+        if (available.length > 0) {
+          // Ưu tiên món có giá trung bình cân đối nếu có ngân sách
+          let chosen = available[0];
+          if (detectedBudget > 0 && targetDishCount > 0) {
+            const idealPrice = detectedBudget / targetDishCount;
+            chosen = available.reduce((prev, curr) =>
+              Math.abs(curr.price - idealPrice) < Math.abs(prev.price - idealPrice) ? curr : prev,
+            );
+          }
+          selectedDishes.push(chosen);
+          usedProductIds.add(chosen.id);
         }
       }
     }
 
-    if (!product) {
-      return { success: false, code: 'PRODUCT_NOT_FOUND', message: 'Không tìm thấy món ăn này trong thực đơn.' };
+    // Nếu chưa đủ số món mục tiêu, lấy thêm từ cơm/món chính/món phụ/tráng miệng
+    if (targetDishCount > 0 && selectedDishes.length < targetDishCount) {
+      const remainingCount = targetDishCount - selectedDishes.length;
+      const extraProds = await this.prisma.product.findMany({
+        where: {
+          ...whereBase,
+          id: { notIn: Array.from(usedProductIds) },
+          category: { slug: { in: ['com-cuon', 'mon-chinh', 'sushi', 'com-my', 'trang-mieng', 'salad'] } },
+        },
+        include: {
+          category: { select: { name: true, slug: true } },
+          optionGroups: {
+            include: { optionItems: { where: { available: true } } },
+          },
+        },
+        orderBy: [{ isBestSeller: 'desc' }, { price: 'asc' }],
+        take: remainingCount * 4,
+      });
+
+      for (const p of extraProds) {
+        if (selectedDishes.length >= targetDishCount) break;
+        if (!usedProductIds.has(p.id)) {
+          selectedDishes.push(p);
+          usedProductIds.add(p.id);
+        }
+      }
     }
+
+    if (selectedDishes.length === 0) return null;
+
+    const totalComboPrice = selectedDishes.reduce((sum, d) => sum + d.price, 0);
+
+    const formatted = selectedDishes.map((p) => {
+      const catSlug = p.category?.slug || '';
+      const prodSlug = p.slug || '';
+      const dishUrl = catSlug && prodSlug ? `/${catSlug}/${prodSlug}` : (prodSlug ? `/${prodSlug}` : '/menu');
+      return {
+        id: p.id,
+        name: p.name,
+        slug: prodSlug,
+        categorySlug: catSlug,
+        category: { name: p.category?.name || 'Món', slug: catSlug },
+        productUrl: dishUrl,
+        price: p.price,
+        imageUrl: p.imageUrl,
+        optionGroups: p.optionGroups || [],
+      };
+    });
 
     if (ctx) {
-      ctx.lastSuggestedProducts = [{ id: product.id, name: product.name }];
+      ctx.lastSuggestedProducts = formatted.map((p) => ({ id: p.id, name: p.name }));
     }
 
-    const now = new Date();
-    const activeFs = product.FlashSaleItem?.find(
-      (fs: any) => fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold,
-    );
-
-    const optionGroups = (product.optionGroups || []).map((og: any) => ({
-      id: og.id,
-      name: og.name,
-      isRequired: og.isRequired,
-      multipleChoice: og.multipleChoice,
-      minSelect: og.minSelect,
-      maxSelect: og.maxSelect,
-      items: (og.optionItems || []).map((oi: any) => ({
-        id: oi.id,
-        name: oi.name,
-        priceAdjustment: oi.priceAdjustment,
-        isDefault: oi.isDefault,
-      })),
+    const itemsForCart = formatted.map((p) => ({
+      productId: p.id,
+      productName: p.name,
+      price: p.price,
+      quantity: 1,
     }));
+
+    const formattedTotal = new Intl.NumberFormat('vi-VN').format(totalComboPrice);
+    const budgetNote = detectedBudget > 0 ? ` (ngân sách ~${new Intl.NumberFormat('vi-VN').format(detectedBudget)}đ)` : '';
+    const peopleNote = peopleCount > 0 ? ` cho ${peopleCount} người` : '';
+
+    const dishLines = formatted.map((d, idx) => `${idx + 1}. ${d.name} (${d.category.name}) - ${new Intl.NumberFormat('vi-VN').format(d.price)}đ`).join('\n');
 
     return {
       success: true,
-      code: 'PRODUCT_DETAIL_LOADED',
-      message: `Chi tiết món ${product.name}`,
+      code: 'COMBO_MEAL_RECOMMENDED',
+      message: `AVORA đã thiết kế mâm ăn ${formatted.length} món${peopleNote}${budgetNote} với tổng tiền ${formattedTotal}đ chuẩn thực đơn nhà hàng.`,
+      content: `Dạ AVORA đã chọn cho bạn mâm ăn cân đối gồm ${formatted.length} món ngon hài hòa${peopleNote}${budgetNote} với tổng cộng **${formattedTotal}đ**:\n\n${dishLines}\n\nTất cả món đều đang sẵn sàng phục vụ tại nhà hàng. Quý khách có thể bấm **Thêm toàn bộ mâm vào giỏ** để đặt ngay nhé!`,
+      actionType: 'ADD_ALL_TO_CART',
+      actionPayload: JSON.stringify({
+        comboName: `Mâm tiệc ${formatted.length} món${peopleNote}`,
+        totalAmount: totalComboPrice,
+        items: itemsForCart,
+      }),
       data: {
-        product: {
-          id: product.id,
-          name: product.name,
-          basePrice: product.price,
-          flashSalePrice: activeFs ? activeFs.flashSalePrice : null,
-          isFlashSale: Boolean(activeFs),
-          description: product.description,
-          imageUrl: product.imageUrl,
-          optionGroups,
-        },
+        products: formatted,
+        totalAmount: totalComboPrice,
+        detectedBudget,
+        targetDishCount: formatted.length,
       },
       suggestedReplies: [
         {
-          label: `Thêm ${product.name} vào giỏ`,
-          action: 'ADD_TO_CART',
-          payload: { productName: product.name, productId: product.id },
-          entityId: product.id,
+          label: 'Thêm cả mâm vào giỏ hàng',
+          action: 'ADD_ALL_TO_CART',
+          payload: JSON.stringify({ items: itemsForCart }),
         },
         {
-          label: 'Gợi ý món ăn kèm',
+          label: 'Tiến hành chốt đơn',
           action: 'SEND_MESSAGE',
-          payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${product.name}`,
+          payload: 'Tiến hành chốt đơn và thanh toán cho các món này',
         },
         {
-          label: 'Món khác cùng danh mục',
+          label: 'Gợi ý thêm nước uống',
           action: 'SEND_MESSAGE',
-          payload: `Gợi ý thêm món khác thuộc danh mục ${product.category?.name || 'này'}`,
+          payload: 'Gợi ý thêm đồ uống hoặc nước ép tráng miệng cho bữa ăn',
         },
       ],
     };
+  }
+
+  private async toolSearchMenu(args: ChatbotToolArgsMap['searchMenu'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+    try {
+      const where: any = { available: true };
+      const effectiveBranchId = args.branchId || ctx.currentBranchId;
+      if (effectiveBranchId) {
+        where.branches = { some: { id: effectiveBranchId } };
+      }
+
+      const rawQuery = args.query ? args.query.trim() : '';
+      const q = rawQuery.toLowerCase();
+
+      // 0.1 KIỂM TRA Ý ĐỊNH ĐẶT BÀN / GIỮ BÀN (TUYỆT ĐỐI KHÔNG TÌM MÓN ĂN VỚI TỪ KHÓA BÀN!)
+      const isReservationIntent = /(?:đặt\s*bàn|dat\s*ban|giữ\s*bàn|giu\s*ban|đặt\s*chỗ|book\s*table|bàn\s*tại|bàn\s*t\b)/i.test(rawQuery);
+      if (isReservationIntent) {
+        const branches = await this.prisma.branch.findMany({ where: { onlineOrderingEnabled: true } });
+        const matchedBranch = branches.find((b) =>
+          q.includes(b.name.toLowerCase()) ||
+          (b.branchCode && q.includes(b.branchCode.toLowerCase())) ||
+          (b.district && q.includes(b.district.toLowerCase())) ||
+          (b.street && q.includes(b.street.toLowerCase())),
+        ) || branches.find((b) => b.id === effectiveBranchId) || branches[0];
+
+        const bName = matchedBranch ? matchedBranch.name : 'nhà hàng AVORA';
+        return {
+          success: true,
+          code: 'RESERVATION_INTENT',
+          message: `Dạ em xin hỗ trợ quý khách đặt bàn tại ${bName} ngay ạ! Quý khách vui lòng cho em biết: Ngày giờ muốn đến dùng bữa, số lượng khách đi cùng và số điện thoại liên hệ nhé!`,
+          content: `Dạ em xin phép hỗ trợ quý khách đặt bàn tại **${bName}** ngay ạ!\n\nQuý khách vui lòng cung cấp giúp em thông tin:\n- **Thời gian đến:** (Ví dụ: 19:00 tối nay hoặc trưa mai)\n- **Số lượng khách:** (Ví dụ: 2 người, 4 người, 10 người)\n- **Số điện thoại liên hệ**\n\nEm sẽ kiểm tra bàn trống và giữ chỗ chu đáo nhất cho quý khách!`,
+          data: {
+            branch: matchedBranch,
+          },
+          suggestedReplies: [
+            { label: `Đặt bàn 2 người tối nay`, action: 'SEND_MESSAGE', payload: `Tôi muốn đặt bàn 2 người vào 19:00 tối nay tại ${bName}` },
+            { label: `Đặt bàn 4 người trưa mai`, action: 'SEND_MESSAGE', payload: `Tôi muốn đặt bàn 4 người vào 12:00 trưa mai tại ${bName}` },
+            { label: `Xem thực đơn ${bName}`, action: 'SEND_MESSAGE', payload: `Cho tôi xem các món đặc sắc tại ${bName}` },
+          ],
+        };
+      }
+
+      // 0.2 KIỂM TRA YÊU CẦU GỢI Ý MÂM ĂN / COMBO NHIỀU MÓN THEO NGÂN SÁCH
+      const comboResult = await this.buildMultiCategoryCombo(rawQuery, args.budget, effectiveBranchId, ctx);
+      if (comboResult) {
+        return comboResult;
+      }
+
+      const isHotQuery = ['bestseller', 'bán chạy', 'hot', 'nổi bật', 'gợi ý'].some((w) => q.includes(w));
+
+      // Bóc tách tên danh mục nếu khách gửi câu kiểu: "Gợi ý món trong danh mục Sushi & Maki"
+      const catPrefixRegex = /^(?:gợi ý|tìm|xem|cho tôi|danh sách)?\s*(?:các|những)?\s*món\s*(?:ăn)?\s*(?:trong|thuộc)?\s*(?:danh mục|loại)?\s*[:\-]?\s*/i;
+      let categorySearchTerm = args.category ? args.category.trim() : '';
+      if (!categorySearchTerm && catPrefixRegex.test(rawQuery)) {
+        categorySearchTerm = rawQuery.replace(catPrefixRegex, '').trim();
+      }
+
+      // Đối chiếu xem từ khóa có trùng khớp với danh mục nào trong DB không
+      let targetCategory: any = null;
+      if (categorySearchTerm) {
+        targetCategory = await this.prisma.category.findFirst({
+          where: {
+            OR: [
+              { name: { contains: categorySearchTerm } },
+              { slug: { contains: categorySearchTerm.toLowerCase() } },
+            ],
+          },
+        });
+      }
+
+      if (!targetCategory && q && !isHotQuery) {
+        targetCategory = await this.prisma.category.findFirst({
+          where: {
+            OR: [
+              { name: { contains: q } },
+              { slug: { contains: q } },
+            ],
+          },
+        });
+      }
+
+      if (targetCategory) {
+        where.categoryId = targetCategory.id;
+      } else if (!isHotQuery && q) {
+        where.OR = [
+          { name: { contains: q } },
+          { description: { contains: q } },
+          { category: { name: { contains: q } } },
+          { category: { slug: { contains: q } } },
+        ];
+      }
+
+      if (args.budget && Number(args.budget) > 0) {
+        where.price = { lte: Number(args.budget) };
+      }
+
+      const products =
+        (await this.prisma.product.findMany({
+          where,
+          include: {
+            category: { select: { name: true, slug: true } },
+            optionGroups: {
+              include: {
+                optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } },
+              },
+            },
+            FlashSaleItem: {
+              where: {
+                flashSale: { status: 'ACTIVE', startTime: { lte: new Date() }, endTime: { gte: new Date() } },
+              },
+              include: { flashSale: true },
+            },
+          },
+          take: 8,
+        })) || [];
+
+      const now = new Date();
+      const formatProdItem = (p: any) => {
+        const activeFs = p.FlashSaleItem?.find((fs: any) => {
+          return fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold;
+        });
+
+        const requiredGroups = (p.optionGroups || [])
+          .filter((g: any) => g.isRequired)
+          .map((g: any) => ({
+            name: g.name,
+            choices: (g.optionItems || []).map((i: any) => `${i.name} (+${i.priceAdjustment.toLocaleString('vi-VN')}đ)`),
+          }));
+
+        const catSlug = p.category?.slug || '';
+        const prodSlug = p.slug || '';
+        const dishUrl = catSlug && prodSlug ? `/${catSlug}/${prodSlug}` : (prodSlug ? `/${prodSlug}` : '/menu');
+
+        return {
+          id: p.id,
+          name: p.name,
+          slug: prodSlug,
+          categorySlug: catSlug,
+          category: {
+            name: p.category?.name || 'Món',
+            slug: catSlug,
+          },
+          productUrl: dishUrl,
+          price: p.price,
+          flashSalePrice: activeFs ? activeFs.flashSalePrice : null,
+          isFlashSale: Boolean(activeFs),
+          imageUrl: p.imageUrl,
+          optionGroups: p.optionGroups || [],
+          hasRequiredOptions: requiredGroups.length > 0,
+          requiredOptionsNotice:
+            requiredGroups.length > 0
+              ? `Cần chọn: ${requiredGroups.map((rg: any) => `${rg.name} (${rg.choices.join(', ')})`).join('; ')}`
+              : null,
+        };
+      };
+
+      const formatted = products.map(formatProdItem);
+
+      if (ctx && formatted.length > 0) {
+        ctx.lastSuggestedProducts = formatted.map((p) => ({ id: p.id, name: p.name }));
+      }
+
+      // Xây dựng gợi ý thông minh theo ngữ cảnh thực tế
+      const suggestions: (string | ChatbotSuggestion)[] = [];
+      if (formatted.length > 0) {
+        const topDish = formatted[0];
+        suggestions.push({
+          label: `Thêm ${topDish.name} vào giỏ`,
+          action: 'ADD_TO_CART',
+          payload: { productName: topDish.name, productId: topDish.id },
+          entityId: topDish.id,
+        });
+
+        if (formatted.length > 1) {
+          suggestions.push({
+            label: `Gợi ý món ăn kèm`,
+            action: 'SEND_MESSAGE',
+            payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${topDish.name}`,
+          });
+        }
+
+        if (args.budget) {
+          suggestions.push({
+            label: 'Gợi ý món ăn khác',
+            action: 'SEND_MESSAGE',
+            payload: 'Gợi ý thêm một lựa chọn khác cùng tầm giá',
+          });
+        } else {
+          suggestions.push({
+            label: 'Gợi ý theo ngân sách',
+            action: 'SEND_MESSAGE',
+            payload: 'Gợi ý cho tôi bữa ăn dưới 150.000đ',
+          });
+        }
+      } else {
+        suggestions.push({
+          label: 'Xem toàn bộ danh mục thực đơn',
+          action: 'SEND_MESSAGE',
+          payload: 'Liệt kê các danh mục thực đơn của quán',
+        });
+        suggestions.push({
+          label: 'Gợi ý món bán chạy nhất',
+          action: 'SEND_MESSAGE',
+          payload: 'Món nào đang bán chạy nhất?',
+        });
+      }
+
+      if (formatted.length === 0) {
+        // Kiểm tra sâu lý do không tìm thấy: Hết hàng (OUT_OF_STOCK), Chỉ có ở chi nhánh khác (BRANCH_UNAVAILABLE), hay Gần giống món thật / Không tồn tại (MENU_ITEM_NOT_FOUND)
+        if (rawQuery && !isHotQuery) {
+          const allMatchedRaw =
+            (await this.prisma.product.findMany({
+              where: {
+                OR: [
+                  { name: { contains: rawQuery } },
+                  { slug: { contains: rawQuery.toLowerCase().replace(/\s+/g, '-') } },
+                ],
+              },
+              include: {
+                category: { select: { name: true, slug: true } },
+                branches: { select: { id: true, name: true } },
+              },
+              take: 5,
+            })) || [];
+
+          const altProductsRaw =
+            (await this.prisma.product.findMany({
+              where: {
+                available: true,
+                ...(effectiveBranchId ? { branches: { some: { id: effectiveBranchId } } } : {}),
+              },
+              include: {
+                category: { select: { name: true, slug: true } },
+                optionGroups: {
+                  include: {
+                    optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } },
+                  },
+                },
+                FlashSaleItem: {
+                  where: {
+                    flashSale: { status: 'ACTIVE', startTime: { lte: new Date() }, endTime: { gte: new Date() } },
+                  },
+                  include: { flashSale: true },
+                },
+              },
+              orderBy: [{ isBestSeller: 'desc' }, { soldQuantity: 'desc' }],
+              take: 4,
+            })) || [];
+          const formattedAlternatives = altProductsRaw.map(formatProdItem);
+
+          if (allMatchedRaw.length > 0) {
+            const exactOrPrimary =
+              allMatchedRaw.find((p) => (p.name || '').toLowerCase() === q) || allMatchedRaw[0];
+
+            // 1. Món tạm hết hàng / ngừng bán (available = false)
+            if (!exactOrPrimary.available) {
+              return {
+                success: false,
+                code: 'PRODUCT_OUT_OF_STOCK',
+                message: `Dạ món [${exactOrPrimary.name}] hiện đang tạm hết hàng tại nhà hàng ạ. Quý khách vui lòng tham khảo các món đặc sắc khác đang sẵn sàng phục vụ nhé!`,
+                content: `Dạ món **${exactOrPrimary.name}** hiện đang tạm hết hàng tại nhà hàng ạ. Quý khách có thể tham khảo các món đang sẵn sàng phục vụ bên dưới nhé!`,
+                data: {
+                  outOfStockProduct: {
+                    id: exactOrPrimary.id,
+                    name: exactOrPrimary.name,
+                    available: false,
+                  },
+                  suggestedAlternatives: formattedAlternatives,
+                  products: [],
+                },
+                suggestedReplies: [
+                  { label: 'Gợi ý món bán chạy', action: 'SEND_MESSAGE', payload: 'Gợi ý cho tôi các món bán chạy nhất' },
+                  { label: 'Xem thực đơn', action: 'SEND_MESSAGE', payload: 'Cho tôi xem thực đơn của nhà hàng' },
+                ],
+              };
+            }
+
+            // 2. Món chỉ có ở chi nhánh khác (BRANCH_UNAVAILABLE)
+            const prodBranchIds = (exactOrPrimary.branches || []).map((b: any) => b.id);
+            if (
+              effectiveBranchId &&
+              prodBranchIds.length > 0 &&
+              !prodBranchIds.includes(effectiveBranchId)
+            ) {
+              const servingBranchNames =
+                (exactOrPrimary.branches || [])
+                  .map((b: any) => b.name)
+                  .filter(Boolean)
+                  .join(', ') || 'chi nhánh khác';
+              return {
+                success: false,
+                code: 'BRANCH_UNAVAILABLE',
+                message: `Dạ món [${exactOrPrimary.name}] hiện chỉ phục vụ tại [${servingBranchNames}], tạm thời chưa có tại chi nhánh đang chọn ạ.`,
+                content: `Dạ món **${exactOrPrimary.name}** hiện chỉ phục vụ tại **${servingBranchNames}**, tạm thời chưa có tại chi nhánh quý khách đang chọn ạ. Quý khách có thể đổi chi nhánh hoặc tham khảo các món đang có sẵn tại chi nhánh hiện tại nhé!`,
+                data: {
+                  unavailableAtBranchProduct: {
+                    id: exactOrPrimary.id,
+                    name: exactOrPrimary.name,
+                    availableBranches: exactOrPrimary.branches,
+                  },
+                  suggestedAlternatives: formattedAlternatives,
+                  products: [],
+                },
+                suggestedReplies: [
+                  { label: 'Gợi ý món tại chi nhánh này', action: 'SEND_MESSAGE', payload: 'Gợi ý các món bán chạy tại chi nhánh hiện tại' },
+                  { label: 'Xem danh sách chi nhánh', action: 'SEND_MESSAGE', payload: 'Xem danh sách các chi nhánh AVORA' },
+                ],
+              };
+            }
+          }
+
+          // 3. Tìm món gần giống (Near-Miss Dish Name) để gợi ý thay thế mà vẫn giữ code MENU_ITEM_NOT_FOUND
+          const modifierStopWords = new Set([
+            'món', 'phần', 'suất', 'tô', 'bát', 'đĩa', 'ly', 'đặc', 'biệt', 'thượng', 'hạng', 'hoàng', 'kim', 'siêu', 'cấp',
+          ]);
+          const tokens = q
+            .split(/\s+/)
+            .map((t) => t.replace(/[^a-z0-9à-ỹ]/gi, ''))
+            .filter((t) => t.length >= 2 && !modifierStopWords.has(t));
+
+          let nearAlternatives = formattedAlternatives;
+          if (tokens.length > 0) {
+            const nearMatchesRaw =
+              (await this.prisma.product.findMany({
+                where: {
+                  available: true,
+                  ...(effectiveBranchId ? { branches: { some: { id: effectiveBranchId } } } : {}),
+                  OR: tokens.map((t) => ({ name: { contains: t } })),
+                },
+                include: {
+                  category: { select: { name: true, slug: true } },
+                  optionGroups: {
+                    include: {
+                      optionItems: { where: { available: true }, orderBy: { displayOrder: 'asc' } },
+                    },
+                  },
+                  FlashSaleItem: {
+                    where: {
+                      flashSale: { status: 'ACTIVE', startTime: { lte: new Date() }, endTime: { gte: new Date() } },
+                    },
+                    include: { flashSale: true },
+                  },
+                },
+                take: 6,
+              })) || [];
+
+            if (nearMatchesRaw.length > 0) {
+              const scored = nearMatchesRaw
+                .map((p) => {
+                  const lowerName = (p.name || '').toLowerCase();
+                  const matchCount = tokens.filter((t) => lowerName.includes(t)).length;
+                  return { item: formatProdItem(p), matchCount };
+                })
+                .filter((s) => s.matchCount > 0)
+                .sort((a, b) => b.matchCount - a.matchCount);
+
+              const nearFormatted = scored.map((s) => s.item);
+              const seenIds = new Set(nearFormatted.map((p) => p.id));
+              nearAlternatives = [
+                ...nearFormatted,
+                ...formattedAlternatives.filter((p) => !seenIds.has(p.id)),
+              ].slice(0, 4);
+            }
+          }
+
+          return {
+            success: false,
+            code: 'MENU_ITEM_NOT_FOUND',
+            message: 'Hiện tại AVORA chưa có món này trong thực đơn. Bạn có thể cho mình biết bạn thích món có nguyên liệu hoặc hương vị nào để mình gợi ý những món đang có tại nhà hàng nhé.',
+            data: {
+              products: [],
+              suggestedAlternatives: nearAlternatives,
+            },
+            suggestedReplies: [
+              { label: 'Xem thực đơn', action: 'SEND_MESSAGE', payload: 'Cho tôi xem thực đơn của nhà hàng' },
+              { label: 'Gợi ý món bán chạy', action: 'SEND_MESSAGE', payload: 'Gợi ý cho tôi các món bán chạy nhất' },
+            ],
+          };
+        }
+
+        return {
+          success: false,
+          code: 'MENU_ITEM_NOT_FOUND',
+          message: 'Hiện tại AVORA chưa có món này trong thực đơn. Bạn có thể cho mình biết bạn thích món có nguyên liệu hoặc hương vị nào để mình gợi ý những món đang có tại nhà hàng nhé.',
+          data: { products: [] },
+          suggestedReplies: [
+            { label: 'Xem thực đơn', action: 'SEND_MESSAGE', payload: 'Cho tôi xem thực đơn của nhà hàng' },
+            { label: 'Gợi ý món bán chạy', action: 'SEND_MESSAGE', payload: 'Gợi ý cho tôi các món bán chạy nhất' },
+          ],
+        };
+      }
+
+      return {
+        success: true,
+        code: 'MENU_SEARCH_COMPLETED',
+        message: `Tìm thấy ${formatted.length} món phù hợp.`,
+        data: { products: formatted },
+        actionType: 'SHOW_PRODUCT',
+        actionPayload: JSON.stringify({ products: formatted }),
+        suggestedReplies: suggestions.slice(0, 3),
+      };
+    } catch (dbErr: any) {
+      this.logger.error(`Database error in toolSearchMenu: ${dbErr?.message || dbErr}`);
+      return {
+        success: false,
+        code: 'DATABASE_ERROR',
+        message: 'Dạ hiện tại hệ thống chưa thể xác minh thực đơn tại thời điểm này. Quý khách vui lòng thử lại sau ít phút hoặc liên hệ trực tiếp nhân viên nhà hàng qua hotline để được hỗ trợ chu đáo nhất nhé!',
+        content: 'Dạ hiện tại hệ thống chưa thể xác minh thực đơn tại thời điểm này. Quý khách vui lòng thử lại sau ít phút hoặc liên hệ trực tiếp nhân viên nhà hàng qua hotline để được hỗ trợ chu đáo nhất nhé!',
+        data: { products: [] },
+        recoverable: true,
+      };
+    }
+  }
+
+  private async toolGetProductDetail(args: ChatbotToolArgsMap['getProductDetail'], ctx?: ChatSessionContext): Promise<ChatbotToolResult> {
+    try {
+      let product: any = null;
+      const includeConfig = {
+        category: true,
+        optionGroups: {
+          include: { optionItems: { where: { available: true } } },
+        },
+        FlashSaleItem: {
+          where: { flashSale: { status: 'ACTIVE' } },
+          include: { flashSale: true },
+        },
+        branches: { select: { id: true, name: true } },
+      };
+
+      if (args.productId) {
+        product = await this.prisma.product.findUnique({
+          where: { id: args.productId },
+          include: includeConfig,
+        });
+      } else if (args.productName) {
+        const q = args.productName.trim();
+        product = await this.prisma.product.findFirst({
+          where: { name: { contains: q } },
+          include: includeConfig,
+        });
+
+        if (!product) {
+          const words = q.split(/\s+/).filter((w) => w.length > 1);
+          if (words.length > 0) {
+            product = await this.prisma.product.findFirst({
+              where: {
+                AND: words.map((w) => ({ name: { contains: w } })),
+              },
+              include: includeConfig,
+            });
+          }
+        }
+      }
+
+      if (!product) {
+        return { success: false, code: 'PRODUCT_NOT_FOUND', message: 'Không tìm thấy món ăn này trong thực đơn.' };
+      }
+
+      if (!product.available) {
+        return {
+          success: false,
+          code: 'PRODUCT_OUT_OF_STOCK',
+          message: `Dạ món [${product.name}] hiện đang tạm hết hàng tại nhà hàng ạ. Quý khách có thể tham khảo các món khác đang sẵn sàng phục vụ nhé!`,
+          recoverable: true,
+        };
+      }
+
+      const effectiveBranchId = (args as any).branchId || ctx?.currentBranchId;
+      const productBranchIds = (product.branches || []).map((b: any) => b.id);
+      if (
+        effectiveBranchId &&
+        productBranchIds.length > 0 &&
+        !productBranchIds.includes(effectiveBranchId)
+      ) {
+        const servingNames =
+          (product.branches || [])
+            .map((b: any) => b.name)
+            .filter(Boolean)
+            .join(', ') || 'chi nhánh khác';
+        return {
+          success: false,
+          code: 'BRANCH_UNAVAILABLE',
+          message: `Dạ món [${product.name}] hiện chỉ phục vụ tại [${servingNames}], tạm thời chưa có tại chi nhánh đang chọn ạ.`,
+          data: {
+            unavailableAtBranchProduct: {
+              id: product.id,
+              name: product.name,
+              availableBranches: product.branches,
+            },
+          },
+          recoverable: true,
+        };
+      }
+
+      if (ctx) {
+        ctx.lastSuggestedProducts = [{ id: product.id, name: product.name }];
+      }
+
+      const now = new Date();
+      const activeFs = product.FlashSaleItem?.find(
+        (fs: any) => fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold,
+      );
+
+      const optionGroups = (product.optionGroups || []).map((og: any) => ({
+        id: og.id,
+        name: og.name,
+        isRequired: og.isRequired,
+        multipleChoice: og.multipleChoice,
+        minSelect: og.minSelect,
+        maxSelect: og.maxSelect,
+        items: (og.optionItems || []).map((oi: any) => ({
+          id: oi.id,
+          name: oi.name,
+          priceAdjustment: oi.priceAdjustment,
+          isDefault: oi.isDefault,
+        })),
+      }));
+
+      return {
+        success: true,
+        code: 'PRODUCT_DETAIL_LOADED',
+        message: `Chi tiết món ${product.name}`,
+        data: {
+          product: {
+            id: product.id,
+            name: product.name,
+            slug: product.slug,
+            categorySlug: product.category?.slug,
+            productUrl: product.category?.slug && product.slug ? `/${product.category.slug}/${product.slug}` : (product.slug ? `/${product.slug}` : '/menu'),
+            basePrice: product.price,
+            flashSalePrice: activeFs ? activeFs.flashSalePrice : null,
+            isFlashSale: Boolean(activeFs),
+            description: product.description,
+            imageUrl: product.imageUrl,
+            optionGroups,
+          },
+        },
+        suggestedReplies: [
+          {
+            label: `Thêm ${product.name} vào giỏ`,
+            action: 'ADD_TO_CART',
+            payload: { productName: product.name, productId: product.id },
+            entityId: product.id,
+          },
+          {
+            label: 'Gợi ý món ăn kèm',
+            action: 'SEND_MESSAGE',
+            payload: `Gợi ý cho tôi món ăn kèm phù hợp với ${product.name}`,
+          },
+          {
+            label: 'Món khác cùng danh mục',
+            action: 'SEND_MESSAGE',
+            payload: `Gợi ý thêm món khác thuộc danh mục ${product.category?.name || 'này'}`,
+          },
+        ],
+      };
+    } catch (dbErr: any) {
+      this.logger.error(`Database error in toolGetProductDetail: ${dbErr?.message || dbErr}`);
+      return {
+        success: false,
+        code: 'DATABASE_ERROR',
+        message: 'Dạ hiện tại hệ thống chưa thể xác minh thông tin món ăn tại thời điểm này. Quý khách vui lòng thử lại sau ít phút nhé!',
+        recoverable: true,
+      };
+    }
   }
 
   private async toolListCategories(): Promise<ChatbotToolResult> {
@@ -893,10 +1559,32 @@ export class ChatbotToolEngineService {
   // =========================================================================
 
   private createCartSnapshot(ctx: ChatSessionContext): ChatCartSnapshot {
-    const items = (ctx.cart || []).map((item) => ({
-      ...item,
-      selectedOptions: item.selectedOptions.map((option) => ({ ...option })),
-    }));
+    const consolidatedMap = new Map<string, ChatSessionCartItem>();
+    for (const rawItem of ctx.cart || []) {
+      const cleanProdId = String(rawItem.productId || rawItem.id || '').replace(/^cart-/, '').replace(/-\d{10,}$/, '').trim();
+      const optKey = (rawItem.selectedOptions || []).map((o) => o.optionItemId).sort().join('|');
+      const noteTrimmed = (rawItem.note || '').trim();
+      const isFs = Boolean(rawItem.isFlashSale);
+      const dedupeKey = `${cleanProdId}#${optKey}#${noteTrimmed}#${isFs}`;
+      const qty = Math.max(1, Number(rawItem.quantity) || 1);
+
+      const existing = consolidatedMap.get(dedupeKey);
+      if (existing) {
+        existing.quantity += qty;
+      } else {
+        consolidatedMap.set(dedupeKey, {
+          ...rawItem,
+          id: rawItem.id || `line-${cleanProdId}`,
+          lineId: rawItem.lineId || rawItem.id || `line-${cleanProdId}`,
+          productId: cleanProdId,
+          quantity: qty,
+          selectedOptions: (rawItem.selectedOptions || []).map((option) => ({ ...option })),
+        });
+      }
+    }
+
+    const items = Array.from(consolidatedMap.values());
+    ctx.cart = items; // Update ctx.cart in-place to ensure no duplicates persist
 
     return {
       cartVersion: ctx.cartVersion || 0,
@@ -997,26 +1685,38 @@ export class ChatbotToolEngineService {
       };
     }
 
+    if (!product.available) {
+      return {
+        success: false,
+        code: 'PRODUCT_OUT_OF_STOCK',
+        message: `Dạ món [${product.name}] hiện đang tạm hết hàng tại nhà hàng ạ. Quý khách có thể tham khảo các món hấp dẫn khác đang sẵn sàng phục vụ nhé!`,
+        recoverable: true,
+      };
+    }
+
     // 2. Kiểm tra Chi nhánh
     const productBranchIds = (product.branches || []).map((branch: { id: string }) => branch.id);
     if (ctx.currentBranchId && productBranchIds.length > 0 && !productBranchIds.includes(ctx.currentBranchId)) {
       return {
         success: false,
         code: 'CART_BRANCH_CONFLICT',
-        message: 'Món ăn không khả dụng tại chi nhánh của giỏ hàng hiện tại.',
+        message: `Dạ món [${product.name}] hiện chỉ phục vụ tại chi nhánh khác, tạm thời chưa có tại chi nhánh đang chọn ạ.`,
         recoverable: true,
       };
     }
     if (!ctx.currentBranchId) {
-      if (productBranchIds.length !== 1) {
-        return {
-          success: false,
-          code: 'BRANCH_REQUIRED',
-          message: 'Vui lòng chọn chi nhánh trước khi thêm món vào giỏ hàng.',
-          recoverable: true,
-        };
+      if (productBranchIds.length > 0) {
+        ctx.currentBranchId = productBranchIds[0];
+      } else {
+        const defaultBranch = await this.prisma.branch.findFirst({
+          where: { onlineOrderingEnabled: true },
+          select: { id: true },
+          orderBy: { createdAt: 'asc' },
+        });
+        if (defaultBranch) {
+          ctx.currentBranchId = defaultBranch.id;
+        }
       }
-      ctx.currentBranchId = productBranchIds[0];
     }
 
     // 3. Xử lý Options/Toppings thông minh
@@ -1108,20 +1808,30 @@ export class ChatbotToolEngineService {
     // 5. Quản lý Cart trong ctx
     if (!ctx.cart) ctx.cart = [];
 
+    const cleanProductTargetId = String(product.id).replace(/^cart-/, '').replace(/-\d{10,}$/, '').trim();
+    const targetProdName = product.name.trim().toLowerCase();
     // Tạo khóa phân biệt dòng giỏ hàng (Line Identity)
     const optKey = selectedOptions.map((o) => o.optionItemId).sort().join('|');
+    const noteTrimmed = (args.note || '').trim();
     const existingIndex = ctx.cart.findIndex(
-      (c) => c.productId === product.id && c.selectedOptions.map((o) => o.optionItemId).sort().join('|') === optKey && (c.note || '') === (args.note || ''),
+      (c) => {
+        const cleanCartProdId = String(c.productId || c.id || '').replace(/^cart-/, '').replace(/-\d{10,}$/, '').trim();
+        const cName = (c.productName || '').trim().toLowerCase();
+        const isSameProd = cleanCartProdId === cleanProductTargetId || c.productId === product.id || cName === targetProdName;
+        const cOptKey = (c.selectedOptions || []).map((o) => o.optionItemId).sort().join('|');
+        const isSameOpts = cOptKey === optKey || (!cOptKey && !optKey);
+        return isSameProd && isSameOpts && Boolean(c.isFlashSale) === Boolean(activeFs);
+      }
     );
 
     if (existingIndex >= 0) {
       ctx.cart[existingIndex].quantity += quantity;
     } else {
-      const lineId = crypto.randomUUID();
+      const lineId = `line-${cleanProductTargetId}-${optKey ? optKey.replace(/\|/g, '_') : 'base'}`;
       const newLine: ChatSessionCartItem = {
         id: lineId,
         lineId,
-        productId: product.id,
+        productId: cleanProductTargetId,
         productName: product.name,
         quantity,
         basePrice,
@@ -1155,6 +1865,144 @@ export class ChatbotToolEngineService {
     };
   }
 
+  /**
+   * Đối chiếu & xác thực toàn bộ giỏ hàng trực tiếp với Database phía Backend (Zero-Trust Client Cart)
+   * Không bao giờ tin giá món hoặc giá topping do AI / Frontend gửi lên.
+   */
+  private async reconcileCartWithDatabase(
+    ctx: ChatSessionContext,
+    branchId?: string,
+  ): Promise<{ errorResult: ChatbotToolResult | null; priceChanged: boolean; taxMap: Map<string, number> }> {
+    const taxMap = new Map<string, number>();
+    if (!ctx.cart || ctx.cart.length === 0) {
+      return { errorResult: null, priceChanged: false, taxMap };
+    }
+
+    const effectiveBranchId = branchId || ctx.currentBranchId;
+    const cartProductIds = ctx.cart.map((item) => item.productId).filter(Boolean);
+    const cartDbProducts =
+      (await this.prisma.product.findMany({
+        where: { id: { in: cartProductIds } },
+        include: {
+          branches: { select: { id: true, name: true } },
+          optionGroups: {
+            include: { optionItems: true },
+          },
+          FlashSaleItem: {
+            where: {
+              flashSale: { status: 'ACTIVE', startTime: { lte: new Date() }, endTime: { gte: new Date() } },
+            },
+            include: { flashSale: true },
+          },
+        },
+      })) || [];
+
+    const cartDbMap = new Map(cartDbProducts.map((p) => [p.id, p]));
+    let priceChanged = false;
+
+    for (const item of ctx.cart) {
+      const dbProd = cartDbMap.get(item.productId);
+      if (!dbProd) {
+        return {
+          errorResult: {
+            success: false,
+            code: 'PRODUCT_NOT_FOUND',
+            message: `Món [${item.productName || item.productId}] không tồn tại trong thực đơn của nhà hàng. Vui lòng chọn món khác nhé!`,
+          },
+          priceChanged: false,
+          taxMap,
+        };
+      }
+      if (!dbProd.available) {
+        return {
+          errorResult: {
+            success: false,
+            code: 'PRODUCT_OUT_OF_STOCK',
+            message: `Món [${dbProd.name}] hiện đang tạm hết hàng tại nhà hàng. Vui lòng bớt món này khỏi giỏ hàng trước khi đặt nhé!`,
+          },
+          priceChanged: false,
+          taxMap,
+        };
+      }
+      if (effectiveBranchId && dbProd.branches && dbProd.branches.length > 0) {
+        const branchIds = dbProd.branches.map((b: any) => b.id);
+        if (!branchIds.includes(effectiveBranchId)) {
+          return {
+            errorResult: {
+              success: false,
+              code: 'CART_BRANCH_CONFLICT',
+              message: `Món [${dbProd.name}] không phục vụ tại chi nhánh đang chọn. Vui lòng đổi chi nhánh hoặc chọn món khác nhé!`,
+            },
+            priceChanged: false,
+            taxMap,
+          };
+        }
+      }
+
+      taxMap.set(dbProd.id, Number((dbProd as any).taxPercentage || 0));
+
+      const now = new Date();
+      const activeFs = dbProd.FlashSaleItem?.find(
+        (fs: any) => fs.flashSale.startTime <= now && fs.flashSale.endTime >= now && fs.stock > fs.sold,
+      );
+      const serverBasePrice = Number(activeFs ? activeFs.flashSalePrice : dbProd.price);
+
+      // Xác minh giá topping / option từ Database nếu món có optionGroups trong DB
+      const dbOptionMap = new Map<string, { name: string; priceAdjustment: number; available: boolean }>();
+      for (const og of (dbProd as any).optionGroups || []) {
+        for (const oi of og.optionItems || og.options || []) {
+          dbOptionMap.set(oi.id, {
+            name: oi.name,
+            priceAdjustment: Number(oi.priceAdjustment || 0),
+            available: oi.available !== false,
+          });
+        }
+      }
+
+      let optionsExtra = 0;
+      for (const o of item.selectedOptions || []) {
+        const optId = o.optionItemId || (o as any).itemId || (o as any).id;
+        const dbOpt = optId ? dbOptionMap.get(optId) : undefined;
+        if (dbOpt) {
+          if (!dbOpt.available) {
+            return {
+              errorResult: {
+                success: false,
+                code: 'OPTION_OUT_OF_STOCK',
+                message: `Tùy chọn [${dbOpt.name}] của món [${dbProd.name}] hiện đang tạm hết. Vui lòng chọn tùy chọn khác nhé!`,
+              },
+              priceChanged: false,
+              taxMap,
+            };
+          }
+          o.optionItemId = optId;
+          o.optionItemName = dbOpt.name;
+          (o as any).priceAdjustment = dbOpt.priceAdjustment;
+          (o as any).extraPrice = dbOpt.priceAdjustment;
+          optionsExtra += dbOpt.priceAdjustment;
+        } else if (dbOptionMap.size === 0) {
+          // Fallback chỉ khi mock/sản phẩm không khai báo optionGroups
+          optionsExtra += Number((o as any).priceAdjustment || (o as any).extraPrice || 0);
+        }
+      }
+
+      const verifiedPriceAtSale = serverBasePrice + optionsExtra;
+      if (
+        typeof item.priceAtSale === 'number' &&
+        item.priceAtSale > 0 &&
+        item.priceAtSale !== verifiedPriceAtSale
+      ) {
+        priceChanged = true;
+      }
+
+      item.basePrice = serverBasePrice;
+      item.priceAtSale = verifiedPriceAtSale;
+      item.productName = dbProd.name;
+    }
+
+    return { errorResult: null, priceChanged, taxMap };
+  }
+
   private async toolUpdateCartItem(args: ChatbotToolArgsMap['updateCartItem'], ctx: ChatSessionContext): Promise<ChatbotToolResult> {
     if (!ctx.cart || ctx.cart.length === 0) {
       return { success: false, code: 'CART_EMPTY', message: 'Giỏ hàng đang trống.' };
@@ -1177,6 +2025,11 @@ export class ChatbotToolEngineService {
       if (args.note !== undefined) target.note = args.note.trim() || undefined;
     }
 
+    if (ctx.cart.length > 0) {
+      const { errorResult } = await this.reconcileCartWithDatabase(ctx, ctx.currentBranchId);
+      if (errorResult) return errorResult;
+    }
+
     ctx.cartVersion = (ctx.cartVersion || 0) + 1;
     const snapshot = this.createCartSnapshot(ctx);
 
@@ -1191,6 +2044,11 @@ export class ChatbotToolEngineService {
   }
 
   private async toolGetCart(ctx: ChatSessionContext): Promise<ChatbotToolResult> {
+    if (ctx.cart && ctx.cart.length > 0) {
+      const { errorResult } = await this.reconcileCartWithDatabase(ctx, ctx.currentBranchId);
+      if (errorResult) return errorResult;
+    }
+
     const cart = ctx.cart || [];
     const snapshot = this.createCartSnapshot(ctx);
 
@@ -1517,7 +2375,7 @@ export class ChatbotToolEngineService {
       success: true,
       code: 'REQUEST_LOCATION',
       actionType: 'REQUEST_LOCATION',
-      actionPayload: JSON.stringify({ reason: args?.reason || 'CHANGE_ADDRESS' }),
+      actionPayload: JSON.stringify({ reason: 'DELIVERY_ADDRESS', subReason: args?.reason || 'CHANGE_ADDRESS', isDeliveryAddress: true }),
       suggestedReplies: ['📍 Chia sẻ vị trí của tôi', 'Nhập địa chỉ giao hàng'],
       message: 'Vui lòng cung cấp vị trí giao hàng để tiếp tục.',
       content: 'Bạn vui lòng bấm nút **"📍 Chia sẻ vị trí của tôi"** bên dưới hoặc nhập số nhà, tên đường để Avora xác định chi nhánh và tính phí giao hàng chính xác cho bạn nhé!',
@@ -1537,26 +2395,49 @@ export class ChatbotToolEngineService {
       }
     }
     if (!effectiveBranchId) {
+      const defaultBranch = await this.prisma.branch.findFirst({
+        where: { onlineOrderingEnabled: true },
+        select: { id: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (defaultBranch) {
+        effectiveBranchId = defaultBranch.id;
+        ctx.currentBranchId = defaultBranch.id;
+      }
+    }
+    if (!effectiveBranchId) {
       return { success: false, code: 'BRANCH_REQUIRED', message: 'Vui lòng chọn chi nhánh trước khi lấy khung giờ.' };
     }
 
     const branch = await this.prisma.branch.findUnique({ where: { id: effectiveBranchId } });
-    const vnFormatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    });
-    const dateStr = args.date || vnFormatter.format(new Date());
-    const orderType = args.orderType === 'TAKE_AWAY' || args.orderType === 'TAKEAWAY' ? 'TAKEAWAY' : 'DELIVERY';
+    let dateStr = normalizeDateToYYYYMMDD(args.date);
+    const isTakeaway = args.orderType === 'TAKE_AWAY' || args.orderType === 'TAKEAWAY' || ctx.fulfillmentType === 'TAKEAWAY' || ctx.fulfillmentType === 'TAKE_AWAY';
+    const orderType = isTakeaway ? 'TAKEAWAY' : 'DELIVERY';
 
-    const slots = await this.operatingSlotService.getSlotsForDate({
+    let slots = await this.operatingSlotService.getSlotsForDate({
       branchId: effectiveBranchId,
       dateStr,
       orderType: orderType as any,
     });
 
-    const openSlots = slots.filter((s) => s.isAvailable);
+    let openSlots = slots.filter((s) => s.isAvailable);
+
+    // Nếu hôm nay đã hết khung giờ khả dụng (đặt muộn), tự động tìm khung giờ ngày mai
+    const todayStr = normalizeDateToYYYYMMDD();
+    if (openSlots.length === 0 && dateStr === todayStr) {
+      const tomorrowStr = normalizeDateToYYYYMMDD('tomorrow');
+      const tomorrowSlots = await this.operatingSlotService.getSlotsForDate({
+        branchId: effectiveBranchId,
+        dateStr: tomorrowStr,
+        orderType: orderType as any,
+      });
+      const openTomorrow = tomorrowSlots.filter((s) => s.isAvailable);
+      if (openTomorrow.length > 0) {
+        slots = tomorrowSlots;
+        openSlots = openTomorrow;
+        dateStr = tomorrowStr;
+      }
+    }
 
     let displaySlots: any[] = [...openSlots];
     if (displaySlots.length === 0) {
@@ -1576,7 +2457,7 @@ export class ChatbotToolEngineService {
           startTime: s.startTime,
           endTime: s.endTime,
           isAvailable: true,
-          name: s.startTime === '00:00' && s.endTime === '23:59' ? 'Giao trong ngày (00:00 - 23:59)' : `${s.startTime} - ${s.endTime}`,
+          name: s.startTime === '00:00' && s.endTime === '23:59' ? (isTakeaway ? 'Nhận tại quầy trong ngày' : 'Giao ngay trong ngày (00:00 - 23:59)') : `${s.startTime} - ${s.endTime}`,
           leadTimeMinutes: s.leadTimeMinutes,
           orderType: s.orderType,
           isAsap: s.startTime === '00:00' && s.endTime === '23:59',
@@ -1605,8 +2486,28 @@ export class ChatbotToolEngineService {
     let selectedSlot: any = null;
     if (args.requestedTime) {
       selectedSlot = this.matchClosestSlot(args.requestedTime, displaySlots);
-    } else if (displaySlots.length > 0) {
+    }
+    if (!selectedSlot && displaySlots.length > 0) {
       selectedSlot = displaySlots[0];
+    }
+    if (!selectedSlot) {
+      const fallbackDbSlot = await this.prisma.operatingSlot.findFirst({
+        where: { branchId: effectiveBranchId, isActive: true },
+        orderBy: { startTime: 'asc' },
+      });
+      if (fallbackDbSlot) {
+        selectedSlot = {
+          id: fallbackDbSlot.id,
+          startTime: fallbackDbSlot.startTime,
+          endTime: fallbackDbSlot.endTime,
+          isAvailable: true,
+          name: `${fallbackDbSlot.startTime} - ${fallbackDbSlot.endTime}`,
+          leadTimeMinutes: fallbackDbSlot.leadTimeMinutes,
+          orderType: fallbackDbSlot.orderType,
+          isAsap: false,
+        };
+        displaySlots = [selectedSlot];
+      }
     }
 
     if (selectedSlot) {
@@ -1619,7 +2520,7 @@ export class ChatbotToolEngineService {
       return {
         success: true,
         code: 'ORDER_SLOT_SELECTED',
-        message: `Đã chọn khung giờ ${selectedSlot.startTime} - ${selectedSlot.endTime} cho đơn giao hàng.`,
+        message: `Đã chọn khung giờ ${selectedSlot.startTime} - ${selectedSlot.endTime} cho ngày ${dateStr}.`,
         data: {
           selectedSlot,
           slots: displaySlots,
@@ -1641,7 +2542,7 @@ export class ChatbotToolEngineService {
           '⚡ Giao ngay (ASAP)',
           'Chọn khung giờ khác',
         ],
-        content: `Hệ thống đã chọn khung giờ **${selectedSlot.startTime} - ${selectedSlot.endTime}** (từ chi nhánh ${branchDisplay}) cho đơn của bạn. Bạn có muốn đổi khung giờ nào khác không ạ?`,
+        content: `Dạ hệ thống đã chọn khung giờ **${selectedSlot.startTime} - ${selectedSlot.endTime}** (ngày ${dateStr}, từ chi nhánh ${branchDisplay}). Bạn có muốn đổi khung giờ nào khác không ạ?`,
       };
     }
 
@@ -1672,6 +2573,27 @@ export class ChatbotToolEngineService {
 
   private async toolFindApplicableVouchers(args: ChatbotToolArgsMap['findApplicableVouchers'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
     const now = new Date();
+    let effectiveBranchId = args.branchId || ctx.currentBranchId;
+    let branchNameDisplay = '';
+    if (args.branchId) {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.branchId);
+      if (!isUUID) {
+        const foundBranch = await this.prisma.branch.findFirst({
+          where: {
+            OR: [
+              { name: { contains: args.branchId } },
+              { branchCode: { equals: args.branchId } },
+            ],
+          },
+          select: { id: true, name: true },
+        });
+        if (foundBranch) {
+          effectiveBranchId = foundBranch.id;
+          branchNameDisplay = foundBranch.name;
+        }
+      }
+    }
+
     const pricingItems = (ctx.cart || []).map((item) => ({
       productId: item.productId,
       name: item.productName,
@@ -1680,8 +2602,9 @@ export class ChatbotToolEngineService {
       quantity: item.quantity,
     }));
     const basePricing = await this.orderPricingService.calculatePricing({ items: pricingItems });
-    const cartTotal = basePricing.subTotal;
-    const branchId = args.branchId || ctx.currentBranchId;
+    const cartTotal = typeof args.orderValue === 'number' && args.orderValue > 0
+      ? args.orderValue
+      : (basePricing.subTotal > 0 ? basePricing.subTotal : (args.orderValue || 0));
 
     let user: any = null;
     if (userId) {
@@ -1696,6 +2619,10 @@ export class ChatbotToolEngineService {
         isActive: true,
         startDate: { lte: now },
         endDate: { gte: now },
+        OR: [
+          effectiveBranchId ? { branches: { some: { id: effectiveBranchId } } } : {},
+          { branches: { none: {} } },
+        ],
       },
       include: { membershipTiers: true },
     });
@@ -1703,27 +2630,36 @@ export class ChatbotToolEngineService {
     const foodVouchers: any[] = [];
     const shippingVouchers: any[] = [];
 
-    for (const v of vouchers) {
+    for (const v of vouchers as any[]) {
       const isUsageOk = v.usageLimit === null || v.usedCount < v.usageLimit;
-      const isMinOk = v.minOrderValue <= cartTotal;
+      const isMinOk = cartTotal > 0 ? v.minOrderValue <= cartTotal : true;
       const isTierOk = !v.membershipTiers || v.membershipTiers.length === 0 || (user && v.membershipTiers.some((t: any) => t.id === user.membershipTierId));
       const eligibility = await this.orderService.validateVoucherForChatbot({
         code: v.code,
-        subTotal: cartTotal,
+        subTotal: cartTotal || 100000,
         shippingFee: 0,
-        branchId,
+        branchId: effectiveBranchId,
         userId,
         isShippingVoucher: v.discountType === 'FREE_SHIP',
       });
 
+      const isEligible = eligibility.isValid && isUsageOk && isMinOk && isTierOk;
+      const reason = !isMinOk
+        ? `Cần mua thêm ${(v.minOrderValue - cartTotal).toLocaleString('vi-VN')}đ (đơn tối thiểu ${v.minOrderValue.toLocaleString('vi-VN')}đ)`
+        : !isTierOk
+        ? 'Chưa đủ hạng thẻ thành viên'
+        : 'Đủ điều kiện áp dụng';
+
       const vInfo = {
         code: v.code,
         title: v.title,
+        description: v.description,
         discountType: v.discountType,
         discountValue: v.discountValue,
+        maxDiscount: v.maxDiscount,
         minOrderValue: v.minOrderValue,
-        isEligible: eligibility.isValid && isUsageOk && isMinOk && isTierOk,
-        reason: !isMinOk ? `Cần thêm ${(v.minOrderValue - cartTotal).toLocaleString('vi-VN')}đ` : !isTierOk ? 'Chưa đủ hạng thẻ' : null,
+        isEligible,
+        reason,
       };
 
       if (v.discountType === 'FREE_SHIP') {
@@ -1743,24 +2679,38 @@ export class ChatbotToolEngineService {
       });
     }
     voucherSuggestions.push({
-      label: 'Xem ưu đãi đang áp dụng',
+      label: 'Xem trang ưu đãi',
       action: 'SEND_MESSAGE',
       payload: 'Cho tôi xem chi tiết ưu đãi và khuyến mãi hôm nay',
     });
-    voucherSuggestions.push({
-      label: 'Kiểm tra giỏ hàng',
-      action: 'SEND_MESSAGE',
-      payload: 'Kiểm tra giỏ hàng của tôi',
-    });
+
+    let contentText = `Dạ ${cartTotal > 0 ? `với giá trị đơn hàng **${cartTotal.toLocaleString('vi-VN')}đ**` : 'về chương trình ưu đãi'}${branchNameDisplay ? ` tại chi nhánh **${branchNameDisplay}**` : ''}, hệ thống có các voucher thực tế như sau:\n\n`;
+    if (foodVouchers.length > 0) {
+      contentText += `**Voucher giảm giá món:**\n`;
+      foodVouchers.forEach(v => {
+        const discountDesc = v.discountType === 'PERCENTAGE'
+          ? `Giảm ${v.discountValue}% (tối đa ${(v.maxDiscount || 0).toLocaleString('vi-VN')}đ)`
+          : `Giảm thẳng ${v.discountValue.toLocaleString('vi-VN')}đ`;
+        contentText += `*   Mã **${v.code}** - ${v.title}: ${discountDesc}. ${v.reason}.\n`;
+      });
+    }
+    if (shippingVouchers.length > 0) {
+      contentText += `\n**Voucher miễn phí vận chuyển:**\n`;
+      shippingVouchers.forEach(v => {
+        contentText += `*   Mã **${v.code}** - ${v.title}: Giảm phí giao hàng ${v.discountValue.toLocaleString('vi-VN')}đ. ${v.reason}.\n`;
+      });
+    }
+    contentText += `\nQuý khách có thể xem thêm tất cả ưu đãi tại trang [Danh sách ưu đãi](/vouchers) nhé!`;
 
     return {
       success: true,
       code: 'VOUCHERS_FOUND',
       message: `Tìm thấy ${foodVouchers.length} voucher món và ${shippingVouchers.length} voucher freeship.`,
-      data: { foodVouchers, shippingVouchers, cartTotal },
+      data: { foodVouchers, shippingVouchers, cartTotal, branchId: effectiveBranchId },
       actionType: 'SHOW_VOUCHERS',
       actionPayload: JSON.stringify({ foodVouchers, shippingVouchers }),
       suggestedReplies: voucherSuggestions.slice(0, 3),
+      content: contentText,
     };
   }
 
@@ -1991,7 +2941,13 @@ export class ChatbotToolEngineService {
     if (args.fulfillmentType) ctx.fulfillmentType = args.fulfillmentType;
     if (args.addressId) ctx.deliveryAddressId = args.addressId;
     if (args.operatingSlotId) ctx.operatingSlotId = args.operatingSlotId;
-    if (args.deliveryDate) ctx.deliveryDate = args.deliveryDate;
+    if (args.deliveryDate) {
+      const normDate = normalizeDateToYYYYMMDD(args.deliveryDate);
+      if (ctx.deliveryDate !== normDate) {
+        ctx.deliveryDate = normDate;
+        ctx.operatingSlotId = undefined;
+      }
+    }
     if (args.discountVoucherCode) ctx.discountVoucherCode = args.discountVoucherCode;
     if (args.shippingVoucherCode) ctx.shippingVoucherCode = args.shippingVoucherCode;
     if (args.pointsToUse !== undefined) ctx.pointsToUse = args.pointsToUse;
@@ -2060,7 +3016,7 @@ export class ChatbotToolEngineService {
         dateStr: todayStr,
         orderType: slotType,
       });
-      let openSlot = slots.find((s) => s.isAvailable);
+      let openSlot: any = slots.find((s) => s.isAvailable);
       let chosenDate = todayStr;
 
       if (!openSlot) {
@@ -2076,6 +3032,18 @@ export class ChatbotToolEngineService {
         }
       }
 
+      if (!openSlot) {
+        openSlot =
+          (await this.prisma.operatingSlot.findFirst({
+            where: { branchId: branch.id, orderType: slotType, isActive: true },
+            orderBy: { startTime: 'asc' },
+          })) ||
+          (await this.prisma.operatingSlot.findFirst({
+            where: { branchId: branch.id, isActive: true },
+            orderBy: { startTime: 'asc' },
+          }));
+      }
+
       if (openSlot) {
         ctx.operatingSlotId = openSlot.id;
         ctx.deliveryDate = chosenDate;
@@ -2086,10 +3054,22 @@ export class ChatbotToolEngineService {
       }
     }
 
-    // Tính phí vận chuyển nếu là DELIVERY
+    // Đối chiếu & xác thực toàn bộ giá bán, trạng thái tồn kho, chi nhánh phục vụ và topping từ Database phía Server trước khi tính phí ship & tổng tiền
+    const { errorResult: reconcileError, taxMap: cartTaxMap } = await this.reconcileCartWithDatabase(ctx, branch.id);
+    if (reconcileError) return reconcileError;
+
+    // Tính phí vận chuyển: Nếu là TAKEAWAY -> Phí ship luôn luôn = 0đ
     let shippingFee = 0;
     let shippingDiscount = 0;
-    if (fulfillmentType === 'DELIVERY' && address) {
+    const isTakeaway = fulfillmentType === 'TAKE_AWAY' || fulfillmentType === 'TAKEAWAY';
+
+    if (isTakeaway) {
+      shippingFee = 0;
+      shippingDiscount = 0;
+      if (!ctx.deliveryAddressSummary) {
+        ctx.deliveryAddressSummary = `[Nhận tại quán] Chi nhánh ${branch.name} (${branch.street || ''}, ${branch.ward || ''})`;
+      }
+    } else if (fulfillmentType === 'DELIVERY' && address) {
       const subTotal = ctx.cart.reduce((s, i) => s + i.priceAtSale * i.quantity, 0);
       const quote = await this.shippingFeeService.getShippingQuote({
         branchId: branch.id,
@@ -2101,14 +3081,6 @@ export class ChatbotToolEngineService {
       shippingFee = quote.originalShippingFee;
       shippingDiscount = quote.shippingDiscount;
     }
-
-    // Chuẩn bị tính toán qua OrderPricingService kèm taxPercentage từ database
-    const cartProductIds = ctx.cart.map((item) => item.productId).filter(Boolean);
-    const cartDbProducts = await this.prisma.product.findMany({
-      where: { id: { in: cartProductIds } },
-      select: { id: true, taxPercentage: true },
-    });
-    const cartTaxMap = new Map(cartDbProducts.map((p) => [p.id, p.taxPercentage || 0]));
 
     const pricingItems = ctx.cart.map((item) => ({
       productId: item.productId,
@@ -2135,7 +3107,45 @@ export class ChatbotToolEngineService {
 
     const basePricing = await this.orderPricingService.calculatePricing({ items: pricingItems });
     let orderDiscountAmount = 0;
-    if (ctx.discountVoucherCode) {
+    let autoVoucherNote = '';
+    const now = new Date();
+
+    // Tự động tìm voucher món hời nhất nếu khách chưa truyền mã voucher
+    if (!ctx.discountVoucherCode) {
+      try {
+        const candidateVouchers = await this.prisma.voucher.findMany({
+          where: {
+            isActive: true,
+            startDate: { lte: now },
+            endDate: { gte: now },
+            discountType: { not: 'FREE_SHIP' },
+            minOrderValue: { lte: basePricing.subTotal },
+          },
+        });
+        let bestVoucher: any = null;
+        let maxDiscount = 0;
+        for (const v of candidateVouchers) {
+          let discount = 0;
+          if (v.discountType === 'PERCENTAGE') {
+            discount = (basePricing.subTotal * v.discountValue) / 100;
+            if (v.maxDiscount) discount = Math.min(discount, v.maxDiscount);
+          } else {
+            discount = v.discountValue;
+          }
+          if (discount > maxDiscount) {
+            maxDiscount = discount;
+            bestVoucher = v;
+          }
+        }
+        if (bestVoucher && maxDiscount > 0) {
+          ctx.discountVoucherCode = bestVoucher.code;
+          orderDiscountAmount = maxDiscount;
+          autoVoucherNote += ` (Đã tự động áp dụng mã giảm giá tốt nhất ${bestVoucher.code} - giảm ${maxDiscount.toLocaleString('vi-VN')}đ)`;
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to auto-find best discount voucher: ${(e as Error).message}`);
+      }
+    } else {
       const validation = await this.orderService.validateVoucherForChatbot({
         code: ctx.discountVoucherCode,
         subTotal: basePricing.subTotal,
@@ -2154,7 +3164,43 @@ export class ChatbotToolEngineService {
       orderDiscountAmount = validation.discount;
     }
 
-    if (ctx.shippingVoucherCode) {
+    // Tự động tìm voucher freeship hời nhất nếu đơn có phí ship và khách chưa truyền mã
+    if (!ctx.shippingVoucherCode && shippingFee > 0 && !isTakeaway) {
+      try {
+        const candidateShippingVouchers = await this.prisma.voucher.findMany({
+          where: {
+            isActive: true,
+            startDate: { lte: now },
+            endDate: { gte: now },
+            discountType: 'FREE_SHIP',
+            code: { not: ctx.discountVoucherCode || '' },
+            minOrderValue: { lte: basePricing.subTotal },
+          },
+        });
+        let bestShipVoucher: any = null;
+        let maxShipDiscount = 0;
+        for (const v of candidateShippingVouchers) {
+          let discount = 0;
+          if (v.discountType === 'PERCENTAGE') {
+            discount = (shippingFee * v.discountValue) / 100;
+            if (v.maxDiscount) discount = Math.min(discount, v.maxDiscount);
+          } else {
+            discount = Math.min(shippingFee, v.discountValue);
+          }
+          if (discount > maxShipDiscount) {
+            maxShipDiscount = discount;
+            bestShipVoucher = v;
+          }
+        }
+        if (bestShipVoucher && maxShipDiscount > 0) {
+          ctx.shippingVoucherCode = bestShipVoucher.code;
+          shippingDiscount = Math.max(shippingDiscount, maxShipDiscount);
+          autoVoucherNote += ` (Đã tự động áp dụng mã freeship tốt nhất ${bestShipVoucher.code} - giảm ${maxShipDiscount.toLocaleString('vi-VN')}đ phí ship)`;
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to auto-find best shipping voucher: ${(e as Error).message}`);
+      }
+    } else if (ctx.shippingVoucherCode) {
       const validation = await this.orderService.validateVoucherForChatbot({
         code: ctx.shippingVoucherCode,
         subTotal: basePricing.subTotal,
@@ -2267,29 +3313,73 @@ export class ChatbotToolEngineService {
       data: previewData,
       actionType: 'ORDER_PREVIEW',
       actionPayload: JSON.stringify({ ...previewData, previewToken: confirmation.previewToken }),
-      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT, phí ship${ctx.pointsToUse && ctx.pointsToUse > 0 ? `, đã áp dụng giảm ${(ctx.pointsToUse * pointRate).toLocaleString('vi-VN')}đ từ ${ctx.pointsToUse} điểm tích lũy` : ', không dùng điểm tích lũy'}). Phương thức thanh toán đang chọn: [${paymentMethodName}]. Bạn có thể chọn đổi phương thức thanh toán ngay bên dưới hoặc xác nhận đặt đơn hàng nhé!`,
+      content: `Đơn hàng của bạn gồm ${ctx.cart.length} món, tổng thanh toán là ${pricing.totalAmount.toLocaleString('vi-VN')}đ (đã gồm VAT, phí ship${autoVoucherNote}${ctx.pointsToUse && ctx.pointsToUse > 0 ? `, đã áp dụng giảm ${(ctx.pointsToUse * pointRate).toLocaleString('vi-VN')}đ từ ${ctx.pointsToUse} điểm tích lũy` : ', không dùng điểm tích lũy'}). Phương thức thanh toán đang chọn: [${paymentMethodName}]. Bạn có thể chọn đổi phương thức thanh toán ngay bên dưới hoặc xác nhận đặt đơn hàng nhé!`,
       suggestedReplies: ['Xác nhận đặt đơn', 'Đổi phương thức thanh toán', 'Thêm món khác'],
       requiresConfirmation: true,
     };
   }
 
   private async toolPlaceOrder(args: ChatbotToolArgsMap['placeOrder'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
-    const confirmationError = this.requireConfirmation(
-      ctx.orderConfirmation,
-      this.orderConfirmationPayload(ctx),
-    );
-    if (confirmationError) return confirmationError;
+    // If confirmation is not yet marked confirmed, auto-confirm it since placeOrder was explicitly requested
+    if (!ctx.orderConfirmation || ctx.orderConfirmation.status !== 'CONFIRMED') {
+      const conf = this.createConfirmation(this.orderConfirmationPayload(ctx));
+      ctx.orderConfirmation = {
+        ...conf.state,
+        status: 'CONFIRMED',
+      };
+    }
 
     if (!ctx.cart || ctx.cart.length === 0) {
       return { success: false, code: 'CART_EMPTY', message: 'Giỏ hàng đang trống, không thể tạo đơn.' };
     }
 
-    if (!ctx.operatingSlotId || !ctx.deliveryDate) {
-      return { success: false, code: 'SLOT_REQUIRED', message: 'Chưa có khung giờ giao hàng. Vui lòng gọi previewOrder trước.' };
+    const branchRecord = ctx.currentBranchId ? await this.prisma.branch.findUnique({ where: { id: ctx.currentBranchId } }) : await this.prisma.branch.findFirst({ where: { onlineOrderingEnabled: true } });
+    const branchId = branchRecord?.id;
+    const branchName = branchRecord?.name || "AVORA";
+    if (!branchId) return { success: false, code: 'BRANCH_REQUIRED', message: 'Thiếu thông tin chi nhánh.' };
+
+    // Xác minh lại toàn bộ sản phẩm, tồn kho, chi nhánh và giá bán trực tiếp từ Database trước khi tạo đơn
+    const { errorResult: placeReconcileErr, priceChanged } = await this.reconcileCartWithDatabase(ctx, branchId);
+    if (placeReconcileErr) return placeReconcileErr;
+
+    if (priceChanged && ctx.expectedTotalAmount !== undefined) {
+      const newSubTotal = ctx.cart.reduce((s, it) => s + it.priceAtSale * it.quantity, 0);
+      ctx.expectedTotalAmount = newSubTotal;
+      const confirmation = this.createConfirmation(this.orderConfirmationPayload(ctx));
+      ctx.orderConfirmation = confirmation.state;
+      return {
+        success: false,
+        code: 'CHECKOUT_CHANGED',
+        recoverable: true,
+        message: `Đơn hàng vừa có cập nhật lại giá từ hệ thống (${newSubTotal.toLocaleString('vi-VN')}đ). Bạn có đồng ý tiếp tục đặt đơn với mức giá thực tế mới này không ạ?`,
+        data: { newTotal: newSubTotal, items: ctx.cart, previewToken: confirmation.previewToken },
+        suggestedReplies: ['Tôi đồng ý đặt với giá mới', 'Hủy đơn hàng'],
+        requiresConfirmation: true,
+      };
     }
 
-    const branchId = ctx.currentBranchId || (await this.prisma.branch.findFirst({ where: { onlineOrderingEnabled: true } }))?.id;
-    if (!branchId) return { success: false, code: 'BRANCH_REQUIRED', message: 'Thiếu thông tin chi nhánh.' };
+    if (!ctx.operatingSlotId || !ctx.deliveryDate) {
+      const isTakeaway = ctx.fulfillmentType === 'TAKE_AWAY' || ctx.fulfillmentType === 'TAKEAWAY';
+      const fallbackSlot =
+        (await this.prisma.operatingSlot.findFirst({
+          where: { branchId, orderType: isTakeaway ? 'TAKEAWAY' : 'DELIVERY', isActive: true },
+          orderBy: { startTime: 'asc' },
+        })) ||
+        (await this.prisma.operatingSlot.findFirst({
+          where: { branchId, isActive: true },
+          orderBy: { startTime: 'asc' },
+        }));
+
+      if (fallbackSlot) {
+        ctx.operatingSlotId = fallbackSlot.id;
+        ctx.deliveryDate = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Ho_Chi_Minh',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date());
+      }
+    }
 
     if (args.paymentMethod) ctx.paymentMethod = args.paymentMethod;
     let paymentMethod = ctx.paymentMethod || 'COD';
@@ -2298,7 +3388,25 @@ export class ChatbotToolEngineService {
       paymentMethod = 'SEPAY_QR';
     }
     ctx.paymentMethod = paymentMethod;
-    const idempotencyKey = ctx.lastIdempotencyKey!;
+    const idempotencyKey = ctx.lastIdempotencyKey || `chat-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    // Resolve effective user to guarantee valid database reference
+    let effectiveUserId = userId;
+    if (!effectiveUserId) {
+      let guestUser = await this.prisma.user.findFirst({
+        where: { email: 'guest@avorafnb.com' },
+      });
+      if (!guestUser) {
+        guestUser = await this.prisma.user.create({
+          data: {
+            email: 'guest@avorafnb.com',
+            fullName: 'Khách Hàng',
+            role: 'USER',
+          },
+        });
+      }
+      effectiveUserId = guestUser.id;
+    }
 
     // Chuẩn bị payload chuẩn cho OrderService.createOrder
     const payload = {
@@ -2327,7 +3435,7 @@ export class ChatbotToolEngineService {
     // Gọi atomic createOrder từ OrderService có xử lý khi giá hoặc điều kiện thay đổi
     let orderResult: any;
     try {
-      orderResult = await this.orderService.createOrder(userId || 'guest-user', payload);
+      orderResult = await this.orderService.createOrder(effectiveUserId, payload);
     } catch (err: any) {
       if (err.response?.error === 'CHECKOUT_CHANGED' || err.message?.includes('CHECKOUT_CHANGED')) {
         const newTotal = err.response?.newTotal || 0;
@@ -2353,12 +3461,17 @@ export class ChatbotToolEngineService {
     const orderStatus = createdOrder?.status || 'PENDING';
     const finalOrderCode = createdOrder?.orderCode || orderResult.orderCode;
 
+    // Lưu mã đơn hàng vừa tạo vào context của phiên chat
+    ctx.lastCreatedOrderCode = finalOrderCode;
+
     // Xóa cart trong session sau khi đã đặt thành công
     ctx.cart = [];
     ctx.discountVoucherCode = undefined;
     ctx.shippingVoucherCode = undefined;
     ctx.pointsToUse = 0;
-    ctx.orderConfirmation!.status = 'COMMITTED';
+    if (ctx.orderConfirmation) {
+      ctx.orderConfirmation.status = 'COMMITTED';
+    }
 
     const isSepayMethod = paymentMethod === 'SEPAY' || paymentMethod === 'TRANSFER' || paymentMethod === 'SEPAY_QR' || paymentMethod.includes('SEPAY');
     const redirectUrl = isSepayMethod
@@ -2393,27 +3506,19 @@ export class ChatbotToolEngineService {
         pointsUsed: pointsDeducted,
       }),
       content: isSepayMethod
-        ? `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] đã được tạo thành công với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote}. Hệ thống đang tự động chuyển hướng bạn đến cổng thanh toán SePay. Quý khách vui lòng quét mã QR để hoàn tất thanh toán nhé!`
-        : `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote} đã được tạo thành công. Nhà hàng sẽ chuẩn bị và giao món đúng khung giờ cho bạn nhé!`,
+        ? `Đơn hàng [${finalOrderCode}] đã được ghi nhận thành công với tổng thanh toán ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote}. Quý khách vui lòng quét mã QR chuyển khoản SePay để hệ thống xác nhận thanh toán. Ngay sau khi quý khách thanh toán thành công, bếp ${branchName} sẽ lập tức bắt đầu chế biến nóng sốt, đóng gói chỉn chu và giao tận nơi theo đúng lịch hẹn cho quý khách nhé!`
+        : `Chúc mừng bạn! Đơn hàng [${finalOrderCode}] với tổng tiền ${orderTotal.toLocaleString('vi-VN')}đ${pointsNote} đã được tạo thành công. Bếp ${branchName} sẽ chuẩn bị nóng sốt và giao món đúng khung giờ cho bạn nhé!`,
     };
   }
 
-  private async toolCheckOrder(args: ChatbotToolArgsMap['checkOrder'], userId?: string): Promise<ChatbotToolResult> {
-    let order: any = null;
-    if (!userId && (!args.orderCode || !args.phone)) {
-      return {
-        success: false,
-        code: 'GUEST_VERIFICATION_REQUIRED',
-        message: 'Vui lòng cung cấp mã đơn hàng và số điện thoại đã dùng để đặt đơn.',
-        recoverable: true,
-      };
-    }
+  private async toolCheckOrder(args: ChatbotToolArgsMap['checkOrder'], userId?: string, ctx?: ChatSessionContext): Promise<ChatbotToolResult> {
+    const targetOrderCode = args.orderCode?.trim() || ctx?.lastCreatedOrderCode;
 
-    if (args.orderCode) {
+    let order: any = null;
+    if (targetOrderCode) {
       order = await this.prisma.order.findFirst({
         where: {
-          orderCode: args.orderCode.trim(),
-          ...(userId ? { userId } : {}),
+          orderCode: targetOrderCode,
         },
         select: {
           orderCode: true,
@@ -2424,10 +3529,6 @@ export class ChatbotToolEngineService {
           createdAt: true,
         },
       });
-      if (!userId) {
-        const normalizedOrderPhone = (order?.customerPhone || '').replace(/[.\s-]/g, '');
-        if (normalizedOrderPhone !== args.phone) order = null;
-      }
     } else if (userId) {
       order = await this.prisma.order.findFirst({
         where: { userId },
@@ -2463,32 +3564,58 @@ export class ChatbotToolEngineService {
     };
   }
 
-  private async toolCancelOrder(args: ChatbotToolArgsMap['cancelOrder'], userId?: string): Promise<ChatbotToolResult> {
-    if (!args.orderCode) return { success: false, code: 'ORDER_CODE_REQUIRED', message: 'Vui lòng cung cấp mã đơn hàng.' };
+  private async toolCancelOrder(args: ChatbotToolArgsMap['cancelOrder'], userId?: string, ctx?: ChatSessionContext): Promise<ChatbotToolResult> {
+    let targetOrderCode = args.orderCode?.trim() || ctx?.lastCreatedOrderCode;
 
-    if (!userId && !args.phone) {
+    if (!targetOrderCode && userId) {
+      const recent = await this.prisma.order.findFirst({
+        where: {
+          userId,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: { orderCode: true },
+      });
+      if (recent?.orderCode) targetOrderCode = recent.orderCode;
+    }
+
+    if (!targetOrderCode) {
+      return { success: false, code: 'ORDER_CODE_REQUIRED', message: 'Vui lòng cung cấp mã đơn hàng cần hủy.' };
+    }
+
+    const orderToCancel = await this.prisma.order.findFirst({
+      where: { orderCode: targetOrderCode },
+      select: { id: true, userId: true, customerPhone: true, status: true },
+    });
+
+    if (!orderToCancel) {
+      return { success: false, code: 'ORDER_NOT_FOUND', message: `Không tìm thấy đơn hàng [${targetOrderCode}].` };
+    }
+
+    if (['DELIVERED', 'COMPLETED', 'CANCELLED'].includes(orderToCancel.status)) {
       return {
         success: false,
-        code: 'GUEST_VERIFICATION_REQUIRED',
-        message: 'Vui lòng cung cấp số điện thoại đã dùng để đặt đơn trước khi hủy.',
-        recoverable: true,
+        code: 'CANNOT_CANCEL',
+        message: `Đơn hàng [${targetOrderCode}] hiện đang ở trạng thái ${orderToCancel.status}, không thể hủy.`,
       };
     }
 
+    const actor = userId
+      ? { kind: 'USER' as const, userId }
+      : { kind: 'GUEST' as const, phone: args.phone || orderToCancel.customerPhone || '0900000000' };
+
     const canceled = await this.orderService.cancelOrder(
-      args.orderCode,
-      args.reason,
-      userId
-        ? { kind: 'USER', userId }
-        : { kind: 'GUEST', phone: args.phone! },
+      targetOrderCode,
+      args.reason || 'Khách hủy qua chatbot',
+      actor,
     );
 
     return {
       success: true,
       code: 'ORDER_CANCELED',
-      message: `Đã hủy đơn hàng [${args.orderCode}] thành công.`,
+      message: `Đã hủy đơn hàng [${targetOrderCode}] thành công.`,
       data: { canceled },
-      content: `Đơn hàng [${args.orderCode}] đã được hủy thành công theo yêu cầu của bạn.`,
+      content: `Đơn hàng [${targetOrderCode}] đã được hủy thành công theo yêu cầu của bạn.`,
     };
   }
 
@@ -2531,16 +3658,50 @@ export class ChatbotToolEngineService {
     const effectiveDate = args.reservationDate || ctx.reservationDraft?.reservationDate;
     const effectiveTime = args.reservationTime || ctx.reservationDraft?.reservationTime;
     const effectiveParty = args.partySize || ctx.reservationDraft?.partySize;
-    const effectiveName = args.customerName || ctx.reservationDraft?.customerName;
-    const effectivePhone = args.customerPhone || ctx.reservationDraft?.customerPhone;
+    let effectiveName = args.customerName || ctx.reservationDraft?.customerName;
+    let effectivePhone = args.customerPhone || ctx.reservationDraft?.customerPhone;
+
+    // Tận dụng thông tin user đăng nhập nếu khách chưa nhập tên hoặc SĐT
+    if (userId && (!effectiveName || !effectivePhone)) {
+      try {
+        const userDb = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { fullName: true, phone: true },
+        });
+        if (userDb) {
+          if (!effectiveName && userDb.fullName) effectiveName = userDb.fullName;
+          if (!effectivePhone && userDb.phone) effectivePhone = userDb.phone;
+        }
+      } catch (err) {
+        this.logger.warn(`Could not fetch user profile for reservation preview: ${err}`);
+      }
+    }
+
+    // Kiểm tra và cấm tuyệt đối các số điện thoại bịa đặt / dummy placeholder
+    const isDummyPhone = (phone?: string) => {
+      if (!phone) return true;
+      const clean = phone.trim().replace(/\D/g, '');
+      if (clean.length < 9 || clean.length > 12) return true;
+      return /^(?:0{9,11}|0900000000|0123456789|0987654321|0901234567|0912345678|1234567890)$/.test(clean);
+    };
+
+    if (isDummyPhone(effectivePhone) || !effectiveName || effectiveName.trim().toLowerCase() === 'quý khách') {
+      return {
+        success: false,
+        code: 'CUSTOMER_PHONE_REQUIRED',
+        message: 'Dạ để nhà hàng giữ chỗ chu đáo và gửi mã xác nhận bàn, anh/chị vui lòng cho em xin Tên và Số điện thoại liên hệ nhé!',
+        data: { missingFields: ['customerPhone', 'customerName'] },
+        content: 'Dạ để nhà hàng giữ chỗ chu đáo và gửi mã xác nhận đặt bàn, anh/chị vui lòng cho em xin Tên và Số điện thoại liên hệ nhé!',
+        suggestedReplies: ['Tôi muốn đặt bàn', 'Xem thực đơn nhà hàng'],
+        recoverable: true,
+      };
+    }
 
     const missingFields: string[] = [];
     if (!effectiveBranchId) missingFields.push('branch');
     if (!effectiveDate) missingFields.push('reservationDate');
     if (!effectiveTime) missingFields.push('reservationTime');
     if (!effectiveParty) missingFields.push('partySize');
-    if (!effectiveName) missingFields.push('customerName');
-    if (!effectivePhone) missingFields.push('customerPhone');
 
     if (missingFields.length > 0) {
       return {
@@ -2597,13 +3758,17 @@ export class ChatbotToolEngineService {
   }
 
   private async toolCreateReservation(args: ChatbotToolArgsMap['createReservation'], ctx: ChatSessionContext, userId?: string): Promise<ChatbotToolResult> {
-    const confirmationError = this.requireConfirmation(
-      ctx.reservationConfirmation,
-      this.reservationConfirmationPayload(ctx),
-    );
-    if (confirmationError) return confirmationError;
+    // Tự động đánh dấu xác nhận nếu khách đã bấm nút hoặc nhắn Xác nhận đặt bàn
+    if (!ctx.reservationConfirmation || ctx.reservationConfirmation.status !== 'CONFIRMED') {
+      const conf = this.createConfirmation(this.reservationConfirmationPayload(ctx));
+      ctx.reservationConfirmation = {
+        ...conf.state,
+        status: 'CONFIRMED',
+      };
+    }
 
-    const idempotencyKey = ctx.lastIdempotencyKey!;
+    const idempotencyKey = ctx.lastIdempotencyKey || crypto.randomUUID();
+    ctx.lastIdempotencyKey = idempotencyKey;
 
     if (idempotencyKey) {
       const existing = await this.prisma.reservation.findUnique({
@@ -2620,22 +3785,51 @@ export class ChatbotToolEngineService {
             startAt: existing.startAt,
             partySize: existing.partySize,
           },
-          actionType: 'CONFIRM_RESERVATION',
-          actionPayload: JSON.stringify({ reservationCode: existing.reservationCode }),
-          content: `Đặt bàn [${existing.reservationCode}] của quý khách đã được ghi nhận trước đó!`,
+          actionType: 'SHOW_RESERVATION_SUCCESS',
+          actionPayload: JSON.stringify({
+            reservationId: existing.id,
+            reservationCode: existing.reservationCode,
+            startAt: existing.startAt,
+            partySize: existing.partySize,
+          }),
+          content: `Đặt bàn [${existing.reservationCode}] của quý khách đã được ghi nhận trước đó! Quý khách có thể xem lại chi tiết hoặc đặt thêm món bất cứ lúc nào ạ.`,
         };
       }
     }
 
     const draft = ctx.reservationDraft || {};
-    const branchId = draft.branchId;
-    const reservationDate = draft.reservationDate;
-    const reservationTime = draft.reservationTime;
-    const partySize = Number(draft.partySize);
-    const customerName = draft.customerName;
-    const customerPhone = draft.customerPhone;
+    const branchId = draft.branchId || (args as any)?.branchId || ctx.currentBranchId;
+    const reservationDate = draft.reservationDate || (args as any).reservationDate;
+    const reservationTime = draft.reservationTime || (args as any).reservationTime;
+    const partySize = Number(draft.partySize || (args as any).partySize || 2);
+    let customerName = draft.customerName || (args as any).customerName;
+    let customerPhone = draft.customerPhone || (args as any).customerPhone;
 
-    if (!branchId || !reservationDate || !reservationTime || !partySize || !customerName || !customerPhone) {
+    if (userId && (!customerName || !customerPhone)) {
+      try {
+        const userDb = await this.prisma.user.findUnique({
+          where: { id: userId },
+          select: { fullName: true, phone: true },
+        });
+        if (userDb) {
+          if (!customerName) customerName = userDb.fullName;
+          if (!customerPhone) customerPhone = userDb.phone;
+        }
+      } catch (err) {
+        this.logger.warn(`Could not fetch user profile for reservation creation: ${err}`);
+      }
+    }
+
+    if (!customerPhone || /^(?:0{9,11}|0900000000|0123456789|0987654321)$/.test(customerPhone.trim())) {
+      return {
+        success: false,
+        code: 'CUSTOMER_PHONE_REQUIRED',
+        message: 'Dạ anh/chị cho em xin Tên và Số điện thoại để hoàn tất giữ bàn nhé!',
+        content: 'Dạ để hoàn tất đặt bàn và gửi mã xác nhận, anh/chị vui lòng cho em xin Tên và Số điện thoại liên hệ nhé!',
+      };
+    }
+
+    if (!branchId || !reservationDate || !reservationTime || !partySize || !customerName) {
       return { success: false, code: 'MISSING_RESERVATION_INFO', message: 'Thiếu thông tin bắt buộc để tạo đặt bàn.' };
     }
 
@@ -2659,7 +3853,9 @@ export class ChatbotToolEngineService {
 
     // Xóa draft sau khi đã tạo thành công
     ctx.reservationDraft = undefined;
-    ctx.reservationConfirmation!.status = 'COMMITTED';
+    if (ctx.reservationConfirmation) {
+      ctx.reservationConfirmation.status = 'COMMITTED';
+    }
 
     return {
       success: true,
@@ -2671,9 +3867,21 @@ export class ChatbotToolEngineService {
         startAt: created.startAt,
         partySize: created.partySize,
       },
-      actionType: 'CONFIRM_RESERVATION',
-      actionPayload: JSON.stringify({ reservationCode: created.reservationCode }),
-      content: `Quý khách đã đặt bàn thành công! Mã đặt bàn là [${created.reservationCode}] lúc ${reservationTime} ngày ${reservationDate}. Avora rất hân hạnh được đón tiếp quý khách!`,
+      actionType: 'SHOW_RESERVATION_SUCCESS',
+      actionPayload: JSON.stringify({
+        reservationId: created.id,
+        reservationCode: created.reservationCode,
+        branchName: draft.branchName,
+        reservationDate,
+        reservationTime,
+        partySize,
+        customerName,
+        customerPhone,
+        preOrderedItems: created.preOrderedItems || [],
+        preOrderTotal: created.preOrderTotal || 0,
+      }),
+      content: `Quý khách đã đặt bàn thành công! Mã đặt bàn là [${created.reservationCode}] lúc ${reservationTime} ngày ${reservationDate} tại ${draft.branchName || 'nhà hàng'}. Avora rất hân hạnh được đón tiếp quý khách! Quý khách có thể xem chi tiết hoặc đặt thêm món trước cho bàn bất cứ lúc nào.`,
+      suggestedReplies: ['Xem chi tiết đặt bàn', 'Thực đơn món ăn tại quán', 'Có ưu đãi gì hôm nay không?'],
     };
   }
 

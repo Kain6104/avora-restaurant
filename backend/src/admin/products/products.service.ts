@@ -138,6 +138,7 @@ export class ProductsService {
       salesChannels,
       secondaryImages,
       redeemAllBranches = true,
+      allowOpenPriceOnPos = false,
       ...restData
     } = data;
 
@@ -161,6 +162,7 @@ export class ProductsService {
         salesChannels: salesChannels || defaultChannels,
         secondaryImages: secondaryImages || [],
         redeemAllBranches: Boolean(redeemAllBranches),
+        allowOpenPriceOnPos: Boolean(allowOpenPriceOnPos),
         branches: branchIds?.length
           ? {
               connect: branchIds.map((id: string) => ({ id })),
@@ -243,6 +245,9 @@ export class ProductsService {
     }
     if (redeemAllBranches !== undefined) {
       updateData.redeemAllBranches = Boolean(redeemAllBranches);
+    }
+    if (data.allowOpenPriceOnPos !== undefined) {
+      updateData.allowOpenPriceOnPos = Boolean(data.allowOpenPriceOnPos);
     }
 
     if (branchIds !== undefined) {

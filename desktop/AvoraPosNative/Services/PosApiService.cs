@@ -32,26 +32,45 @@ namespace AvoraPosNative.Services
             return req;
         }
 
-        public async Task<List<PosCategory>> GetCategoriesAsync(string? branchId = null)
+        public async Task<(List<PosCategory> Categories, List<PosProduct> Products)> GetMenuDataAsync(string? branchId = null)
         {
             try
             {
-                string path = string.IsNullOrEmpty(branchId) || branchId == "DEFAULT" ? "/api/pos/categories" : $"/api/pos/categories?branchId={branchId}";
+                string effectiveBranch = branchId ?? Security.SecureSessionManager.LoadSession()?.BranchId ?? string.Empty;
+                string path = string.IsNullOrWhiteSpace(effectiveBranch) || effectiveBranch == "DEFAULT"
+                    ? "/api/pos/products"
+                    : $"/api/pos/products?branchId={Uri.EscapeDataString(effectiveBranch)}";
+
                 using var req = CreateRequest(HttpMethod.Get, path);
                 var res = await _http.SendAsync(req);
                 string text = await res.Content.ReadAsStringAsync();
-                if (!res.IsSuccessStatusCode) return new List<PosCategory>();
+                if (!res.IsSuccessStatusCode) return (new List<PosCategory>(), new List<PosProduct>());
 
                 var obj = JObject.Parse(text);
-                var data = (obj["data"]?["categories"] ?? obj["data"]) as JArray;
-                if (data == null) return new List<PosCategory>();
+                var catArr = obj["data"]?["categories"] as JArray;
+                var prodArr = (obj["data"]?["products"] ?? obj["data"]) as JArray;
 
-                return JsonConvert.DeserializeObject<List<PosCategory>>(data.ToString()) ?? new List<PosCategory>();
+                var categories = catArr != null
+                    ? JsonConvert.DeserializeObject<List<PosCategory>>(catArr.ToString()) ?? new List<PosCategory>()
+                    : new List<PosCategory>();
+
+                var products = prodArr != null
+                    ? JsonConvert.DeserializeObject<List<PosProduct>>(prodArr.ToString()) ?? new List<PosProduct>()
+                    : new List<PosProduct>();
+
+                return (categories, products);
             }
-            catch
+            catch (Exception ex)
             {
-                return new List<PosCategory>();
+                System.Diagnostics.Debug.WriteLine($"[API] GetMenuData error: {ex.Message}");
+                return (new List<PosCategory>(), new List<PosProduct>());
             }
+        }
+
+        public async Task<List<PosCategory>> GetCategoriesAsync(string? branchId = null)
+        {
+            var (categories, _) = await GetMenuDataAsync(branchId);
+            return categories;
         }
 
         public async Task<List<PosProduct>> GetProductsAsync()
@@ -59,6 +78,33 @@ namespace AvoraPosNative.Services
             var session = Security.SecureSessionManager.LoadSession();
             string branchId = session?.BranchId ?? "DEFAULT";
             return await GetProductsAsync(branchId);
+        }
+
+        public async Task<List<PosBuffetPackage>> GetBuffetPackagesAsync(string? branchId = null)
+        {
+            try
+            {
+                string effectiveBranch = branchId ?? Security.SecureSessionManager.LoadSession()?.BranchId ?? string.Empty;
+                string path = string.IsNullOrWhiteSpace(effectiveBranch) || effectiveBranch == "DEFAULT"
+                    ? "/api/buffet/packages?onlyActive=true"
+                    : $"/api/buffet/packages?branchId={Uri.EscapeDataString(effectiveBranch)}&onlyActive=true";
+
+                using var req = CreateRequest(HttpMethod.Get, path);
+                var res = await _http.SendAsync(req);
+                if (!res.IsSuccessStatusCode) return new List<PosBuffetPackage>();
+
+                string text = await res.Content.ReadAsStringAsync();
+                var obj = JObject.Parse(text);
+                var data = obj["data"] as JArray;
+                if (data == null) return new List<PosBuffetPackage>();
+
+                return JsonConvert.DeserializeObject<List<PosBuffetPackage>>(data.ToString()) ?? new List<PosBuffetPackage>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[BUFFET] Error loading buffet packages: {ex.Message}");
+                return new List<PosBuffetPackage>();
+            }
         }
 
         public async Task<PosCustomer?> SearchMembershipAsync(string phone)
@@ -119,9 +165,11 @@ namespace AvoraPosNative.Services
         {
             try
             {
-                string path = string.IsNullOrWhiteSpace(branchId) || branchId == "DEFAULT"
-                    ? "/api/pos/tables"
-                    : $"/api/pos/tables?branchId={branchId}";
+                string targetBranchId = !string.IsNullOrWhiteSpace(branchId) && branchId != "DEFAULT"
+                    ? branchId
+                    : (Security.SecureSessionManager.LoadSession()?.BranchId ?? "4d69e8f9-4abf-4499-b2b4-6769228bbb51");
+
+                string path = $"/api/pos/tables?branchId={targetBranchId}";
 
                 using var req = CreateRequest(HttpMethod.Get, path);
                 var res = await _http.SendAsync(req);
@@ -293,6 +341,52 @@ namespace AvoraPosNative.Services
             }
         }
 
+        public async Task<(string? Token, string? Status, string? Error)> GetTableQrSessionAsync(string tableId, string branchId)
+        {
+            try
+            {
+                string path = $"/api/qr-order/admin/tables/{Uri.EscapeDataString(tableId)}/qr?branchId={Uri.EscapeDataString(branchId)}";
+                using var req = CreateRequest(HttpMethod.Get, path);
+                var res = await _http.SendAsync(req);
+                string text = await res.Content.ReadAsStringAsync();
+                if (!res.IsSuccessStatusCode) return (null, null, text);
+
+                var obj = JObject.Parse(text);
+                var data = obj["data"];
+                if (data == null) return (null, null, "Không có dữ liệu phiên QR");
+
+                string? rawToken = data["rawToken"]?.ToString();
+                string? status = data["qrSession"]?["status"]?.ToString() ?? "ACTIVE";
+                return (rawToken, status, null);
+            }
+            catch (Exception ex)
+            {
+                return (null, null, ex.Message);
+            }
+        }
+
+        public async Task<(bool Success, string? NewToken, string? Error)> RegenerateTableQrAsync(string tableId, string orderId)
+        {
+            try
+            {
+                string path = $"/api/qr-order/admin/tables/{Uri.EscapeDataString(tableId)}/qr/regenerate";
+                using var req = CreateRequest(HttpMethod.Post, path);
+                req.Content = new StringContent(JsonConvert.SerializeObject(new { orderId }), Encoding.UTF8, "application/json");
+
+                var res = await _http.SendAsync(req);
+                string text = await res.Content.ReadAsStringAsync();
+                if (!res.IsSuccessStatusCode) return (false, null, text);
+
+                var obj = JObject.Parse(text);
+                string? newToken = obj["data"]?["rawToken"]?.ToString();
+                return (true, newToken, null);
+            }
+            catch (Exception ex)
+            {
+                return (false, null, ex.Message);
+            }
+        }
+
         public async Task<PosCashShift?> GetCurrentShiftAsync(string branchId, string cashierId)
         {
             try
@@ -372,6 +466,57 @@ namespace AvoraPosNative.Services
             catch
             {
                 return new List<PosCustomer>();
+            }
+        }
+
+        public async Task<string> GetVatPriceModeAsync()
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Get, "/api/home/settings");
+                var res = await _http.SendAsync(req);
+                if (!res.IsSuccessStatusCode) return "VAT_INCLUDED";
+                string text = await res.Content.ReadAsStringAsync();
+                var obj = JObject.Parse(text);
+                string? mode = obj["vat_price_mode"]?.ToString()?.ToUpper();
+                if (mode == "EXCLUDED" || mode == "VAT_EXCLUDED")
+                {
+                    return "VAT_EXCLUDED";
+                }
+                return "VAT_INCLUDED";
+            }
+            catch
+            {
+                return "VAT_INCLUDED";
+            }
+        }
+
+        public async Task<PosCustomer?> CreateMemberAsync(string fullName, string phone, string? email = null)
+        {
+            try
+            {
+                string path = "/api/pos/members";
+                using var req = CreateRequest(HttpMethod.Post, path);
+                var payload = new
+                {
+                    fullName = fullName,
+                    phone = phone,
+                    email = email
+                };
+                req.Content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                var res = await _http.SendAsync(req);
+                string text = await res.Content.ReadAsStringAsync();
+                if (!res.IsSuccessStatusCode) return null;
+
+                var obj = JObject.Parse(text);
+                var data = obj["data"];
+                if (data == null) return null;
+
+                return JsonConvert.DeserializeObject<PosCustomer>(data.ToString());
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -472,6 +617,223 @@ namespace AvoraPosNative.Services
                 if (!res.IsSuccessStatusCode) return (false, text);
 
                 return (true, null);
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        public async Task<List<PosOrder>> GetActiveOrdersAsync(string branchId)
+        {
+            try
+            {
+                string effectiveBranch = string.IsNullOrWhiteSpace(branchId) || branchId == "DEFAULT"
+                    ? (Security.SecureSessionManager.LoadSession()?.BranchId ?? string.Empty)
+                    : branchId;
+
+                string path = string.IsNullOrWhiteSpace(effectiveBranch)
+                    ? "/api/pos/tables"
+                    : $"/api/pos/tables?branchId={Uri.EscapeDataString(effectiveBranch)}";
+
+                using var req = CreateRequest(HttpMethod.Get, path);
+                var res = await _http.SendAsync(req);
+                if (res.IsSuccessStatusCode)
+                {
+                    string text = await res.Content.ReadAsStringAsync();
+                    var obj = JObject.Parse(text);
+                    var activeOrders = obj["data"]?["activeOrders"] as JArray;
+                    if (activeOrders != null)
+                    {
+                        return JsonConvert.DeserializeObject<List<PosOrder>>(activeOrders.ToString()) ?? new List<PosOrder>();
+                    }
+                }
+
+                // Fallback to sync/snapshot
+                string snapPath = string.IsNullOrWhiteSpace(effectiveBranch)
+                    ? "/api/pos/sync/snapshot"
+                    : $"/api/pos/sync/snapshot?branchId={Uri.EscapeDataString(effectiveBranch)}";
+                using var snapReq = CreateRequest(HttpMethod.Get, snapPath);
+                var snapRes = await _http.SendAsync(snapReq);
+                if (!snapRes.IsSuccessStatusCode) return new List<PosOrder>();
+
+                string snapText = await snapRes.Content.ReadAsStringAsync();
+                var snapObj = JObject.Parse(snapText);
+                var snapOrders = snapObj["data"]?["activeOrders"] as JArray;
+                if (snapOrders == null) return new List<PosOrder>();
+
+                return JsonConvert.DeserializeObject<List<PosOrder>>(snapOrders.ToString()) ?? new List<PosOrder>();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[API] GetActiveOrders error: {ex.Message}");
+                return new List<PosOrder>();
+            }
+        }
+
+        public async Task<List<PosQrOrder>> GetPendingQrRoundsAsync(string branchId)
+        {
+            var result = new List<PosQrOrder>();
+            string effectiveBranch = string.IsNullOrWhiteSpace(branchId) || branchId == "DEFAULT"
+                ? (Security.SecureSessionManager.LoadSession()?.BranchId ?? string.Empty)
+                : branchId;
+
+            if (string.IsNullOrWhiteSpace(effectiveBranch))
+                return result;
+
+            try
+            {
+                string path = $"/api/qr-order/admin/branches/{Uri.EscapeDataString(effectiveBranch)}/qr-rounds/pending";
+                using var req = CreateRequest(HttpMethod.Get, path);
+                var res = await _http.SendAsync(req);
+                if (res.IsSuccessStatusCode)
+                {
+                    string text = await res.Content.ReadAsStringAsync();
+                    var obj = JObject.Parse(text);
+                    var data = obj["data"] as JArray;
+                    if (data != null)
+                    {
+                        foreach (var roundToken in data)
+                        {
+                            var round = new PosQrOrder
+                            {
+                                Id = roundToken["id"]?.ToString() ?? string.Empty,
+                                OrderId = roundToken["orderId"]?.ToString() ?? string.Empty,
+                                RoundNumber = roundToken["roundNumber"]?.ToObject<int>() ?? 1,
+                                GuestName = roundToken["guestName"]?.ToString() ?? "Khách QR",
+                                Status = roundToken["status"]?.ToString() ?? "PENDING",
+                                RequestedAt = roundToken["createdAt"] != null ? DateTime.Parse(roundToken["createdAt"]!.ToString()) : DateTime.UtcNow,
+                                OrderCode = roundToken["order"]?["orderCode"]?.ToString() ?? roundToken["order"]?["temporaryOrderCode"]?.ToString() ?? string.Empty,
+                                TableName = roundToken["order"]?["table"]?["name"]?.ToString() ?? roundToken["order"]?["tableName"]?.ToString() ?? "Bàn QR",
+                                TableId = roundToken["order"]?["table"]?["id"]?.ToString() ?? string.Empty,
+                            };
+
+                            var itemsToken = roundToken["items"] as JArray;
+                            if (itemsToken != null)
+                            {
+                                foreach (var itemToken in itemsToken)
+                                {
+                                    var cartItem = new PosCartItem
+                                    {
+                                        Id = itemToken["id"]?.ToString() ?? Guid.NewGuid().ToString(),
+                                        ProductId = itemToken["productId"]?.ToString() ?? itemToken["product"]?["id"]?.ToString() ?? string.Empty,
+                                        ProductName = itemToken["product"]?["name"]?.ToString() ?? "Món QR",
+                                        Quantity = itemToken["quantity"]?.ToObject<int>() ?? 1,
+                                        PriceAtSale = itemToken["priceAtSale"]?.ToObject<decimal>() ?? 0,
+                                        Note = itemToken["note"]?.ToString(),
+                                        OptionsTextSnapshot = itemToken["optionsTextSnapshot"]?.ToString(),
+                                    };
+                                    round.Items.Add(cartItem);
+                                }
+                            }
+                            result.Add(round);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[API] GetPendingQrRounds (rounds) error: {ex.Message}");
+            }
+
+            // Also check /api/pos/qr-orders?branchId=... for direct QR orders in PENDING status
+            try
+            {
+                string qrOrdersPath = $"/api/pos/qr-orders?branchId={Uri.EscapeDataString(effectiveBranch)}";
+                using var req2 = CreateRequest(HttpMethod.Get, qrOrdersPath);
+                var res2 = await _http.SendAsync(req2);
+                if (res2.IsSuccessStatusCode)
+                {
+                    string text2 = await res2.Content.ReadAsStringAsync();
+                    var obj2 = JObject.Parse(text2);
+                    var qrOrdersArr = (obj2["data"]?["qrOrders"] ?? obj2["data"]) as JArray;
+                    if (qrOrdersArr != null)
+                    {
+                        foreach (var oToken in qrOrdersArr)
+                        {
+                            string oId = oToken["id"]?.ToString() ?? string.Empty;
+                            string oStatus = oToken["status"]?.ToString() ?? "PENDING";
+                            if (string.IsNullOrEmpty(oId) || oStatus != "PENDING") continue;
+                            if (result.Exists(r => r.Id == oId || r.OrderId == oId)) continue;
+
+                            var directQr = new PosQrOrder
+                            {
+                                Id = oId,
+                                OrderId = oId,
+                                RoundNumber = 1,
+                                GuestName = "Khách đặt QR tại bàn",
+                                Status = oStatus,
+                                RequestedAt = oToken["createdAt"] != null ? DateTime.Parse(oToken["createdAt"]!.ToString()) : DateTime.UtcNow,
+                                OrderCode = oToken["orderCode"]?.ToString() ?? string.Empty,
+                                TableName = oToken["table"]?["name"]?.ToString() ?? "Bàn QR",
+                                TableId = oToken["tableId"]?.ToString() ?? oToken["table"]?["id"]?.ToString() ?? string.Empty,
+                            };
+
+                            var itemsArr = oToken["items"] as JArray;
+                            if (itemsArr != null)
+                            {
+                                foreach (var it in itemsArr)
+                                {
+                                    directQr.Items.Add(new PosCartItem
+                                    {
+                                        Id = it["id"]?.ToString() ?? Guid.NewGuid().ToString(),
+                                        ProductId = it["product"]?["id"]?.ToString() ?? string.Empty,
+                                        ProductName = it["product"]?["name"]?.ToString() ?? "Món QR",
+                                        Quantity = it["quantity"]?.ToObject<int>() ?? 1,
+                                        PriceAtSale = it["price"]?.ToObject<decimal>() ?? 0,
+                                        Note = it["note"]?.ToString(),
+                                        OptionsTextSnapshot = it["optionsTextSnapshot"]?.ToString(),
+                                    });
+                                }
+                            }
+                            result.Add(directQr);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[API] GetPendingQrRounds (qr-orders) error: {ex.Message}");
+            }
+
+            return result;
+        }
+
+        public async Task<(bool Success, string? Error)> ApproveQrRoundAsync(string roundId)
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Post, $"/api/qr-order/admin/rounds/{roundId}/approve");
+                var res = await _http.SendAsync(req);
+                if (res.IsSuccessStatusCode) return (true, null);
+
+                // Fallback to direct QR order confirm
+                using var req2 = CreateRequest(HttpMethod.Post, $"/api/pos/qr-orders/{roundId}/confirm");
+                var res2 = await _http.SendAsync(req2);
+                string text2 = await res2.Content.ReadAsStringAsync();
+                return (res2.IsSuccessStatusCode, res2.IsSuccessStatusCode ? null : text2);
+            }
+            catch (Exception ex)
+            {
+                return (false, ex.Message);
+            }
+        }
+
+        public async Task<(bool Success, string? Error)> RejectQrRoundAsync(string roundId, string reason)
+        {
+            try
+            {
+                using var req = CreateRequest(HttpMethod.Post, $"/api/qr-order/admin/rounds/{roundId}/reject");
+                req.Content = new StringContent(JsonConvert.SerializeObject(new { reason }), Encoding.UTF8, "application/json");
+                var res = await _http.SendAsync(req);
+                if (res.IsSuccessStatusCode) return (true, null);
+
+                // Fallback to direct QR order reject
+                using var req2 = CreateRequest(HttpMethod.Post, $"/api/pos/qr-orders/{roundId}/reject");
+                req2.Content = new StringContent(JsonConvert.SerializeObject(new { reason }), Encoding.UTF8, "application/json");
+                var res2 = await _http.SendAsync(req2);
+                string text2 = await res2.Content.ReadAsStringAsync();
+                return (res2.IsSuccessStatusCode, res2.IsSuccessStatusCode ? null : text2);
             }
             catch (Exception ex)
             {

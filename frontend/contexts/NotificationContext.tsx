@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { Bell, ShoppingBag, Gift, Award, Info, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getAuthToken, getAuthHeaders, getApiBaseUrl } from '@/lib/auth';
 
 export interface AppNotification {
   id: string;
@@ -41,6 +42,13 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
   // Kiểm tra user hiện tại
   useEffect(() => {
     const checkUser = async () => {
+      const token = getAuthToken();
+      if (!token) {
+        setCurrentUser(null);
+        setLoading(false);
+        return;
+      }
+
       if (typeof window !== 'undefined') {
         const path = window.location.pathname;
         if (path.startsWith('/login') || path.startsWith('/register') || path.startsWith('/forgot-password')) {
@@ -49,10 +57,12 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
           return;
         }
       }
+
       try {
-        const res = await fetch(`${API_URL}/api/auth/me`, {
+        const apiBase = getApiBaseUrl();
+        const res = await fetch(`${apiBase}/api/auth/me`, {
           credentials: 'include',
-          headers: { 'ngrok-skip-browser-warning': 'true' },
+          headers: getAuthHeaders(),
         });
         if (res.ok) {
           const data = await res.json();
@@ -64,16 +74,37 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
         setCurrentUser(null);
       }
     };
+
     checkUser();
+
+    // Lắng nghe cập nhật auth từ toàn hệ thống
+    const handleUserUpdate = (e: any) => {
+      if (e.detail) {
+        setCurrentUser(e.detail);
+      } else {
+        setCurrentUser(null);
+        setNotifications([]);
+        setUnreadCount(0);
+      }
+    };
+    window.addEventListener('user-updated', handleUserUpdate);
+    return () => window.removeEventListener('user-updated', handleUserUpdate);
   }, []);
 
   // Lấy danh sách thông báo từ API
   const fetchNotifications = useCallback(async () => {
+    if (!getAuthToken()) {
+      setNotifications([]);
+      setUnreadCount(0);
+      setLoading(false);
+      return;
+    }
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/api/notifications`, {
+      const apiBase = getApiBaseUrl();
+      const res = await fetch(`${apiBase}/api/notifications`, {
         credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -120,10 +151,11 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       );
       setUnreadCount((prev) => Math.max(0, prev - 1));
 
-      await fetch(`${API_URL}/api/notifications/${id}/read`, {
+      const apiBase = getApiBaseUrl();
+      await fetch(`${apiBase}/api/notifications/${id}/read`, {
         method: 'PATCH',
         credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+        headers: getAuthHeaders(),
       });
     } catch (error) {
       console.error('Error marking notification as read:', error);
@@ -136,10 +168,11 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
       setUnreadCount(0);
 
-      await fetch(`${API_URL}/api/notifications/read-all`, {
+      const apiBase = getApiBaseUrl();
+      await fetch(`${apiBase}/api/notifications/read-all`, {
         method: 'PATCH',
         credentials: 'include',
-        headers: { 'ngrok-skip-browser-warning': 'true' },
+        headers: getAuthHeaders(),
       });
       toast.success('Đã đánh dấu tất cả là đã đọc');
     } catch (error) {
@@ -197,72 +230,8 @@ export const NotificationProvider = ({ children }: { children: React.ReactNode }
       });
       setUnreadCount((prev) => prev + 1);
 
-      // Hiển thị Toast thông báo nổi bật theo thời gian thực
-      const getIcon = () => {
-        switch (newNotif.type) {
-          case 'ORDER':
-            return <ShoppingBag className="w-5 h-5 text-red-600 shrink-0" />;
-          case 'PROMOTION':
-            return <Gift className="w-5 h-5 text-amber-600 shrink-0" />;
-          case 'REWARD':
-            return <Award className="w-5 h-5 text-emerald-600 shrink-0" />;
-          default:
-            return <Bell className="w-5 h-5 text-blue-600 shrink-0" />;
-        }
-      };
-
-      toast.custom(
-        (t) => (
-          <div
-            className={`${
-              t.visible ? 'animate-in fade-in slide-in-from-top-3' : 'animate-out fade-out slide-out-to-top-3'
-            } max-w-sm w-full bg-white shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-black/5 overflow-hidden border border-slate-100 transition-all cursor-pointer hover:bg-slate-50`}
-            onClick={() => {
-              toast.dismiss(t.id);
-              markAsRead(newNotif.id);
-              if (newNotif.url) {
-                router.push(newNotif.url);
-              } else if (newNotif.type === 'ORDER') {
-                router.push(newNotif.referenceId ? `/orders/${newNotif.referenceId}` : '/orders');
-              } else {
-                router.push('/notifications');
-              }
-            }}
-          >
-            <div className="flex-1 w-0 p-4">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-red-50 rounded-xl mt-0.5">
-                  {getIcon()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate">
-                    {newNotif.title}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 line-clamp-2 leading-relaxed">
-                    {newNotif.content}
-                  </p>
-                  <span className="mt-1.5 inline-block text-[10px] font-bold text-red-600">
-                    Vừa xong · Bấm để xem chi tiết
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex border-l border-slate-100">
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toast.dismiss(t.id);
-                }}
-                className="w-full border border-transparent rounded-none rounded-r-2xl p-4 flex items-center justify-center text-xs font-bold text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-        ),
-        { duration: 6000, position: 'top-right' }
-      );
+      // Đã loại bỏ popup Toast bên phải tại NotificationContext để tránh trùng lặp 2 thông báo
+      // Toàn bộ thông báo trực quan trên giao diện được đảm nhiệm thống nhất bởi NotificationRealtimeProvider (top-left)
     });
 
     // Lắng nghe cập nhật số lượng thông báo chưa đọc

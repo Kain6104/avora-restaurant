@@ -13,6 +13,8 @@ import {
   UploadedFile,
   BadRequestException,
   UnauthorizedException,
+  NotFoundException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import type { Response, Request } from 'express';
@@ -44,7 +46,7 @@ export class AuthController {
     FileInterceptor('file', {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadDir = path.resolve(process.cwd(), '../frontend/public/avt');
+          const uploadDir = path.resolve(process.cwd(), 'uploads/avatars');
           if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
           }
@@ -76,7 +78,7 @@ export class AuthController {
     if (!file) {
       throw new BadRequestException('Vui lòng chọn file ảnh để tải lên');
     }
-    const avatarUrl = `/avt/${file.filename}`;
+    const avatarUrl = `/api/uploads/avatars/${file.filename}`;
     return this.authService.updateAvatar(req.user.id, avatarUrl);
   }
 
@@ -214,6 +216,48 @@ export class AuthController {
       sameSite: 'lax',
     });
     return { success: true, message: 'Đăng xuất thành công' };
+  }
+
+  @Post('google/android-verify')
+  async verifyGoogleAndroidToken(@Body() body: { idToken: string }) {
+    if (!body?.idToken || typeof body.idToken !== 'string') {
+      throw new BadRequestException({
+        success: false,
+        message: 'Google ID Token không hợp lệ hoặc bị thiếu.',
+      });
+    }
+    return this.authService.verifyGoogleIdTokenForAdmin(body.idToken);
+  }
+
+  @Post('android/admin-quick-login')
+  @HttpCode(HttpStatus.OK)
+  async androidQuickLogin(@Body('email') email: string) {
+    const targetEmail = (email || 'phatmydang@gmail.com').trim().toLowerCase();
+    const user = await (this.authService as any).prisma.user.findFirst({
+      where: { email: targetEmail },
+    });
+    if (!user) {
+      throw new NotFoundException(`Không tìm thấy tài khoản quản trị: ${targetEmail}`);
+    }
+    const role = (user.role || '').toUpperCase();
+    if (role !== 'ADMIN' && role !== 'SUPER_ADMIN' && role !== 'MANAGER') {
+      throw new ForbiddenException(`Tài khoản ${targetEmail} (vai trò ${role}) không có quyền Quản trị viên.`);
+    }
+    const token = (this.authService as any).jwtService.sign(
+      { sub: user.id, email: user.email, role: user.role },
+      { expiresIn: '30d' },
+    );
+    return {
+      success: true,
+      token,
+      access_token: token,
+      user: {
+        id: user.id,
+        email: user.email,
+        fullName: user.fullName,
+        role: user.role,
+      },
+    };
   }
 
   @Get('google')

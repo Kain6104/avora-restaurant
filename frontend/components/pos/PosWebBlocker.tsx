@@ -73,7 +73,7 @@ export const PosWebBlocker: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#FAFAFA] text-slate-900 flex flex-col justify-between select-none relative overflow-x-hidden">
+    <div className="min-h-screen w-full bg-[#FAFAFA] text-slate-900 flex flex-col justify-between select-none relative overflow-y-auto overflow-x-hidden">
       {/* Subtle Warm Brand Ambient Glows */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 max-w-[850px] w-full h-[380px] bg-gradient-to-b from-red-100/50 via-red-50/20 to-transparent blur-3xl pointer-events-none -z-10" />
       <div className="absolute bottom-0 right-0 max-w-[450px] w-full h-[350px] bg-gradient-to-t from-red-50/40 to-transparent blur-2xl pointer-events-none -z-10" />

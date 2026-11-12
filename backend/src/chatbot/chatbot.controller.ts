@@ -94,21 +94,66 @@ export class ChatbotController {
     );
   }
 
+  @Get('sessions')
+  @UseGuards(OptionalJwtAuthGuard)
+  async getSessions(@Req() request?: AuthenticatedRequest) {
+    if (!request?.user?.id) {
+      return [];
+    }
+    return this.chatbotService.getUserSessions(request.user.id);
+  }
+
+  @Post('session')
+  @UseGuards(OptionalJwtAuthGuard)
+  async createSession(
+    @Body('title') title?: string,
+    @Body('channel') channel?: 'TEXT' | 'VOICE',
+    @Req() request?: AuthenticatedRequest,
+  ) {
+    return this.chatbotService.createNewSession(request?.user?.id, title, channel);
+  }
+
   @Get('session/:sessionId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   async getSession(
     @Param('sessionId') sessionId: string,
-    @Req() request: AuthenticatedRequest,
+    @Req() request?: AuthenticatedRequest,
   ) {
-    return this.chatbotService.getSession(sessionId, request.user!.id);
+    return this.chatbotService.getSession(sessionId, request?.user?.id);
   }
 
   @Delete('session/:sessionId')
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(OptionalJwtAuthGuard)
   async deleteSession(
     @Param('sessionId') sessionId: string,
-    @Req() request: AuthenticatedRequest,
+    @Req() request?: AuthenticatedRequest,
   ) {
-    return this.chatbotService.deleteSession(sessionId, request.user!.id);
+    return this.chatbotService.deleteSession(sessionId, request?.user?.id);
+  }
+
+  @Post('session/:sessionId/share')
+  @UseGuards(OptionalJwtAuthGuard)
+  async createShareLink(
+    @Param('sessionId') sessionId: string,
+    @Body('duration') duration?: string,
+    @Body('maskSensitive') maskSensitive?: boolean,
+    @Req() request?: AuthenticatedRequest,
+  ) {
+    return this.chatbotService.createShareLink(
+      sessionId,
+      request?.user?.id,
+      duration || '24h',
+      maskSensitive !== false,
+    );
+  }
+
+  @Get('share/:token')
+  async getSharedChat(@Param('token') token: string) {
+    return this.chatbotService.getSharedChat(token);
+  }
+
+  @Post('share/:token/revoke')
+  async revokeSharedChat(@Param('token') token: string) {
+    return this.chatbotService.revokeShareLink(token);
   }
 }

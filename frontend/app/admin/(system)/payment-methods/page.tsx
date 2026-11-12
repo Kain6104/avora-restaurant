@@ -22,8 +22,10 @@ import {
   Sliders,
   Check,
   Zap,
+  ExternalLink,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getAuthHeaders } from '@/lib/auth';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { PageHeader, FormField } from '@/app/admin/components/ui';
 
@@ -75,7 +77,7 @@ export default function PaymentMethodsPage() {
 
   const fetchBranches = async () => {
     try {
-      const res = await fetch('/api/admin/branches', { credentials: 'include' });
+      const res = await fetch('/api/admin/branches', { headers: getAuthHeaders(), credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setBranches(data.data || []);
@@ -88,7 +90,7 @@ export default function PaymentMethodsPage() {
   const fetchMethods = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/payment-methods', { credentials: 'include' });
+      const res = await fetch('/api/payment-methods', { headers: getAuthHeaders(), credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         setMethods(data.data || []);
@@ -170,7 +172,7 @@ export default function PaymentMethodsPage() {
     try {
       const res = await fetch(`/api/payment-methods/${id}/toggle`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ field }),
         credentials: 'include',
       });
@@ -190,6 +192,7 @@ export default function PaymentMethodsPage() {
     try {
       const res = await fetch(`/api/payment-methods/${id}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
         credentials: 'include',
       });
       if (res.ok) {
@@ -231,7 +234,7 @@ export default function PaymentMethodsPage() {
 
       const res = await fetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify(payload),
         credentials: 'include',
       });
@@ -350,8 +353,22 @@ export default function PaymentMethodsPage() {
                           <p className="font-bold text-slate-900">{m.name}</p>
                           {m.accountNumber && (
                             <p className="text-[11px] text-slate-500">
-                              {m.bankCode} · {m.accountNumber}
+                              {m.bankCode} · {m.accountNumber} {m.accountName ? `(${m.accountName})` : ''}
                             </p>
+                          )}
+                          {(m.gatewayType === 'TRANSFER' || m.methodCode === 'TRANSFER') && (
+                            <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse"></span>
+                                AVORA Bank Connect
+                              </span>
+                              <a
+                                href="/admin/bank-connect"
+                                className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+                              >
+                                Quản lý Android <ExternalLink size={10} />
+                              </a>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -365,7 +382,7 @@ export default function PaymentMethodsPage() {
                           : m.gatewayType === 'CARD'
                           ? t('paymentMethods.cardPos', 'Quẹt thẻ ngân hàng (POS)')
                           : m.gatewayType === 'TRANSFER'
-                          ? t('paymentMethods.vietqr', 'Chuyển khoản VietQR')
+                          ? t('paymentMethods.vietqr', 'Chuyển khoản VietQR (Bank Connect)')
                           : m.gatewayType}
                       </span>
                     </td>
@@ -652,6 +669,29 @@ export default function PaymentMethodsPage() {
               )}
 
               {/* THÔNG TIN NGÂN HÀNG THỤ HƯỞNG (KHI CHỌN SEPAY HOẶC TRANSFER) */}
+              {(formData.gatewayType === 'TRANSFER' || formData.methodCode === 'TRANSFER') && (
+                <div className="p-3.5 bg-red-50/80 rounded-2xl border border-red-200 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center shrink-0">
+                      <Zap size={16} />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-red-900">AVORA Bank Connect – Tự động đối soát</p>
+                      <p className="text-[11px] text-red-700">Biến động số dư từ Vietcombank trên Android Gateway sẽ được khớp lệnh tự động thời gian thực.</p>
+                    </div>
+                  </div>
+                  <a
+                    href="/admin/bank-connect"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white text-[11px] font-bold rounded-xl shrink-0 inline-flex items-center gap-1"
+                  >
+                    <span>Android Gateway</span>
+                    <ExternalLink size={11} />
+                  </a>
+                </div>
+              )}
+
               {(formData.gatewayType === 'SEPAY' || formData.gatewayType === 'TRANSFER') && (
                 <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-200/80 space-y-3">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">

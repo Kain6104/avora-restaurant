@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import LoadingOverlay from '@/components/LoadingOverlay';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_URL = '';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -129,7 +129,10 @@ export default function RegisterPage() {
         inputRefs.current[0]?.focus();
       } else {
         toast.success('Xác thực thành công! Hệ thống đang đăng nhập...');
-        router.push('/');
+        const searchParams = new URLSearchParams(window.location.search);
+        const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
+        const redirectURL = redirectParam || '/';
+        router.push(redirectURL);
         router.refresh();
       }
     } catch (err) {
@@ -418,7 +421,7 @@ export default function RegisterPage() {
                   disabled={loading || isGoogleLoading}
                   onClick={() => {
                     setIsGoogleLoading(true);
-                    window.location.href = `${API_URL}/api/auth/google`;
+                    window.location.href = '/api/auth/google';
                   }}
                   className="w-full flex justify-center items-center py-3 lg:py-3.5 px-4 bg-white border border-slate-300 rounded-2xl hover:bg-slate-50 transition-all shadow-sm hover:shadow-md hover:-translate-y-0.5 text-slate-700 font-bold text-sm lg:text-base gap-3 disabled:opacity-70 disabled:cursor-not-allowed disabled:hover:translate-y-0"
                 >
@@ -441,9 +444,15 @@ export default function RegisterPage() {
 
             <div className="mt-8 lg:mt-10 text-center text-xs lg:text-sm text-white/90 lg:text-slate-600 font-bold drop-shadow-md lg:drop-shadow-sm pb-4">
               Đã có tài khoản?{' '}
-              <Link href="/login" className="font-black text-red-500 lg:text-red-600 hover:text-red-400 lg:hover:text-red-700 underline decoration-2 underline-offset-4">
-                Đăng nhập ngay
-              </Link>
+              {(() => {
+                const redirectParam = typeof window !== 'undefined' ? (new URLSearchParams(window.location.search).get('redirect') || new URLSearchParams(window.location.search).get('redirectURL')) : '';
+                const loginUrl = redirectParam ? `/login?redirect=${encodeURIComponent(redirectParam)}` : '/login';
+                return (
+                  <Link href={loginUrl} className="font-black text-red-500 lg:text-red-600 hover:text-red-400 lg:hover:text-red-700 underline decoration-2 underline-offset-4">
+                    Đăng nhập ngay
+                  </Link>
+                );
+              })()}
             </div>
           </div>
         </div>

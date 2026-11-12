@@ -51,6 +51,8 @@ interface Reservation {
     name: string;
     branchCode: string;
   };
+  preOrderedItems?: any[];
+  preOrderTotal?: number;
   tables: Array<{
     tableId: string;
     table: {
@@ -503,6 +505,7 @@ export default function AdminReservationsPage() {
                     <th className="px-4 py-3.5">Thời Gian</th>
                     <th className="px-4 py-3.5">Khách</th>
                     <th className="px-4 py-3.5">Bàn Gán</th>
+                    <th className="px-4 py-3.5">Món Đặt Trước</th>
                     <th className="px-4 py-3.5">Trạng Thái</th>
                     <th className="px-4 py-3.5 text-right">Thao Tác</th>
                   </tr>
@@ -550,6 +553,21 @@ export default function AdminReservationsPage() {
                           >
                             + Gán bàn
                           </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {Array.isArray(res.preOrderedItems) && res.preOrderedItems.length > 0 ? (
+                          <div>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-red-50 text-red-700 border border-red-100">
+                              <Utensils className="w-3 h-3" />
+                              {res.preOrderedItems.length} món
+                            </span>
+                            <span className="block font-extrabold text-[11px] text-slate-800 font-mono mt-0.5">
+                              {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(res.preOrderTotal || 0)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
                         )}
                       </td>
                       <td className="px-4 py-3.5">{renderStatusBadge(res.status)}</td>
@@ -820,6 +838,30 @@ export default function AdminReservationsPage() {
               Đặt bàn: <strong>{assigningReservation.reservationCode}</strong> ({assigningReservation.partySize} khách) lúc{' '}
               <strong className="text-red-600">{assigningReservation.reservationTime}</strong>.
             </p>
+
+            {Array.isArray(assigningReservation.preOrderedItems) && assigningReservation.preOrderedItems.length > 0 && (
+              <div className="mb-3.5 p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs">
+                <div className="flex justify-between font-bold text-slate-800 mb-1.5">
+                  <span className="flex items-center gap-1 text-red-600 font-bold">
+                    <Utensils className="w-3.5 h-3.5" />
+                    Món khách đặt trước ({assigningReservation.preOrderedItems.length} món):
+                  </span>
+                  <span className="text-red-700 font-mono font-extrabold">
+                    {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(assigningReservation.preOrderTotal || 0)}
+                  </span>
+                </div>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {assigningReservation.preOrderedItems.map((item, idx) => (
+                    <div key={idx} className="flex justify-between text-slate-600 text-[11px]">
+                      <span>{item.name} x{item.quantity}</span>
+                      <span className="font-semibold text-slate-800 font-mono">
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(item.lineTotal || (item.price * item.quantity))}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="max-h-60 overflow-y-auto space-y-1.5 sm:space-y-2 border border-slate-100 rounded-xl p-2.5 sm:p-3 mb-3 sm:mb-4">
               {branchTables.map((tbl) => {

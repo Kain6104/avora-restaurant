@@ -20,12 +20,14 @@ interface OrderItemInfo {
 
 interface SepayConfigData {
   orderCode: string;
+  transferContent?: string;
   amount: number;
   status: string;
   paymentStatus: string;
   isPaid: boolean;
   qrUrl: string;
   bankCode: string;
+  bankName?: string;
   accountNumber: string;
   accountName: string;
   hasConfig: boolean;
@@ -98,6 +100,7 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
   const [loading, setLoading] = useState(true);
   const [showOrderDetails, setShowOrderDetails] = useState(false);
   const [isPaidSuccess, setIsPaidSuccess] = useState(false);
+  const [isCancelled, setIsCancelled] = useState(false);
   const [countdown, setCountdown] = useState(3);
   const pollerRef = useRef<NodeJS.Timeout | null>(null);
   const isRedirectingRef = useRef(false);
@@ -116,8 +119,18 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
       if (!res.ok) {
         throw new Error('Không tìm thấy thông tin đơn hàng');
       }
-      const config: SepayConfigData = await res.json();
+      const config: any = await res.json();
       setData(config);
+
+      const cancelled = config.isCancelled || config.status === 'CANCELLED' || config.status === 'CANCELED' || config.rawStatus === 'CANCELLED';
+      if (cancelled) {
+        setIsCancelled(true);
+        if (pollerRef.current) {
+          clearInterval(pollerRef.current);
+          pollerRef.current = null;
+        }
+        return;
+      }
 
       if (config.isPaid) {
         handleSuccess();
@@ -162,10 +175,15 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
         });
         if (res.ok) {
           const resData = await res.json();
-          if (resData.isPaid || resData.status === 'PAID' || resData.status === 'COMPLETED') {
+          const cancelled = resData.isCancelled || resData.status === 'CANCELLED' || resData.status === 'CANCELED' || resData.rawStatus === 'CANCELLED';
+          if (cancelled) {
+            setIsCancelled(true);
+            if (pollerRef.current) {
+              clearInterval(pollerRef.current);
+              pollerRef.current = null;
+            }
+          } else if (resData.isPaid || resData.status === 'PAID' || resData.status === 'COMPLETED') {
             handleSuccess();
-          } else if (resData.status === 'CANCELED') {
-            window.location.href = `/orders`;
           }
         }
       } catch (e) {
@@ -227,17 +245,49 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
   const confirmCancel = (e: React.MouseEvent) => {
     e.preventDefault();
     Swal.fire({
-      title: 'Xác nhận hủy đơn?',
-      text: 'Bạn có chắc chắn muốn hủy giao dịch thanh toán này không?',
+      title: 'Xác nhận hủy giao dịch?',
+      text: 'Bạn có chắc chắn muốn hủy đơn hàng / giao dịch thanh toán này không?',
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
       cancelButtonColor: '#9ca3af',
       confirmButtonText: 'Đồng ý hủy',
-      cancelButtonText: 'Đóng',
+      cancelButtonText: 'Giữ lại đơn',
+      showLoaderOnConfirm: true,
+      preConfirm: async () => {
+        try {
+          const res = await fetch('/api/payment/cancel', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(typeof window !== 'undefined' && localStorage.getItem('token') ? { 'Authorization': `Bearer ${localStorage.getItem('token')}` } : {}),
+            },
+            body: JSON.stringify({
+              orderCode,
+              reason: 'Khách hàng hủy trên trang thanh toán SePay',
+            }),
+          });
+          const resJson = await res.json();
+          if (!res.ok) {
+            throw new Error(resJson.message || 'Không thể hủy đơn hàng');
+          }
+          return resJson;
+        } catch (error: any) {
+          Swal.showValidationMessage(`Lỗi: ${error.message || 'Có lỗi xảy ra khi hủy'}`);
+        }
+      },
+      allowOutsideClick: () => !Swal.isLoading(),
     }).then((result) => {
       if (result.isConfirmed) {
-        window.location.href = '/orders';
+        Swal.fire({
+          icon: 'success',
+          title: 'Đã hủy thành công!',
+          text: 'Giao dịch thanh toán đã được hủy theo yêu cầu của bạn.',
+          timer: 2000,
+          showConfirmButton: false,
+        }).then(() => {
+          window.location.href = '/orders';
+        });
       }
     });
   };
@@ -296,7 +346,10 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
     );
   }
 
-  const bankFullName = data?.bankCode ? (BANK_BINS[data.bankCode] || data.bankCode) : 'Ngân hàng';
+  const bankCode = (data?.bankCode || '').toUpperCase();
+  const bankFullName = data?.bankName || (bankCode ? (BANK_BINS[bankCode] || bankCode) : 'Chưa cấu hình ngân hàng');
+  const transferContent = (data as any)?.transferContent || data?.orderCode || orderCode || '';
+  const bankLogoUrl = bankCode ? `https://api.vietqr.io/img/${bankCode}.png` : '';
 
   return (
     <div className="min-h-screen flex flex-col font-sans text-gray-800 bg-[#f4f5f7]">
@@ -309,11 +362,16 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
           onClick={() => (window.location.href = '/')}
         />
         <div className="flex items-center justify-center">
-          <img
-            src="https://sepay.vn/assets/img/brand-assets/png/logo-sepay-color-in-white.png"
-            alt="Sepay"
-            className="h-10 md:h-16 object-contain"
-          />
+          {bankLogoUrl && (
+            <img
+              src={bankLogoUrl}
+              alt={bankCode}
+              className="h-7 md:h-10 max-w-[120px] md:max-w-[160px] object-contain"
+              onError={(e: any) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          )}
         </div>
       </header>
 
@@ -330,6 +388,33 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
               <p className="text-[14px] text-gray-500 mb-6">Đơn hàng của bạn đã được xác nhận.</p>
               <div className="text-red-500 font-medium text-[14px]">
                 Chuyển hướng sau {countdown} giây...
+              </div>
+            </div>
+          ) : isCancelled ? (
+            /* MÀN HÌNH CẢNH BÁO ĐƠN HÀNG ĐÃ BỊ HỦY */
+            <div className="w-full flex flex-col items-center justify-center py-16 px-6 animate-in zoom-in-95 duration-500 text-center">
+              <div className="w-16 h-16 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4 text-3xl font-black">
+                ✕
+              </div>
+              <h3 className="text-[22px] text-slate-900 font-black mb-2">Đơn Hàng / Gói Thuê Bao Đã Bị Hủy</h3>
+              <p className="text-[14px] text-slate-600 max-w-md mx-auto mb-8 leading-relaxed">
+                Đơn hàng <strong className="font-mono text-red-600 font-bold">[{orderCode}]</strong> này đã bị hủy thanh toán. Quý khách vui lòng <strong className="text-red-600">không thực hiện chuyển khoản</strong> cho đơn hàng này nữa nhé!
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center w-full max-w-xs sm:max-w-md">
+                <button
+                  type="button"
+                  onClick={() => (window.location.href = '/orders')}
+                  className="flex-1 py-3 px-5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-sm transition-all"
+                >
+                  Xem lịch sử đơn hàng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => (window.location.href = '/menu')}
+                  className="flex-1 py-3 px-5 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-bold text-sm shadow-md shadow-red-500/20 transition-all"
+                >
+                  Đặt món mới
+                </button>
               </div>
             </div>
           ) : (
@@ -521,13 +606,13 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-[12px] md:text-[13px] text-gray-500 mb-0.5">Nội dung:</p>
-                        <p className="font-bold text-gray-900 text-[13.5px] md:text-[14px]">
-                          {data?.orderCode}
+                        <p className="font-bold text-gray-900 text-[13.5px] md:text-[14px] font-mono tracking-wide">
+                          {transferContent}
                         </p>
                       </div>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(data?.orderCode || '')}
+                        onClick={() => copyToClipboard(transferContent)}
                         className="bg-red-50 text-red-500 hover:bg-red-100 px-3 py-1.5 rounded text-[11px] md:text-[12px] font-semibold transition-colors shrink-0 cursor-pointer"
                       >
                         Sao chép
@@ -537,7 +622,7 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
 
                   {/* Lời nhắc */}
                   <div className="mt-5 md:mt-6 pt-3 md:pt-4 text-[12.5px] md:text-[13.5px] text-gray-800 leading-relaxed border-t border-gray-100">
-                    Lưu ý : Nhập chính xác số tiền <strong>{formatMoney(data?.amount || 0)}</strong>, nội dung <strong>{data?.orderCode}</strong> khi chuyển khoản
+                    Lưu ý : Nhập chính xác số tiền <strong>{formatMoney(data?.amount || 0)}</strong>, nội dung <strong className="font-mono text-red-600">{transferContent}</strong> khi chuyển khoản
                   </div>
 
                   {/* SECTION APP NGÂN HÀNG TRÊN MOBILE */}
@@ -548,7 +633,7 @@ export default function SePayCheckoutForm({ orderCode }: { orderCode: string }) 
                     <div className="grid grid-cols-4 gap-x-2 gap-y-4 justify-items-center">
                       {BANKING_APPS.map((app) => {
                         const redirectUrl = typeof window !== 'undefined' ? encodeURIComponent(window.location.href) : '';
-                        const deepLink = `https://dl.vietqr.io/pay?app=${app.id}&ba=${data?.accountNumber}@${data?.bankCode}&bn=${encodeURIComponent(data?.accountName || '')}&am=${data?.amount}&tn=${encodeURIComponent(data?.orderCode || '')}&redirect_url=${redirectUrl}`;
+                        const deepLink = `https://dl.vietqr.io/pay?app=${app.id}&ba=${data?.accountNumber}@${data?.bankCode}&bn=${encodeURIComponent(data?.accountName || '')}&am=${data?.amount}&tn=${encodeURIComponent(transferContent)}&redirect_url=${redirectUrl}`;
 
                         if (app.id === 'more') {
                           return (

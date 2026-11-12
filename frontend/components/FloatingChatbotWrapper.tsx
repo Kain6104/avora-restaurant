@@ -9,6 +9,7 @@ export default function FloatingChatbotWrapper() {
 
   // Ẩn hoàn toàn Chatbot trên các màn hình đặc thù và các trang xác thực (login, register)
   if (
+    pathname?.startsWith('/chatbot') ||
     pathname?.startsWith('/farm') ||
     pathname?.startsWith('/pos') ||
     pathname?.startsWith('/kds') ||

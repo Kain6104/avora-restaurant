@@ -26,7 +26,6 @@ import {
   IceCream,
   CheckCircle2,
 } from 'lucide-react';
-import toast from 'react-hot-toast';
 import { PosBranch } from '@/components/pos/pos-types';
 import { KitchenKdsPanel } from '@/components/pos/KitchenKdsPanel';
 import { usePosSocket } from '@/components/pos/usePosSocket';
@@ -129,10 +128,6 @@ export default function AdminKdsPage() {
   const handleSocketKitchenTicket = useCallback(
     (ticket: any) => {
       playChime();
-      toast.success(`Món mới cho ${ticket.tableName || 'đơn hàng'}!`, {
-        icon: <ChefHat className="w-4 h-4 text-amber-500" />,
-        duration: 3000,
-      });
       fetchTickets();
     },
     [playChime, fetchTickets],
@@ -158,7 +153,7 @@ export default function AdminKdsPage() {
         fetchTickets();
       }
     } catch (e) {
-      toast.error('Không thể cập nhật trạng thái món');
+      console.error('Không thể cập nhật trạng thái món:', e);
     }
   };
 
