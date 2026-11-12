@@ -84,6 +84,18 @@ export class PermissionsGuard implements CanActivate {
       });
     }
 
+    // Role USER (Khách hàng) tuyệt đối không được phép truy cập bất kỳ endpoint quản trị nào
+    if (user.role === 'USER') {
+      throw new ForbiddenException({
+        success: false,
+        statusCode: 403,
+        error: {
+          code: 'USER_ROLE_FORBIDDEN',
+          message: 'Tài khoản khách hàng (USER) không có quyền truy cập khu vực quản trị.',
+        },
+      });
+    }
+
     // 3. Trích xuất branchId mục tiêu và kiểm tra chống IDOR
     let targetBranchId: string | null | undefined = null;
 

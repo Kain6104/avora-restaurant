@@ -539,8 +539,8 @@ export default function SettingsView() {
   // =========================================================================
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] select-none text-slate-800 font-sans overflow-hidden">
-      {/* 1. Header Tiêu đề Tab */}
-      <div className="px-4 py-3 bg-white border-b border-slate-200/80 shrink-0 shadow-2xs">
+      {/* 1. Header Tiêu đề Tab (Safe area iPhone) */}
+      <div className="px-4 pt-[max(12px,calc(env(safe-area-inset-top)+4px))] pb-3 bg-white border-b border-slate-200/80 shrink-0 shadow-2xs">
         <h1 className="font-extrabold text-base text-slate-900 tracking-tight">
           Tiện ích & Tài khoản
         </h1>

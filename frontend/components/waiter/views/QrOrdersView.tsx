@@ -5,6 +5,7 @@ import useSWR from 'swr';
 import { useWaiterStore } from '@/store/useWaiterStore';
 import { QrCode, CheckCircle, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { PullToRefresh } from '../common/PullToRefresh';
 
 const fetcher = (url: string) => fetch(url).then(r => r.json());
 
@@ -55,16 +56,22 @@ export default function QrOrdersView() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 pt-[env(safe-area-inset-top)] pb-14">
-      <div className="px-4 py-4 bg-white border-b border-slate-100 shrink-0 shadow-sm z-10">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <QrCode className="text-[#DA251D]" />
+    <div className="flex flex-col h-full min-h-0 bg-slate-50 select-none">
+      <div className="px-4 pt-[max(10px,calc(env(safe-area-inset-top)+4px))] pb-3 bg-white border-b border-slate-200/80 shrink-0 shadow-2xs select-none">
+        <h2 className="text-sm font-black text-slate-900 flex items-center gap-2">
+          <QrCode className="text-[#DA251D]" size={18} />
           Yêu cầu từ khách (QR)
         </h2>
-        <p className="text-sm text-slate-500 mt-1">Các món khách hàng tự gọi qua mã QR tại bàn</p>
+        <p className="text-[11px] text-slate-500 mt-0.5">Các món khách hàng tự gọi qua mã QR tại bàn</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 touch-pan-y">
+      <PullToRefresh
+        onRefresh={async () => {
+          await mutate();
+        }}
+        isOffline={isOffline}
+        className="p-3 space-y-2.5 pb-8"
+      >
         {isLoading && !isOffline ? (
           <div className="flex justify-center py-10">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DA251D]"></div>
@@ -114,7 +121,7 @@ export default function QrOrdersView() {
             </div>
           ))
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

@@ -167,11 +167,11 @@ export function clearAuthSession() {
 /**
  * Đăng xuất người dùng toàn diện (Client + Server + Redirect)
  */
-export async function logoutUser(options?: { redirectUrl?: string; reload?: boolean }) {
+export async function logoutUser(options?: { redirectUrl?: string; reload?: boolean; noRedirectParam?: boolean }) {
   let targetUrl = options?.redirectUrl;
   const reload = options?.reload ?? true;
 
-  if (typeof window !== 'undefined') {
+  if (typeof window !== 'undefined' && !options?.noRedirectParam) {
     const currentPath = window.location.pathname + window.location.search;
     // Nếu đang ở bất kỳ trang quản trị nào thuộc /admin/*, tự động lưu lại tham số redirect
     if (!targetUrl) {

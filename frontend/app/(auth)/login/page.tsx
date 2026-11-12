@@ -128,8 +128,21 @@ export default function LoginPage() {
       const searchParams = new URLSearchParams(window.location.search);
       const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
       const isSafeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//');
-      const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF') ? '/admin' : '/';
-      const redirectURL = isSafeRedirect ? redirectParam : (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP ? '/admin/pos' : defaultDest);
+      const isStaffRole = data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF' || data?.user?.role === 'STAFF';
+      const defaultDest = isStaffRole ? '/admin' : '/';
+
+      let redirectURL = defaultDest;
+      if (isSafeRedirect) {
+        // Tuyệt đối chặn role USER vượt qua phân quyền để vào /admin/*
+        if (data?.user?.role === 'USER' && redirectParam.startsWith('/admin')) {
+          redirectURL = '/';
+        } else {
+          redirectURL = redirectParam;
+        }
+      } else if (typeof window !== 'undefined' && (window as any).IS_AVORA_DESKTOP) {
+        redirectURL = '/admin/pos';
+      }
+
       window.location.href = redirectURL;
     } catch (err) {
       console.error('Login error:', err);
@@ -182,8 +195,17 @@ export default function LoginPage() {
         const searchParams = new URLSearchParams(window.location.search);
         const redirectParam = searchParams.get('redirect') || searchParams.get('redirectURL') || searchParams.get('returnUrl');
         const isSafeRedirect = redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//');
-        const defaultDest = (data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF') ? '/admin' : '/';
-        const redirectURL = isSafeRedirect ? redirectParam : defaultDest;
+        const isStaffRole = data?.user?.role === 'ADMIN' || data?.user?.role === 'MANAGER' || data?.user?.role === 'WAITER' || data?.user?.role === 'CHEF' || data?.user?.role === 'STAFF';
+        const defaultDest = isStaffRole ? '/admin' : '/';
+
+        let redirectURL = defaultDest;
+        if (isSafeRedirect) {
+          if (data?.user?.role === 'USER' && redirectParam.startsWith('/admin')) {
+            redirectURL = '/';
+          } else {
+            redirectURL = redirectParam;
+          }
+        }
         router.push(redirectURL);
         router.refresh();
       }

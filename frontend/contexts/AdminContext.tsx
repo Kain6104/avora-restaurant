@@ -152,7 +152,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
   // Khởi tạo an toàn cho SSR (tránh hydration mismatch giữa server và client)
   const [capabilities, setCapabilities] = useState<UserCapabilities | null>(null);
-  const [user, setUser] = useState<AdminUser | null>(null);
+  const [user, setUser] = useState<AdminUser | null>(() => getAuthUser());
   const [allBranches, setAllBranches] = useState<Branch[]>([]);
   const [availableBranches, setAvailableBranches] = useState<Branch[]>([]);
   const [selectedBranchId, setSelectedBranchIdState] = useState<string>('ALL');
@@ -278,9 +278,16 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           throw new Error(`Server returned ${res.status}`);
         }
         const meData = await meRes.json();
-        if (!meData?.role || meData.role === 'USER') {
+        if (meData?.role === 'USER') {
           setCachedCapabilities(null);
-          router.push('/');
+          setUser({
+            id: meData.id,
+            email: meData.email,
+            fullName: meData.fullName,
+            role: 'USER',
+            roleName: 'Khách hàng',
+          });
+          setLoading(false);
           return null;
         }
         if (meData.token) {
@@ -295,6 +302,12 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       }
 
       const caps: UserCapabilities = await res.json();
+      if (caps?.user?.role === 'USER') {
+        setCachedCapabilities(null);
+        setUser(caps.user);
+        setLoading(false);
+        return null;
+      }
       setCachedCapabilities(caps);
       applyCapabilities(caps);
       return caps;

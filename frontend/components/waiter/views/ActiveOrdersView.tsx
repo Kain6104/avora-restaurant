@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import useSWR from 'swr';
 import { useWaiterStore } from '@/store/useWaiterStore';
 import { db } from '@/lib/offline/db';
+import { useInstantActiveOrders } from '@/lib/offline/useOfflineData';
+import { syncEngine } from '@/lib/offline/syncEngine';
+import PullToRefresh from '../common/PullToRefresh';
 import { 
   Clock, 
   Utensils, 
@@ -53,26 +56,73 @@ export function getOrderCategory(order: any): 'ONLINE' | 'DINE_IN' | 'TAKEAWAY' 
 export default function ActiveOrdersView() {
   const isOffline = useWaiterStore((s) => s.isOffline);
   const activeBranchId = useWaiterStore((s) => s.activeBranchId);
-  const { setSelectedTableId, setSelectedOrderId, setActiveTab } = useWaiterStore();
+  const { 
+    setSelectedTableId, 
+    setSelectedOrderId, 
+    setActiveTab,
+    setSourceTab,
+    ordersFilter,
+    setOrdersFilter,
+    ordersSearchQuery,
+    setOrdersSearchQuery,
+    setScrollPosition,
+    getScrollPosition,
+  } = useWaiterStore();
 
-  const [filter, setFilter] = useState<OrderFilterType>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
+  const filter = ordersFilter;
+  const setFilter = setOrdersFilter;
+  const searchQuery = ordersSearchQuery;
+  const setSearchQuery = setOrdersSearchQuery;
 
-  const { data: response, isLoading } = useSWR(
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Restore scroll position when returning from order details
+  useEffect(() => {
+    const saved = getScrollPosition('ACTIVE_ORDERS');
+    if (saved > 0 && scrollContainerRef.current) {
+      requestAnimationFrame(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTop = saved;
+        }
+      });
+    }
+  }, [getScrollPosition]);
+
+  const { data: response, isLoading, mutate } = useSWR(
     isOffline || !activeBranchId ? null : `/api/pos/tables?branchId=${activeBranchId}`,
     fetcher,
     { refreshInterval: 4000 }
   );
 
-  // Offline fallback
-  const [offlineOrders, setOfflineOrders] = useState<any[]>([]);
-  React.useEffect(() => {
-    if (isOffline) {
-      db.activeOrders?.toArray().then(setOfflineOrders).catch(() => {});
-    }
-  }, [isOffline]);
+  // Instant load from Dexie with SWR background updates
+  const { orders: localOrders } = useInstantActiveOrders(activeBranchId);
 
-  const rawOrders: any[] = isOffline ? offlineOrders : (response?.data?.activeOrders || []);
+  // Sync SWR activeOrders to Dexie
+  React.useEffect(() => {
+    if (response?.data?.activeOrders && Array.isArray(response.data.activeOrders) && activeBranchId) {
+      const orderList = response.data.activeOrders.map((o: any) => ({
+        id: o.id,
+        branchId: activeBranchId,
+        tableId: o.tableId,
+        orderCode: o.orderCode,
+        temporaryOrderCode: o.temporaryOrderCode || null,
+        guestCount: o.guestCount || 2,
+        totalAmount: o.totalAmount || 0,
+        subTotal: o.subTotal || 0,
+        status: o.status,
+        kitchenStatus: o.kitchenStatus || 'PENDING',
+        cashierId: o.cashierId || null,
+        orderItems: o.orderItems || [],
+        user: o.user || null,
+        updatedAt: o.updatedAt,
+      }));
+      db.activeOrders.bulkPut(orderList).catch(() => {});
+    }
+  }, [response, activeBranchId]);
+
+  const rawOrders: any[] = (localOrders && localOrders.length > 0)
+    ? localOrders
+    : (response?.data?.activeOrders || []);
 
   // Compute category counts
   const categoryCounts = useMemo(() => {
@@ -120,6 +170,8 @@ export default function ActiveOrdersView() {
   ];
 
   const handleSelectOrder = (order: any) => {
+    setSourceTab('ORDERS');
+    setScrollPosition('ACTIVE_ORDERS', scrollContainerRef.current?.scrollTop || 0);
     if (order.tableId) {
       setSelectedTableId(order.tableId);
       setSelectedOrderId(order.id || null);
@@ -131,35 +183,40 @@ export default function ActiveOrdersView() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 pt-[calc(0.5rem+env(safe-area-inset-top))] pb-24">
+    <div className="flex flex-col h-full min-h-0 bg-slate-50 select-none">
       {/* TOP HEADER & SEARCH */}
-      <div className="px-4 pt-2 pb-3 bg-white border-b border-slate-200/80 shrink-0 shadow-2xs space-y-2.5">
+      <div className="px-3.5 pt-[max(8px,calc(env(safe-area-inset-top)+4px))] pb-2.5 bg-white border-b border-slate-200/80 shrink-0 shadow-2xs space-y-2 select-none">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-xl bg-red-50 text-[#DA251D] flex items-center justify-center font-black">
-              <Receipt size={18} />
+            <div className="w-7 h-7 rounded-lg bg-red-50 text-[#DA251D] flex items-center justify-center font-black">
+              <Receipt size={16} />
             </div>
             <div>
-              <h1 className="text-base font-black text-slate-900 leading-tight">Danh sách đơn hàng</h1>
-              <p className="text-[11px] font-medium text-slate-500">Đang phục vụ: {rawOrders.length} đơn</p>
+              <h1 className="text-sm font-black text-slate-900 leading-tight">Danh sách đơn hàng</h1>
+              <p className="text-[10.5px] font-medium text-slate-500">Đang phục vụ: {rawOrders.length} đơn</p>
             </div>
           </div>
         </div>
 
         {/* Search bar */}
         <div className="relative w-full">
-          <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={(e) => { if (e.currentTarget.value) e.currentTarget.select(); }}
+            onClick={(e) => { if (e.currentTarget.value) e.currentTarget.select(); }}
             placeholder="Tìm theo mã đơn, số bàn, khách hàng, SĐT..."
-            className="w-full pl-9 pr-4 py-2 text-xs rounded-xl bg-slate-100 border-none text-slate-800 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-[#DA251D]/20 focus:outline-none transition-all"
+            className="w-full pl-8 pr-4 py-1.5 text-xs rounded-xl bg-slate-100 border-none text-slate-800 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-[#DA251D]/20 focus:outline-none transition-all"
           />
         </div>
 
-        {/* TABS SELECTOR */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar py-0.5 -mx-4 px-4">
+        {/* TABS SELECTOR - Cuộn ngang mượt mà, touch-pan-x cho mobile */}
+        <div 
+          className="flex gap-2 overflow-x-auto no-scrollbar py-1 -mx-3.5 px-3.5 touch-pan-x overscroll-x-contain shrink-0 scroll-smooth"
+          style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+        >
           {filterTabs.map((tab) => {
             const isActive = filter === tab.id;
             const count = categoryCounts[tab.id];
@@ -168,9 +225,9 @@ export default function ActiveOrdersView() {
               <button
                 key={tab.id}
                 onClick={() => setFilter(tab.id)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1.5 cursor-pointer select-none ${
+                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer select-none ${
                   isActive
-                    ? 'bg-[#DA251D] text-white shadow-sm ring-2 ring-[#DA251D]/20 scale-100'
+                    ? 'bg-[#DA251D] text-white shadow-xs ring-2 ring-[#DA251D]/20 scale-100'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 active:scale-95'
                 }`}
               >
@@ -189,8 +246,17 @@ export default function ActiveOrdersView() {
         </div>
       </div>
 
-      {/* ORDERS LIST */}
-      <div className="flex-1 overflow-y-auto p-4 touch-pan-y space-y-3">
+      {/* ORDERS LIST (Tích hợp PullToRefresh) */}
+      <PullToRefresh
+        onRefresh={async () => {
+          if (activeBranchId) {
+            await syncEngine.performDeltaSync(activeBranchId, false);
+          }
+          await mutate();
+        }}
+        isOffline={isOffline}
+        className="p-3 space-y-2.5 pb-8"
+      >
         {isLoading && !isOffline ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-2">
             <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#DA251D] border-t-transparent" />
@@ -345,7 +411,7 @@ export default function ActiveOrdersView() {
             })}
           </div>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

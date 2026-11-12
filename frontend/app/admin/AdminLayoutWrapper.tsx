@@ -2,7 +2,7 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
-import { AdminProvider } from '@/contexts/AdminContext';
+import { AdminProvider, useAdmin } from '@/contexts/AdminContext';
 import { LanguageProvider } from '@/contexts/LanguageContext';
 import { NotificationRealtimeProvider } from '@/contexts/NotificationRealtimeProvider';
 import dynamic from 'next/dynamic';
@@ -10,6 +10,7 @@ import AdminHeader from './components/AdminHeader';
 import AdminBottomNav from './components/AdminBottomNav';
 import AdminFooter from './components/AdminFooter';
 import { AdminPageGuard } from '@/components/AdminPageGuard';
+import AdminUserForbidden404 from '@/components/admin/AdminUserForbidden404';
 import { platformBridge } from '@/lib/platform/platform-bridge';
 import toast from 'react-hot-toast';
 import TopProgressBar from './components/ui/TopProgressBar';
@@ -137,6 +138,12 @@ function RoutePermissionEnforcer({ children }: { children: React.ReactNode }) {
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { user, capabilities } = useAdmin();
+
+  const isUserRole = user?.role === 'USER' || capabilities?.user?.role === 'USER';
+  if (isUserRole) {
+    return <AdminUserForbidden404 />;
+  }
 
   // Reset scroll position on route change
   useEffect(() => {
@@ -146,10 +153,13 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [pathname]);
 
+  const [isDesktopEnv, setIsDesktopEnv] = React.useState(false);
+
   // CHỈ tự động quay về màn hình POS trên App Desktop (AVORA POS Desktop WebView2), KHÔNG áp dụng cho trình duyệt Web
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const isDesktop = platformBridge.isDesktop || Boolean((window as any).IS_AVORA_DESKTOP);
+    setIsDesktopEnv(isDesktop);
 
     // Dọn dẹp cờ trên trình duyệt Web để quản trị viên tự do truy cập trang quản trị
     if (!isDesktop) {
@@ -164,9 +174,32 @@ function AdminLayoutInner({ children }: { children: React.ReactNode }) {
     }
   }, [pathname, router]);
 
-  const isPosOrKds = pathname?.startsWith('/admin/pos') || pathname?.startsWith('/admin/kds');
+  const isWaiter = pathname?.startsWith('/admin/pos/waiter');
+  const isPos = pathname?.startsWith('/admin/pos');
+  const isKds = pathname?.startsWith('/admin/kds');
 
-  if (isPosOrKds) {
+  // Cho Waiter POS: Mobile-first app shell h-[100dvh] không bọc container cuộn bên ngoài, cố định chống rung lắc trên iOS
+  if (isWaiter) {
+    return (
+      <div className="fixed inset-0 w-full h-[100dvh] max-h-[100dvh] bg-slate-50 overflow-hidden font-sans text-slate-800 overscroll-none touch-none select-none">
+        <RoutePermissionEnforcer>
+          {children}
+        </RoutePermissionEnforcer>
+      </div>
+    );
+  }
+
+  if (isPos && !isDesktopEnv) {
+    return (
+      <div className="min-h-screen w-full bg-[#FAFAFA] overflow-y-auto overflow-x-hidden font-sans text-slate-800">
+        <RoutePermissionEnforcer>
+          {children}
+        </RoutePermissionEnforcer>
+      </div>
+    );
+  }
+
+  if (isPos || isKds) {
     return (
       <div className="h-screen max-h-[100dvh] w-full max-w-[100vw] bg-gray-100 overflow-hidden select-none font-sans text-slate-800">
         <RoutePermissionEnforcer>

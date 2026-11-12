@@ -348,15 +348,20 @@ export class AttendanceService {
       throw new NotFoundException('Không tìm thấy tài khoản nhân viên.');
     }
 
+    const effectiveQrData = request.qrCodeData || request.qrData;
+    if (!effectiveQrData) {
+      throw new BadRequestException('Dữ liệu mã QR không được để trống.');
+    }
+
     const logData: any = {
       userId: employee.id,
       scanTime: new Date(),
       scanType: request.scanType || 'AUTO',
-      clientLatitude: request.latitude || 0,
-      clientLongitude: request.longitude || 0,
-      clientAccuracy: request.accuracy || 0,
+      clientLatitude: request.latitude ?? 0,
+      clientLongitude: request.longitude ?? 0,
+      clientAccuracy: request.accuracy ?? request.gpsAccuracy ?? 0,
       deviceId: request.deviceId || 'UNKNOWN_DEVICE',
-      rawQrData: request.qrCodeData,
+      rawQrData: effectiveQrData,
       isSuccess: false,
     };
 
@@ -377,7 +382,7 @@ export class AttendanceService {
       }
 
       // 2. Xác minh QR
-      const { branchId: branchIdFromQr } = await this.qrService.verifyAndExtractBranch(request.qrCodeData);
+      const { branchId: branchIdFromQr } = await this.qrService.verifyAndExtractBranch(effectiveQrData);
       const branchId = request.branchId || branchIdFromQr;
 
       const branch = await this.prisma.branch.findUnique({ where: { id: branchId } });
@@ -387,24 +392,32 @@ export class AttendanceService {
       logData.branchId = branch.id;
 
       // 3. Kiểm tra vị trí GPS
+      const clientLat = request.latitude ?? 0;
+      const clientLng = request.longitude ?? 0;
+      const clientAcc = request.accuracy ?? request.gpsAccuracy ?? 0;
+
       if (branch.latitude && branch.longitude) {
+        if (!clientLat || !clientLng) {
+          throw new BadRequestException('Vui lòng bật quyền truy cập vị trí (GPS) trên thiết bị để chấm công!');
+        }
+
         const distance = this.calculateDistance(
           branch.latitude,
           branch.longitude,
-          request.latitude,
-          request.longitude,
+          clientLat,
+          clientLng,
         );
         logData.distanceCalculated = distance;
 
         const configuredRadius = branch.allowedRadiusMeters > 0 ? branch.allowedRadiusMeters : 500;
         const allowedRadius = Math.min(configuredRadius, 400.0);
 
-        if (request.accuracy > 300) {
+        if (clientAcc > 300) {
           throw new BadRequestException('Tín hiệu GPS quá yếu. Hãy ra ngoài trời hoặc bật cho phép vị trí chính xác.');
         }
 
         if (distance > allowedRadius) {
-          if (distance <= allowedRadius + request.accuracy) {
+          if (distance <= allowedRadius + clientAcc) {
             logData.errorCode = 'WARNING_HIGH_ACCURACY_ERROR';
           } else {
             throw new BadRequestException(

@@ -3,6 +3,7 @@
 import React from 'react';
 import { useAdmin } from '@/contexts/AdminContext';
 import Link from 'next/link';
+import AdminUserForbidden404 from '@/components/admin/AdminUserForbidden404';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -33,6 +34,12 @@ export function AdminPageGuard({
 }: AdminPageGuardProps) {
   const { loading, can, selectedBranchId, capabilities, role, user } = useAdmin();
   const targetBranch = branchId !== undefined ? branchId : selectedBranchId;
+
+  // Role USER tuyệt đối không được phép xem bất kỳ giao diện hay dữ liệu quản trị nào
+  const isUserRole = user?.role === 'USER' || capabilities?.user?.role === 'USER' || role === 'USER';
+  if (isUserRole) {
+    return <AdminUserForbidden404 />;
+  }
 
   const isSystemAdmin =
     capabilities?.roles?.some((r) => r.code === 'ADMIN') ||
@@ -89,6 +96,39 @@ export function AdminPageGuard({
   }
 
   if (!isAllowed) {
+    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
+
+    // Phân biệt rõ giữa mất mạng chưa lưu cache và tài khoản thực sự không có quyền
+    if (isOffline && !capabilities) {
+      return (
+        <div className="py-8 sm:py-12 px-4 flex items-center justify-center">
+          <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-100 shadow-[0_10px_35px_rgba(0,0,0,0.04)] p-7 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-16 h-16 rounded-2xl bg-rose-50 border border-rose-200/60 flex items-center justify-center mx-auto mb-4 text-rose-500 shadow-2xs">
+              <AlertTriangle className="w-8 h-8" strokeWidth={2.2} />
+            </div>
+
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight mb-2">
+              Chưa có phiên làm việc ngoại tuyến
+            </h2>
+
+            <p className="text-slate-500 text-xs sm:text-sm leading-relaxed mb-5">
+              Thiết bị của bạn đang mất kết nối Internet và chưa lưu quyền truy cập ngoại tuyến cho tài khoản này. Vui lòng kết nối mạng để đăng nhập và đồng bộ dữ liệu lần đầu.
+            </p>
+
+            <div className="flex items-center justify-center gap-3 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition shadow-xs cursor-pointer"
+              >
+                Thử kết nối lại
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="py-8 sm:py-12 px-4 flex items-center justify-center">
         <div className="w-full max-w-lg bg-white rounded-3xl border border-slate-100 shadow-[0_10px_35px_rgba(0,0,0,0.04)] p-7 sm:p-9 text-center animate-in fade-in zoom-in-95 duration-200">

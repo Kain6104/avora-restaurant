@@ -9,12 +9,14 @@ import {
   Clock,
   AlertTriangle,
   CheckCircle2,
-  XCircle,
   AlertCircle,
   Search,
   Filter,
   RefreshCw,
   User as UserIcon,
+  ChevronDown,
+  ChevronUp,
+  Building2,
 } from 'lucide-react';
 import { useWaiterStore } from '@/store/useWaiterStore';
 
@@ -27,6 +29,16 @@ interface AttendanceItem {
   hours: number;
   status: string;
   notes: string;
+  branchName?: string;
+}
+
+interface GroupedDayAttendance {
+  date: string;
+  isoDate: string;
+  totalHours: number;
+  overallStatus: string;
+  branchName: string;
+  shifts: AttendanceItem[];
 }
 
 interface PersonalTimecardViewProps {
@@ -34,7 +46,7 @@ interface PersonalTimecardViewProps {
 }
 
 export default function PersonalTimecardView({ onBack }: PersonalTimecardViewProps) {
-  const { currentUser } = useWaiterStore();
+  const { currentUser, currentBranch } = useWaiterStore();
 
   const [activeTab, setActiveTab] = useState<'LIST' | 'MATRIX'>('LIST');
   const [filterType, setFilterType] = useState<'custom' | 'this_week' | 'last_week' | 'this_month' | 'last_month'>('custom');
@@ -67,6 +79,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
 
   const [historyList, setHistoryList] = useState<AttendanceItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [expandedDays, setExpandedDays] = useState<Record<string, boolean>>({});
 
   // Quick range helper
   const applyQuickFilter = (type: 'this_week' | 'last_week' | 'this_month' | 'last_month') => {
@@ -147,8 +160,57 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
       case 'MISSING_CHECKOUT':
         return { text: 'Thiếu Checkout', bg: 'bg-orange-50 text-orange-700 border-orange-200', icon: AlertCircle };
       default:
-        return { text: 'Đang làm', bg: 'bg-blue-50 text-blue-700 border-blue-200', icon: Clock };
+        return { text: 'Đang làm', bg: 'bg-slate-100 text-slate-700 border-slate-200', icon: Clock };
     }
+  };
+
+  // 4.3 Gộp các ca làm cùng ngày trong chế độ Danh sách
+  const groupedDays = useMemo(() => {
+    const groups: Record<string, GroupedDayAttendance> = {};
+
+    historyList.forEach((item) => {
+      const dateKey = item.date || 'Chưa rõ';
+      if (!groups[dateKey]) {
+        let isoDate = dateKey;
+        if (dateKey.includes('/')) {
+          const parts = dateKey.split('/');
+          if (parts.length === 3) {
+            isoDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
+
+        groups[dateKey] = {
+          date: dateKey,
+          isoDate,
+          totalHours: 0,
+          overallStatus: 'ON_TIME',
+          branchName: item.branchName || currentBranch?.name || 'Chi nhánh AVORA',
+          shifts: [],
+        };
+      }
+
+      groups[dateKey].shifts.push(item);
+      groups[dateKey].totalHours += Number(item.hours) || 0;
+
+      // Xác định overallStatus theo mức độ ưu tiên: LATE/EARLY_LEAVE/MISSING_CHECKOUT ghi đè ON_TIME
+      if (item.status === 'LATE') {
+        groups[dateKey].overallStatus = 'LATE';
+      } else if (item.status === 'EARLY_LEAVE' && groups[dateKey].overallStatus !== 'LATE') {
+        groups[dateKey].overallStatus = 'EARLY_LEAVE';
+      } else if (item.status === 'MISSING_CHECKOUT' && groups[dateKey].overallStatus === 'ON_TIME') {
+        groups[dateKey].overallStatus = 'MISSING_CHECKOUT';
+      }
+    });
+
+    // Sắp xếp ngày giảm dần (mới nhất lên đầu)
+    return Object.values(groups).sort((a, b) => b.isoDate.localeCompare(a.isoDate));
+  }, [historyList, currentBranch]);
+
+  const toggleDayExpanded = (date: string) => {
+    setExpandedDays((prev) => ({
+      ...prev,
+      [date]: !prev[date],
+    }));
   };
 
   // Ma trận tuần
@@ -197,8 +259,8 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
 
   return (
     <div className="flex flex-col h-full bg-[#f8f9fa] select-none text-slate-800 overflow-hidden font-sans">
-      {/* 1. TOP BAR — NATIVE IOS TITLE & BACK */}
-      <div className="px-4 py-3 bg-white border-b border-slate-200/80 flex items-center justify-between shrink-0 shadow-2xs">
+      {/* 1. TOP BAR — NATIVE IOS TITLE & BACK (SAFE AREA IPHONE) */}
+      <div className="px-4 pt-[max(12px,calc(env(safe-area-inset-top)+4px))] pb-3 bg-white border-b border-slate-200/80 flex items-center justify-between shrink-0 shadow-2xs">
         <button
           onClick={onBack}
           type="button"
@@ -214,15 +276,15 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
         <div className="w-8" />
       </div>
 
-      {/* 2. SEGMENTED CONTROL (DANH SÁCH / MA TRẬN) */}
+      {/* 2. SEGMENTED CONTROL (DANH SÁCH / MA TRẬN) - AVORA RED THEME */}
       <div className="p-3 bg-white border-b border-slate-100 shrink-0">
         <div className="max-w-md mx-auto grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">
           <button
             type="button"
             onClick={() => setActiveTab('LIST')}
-            className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'LIST'
-                ? 'bg-[#007AFF] text-white shadow-sm'
+                ? 'bg-[#DA251D] text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -233,9 +295,9 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
           <button
             type="button"
             onClick={() => setActiveTab('MATRIX')}
-            className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${
+            className={`py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
               activeTab === 'MATRIX'
-                ? 'bg-[#007AFF] text-white shadow-sm'
+                ? 'bg-[#DA251D] text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
@@ -246,16 +308,16 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
       </div>
 
       {/* 3. SCROLLABLE CONTENT BODY */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-3.5 pb-20 touch-pan-y">
+      <div className="flex-1 overflow-y-auto p-3 space-y-3.5 pb-24 touch-pan-y">
         {/* ========================================================= */}
-        {/* TAB 1: DANH SÁCH (ẢNH 3 ĐÍNH KÈM)                         */}
+        {/* TAB 1: DANH SÁCH (GỘP CÁC CA LÀM CÙNG NGÀY)               */}
         {/* ========================================================= */}
         {activeTab === 'LIST' && (
           <>
             {/* Box Khoảng thời gian */}
             <div className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-2xs space-y-2.5">
               <div className="flex items-center gap-1.5 text-[11px] font-black uppercase tracking-wider text-slate-500">
-                <Filter size={13} className="text-[#007AFF]" />
+                <Filter size={13} className="text-[#DA251D]" />
                 <span>KHOẢNG THỜI GIAN</span>
               </div>
 
@@ -267,7 +329,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                   setFilterType(val);
                   if (val !== 'custom') applyQuickFilter(val);
                 }}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-[#007AFF]"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-[#DA251D]"
               >
                 <option value="custom">Tùy chỉnh khoảng ngày...</option>
                 <option value="this_week">Tuần này</option>
@@ -297,7 +359,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                 <button
                   type="button"
                   onClick={() => fetchData(startDate, endDate)}
-                  className="w-10 h-10 rounded-xl bg-[#007AFF] hover:bg-blue-600 active:scale-95 text-white flex items-center justify-center shadow-sm shrink-0 transition-all cursor-pointer"
+                  className="w-10 h-10 rounded-xl bg-[#DA251D] hover:bg-red-700 active:scale-95 text-white flex items-center justify-center shadow-sm shrink-0 transition-all cursor-pointer"
                   title="Áp dụng tìm kiếm"
                 >
                   <Search size={16} strokeWidth={2.5} />
@@ -305,103 +367,153 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
               </div>
             </div>
 
-            {/* 2 Thẻ KPI: TỔNG GIỜ CÔNG & VI PHẠM (TRỄ/SỚM) */}
+            {/* 2 Thẻ KPI: TỔNG GIỜ CÔNG & VI PHẠM (TRỄ/SỚM) - ĐỒNG BỘ MÀU AVORA */}
             <div className="grid grid-cols-2 gap-3">
-              {/* Thẻ 1: Tổng Giờ Công (Viền xanh) */}
-              <div className="bg-white rounded-2xl p-3.5 border-l-4 border-l-[#007AFF] border border-slate-200/80 shadow-2xs flex flex-col items-center justify-center text-center">
+              {/* Thẻ 1: Tổng Giờ Công */}
+              <div className="bg-white rounded-2xl p-3.5 border-l-4 border-l-[#DA251D] border border-slate-200/80 shadow-2xs flex flex-col items-center justify-center text-center">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                   TỔNG GIỜ CÔNG
                 </span>
-                <span className="text-2xl font-black text-[#007AFF] font-mono mt-1 leading-none">
+                <span className="text-2xl font-black text-[#DA251D] font-mono mt-1 leading-none">
                   {totalHours.toFixed(1)}h
                 </span>
               </div>
 
-              {/* Thẻ 2: Vi phạm (Trễ/Sớm) (Viền đỏ) */}
-              <div className="bg-white rounded-2xl p-3.5 border-l-4 border-l-[#FF3B30] border border-slate-200/80 shadow-2xs flex flex-col items-center justify-center text-center">
+              {/* Thẻ 2: Vi phạm (Trễ/Sớm) */}
+              <div className="bg-white rounded-2xl p-3.5 border-l-4 border-l-rose-500 border border-slate-200/80 shadow-2xs flex flex-col items-center justify-center text-center">
                 <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                   VI PHẠM (TRỄ/SỚM)
                 </span>
-                <span className="text-2xl font-black text-[#FF3B30] font-mono mt-1 leading-none">
+                <span className="text-2xl font-black text-rose-600 font-mono mt-1 leading-none">
                   {violationCount} lần
                 </span>
               </div>
             </div>
 
-            {/* Danh sách CHI TIẾT CÁC CA LÀM */}
+            {/* Danh sách CHI TIẾT CÁC CA LÀM (GỘP THEO NGÀY - ACCORDION) */}
             <div className="space-y-2.5">
               <div className="text-[11px] font-black uppercase tracking-wider text-slate-500 px-1">
-                CHI TIẾT CÁC CA LÀM
+                CHI TIẾT CÁC CA LÀM THEO NGÀY
               </div>
 
               {isLoading ? (
                 <div className="py-12 bg-white rounded-2xl border border-slate-200/80 text-center text-slate-400">
-                  <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-[#007AFF]" />
-                  <p className="text-xs font-semibold">Đang tải chi tiết ca làm việc...</p>
+                  <RefreshCw size={24} className="animate-spin mx-auto mb-2 text-[#DA251D]" />
+                  <p className="text-xs font-semibold">Đang tải dữ liệu ca làm việc...</p>
                 </div>
-              ) : historyList.length === 0 ? (
+              ) : groupedDays.length === 0 ? (
                 <div className="py-12 bg-white rounded-2xl border border-slate-200/80 text-center text-slate-400">
                   <Calendar size={32} className="mx-auto mb-2 opacity-30" />
                   <p className="text-xs font-semibold">Không có dữ liệu ca làm trong khoảng thời gian này.</p>
                 </div>
               ) : (
-                historyList.map((item) => {
-                  const cfg = getBadgeConfig(item.status);
+                groupedDays.map((group) => {
+                  const isExpanded = !!expandedDays[group.date];
+                  const cfg = getBadgeConfig(group.overallStatus);
                   const Icon = cfg.icon;
 
                   return (
                     <div
-                      key={item.id}
-                      className="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-2xs space-y-2.5"
+                      key={group.date}
+                      className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden transition-all"
                     >
-                      {/* Top: Ngày & Badge Trạng Thái */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900">
-                          <Calendar size={14} className="text-[#007AFF]" />
-                          <span>{item.date}</span>
-                        </div>
+                      {/* Thẻ Thu Gọn Mặc Định: Đúng 2 dòng thông tin */}
+                      <div
+                        onClick={() => toggleDayExpanded(group.date)}
+                        className="p-3.5 cursor-pointer hover:bg-slate-50/70 active:bg-slate-100 transition-colors select-none"
+                      >
+                        {/* Dòng 1: Ngày làm việc, Tổng số giờ công, Trạng thái chấm công */}
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 font-bold text-xs text-slate-900 shrink-0">
+                            <Calendar size={14} className="text-[#DA251D]" />
+                            <span>{group.date}</span>
+                          </div>
 
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${cfg.bg}`}>
-                          <Icon size={12} strokeWidth={2.5} />
-                          <span>{cfg.text}</span>
-                        </span>
-                      </div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-black text-xs text-slate-800">
+                              {group.totalHours.toFixed(1)}h
+                            </span>
 
-                      {/* Tên Ca Làm */}
-                      <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
-                        <UserIcon size={14} className="text-slate-400 shrink-0" />
-                        <span>{item.shiftName}</span>
-                      </div>
+                            <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${cfg.bg}`}>
+                              <Icon size={12} strokeWidth={2.5} />
+                              <span>{cfg.text}</span>
+                            </span>
 
-                      {/* 3 Cột: Giờ Vào - Giờ Ra - Số giờ */}
-                      <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-xl p-2.5 text-center border border-slate-100">
-                        <div>
-                          <div className="text-[10px] text-slate-400 font-medium">Giờ Vào</div>
-                          <div className="font-mono font-black text-xs text-emerald-600 mt-0.5">
-                            {item.checkIn || '--:--'}
+                            <div className="text-slate-400 ml-1">
+                              {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                            </div>
                           </div>
                         </div>
 
-                        <div>
-                          <div className="text-[10px] text-slate-400 font-medium">Giờ Ra</div>
-                          <div className={`font-mono font-black text-xs mt-0.5 ${item.checkOut === 'Đang làm' ? 'text-amber-500 animate-pulse' : 'text-slate-800'}`}>
-                            {item.checkOut || '--:--'}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div className="text-[10px] text-slate-400 font-medium">Số giờ</div>
-                          <div className="font-mono font-black text-xs text-[#007AFF] mt-0.5">
-                            {Number(item.hours).toFixed(2)}h
-                          </div>
+                        {/* Dòng 2: Tên chi nhánh (Không xuống dòng, Ellipsis nếu dài > 90%) */}
+                        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-500 font-medium max-w-[90%]">
+                          <Building2 size={12} className="text-slate-400 shrink-0" />
+                          <span className="truncate block whitespace-nowrap overflow-hidden text-ellipsis">
+                            {group.branchName}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Ghi chú ca gãy / trễ */}
-                      {item.notes && (
-                        <div className="text-[11px] text-slate-600 bg-amber-50/60 border border-amber-200/70 rounded-xl px-2.5 py-1.5 flex items-start gap-1.5">
-                          <AlertTriangle size={13} className="text-amber-600 mt-0.5 shrink-0" />
-                          <span>{item.notes}</span>
+                      {/* Chi Tiết Các Ca Làm Khi Mở Rộng (Accordion Expanded) */}
+                      {isExpanded && (
+                        <div className="px-3.5 pb-3.5 pt-1 border-t border-slate-100 bg-slate-50/50 space-y-2.5 animate-in fade-in duration-150">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 pt-1">
+                            Ca làm trong ngày ({group.shifts.length} ca):
+                          </div>
+
+                          {group.shifts.map((shift, idx) => {
+                            const shiftCfg = getBadgeConfig(shift.status);
+                            const ShiftIcon = shiftCfg.icon;
+
+                            return (
+                              <div
+                                key={shift.id || idx}
+                                className="bg-white rounded-xl p-3 border border-slate-200/90 shadow-2xs space-y-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                                    <UserIcon size={13} className="text-slate-400 shrink-0" />
+                                    <span>{shift.shiftName}</span>
+                                  </div>
+
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${shiftCfg.bg}`}>
+                                    <ShiftIcon size={10} strokeWidth={2.5} />
+                                    <span>{shiftCfg.text}</span>
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-3 gap-2 bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                                  <div>
+                                    <div className="text-[9.5px] text-slate-400 font-medium">Giờ Vào</div>
+                                    <div className="font-mono font-black text-xs text-emerald-600 mt-0.5">
+                                      {shift.checkIn || '--:--'}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-[9.5px] text-slate-400 font-medium">Giờ Ra</div>
+                                    <div className={`font-mono font-black text-xs mt-0.5 ${shift.checkOut === 'Đang làm' ? 'text-amber-500 animate-pulse' : 'text-slate-800'}`}>
+                                      {shift.checkOut || '--:--'}
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <div className="text-[9.5px] text-slate-400 font-medium">Số giờ</div>
+                                    <div className="font-mono font-black text-xs text-[#DA251D] mt-0.5">
+                                      {Number(shift.hours).toFixed(2)}h
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {shift.notes && (
+                                  <div className="text-[10.5px] text-slate-600 bg-amber-50/60 border border-amber-200/70 rounded-lg px-2 py-1 flex items-start gap-1.5">
+                                    <AlertTriangle size={12} className="text-amber-600 mt-0.5 shrink-0" />
+                                    <span>{shift.notes}</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -413,7 +525,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
         )}
 
         {/* ========================================================= */}
-        {/* TAB 2: MA TRẬN TUẦN (ẢNH 2 ĐÍNH KÈM)                      */}
+        {/* TAB 2: MA TRẬN TUẦN (SỬA LỖI OVERFLOW - CUỘN NGANG)      */}
         {/* ========================================================= */}
         {activeTab === 'MATRIX' && (
           <>
@@ -425,7 +537,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
 
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs">
-                  <Calendar size={14} className="text-[#007AFF] shrink-0" />
+                  <Calendar size={14} className="text-[#DA251D] shrink-0" />
                   <input
                     type="date"
                     value={matrixStartDate}
@@ -444,20 +556,24 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                 <button
                   type="button"
                   onClick={() => fetchData(matrixStartDate, matrixEndDate)}
-                  className="px-4 py-2 bg-[#007AFF] hover:bg-blue-600 active:scale-95 text-white rounded-xl font-bold text-xs shadow-sm transition-all shrink-0 cursor-pointer"
+                  className="px-4 py-2 bg-[#DA251D] hover:bg-red-700 active:scale-95 text-white rounded-xl font-bold text-xs shadow-sm transition-all shrink-0 cursor-pointer"
                 >
                   Áp dụng
                 </button>
               </div>
             </div>
 
-            {/* Bảng Ma Trận Chi Tiết */}
-            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-center border-collapse">
+            {/* Bảng Ma Trận Chi Tiết - Bọc container overflow-x-auto, cố định cột nhân viên */}
+            <div className="bg-white rounded-2xl border border-slate-200/80 shadow-2xs overflow-hidden w-full max-w-full">
+              <div 
+                className="overflow-x-auto touch-pan-x overscroll-x-contain scroll-smooth no-scrollbar"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+              >
+                <table className="min-w-[620px] w-full text-xs text-center border-collapse">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200 text-slate-700">
-                      <th className="p-3 font-bold border-r border-slate-200 text-left min-w-[110px]">
+                      {/* Cột Nhân Viên Cố Định Bên Trái (Sticky Column) */}
+                      <th className="p-3 font-bold border-r border-slate-200 text-left min-w-[110px] w-[110px] sticky left-0 bg-slate-50 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.04)]">
                         Nhân viên
                       </th>
                       {matrixDays.map((d) => (
@@ -468,7 +584,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                           <div className="text-[10px] text-slate-500">{d.dayName}</div>
                           <div
                             className={`mt-0.5 px-1.5 py-0.5 rounded-md inline-block font-mono ${
-                              d.isToday ? 'bg-[#007AFF] text-white font-bold' : 'text-slate-700'
+                              d.isToday ? 'bg-[#DA251D] text-white font-bold' : 'text-slate-700'
                             }`}
                           >
                             {d.dateShort}
@@ -480,15 +596,15 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
 
                   <tbody>
                     <tr className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/50">
-                      {/* Cột Nhân Viên */}
-                      <td className="p-3 border-r border-slate-200 text-left align-top">
-                        <div className="font-extrabold text-xs text-[#007AFF]">
+                      {/* Cột Nhân Viên Cố Định Bên Trái (Sticky Column) */}
+                      <td className="p-3 border-r border-slate-200 text-left align-top sticky left-0 bg-white z-10 shadow-[2px_0_5px_rgba(0,0,0,0.04)]">
+                        <div className="font-extrabold text-xs text-slate-900 truncate">
                           {currentUser?.fullName || 'Nhân viên'}
                         </div>
                         <div className="text-[10px] text-slate-400 uppercase mt-0.5 font-bold">
                           {currentUser?.role || 'SERVER'}
                         </div>
-                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
                           {daysWorkedCount} ngày
                         </span>
                       </td>
@@ -501,7 +617,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                           <td
                             key={d.isoDate}
                             className={`p-1.5 border-r border-slate-200 last:border-r-0 align-top ${
-                              d.isToday ? 'bg-blue-50/30' : ''
+                              d.isToday ? 'bg-red-50/30' : ''
                             }`}
                           >
                             {records.length === 0 ? (
@@ -519,7 +635,7 @@ export default function PersonalTimecardView({ onBack }: PersonalTimecardViewPro
                                     <div className="font-mono text-[9px] text-slate-500 mt-0.5">
                                       {r.checkIn} - {r.checkOut}
                                     </div>
-                                    <div className="text-[9px] font-bold text-[#007AFF] font-mono mt-0.5">
+                                    <div className="text-[9px] font-bold text-[#DA251D] font-mono mt-0.5">
                                       {Number(r.hours).toFixed(1)}h
                                     </div>
                                   </div>

@@ -146,6 +146,12 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
       const deltaY = currentY - startY;
 
       const target = e.target as HTMLElement | null;
+      // Cho phép cuộn ngang tự do cho các menu thanh lọc / bảng ma trận
+      const scrollableX = target?.closest('.overflow-x-auto') as HTMLElement | null;
+      if (scrollableX) {
+        return;
+      }
+
       const scrollable = target?.closest('.overflow-y-auto, .overflow-auto') as HTMLElement | null;
 
       if (!scrollable) {
@@ -190,13 +196,15 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
 
   const selectedTableId = useWaiterStore((s) => s.selectedTableId);
   const selectedOrderId = useWaiterStore((s) => s.selectedOrderId);
+  const activeTab = useWaiterStore((s) => s.activeTab);
   const isDrilldown = Boolean(selectedTableId || selectedOrderId);
 
   if (!mounted) return null; // Avoid hydration mismatch on PWA
 
   return (
     <div className="fixed inset-0 flex flex-col h-[100dvh] max-h-[100dvh] w-full bg-slate-50 text-slate-900 overflow-hidden select-none overscroll-none touch-none">
-      {!isDrilldown && <WaiterHeader />}
+      {/* Header thương hiệu (Logo AVORA, WiFi, Bell) CHỈ hiển thị duy nhất tại tab Bàn (TABLES) */}
+      {!isDrilldown && activeTab === 'TABLES' && <WaiterHeader />}
       
       {/* Main Content Area: Cố định layout, từng màn hình tự quản lý scroll độc lập */}
       <main className="flex-1 min-h-0 w-full overflow-hidden flex flex-col relative touch-auto overscroll-contain">

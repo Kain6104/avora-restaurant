@@ -1,18 +1,29 @@
 import { IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 
 export class AttendanceScanDto {
-  @IsNotEmpty({ message: 'Dữ liệu mã QR không được để trống' })
+  @IsOptional()
   @IsString()
-  qrCodeData: string;
+  qrCodeData?: string;
 
+  @IsOptional()
+  @IsString()
+  qrData?: string;
+
+  @IsOptional()
   @IsNumber({}, { message: 'Tọa độ vĩ độ (latitude) không hợp lệ' })
-  latitude: number;
+  latitude?: number;
 
+  @IsOptional()
   @IsNumber({}, { message: 'Tọa độ kinh độ (longitude) không hợp lệ' })
-  longitude: number;
+  longitude?: number;
 
+  @IsOptional()
   @IsNumber({}, { message: 'Độ chính xác GPS (accuracy) không hợp lệ' })
-  accuracy: number;
+  accuracy?: number;
+
+  @IsOptional()
+  @IsNumber({}, { message: 'Độ chính xác GPS (gpsAccuracy) không hợp lệ' })
+  gpsAccuracy?: number;
 
   @IsOptional()
   @IsString()
