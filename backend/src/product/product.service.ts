@@ -452,4 +452,74 @@ export class ProductService {
       relatedArticles,
     };
   }
+
+  async getUserFavoriteProducts(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        favoriteItems: {
+          where: { available: true },
+          include: {
+            category: { select: { id: true, name: true, slug: true } },
+            optionGroups: { include: { optionItems: true } },
+            branches: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!user) return [];
+    return this.promotionService.enrichProductsWithFlashSale(user.favoriteItems);
+  }
+
+  async toggleFavoriteProduct(productId: string, userId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { id: true, name: true },
+    });
+    if (!product) {
+      throw new NotFoundException('Món ăn không tồn tại');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        favoriteItems: {
+          where: { id: productId },
+          select: { id: true },
+        },
+      },
+    });
+
+    const isFavorited = (user?.favoriteItems?.length || 0) > 0;
+
+    if (isFavorited) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          favoriteItems: {
+            disconnect: { id: productId },
+          },
+        },
+      });
+      return {
+        isFavorite: false,
+        message: `Đã bỏ lưu món "${product.name}" khỏi danh sách yêu thích`,
+      };
+    } else {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          favoriteItems: {
+            connect: { id: productId },
+          },
+        },
+      });
+      return {
+        isFavorite: true,
+        message: `Đã lưu món "${product.name}" vào danh sách yêu thích`,
+      };
+    }
+  }
 }

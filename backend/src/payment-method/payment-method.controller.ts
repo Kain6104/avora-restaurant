@@ -88,14 +88,14 @@ export class PaymentMethodController {
   }
 
   /**
-   * Admin: Bật/tắt nhanh trạng thái isActive hoặc isActiveForPos
+   * Admin: Bật/tắt nhanh trạng thái isActive, isActiveForPos hoặc isActiveForQr
    */
   @Patch(':id/toggle')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @RequirePermission('payment_methods.update')
   async toggleStatus(
     @Param('id') id: string,
-    @Body('field') field: 'isActive' | 'isActiveForPos',
+    @Body('field') field: 'isActive' | 'isActiveForPos' | 'isActiveForQr',
   ) {
     const data = await this.paymentMethodService.toggleStatus(id, field);
     return { data, message: 'Cập nhật trạng thái thành công' };

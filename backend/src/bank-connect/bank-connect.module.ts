@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PosModule } from '../pos/pos.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { NotificationModule } from '../notification/notification.module';
 import { BankConnectController } from './bank-connect.controller';
 import { BankConnectService } from './services/bank-connect.service';
 import { BankCryptoService } from './services/bank-crypto.service';
@@ -10,7 +11,7 @@ import { OrderMatchingService } from './services/order-matching.service';
 import { DeviceAuthGuard } from './guards/device-auth.guard';
 
 @Module({
-  imports: [PrismaModule, PosModule, RealtimeModule],
+  imports: [PrismaModule, PosModule, RealtimeModule, forwardRef(() => NotificationModule)],
   controllers: [BankConnectController],
   providers: [
     BankConnectService,

@@ -38,3 +38,19 @@ export class RedeemRewardDto {
   @Min(1)
   quantity?: number;
 }
+
+export class GoogleQrAuthDto {
+  @IsString()
+  @IsNotEmpty({ message: 'Google ID Token là bắt buộc' })
+  idToken: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'deviceSessionId là bắt buộc' })
+  deviceSessionId: string;
+}
+
+export class LinkQrSessionAuthDto {
+  @IsString()
+  @IsNotEmpty({ message: 'deviceSessionId là bắt buộc' })
+  deviceSessionId: string;
+}

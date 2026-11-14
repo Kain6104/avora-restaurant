@@ -142,6 +142,8 @@ model User {
   customRecipes        CustomUserRecipe[]     @relation("UserCustomRecipes")
   mealSubscriptions    UserMealSubscription[] @relation("UserMealSubscriptions")
   cart                 Cart?
+  webPushSubscriptions WebPushSubscription[]
+  staffNotificationPreference StaffNotificationPreference?
 }
 
 model Address {
@@ -274,6 +276,7 @@ model Branch {
   attendances           Attendance[]
   attendanceLogs        AttendanceLog[]
   shifts                Shift[]
+  webPushSubscriptions WebPushSubscription[]
 }
 
 model Banner {
@@ -1406,6 +1409,7 @@ model PaymentMethod {
   // Cờ trạng thái
   isActive       Boolean @default(false)
   isActiveForPos Boolean @default(false)
+  isActiveForQr  Boolean @default(false)
   displayOrder   Int     @default(0)
 
   vouchers VoucherPaymentMethod[]
@@ -2521,14 +2525,15 @@ model UserRoleBranch {
 // ====================================================================
 
 model BuffetPackage {
-  id           String   @id @default(uuid())
-  branchId     String
-  name         String
-  description  String?  @db.Text
-  active       Boolean  @default(true)
-  displayOrder Int      @default(0)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id                    String   @id @default(uuid())
+  branchId              String
+  name                  String
+  description           String?  @db.Text
+  active                Boolean  @default(true)
+  displayOrder          Int      @default(0)
+  maxItemsPerSubmission Int?     // Giới hạn tổng số lượng món tối đa cho mỗi lượt gửi xuống bếp (null = không giới hạn)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   branch   Branch                @relation(fields: [branchId], references: [id], onDelete: Cascade)
   tickets  BuffetPackageTicket[]
@@ -2557,6 +2562,7 @@ model BuffetPackageItem {
   productId           String
   displayOrder        Int      @default(0)
   maxQuantityPerRound Int?
+  maxTotalQuantity    Int?
   availableForQr      Boolean  @default(true)
   allowRetailPurchase Boolean  @default(true)
   createdAt           DateTime @default(now())
@@ -2636,15 +2642,20 @@ model QrOrderGuest {
 }
 
 model QrOrderRound {
-  id               String   @id @default(uuid())
+  id               String    @id @default(uuid())
   qrOrderSessionId String
   qrGuestId        String?
   orderId          String
-  roundNumber      Int      @default(1)
-  idempotencyKey   String   @unique
-  status           String   @default("SUBMITTED")
-  submittedAt      DateTime @default(now())
-  createdAt        DateTime @default(now())
+  roundNumber      Int       @default(1)
+  idempotencyKey   String    @unique
+  status           String    @default("SUBMITTED")
+  submittedAt      DateTime  @default(now())
+  approvedById     String?
+  approvedByName   String?
+  approvedAt       DateTime?
+  rejectReason     String?   @db.Text
+  itemsSnapshot    Json?
+  createdAt        DateTime  @default(now())
 
   qrOrderSession QrOrderSession @relation(fields: [qrOrderSessionId], references: [id], onDelete: Cascade)
   guest          QrOrderGuest?  @relation(fields: [qrGuestId], references: [id], onDelete: SetNull)
@@ -5175,4 +5186,57 @@ model AttendanceLog {
   @@index([scanTime])
   @@map("attendance_logs")
 }
+
+model WebPushSubscription {
+  id                   String    @id @default(uuid())
+  userId               String    @map("user_id")
+  deviceInstallationId String    @map("device_installation_id") @db.VarChar(64)
+  endpoint             String    @unique @db.VarChar(500)
+  p256dh               String    @db.Text
+  auth                 String    @db.VarChar(255)
+  platform             String    @db.VarChar(20) // IOS, ANDROID, DESKTOP
+  browser              String?   @db.VarChar(50)
+  userAgent            String?   @map("user_agent") @db.Text
+  sessionId            String?   @map("session_id") @db.VarChar(128)
+  branchId             String?   @map("branch_id")
+  status               String    @default("ACTIVE") @db.VarChar(20) // ACTIVE, REVOKED, EXPIRED
+  categoryPreferences  Json?     @map("category_preferences")
+  sessionExpiresAt     DateTime? @map("session_expires_at")
+  lastSeenAt           DateTime  @default(now()) @map("last_seen_at")
+  revokedAt            DateTime? @map("revoked_at")
+  createdAt            DateTime  @default(now()) @map("created_at")
+  updatedAt            DateTime  @updatedAt @map("updated_at")
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
+  @@index([sessionId])
+  @@index([deviceInstallationId])
+  @@index([branchId])
+  @@index([status])
+  @@map("web_push_subscriptions")
+}
+
+model StaffNotificationPreference {
+  id             String   @id @default(uuid())
+  userId         String   @unique @map("user_id")
+  orderEnabled   Boolean  @default(true) @map("order_enabled")
+  itemEnabled    Boolean  @default(true) @map("item_enabled")
+  kitchenEnabled Boolean  @default(true) @map("kitchen_enabled")
+  qrOrderEnabled Boolean  @default(true) @map("qr_order_enabled")
+  serviceEnabled Boolean  @default(true) @map("service_enabled")
+  paymentEnabled Boolean  @default(true) @map("payment_enabled")
+  tableEnabled   Boolean  @default(true) @map("table_enabled")
+  buffetEnabled  Boolean  @default(true) @map("buffet_enabled")
+  alertEnabled   Boolean  @default(true) @map("alert_enabled")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("staff_notification_preferences")
+}
+
+
 

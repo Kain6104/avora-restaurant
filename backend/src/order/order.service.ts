@@ -2,6 +2,11 @@ import { Injectable, BadRequestException, NotFoundException, Optional, Logger } 
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationEngineService } from '../notification/notification-engine.service';
+import {
+  buildOrderNotificationPayload,
+  mapPriorityToNumeric,
+} from '../notification/order-notification.helper';
+import { OrderAuditService } from '../common/services/order-audit.service';
 import { OrderStatus, PointTransactionSource, Voucher, User, OrderSource, SlotOrderType } from '@prisma/client';
 import { PromotionService } from '../promotion/promotion.service';
 import { MembershipService } from '../membership/membership.service';
@@ -77,6 +82,7 @@ export class OrderService {
     private shippingFeeService: ShippingFeeService,
     private orderPricingService: OrderPricingService,
     @Optional() private farmIntegrationService?: FarmIntegrationService,
+    @Optional() private orderAuditService?: OrderAuditService,
   ) {}
 
   /**
@@ -1417,16 +1423,65 @@ export class OrderService {
       url: `/orders/${displayCode}`,
     });
 
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: txResult.id,
+          orderCode: displayCode,
+          action: 'ORDER_CREATED',
+          category: 'ORDER',
+          actorId: user.id,
+          actorName: user.fullName || user.email || 'Khách hàng',
+          branchId: txResult.branchId,
+          newValue: {
+            orderSource: txResult.orderSource,
+            orderType: txResult.orderType,
+            totalAmount: txResult.totalAmount,
+            paymentMethod: txResult.paymentMethod,
+            discountAmount: txResult.discountAmount || 0,
+            pointsUsed: txResult.pointsUsed || 0,
+          },
+          metadata: {
+            branchCode: branchInfo?.branchCode || null,
+            branchName: branchInfo?.name || null,
+          },
+        })
+        .catch(() => {});
+
+      if (txResult.pointsUsed && txResult.pointsUsed > 0) {
+        this.orderAuditService
+          .log({
+            orderId: txResult.id,
+            orderCode: displayCode,
+            action: 'POINTS_USED',
+            category: 'POINTS',
+            actorId: user.id,
+            actorName: user.fullName || user.email || 'Khách hàng',
+            branchId: txResult.branchId,
+            newValue: { pointsUsed: txResult.pointsUsed },
+          })
+          .catch(() => {});
+      }
+    }
+
+    const builtOnlineCreate = buildOrderNotificationPayload({
+      eventType: 'ORDER_CREATED',
+      orderCode: displayCode,
+      orderType: txResult.orderType,
+      totalAmount: txResult.totalAmount,
+      actorName: user.fullName || user.email || 'Khách hàng',
+    });
+
     // Phát sự kiện thông báo nội bộ cho nhân viên chi nhánh qua NotificationEngine
     try {
-      await this.notificationEngine.publishEvent({
-        eventType: 'ONLINE_ORDER_CREATED',
+      await this.notificationEngine?.publishEvent?.({
+        eventType: 'ORDER_CREATED', icon: builtOnlineCreate.icon,
         category: 'ORDER',
         priority: 2, // HIGH
         branchId: txResult.branchId,
         entityId: txResult.id,
-        title: 'Đơn Online mới',
-        message: `Đơn ${displayCode}${branchTag} trị giá ${txResult.totalAmount.toLocaleString('vi-VN')}₫ vừa được khách hàng đặt.`,
+        title: builtOnlineCreate.title,
+        message: `${builtOnlineCreate.message}${branchTag}`,
         actor: {
           id: user.id,
           name: user.fullName || user.email || 'Khách hàng',
@@ -1725,7 +1780,70 @@ export class OrderService {
       return cancelledOrder;
     });
 
-    // Gửi thông báo hủy đơn hàng tới khách hàng
+    // Gửi thông báo hủy đơn hàng tới khách hàng & nhân viên chi nhánh + AuditLog
+    const cancelDisplayCode = order.orderCode || order.temporaryOrderCode || order.id;
+    const cancelActorName =
+      principal.kind === 'ADMIN'
+        ? principal.user?.fullName || principal.user?.email || 'Admin'
+        : principal.kind === 'USER'
+          ? 'Khách hàng'
+          : 'Khách';
+
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: cancelDisplayCode,
+          action: 'ORDER_CANCELED',
+          category: 'CANCEL',
+          actorId: principal.kind === 'ADMIN' ? principal.user?.id : principal.kind === 'USER' ? principal.userId : null,
+          actorName: cancelActorName,
+          actorRole: principal.kind === 'ADMIN' ? principal.user?.role || 'ADMIN' : 'CUSTOMER',
+          branchId: order.branchId,
+          reason: reason || null,
+          oldValue: { status: order.status, totalAmount: order.totalAmount },
+          newValue: { status: OrderStatus.CANCELLED, pointsRefunded: order.pointsUsed || 0 },
+        })
+        .catch(() => {});
+    }
+
+    const builtCancel = buildOrderNotificationPayload({
+      eventType: 'ORDER_CANCELED',
+      orderCode: cancelDisplayCode,
+      orderType: order.orderType,
+      totalAmount: order.totalAmount,
+      actorName: cancelActorName,
+      reason,
+    });
+    this.notificationEngine?.publishEvent?.({
+        eventType: 'ORDER_CANCELED',
+        category: 'ORDER',
+        priority: mapPriorityToNumeric(builtCancel.priority),
+        icon: builtCancel.icon,
+        branchId: order.branchId,
+        entityId: order.id,
+        subId: `cancel-${Date.now()}`,
+        title: builtCancel.title,
+        message: builtCancel.message,
+        actor: {
+          id: principal.kind === 'ADMIN' ? principal.user?.id : principal.kind === 'USER' ? principal.userId : undefined,
+          name: cancelActorName,
+        },
+        reference: {
+          type: 'ORDER',
+          id: order.id,
+          url: `/admin/orders/${order.id}`,
+        },
+        metadata: {
+          orderId: order.id,
+          orderCode: cancelDisplayCode,
+          reason: reason || null,
+        },
+        requiredPermissions: ['orders.view', 'pos.order.view'],
+        appScopes: ['ADMIN', 'POS'],
+        legacyType: 'ORDER',
+      })
+      .catch(() => {});
     const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
     if (order.userId) {
       await this.notificationService.createNotification({
@@ -1914,6 +2032,58 @@ export class OrderService {
         }
       }
     }
+
+    const displayCodeForAudit = order.orderCode || order.temporaryOrderCode || order.id;
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: displayCodeForAudit,
+          action: 'ORDER_STATUS_CHANGED',
+          category: 'ORDER',
+          actorId: actionByUserId !== 'ADMIN' ? actionByUserId : null,
+          actorName: actionByUserId === 'ADMIN' ? 'Admin' : undefined,
+          branchId: order.branchId,
+          oldValue: { status: order.status },
+          newValue: { status },
+        })
+        .catch(() => {});
+    }
+
+    const builtStatus = buildOrderNotificationPayload({
+      eventType: 'ORDER_STATUS_CHANGED',
+      orderCode: displayCodeForAudit,
+      orderType: order.orderType,
+      oldStatus: order.status,
+      newStatus: status,
+    });
+    this.notificationEngine?.publishEvent?.({
+        eventType: 'ORDER_STATUS_CHANGED',
+        category: 'ORDER',
+        priority: mapPriorityToNumeric(builtStatus.priority),
+        icon: builtStatus.icon,
+        branchId: order.branchId,
+        entityId: order.id,
+        subId: `${status}-${Date.now()}`,
+        title: builtStatus.title,
+        message: builtStatus.message,
+        reference: {
+          type: 'ORDER',
+          id: order.id,
+          url: `/admin/orders/${order.id}`,
+        },
+        metadata: {
+          orderId: order.id,
+          orderCode: displayCodeForAudit,
+          oldStatus: order.status,
+          newStatus: status,
+        },
+        requiredPermissions: ['orders.view', 'pos.order.view'],
+        appScopes: ['ADMIN', 'POS'],
+        excludeActor: true,
+        legacyType: 'ORDER',
+      })
+      .catch(() => {});
 
     return txResult;
   }

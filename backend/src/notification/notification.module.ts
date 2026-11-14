@@ -8,11 +8,13 @@ import { NotificationEngineService } from './notification-engine.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { PosModule } from '../pos/pos.module';
 import { getRequiredEnv } from '../common/utils/env.util';
+import { WebPushModule } from './web-push/web-push.module';
 
 @Module({
   imports: [
     PrismaModule,
     forwardRef(() => PosModule),
+    WebPushModule,
     JwtModule.register({
       secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
@@ -30,6 +32,7 @@ import { getRequiredEnv } from '../common/utils/env.util';
     NotificationGateway,
     NotificationRecipientService,
     NotificationEngineService,
+    WebPushModule,
   ],
 })
 export class NotificationModule {}

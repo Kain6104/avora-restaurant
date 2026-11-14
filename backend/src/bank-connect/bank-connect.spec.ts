@@ -332,11 +332,11 @@ describe('BankConnect Core Security & Logic Integration', () => {
       expect(mockPrisma.bankTransaction.deleteMany).not.toHaveBeenCalled();
     });
 
-    it('Scenario 11: OTA Metadata trả về đầy đủ packageName, versionName 1.0.5, versionCode 6, fileSize và sha256', () => {
+    it('Scenario 11: OTA Metadata trả về đầy đủ packageName, versionName 1.0.7, versionCode 8, fileSize và sha256', () => {
       const meta = service.getLatestApkMetadata();
       expect(meta.packageName).toBe('vn.avora.bankconnect');
-      expect(meta.versionName).toBe('1.0.5');
-      expect(meta.versionCode).toBe(6);
+      expect(meta.versionName).toBe('1.0.7');
+      expect(meta.versionCode).toBe(8);
       expect(meta.downloadUrl).toBe('https://avorafnb.com/api/bank-connect/v1/app/download-latest');
       expect(typeof meta.sha256).toBe('string');
       expect(typeof meta.fileSize).toBe('number');

@@ -1,7 +1,13 @@
-import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, NotFoundException, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationEngineService } from '../notification/notification-engine.service';
+import {
+  buildOrderNotificationPayload,
+  mapPriorityToNumeric,
+} from '../notification/order-notification.helper';
+import { OrderAuditService } from '../common/services/order-audit.service';
+import { PosGateway } from '../pos/pos.gateway';
 import { OrderStatus } from '@prisma/client';
 
 @Injectable()
@@ -12,6 +18,8 @@ export class SepayService {
     private prisma: PrismaService,
     private notificationService: NotificationService,
     private notificationEngine: NotificationEngineService,
+    @Optional() private orderAuditService?: OrderAuditService,
+    @Optional() private posGateway?: PosGateway,
   ) {}
 
   /**
@@ -103,9 +111,70 @@ export class SepayService {
       return { success: true, message: 'Đơn hàng này đã được gạch nợ từ trước.', orderCode: order.orderCode };
     }
 
+    const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
     const expectedAmount = Math.round(order.totalAmount);
     if (transferAmount < expectedAmount) {
-      this.logger.error(`❌ Đơn hàng ${order.orderCode} chuyển THIẾU TIỀN! Cần: ${expectedAmount}, Nhận: ${transferAmount}`);
+      const underpayReason = `Chuyển thiếu tiền: cần ${expectedAmount.toLocaleString('vi-VN')}₫, nhận ${transferAmount.toLocaleString('vi-VN')}₫`;
+      this.logger.error(`❌ Đơn hàng ${displayCode} chuyển THIẾU TIỀN! Cần: ${expectedAmount}, Nhận: ${transferAmount}`);
+
+      if (this.orderAuditService) {
+        this.orderAuditService
+          .log({
+            orderId: order.id,
+            orderCode: displayCode,
+            action: 'PAYMENT_FAILED',
+            category: 'PAYMENT',
+            actorName: 'SePay VietQR',
+            branchId: order.branchId,
+            reason: underpayReason,
+            newValue: {
+              expectedAmount,
+              receivedAmount: transferAmount,
+              transactionCode: referenceCode,
+              gateway: 'SEPAY',
+            },
+          })
+          .catch(() => {});
+      }
+
+      const builtFail = buildOrderNotificationPayload({
+        eventType: 'PAYMENT_FAILED',
+        orderCode: displayCode,
+        orderType: order.orderType,
+        tableName: (order as any).table?.name,
+        reason: underpayReason,
+      });
+      await this.notificationEngine
+        ?.publishEvent?.({
+          eventType: 'PAYMENT_FAILED',
+          category: 'PAYMENT',
+          priority: mapPriorityToNumeric(builtFail.priority),
+          icon: builtFail.icon,
+          branchId: order.branchId,
+          entityId: order.id,
+          subId: `fail-${referenceCode || Date.now()}`,
+          title: builtFail.title,
+          message: builtFail.message,
+          actor: { name: 'SePay VietQR' },
+          reference: {
+            type: 'ORDER',
+            id: order.id,
+            url: `/admin/orders/${order.id}`,
+          },
+          metadata: {
+            orderId: order.id,
+            orderCode: displayCode,
+            expectedAmount,
+            receivedAmount: transferAmount,
+            transactionCode: referenceCode,
+            paymentMethod: 'SEPAY',
+          },
+          requiredPermissions: ['orders.view', 'pos.payment.view', 'pos.payment.collect', 'waiter.access'],
+          appScopes: ['ADMIN', 'POS', 'WAITER'],
+          legacyType: 'ORDER',
+        })
+        ?.catch?.(() => {});
+
       return {
         success: false,
         message: `Số tiền chuyển không đủ. Cần: ${expectedAmount}đ, Thực nhận: ${transferAmount}đ.`,
@@ -113,7 +182,7 @@ export class SepayService {
     }
 
     // 1.5 Cập nhật trạng thái đơn hàng sang PAID
-    this.logger.log(`✅ Giao dịch hợp lệ! Gạch nợ thành công cho đơn hàng: ${order.orderCode}`);
+    this.logger.log(`✅ Giao dịch hợp lệ! Gạch nợ thành công cho đơn hàng: ${displayCode}`);
     const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data: {
@@ -123,10 +192,47 @@ export class SepayService {
         transactionId: referenceCode,
         paymentMethod: 'SEPAY',
       },
+      include: {
+        table: true,
+        orderItems: {
+          include: {
+            product: true,
+            selectedOptions: { include: { optionItem: true } },
+          },
+        },
+      },
     });
 
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: displayCode,
+          action: 'PAYMENT_CONFIRMED',
+          category: 'PAYMENT',
+          actorName: 'SePay VietQR',
+          branchId: order.branchId,
+          oldValue: { paymentStatus: order.paymentStatus, status: order.status },
+          newValue: {
+            paymentStatus: 'PAID',
+            status: updatedOrder.status,
+            paymentMethod: 'SEPAY',
+            amount: transferAmount,
+            transactionCode: referenceCode,
+          },
+        })
+        .catch(() => {});
+    }
+
+    if (this.posGateway) {
+      this.posGateway.emitPaymentCompleted(
+        updatedOrder,
+        { paymentMethod: 'SEPAY', amount: transferAmount, transactionId: referenceCode },
+      );
+      this.posGateway.emitOrderUpdated(updatedOrder, undefined, updatedOrder.table?.name);
+    }
+
     // 1.6 Bắn thông báo realtime cho User
-    const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
     if (order.userId) {
       await this.notificationService.createNotification({
         userId: order.userId,
@@ -140,15 +246,25 @@ export class SepayService {
 
     // Gửi thông báo tới nhân viên chi nhánh qua NotificationEngine
     try {
-      await this.notificationEngine.publishEvent({
+      const builtSuccess = buildOrderNotificationPayload({
+        eventType: 'PAYMENT_SUCCESS',
+        orderCode: displayCode,
+        orderType: updatedOrder.orderType,
+        tableName: updatedOrder.table?.name,
+        totalAmount: transferAmount,
+        paymentMethod: 'SEPAY',
+        gateway: 'SEPAY',
+      });
+      await this.notificationEngine?.publishEvent?.({
         eventType: 'PAYMENT_SUCCESS',
         category: 'PAYMENT',
-        priority: 1, // NORMAL
+        priority: mapPriorityToNumeric(builtSuccess.priority),
+        icon: builtSuccess.icon,
         branchId: order.branchId,
         entityId: order.id,
         subId: referenceCode,
-        title: 'Thanh toán SePay thành công',
-        message: `Đơn ${displayCode} đã được thanh toán ${transferAmount.toLocaleString('vi-VN')}₫ qua SePay VietQR (Mã GD: ${referenceCode}).`,
+        title: builtSuccess.title,
+        message: builtSuccess.message,
         actor: {
           name: 'SePay VietQR',
         },
@@ -164,7 +280,7 @@ export class SepayService {
           transactionCode: referenceCode,
           paymentMethod: 'SEPAY',
         },
-        requiredPermissions: ['orders.view', 'pos.payment.view'],
+        requiredPermissions: ['orders.view', 'pos.payment.view', 'pos.access', 'waiter.access'],
         appScopes: ['ADMIN', 'POS', 'WAITER'],
         legacyType: 'ORDER',
       });
@@ -244,17 +360,14 @@ export class SepayService {
       throw new BadRequestException('Không thể phát sinh mã thanh toán cho đơn hàng rỗng (0 món, 0đ)');
     }
     const isPaid = order.paymentStatus === 'PAID' || order.status === OrderStatus.COMPLETED;
-    if (!isPaid && order.paymentIntentStatus !== 'ACTIVE') {
+    if (!isPaid && !order.paymentIntentCode) {
       await this.prisma.order.update({
         where: { id: order.id },
         data: {
-          paymentIntentStatus: 'ACTIVE',
           paymentIntentCode: order.orderCode || order.temporaryOrderCode || order.id,
           paymentIntentAmount: amount,
           paymentIntentMethod: 'TRANSFER',
           paymentIntentCreatedAt: new Date(),
-          paymentLockedAt: new Date(),
-          paymentStatus: order.paymentStatus === 'PAID' ? 'PAID' : 'AWAITING_PAYMENT',
         },
       });
     }
@@ -307,15 +420,30 @@ export class SepayService {
    * 3. Kiểm tra trạng thái đơn hàng (Dùng cho Polling phía Client)
    */
   async checkOrderStatus(orderCode: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { orderCode },
+    const order = await this.prisma.order.findFirst({
+      where: {
+        OR: [
+          { orderCode },
+          { temporaryOrderCode: orderCode },
+          { id: orderCode },
+        ],
+      },
       select: {
         id: true,
         orderCode: true,
+        temporaryOrderCode: true,
         status: true,
         paymentStatus: true,
         transactionId: true,
         totalAmount: true,
+        payments: {
+          select: {
+            id: true,
+            paymentMethod: true,
+            amount: true,
+            status: true,
+          },
+        },
       },
     });
 
@@ -323,14 +451,35 @@ export class SepayService {
       throw new NotFoundException(`Không tìm thấy đơn hàng ${orderCode}`);
     }
 
-    const isPaid = order.paymentStatus === 'PAID' || order.status === OrderStatus.COMPLETED;
+    const completedPayments = (order.payments || []).filter(
+      (p) => p.status === 'COMPLETED' || (p.status as any) === 'PAID',
+    );
+    const totalPaid = completedPayments.reduce(
+      (sum, p) => sum + Number(p.amount || 0),
+      0,
+    );
+    const orderTotal = Number(order.totalAmount || 0);
+
+    const isPaid =
+      order.paymentStatus === 'PAID' ||
+      order.status === OrderStatus.COMPLETED ||
+      (orderTotal > 0 && totalPaid >= orderTotal);
+
+    const hasTransferPayment = completedPayments.some((p) =>
+      ['BANK_TRANSFER', 'QR_CODE', 'SEPAY', 'VIETQR', 'VCB', 'TRANSFER'].includes(p.paymentMethod),
+    );
 
     return {
-      orderCode: order.orderCode,
+      orderCode: order.orderCode || order.temporaryOrderCode || order.id,
+      realOrderCode: order.orderCode,
+      temporaryOrderCode: order.temporaryOrderCode,
       status: isPaid ? 'PAID' : order.status,
       rawStatus: order.status,
       paymentStatus: order.paymentStatus,
       isPaid,
+      hasTransferPayment,
+      totalPaid,
+      totalAmount: orderTotal,
       transactionCode: order.transactionId,
     };
   }

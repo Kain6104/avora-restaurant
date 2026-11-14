@@ -433,7 +433,8 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   emitOrderUpdated(order: any, actorId?: string, tableName?: string) {
-    const finalTableName = tableName || order?.table?.name || order?.tableName;
+    const rawTableName = tableName || order?.table?.name || order?.tableName || '';
+    const finalTableName = rawTableName.replace(/^Bàn\s+/i, '').trim() || rawTableName;
     const envelope: PosEventEnvelope = {
       eventId: randomUUID(),
       eventType: 'ORDER_UPDATED',
@@ -445,7 +446,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
       actorId,
       payload: {
         ...order,
-        tableName: finalTableName,
+        tableName: finalTableName || undefined,
         notificationMessage: finalTableName ? `Có thay đổi ở bàn ${finalTableName}` : `Đơn hàng [${order.orderCode || order.temporaryOrderCode}] có cập nhật`,
       },
     };
@@ -462,7 +463,8 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
     actorId?: string,
     tableName?: string,
   ) {
-    const finalTableName = tableName || order?.table?.name || order?.tableName;
+    const rawTableName = tableName || order?.table?.name || order?.tableName || '';
+    const finalTableName = rawTableName.replace(/^Bàn\s+/i, '').trim() || rawTableName;
     const envelope: PosEventEnvelope = {
       eventId: randomUUID(),
       eventType: 'TABLE_STATUS_CHANGED',
@@ -476,7 +478,7 @@ export class PosGateway implements OnGatewayConnection, OnGatewayDisconnect {
         status, 
         session, 
         order,
-        tableName: finalTableName,
+        tableName: finalTableName || undefined,
         notificationMessage: finalTableName ? `Có thay đổi ở bàn ${finalTableName}` : `Bàn có cập nhật trạng thái`,
       },
     };

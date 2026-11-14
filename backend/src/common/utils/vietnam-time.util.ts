@@ -186,3 +186,43 @@ export function validateSevenDaysRule(startUtc: Date, endUtc: Date): void {
     throw new BadRequestException('Khoảng thời gian truy vấn tối đa không vượt quá 7 ngày.');
   }
 }
+
+/**
+ * Trả về chuỗi ISO 8601 hiện tại kèm offset +07:00 của Asia/Ho_Chi_Minh (không hardcode cộng trừ giờ thủ công).
+ */
+export function getCurrentVietnamIso(date?: Date | string | number): string {
+  const base = date ? dayjs(date) : dayjs();
+  return base.tz(VN_TIMEZONE).format('YYYY-MM-DDTHH:mm:ss+07:00');
+}
+
+/**
+ * Chuẩn hóa timestamp đầu vào (ISO có Z/+07:00/offset hoặc chuỗi local không offset) về UTC Date chính xác để lưu DB.
+ * Nếu chuỗi không kèm timezone offset, mặc định hiểu là giờ nghiệp vụ Asia/Ho_Chi_Minh thay vì timezone OS của server.
+ */
+export function parseIsoToUtcDate(raw?: string | Date | null, fallback?: Date): Date {
+  const safeFallback = fallback ?? new Date();
+  if (!raw) return safeFallback;
+  if (raw instanceof Date) {
+    return Number.isNaN(raw.getTime()) ? safeFallback : raw;
+  }
+
+  const trimmed = String(raw).trim();
+  if (!trimmed) return safeFallback;
+
+  // Đã có timezone rõ ràng (Z hoặc +HH:MM / -HH:MM / +HHMM)
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) {
+    const parsed = dayjs(trimmed);
+    return parsed.isValid() ? parsed.toDate() : safeFallback;
+  }
+
+  // Chỉ có ngày YYYY-MM-DD -> 00:00:00.000 giờ Việt Nam
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    const parsed = dayjs.tz(`${trimmed} 00:00:00.000`, VN_TIMEZONE);
+    return parsed.isValid() ? parsed.toDate() : safeFallback;
+  }
+
+  // Chuỗi datetime không có timezone -> giải mã theo Asia/Ho_Chi_Minh
+  const normalized = trimmed.replace(' ', 'T');
+  const parsed = dayjs.tz(normalized, VN_TIMEZONE);
+  return parsed.isValid() ? parsed.toDate() : safeFallback;
+}

@@ -1,9 +1,22 @@
-import { Controller, Get, Param, Query, Post, Body } from '@nestjs/common';
+import { Controller, Get, Param, Query, Post, Body, UseGuards, Req } from '@nestjs/common';
 import { ProductService } from './product.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('products')
 export class ProductController {
   constructor(private readonly productService: ProductService) {}
+
+  @Get('user/favorites')
+  @UseGuards(JwtAuthGuard)
+  async getUserFavorites(@Req() req: any) {
+    return this.productService.getUserFavoriteProducts(req.user.id);
+  }
+
+  @Post(':id/favorite')
+  @UseGuards(JwtAuthGuard)
+  async toggleFavorite(@Param('id') productId: string, @Req() req: any) {
+    return this.productService.toggleFavoriteProduct(productId, req.user.id);
+  }
 
   @Get('search/suggestions')
   async getSearchSuggestions() {

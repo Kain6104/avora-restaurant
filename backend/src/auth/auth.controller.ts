@@ -207,7 +207,11 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@Res({ passthrough: true }) res: Response) {
+  async logout(
+    @Res({ passthrough: true }) res: Response,
+    @Body() body?: { deviceInstallationId?: string; endpoint?: string },
+    @Req() req?: any
+  ) {
     const isSecure = process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL?.startsWith('https');
     res.clearCookie('token', {
       path: '/',
@@ -215,6 +219,22 @@ export class AuthController {
       secure: !!isSecure,
       sameSite: 'lax',
     });
+
+    try {
+      const rawToken = req?.cookies?.token || (req?.headers?.authorization ? req.headers.authorization.replace('Bearer ', '') : null);
+      let parsedPayload: any = null;
+      if (rawToken) {
+        parsedPayload = this.authService.decodeTokenSafely(rawToken);
+      }
+
+      await this.authService.handleLogoutRevocation({
+        deviceInstallationId: body?.deviceInstallationId,
+        endpoint: body?.endpoint,
+        sessionId: parsedPayload?.jti,
+        userId: parsedPayload?.sub,
+      });
+    } catch {}
+
     return { success: true, message: 'Đăng xuất thành công' };
   }
 

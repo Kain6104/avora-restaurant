@@ -133,7 +133,13 @@ export class PosController {
   @Post('qr-orders/:id/confirm')
   @RequirePermission('pos.qr_order.process', {
     resourceResolver: async (req, prisma) =>
-      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId ||
+      (
+        await prisma.qrOrderRound.findUnique({
+          where: { id: req.params.id },
+          include: { qrOrderSession: { select: { branchId: true } } },
+        })
+      )?.qrOrderSession?.branchId,
   })
   async confirmQrOrder(@Param('id') id: string, @Req() req?: any) {
     const data = await this.posService.confirmQrOrder(id, req?.user);
@@ -143,7 +149,13 @@ export class PosController {
   @Post('qr-orders/:id/reject')
   @RequirePermission('pos.qr_order.process', {
     resourceResolver: async (req, prisma) =>
-      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId ||
+      (
+        await prisma.qrOrderRound.findUnique({
+          where: { id: req.params.id },
+          include: { qrOrderSession: { select: { branchId: true } } },
+        })
+      )?.qrOrderSession?.branchId,
   })
   async rejectQrOrder(
     @Param('id') id: string,
@@ -151,6 +163,40 @@ export class PosController {
     @Req() req?: any,
   ) {
     const data = await this.posService.rejectQrOrder(id, reason, req?.user);
+    return { success: true, data };
+  }
+
+  @Post('service-requests/:id/resolve')
+  @RequirePermission('waiter.access', {
+    resourceResolver: async (req, prisma) =>
+      (
+        await prisma.tableServiceRequest.findUnique({
+          where: { id: req.params.id },
+          select: { branchId: true },
+        })
+      )?.branchId,
+  })
+  async resolveServiceRequest(@Param('id') id: string, @Req() req?: any) {
+    const data = await this.posService.resolveServiceRequest(id, req?.user);
+    return { success: true, data };
+  }
+
+  @Post('service-requests/:id/cancel')
+  @RequirePermission('waiter.access', {
+    resourceResolver: async (req, prisma) =>
+      (
+        await prisma.tableServiceRequest.findUnique({
+          where: { id: req.params.id },
+          select: { branchId: true },
+        })
+      )?.branchId,
+  })
+  async cancelServiceRequest(
+    @Param('id') id: string,
+    @Body('reason') reason?: string,
+    @Req() req?: any,
+  ) {
+    const data = await this.posService.cancelServiceRequest(id, reason, req?.user);
     return { success: true, data };
   }
 
@@ -353,6 +399,20 @@ export class PosController {
   })
   async cancelPaymentRequest(@Param('id') id: string, @Req() req?: any) {
     const data = await this.posService.cancelPaymentRequest(id, req?.user);
+    return { success: true, data };
+  }
+
+  @Post('orders/:id/unlock-payment-lock')
+  @RequirePermission('pos.order.update', {
+    resourceResolver: async (req, prisma) =>
+      (await prisma.order.findUnique({ where: { id: req.params.id }, select: { branchId: true } }))?.branchId,
+  })
+  async unlockPaymentLock(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req?: any,
+  ) {
+    const data = await this.posService.unlockPaymentLock(id, body?.reason, req?.user);
     return { success: true, data };
   }
 

@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { DayOfWeek, SlotOrderType, SlotStatus } from '@prisma/client';
+import { getVietnamNow, toVietnamTime, getVietnamDateString } from '../common/utils/vietnam-time.util';
 
 export function timeToMinutes(timeStr: string): number {
   if (!timeStr || !timeStr.includes(':')) return 0;
@@ -22,32 +23,24 @@ export function doTimesOverlap(
 }
 
 export function normalizeDateToYYYYMMDD(dateInput?: string | Date): string {
-  const vnFormatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  const now = new Date();
-  if (!dateInput) return vnFormatter.format(now);
+  if (!dateInput) return getVietnamDateString();
 
   if (dateInput instanceof Date) {
-    return isNaN(dateInput.getTime()) ? vnFormatter.format(now) : vnFormatter.format(dateInput);
+    return isNaN(dateInput.getTime()) ? getVietnamDateString() : toVietnamTime(dateInput).format('YYYY-MM-DD');
   }
 
   const raw = String(dateInput).trim().toLowerCase();
+  const vnNow = getVietnamNow();
   if (!raw || raw === 'today' || raw.includes('hôm nay') || raw === 'nay') {
-    return vnFormatter.format(now);
+    return vnNow.format('YYYY-MM-DD');
   }
 
   if (raw === 'tomorrow' || raw.includes('mai') || raw === 'ngay mai') {
-    const tm = new Date(now.getTime() + 86400000);
-    return vnFormatter.format(tm);
+    return vnNow.add(1, 'day').format('YYYY-MM-DD');
   }
 
   if (raw.includes('mốt') || raw.includes('ngày kia') || raw === 'ngay mot') {
-    const dayAfter = new Date(now.getTime() + 2 * 86400000);
-    return vnFormatter.format(dayAfter);
+    return vnNow.add(2, 'day').format('YYYY-MM-DD');
   }
 
   // Check DD/MM/YYYY or DD-MM-YYYY
@@ -55,7 +48,7 @@ export function normalizeDateToYYYYMMDD(dateInput?: string | Date): string {
   if (dmyMatch) {
     const d = dmyMatch[1].padStart(2, '0');
     const m = dmyMatch[2].padStart(2, '0');
-    let y = dmyMatch[3] || String(now.getFullYear());
+    let y = dmyMatch[3] || String(vnNow.year());
     if (y.length === 2) y = '20' + y;
     return `${y}-${m}-${d}`;
   }
@@ -69,39 +62,21 @@ export function normalizeDateToYYYYMMDD(dateInput?: string | Date): string {
     return `${y}-${m}-${d}`;
   }
 
-  // Try standard Date parsing
-  const parsed = new Date(raw);
-  if (!isNaN(parsed.getTime())) {
-    return vnFormatter.format(parsed);
-  }
+  try {
+    const vt = toVietnamTime(raw);
+    if (vt.isValid()) {
+      return vt.format('YYYY-MM-DD');
+    }
+  } catch {}
 
-  return vnFormatter.format(now);
+  return vnNow.format('YYYY-MM-DD');
 }
 
 export function getDayOfWeekFromDate(dateInput: Date | string): DayOfWeek {
-  let dayIndex: number;
-  const normalizedStr = typeof dateInput === 'string' ? normalizeDateToYYYYMMDD(dateInput) : '';
-  if (typeof dateInput === 'string' && normalizedStr) {
-    const [y, m, d] = normalizedStr.split('-').map(Number);
-    const dateObj = new Date(y, m - 1, d, 12, 0, 0);
-    dayIndex = dateObj.getDay();
-  } else {
-    const dObj = dateInput instanceof Date ? dateInput : new Date(dateInput);
-    const vnWeekday = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      weekday: 'short',
-    }).format(dObj);
-    const weekdayMap: Record<string, number> = {
-      Sun: 0,
-      Mon: 1,
-      Tue: 2,
-      Wed: 3,
-      Thu: 4,
-      Fri: 5,
-      Sat: 6,
-    };
-    dayIndex = weekdayMap[vnWeekday] ?? dObj.getDay();
-  }
+  const normalizedStr = typeof dateInput === 'string' ? normalizeDateToYYYYMMDD(dateInput) : toVietnamTime(dateInput).format('YYYY-MM-DD');
+  const vnDate = toVietnamTime(`${normalizedStr}T12:00:00+07:00`);
+  const dayIndex = vnDate.day(); // 0: Sun, 1: Mon, ..., 6: Sat
+
   const mapping: Record<number, DayOfWeek> = {
     0: DayOfWeek.SUNDAY,
     1: DayOfWeek.MONDAY,
@@ -211,25 +186,10 @@ export class OperatingSlotService {
       lockCountMap.set(l.slotId, (lockCountMap.get(l.slotId) || 0) + 1);
     });
 
-    // Tính toán thời gian hiện tại (theo giờ VN GMT+7)
-    const vnFormatter = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const parts = vnFormatter.formatToParts(now);
-    const vnYear = parts.find((p) => p.type === 'year')?.value;
-    const vnMonth = parts.find((p) => p.type === 'month')?.value;
-    const vnDay = parts.find((p) => p.type === 'day')?.value;
-    const vnHour = Number(parts.find((p) => p.type === 'hour')?.value || 0);
-    const vnMinute = Number(parts.find((p) => p.type === 'minute')?.value || 0);
-
-    const todayStr = `${vnYear}-${vnMonth}-${vnDay}`;
-    const currentMinutesVn = vnHour * 60 + vnMinute;
+    // Tính toán thời gian hiện tại chuẩn giờ Việt Nam (Asia/Ho_Chi_Minh)
+    const vnNow = getVietnamNow();
+    const todayStr = vnNow.format('YYYY-MM-DD');
+    const currentMinutesVn = vnNow.hour() * 60 + vnNow.minute();
 
     const isToday = dateStr === todayStr;
     const isPastDay = dateStr < todayStr;
@@ -242,7 +202,7 @@ export class OperatingSlotService {
       const isCapacityFull = slot.maxOrders > 0 && effectiveOrders >= slot.maxOrders;
       const remainingOrders = slot.maxOrders > 0 ? Math.max(0, slot.maxOrders - effectiveOrders) : 999;
 
-      // Kiểm tra Lead Time: nếu đặt cho hôm nay, giờ bắt đầu phải >= giờ hiện tại + leadTimeMinutes
+      // Kiểm tra Lead Time: nếu đặt cho hôm nay
       let isLeadTimeRestricted = false;
       if (isPastDay) {
         isLeadTimeRestricted = true;
@@ -255,7 +215,11 @@ export class OperatingSlotService {
           }
         } else {
           const slotStartMin = timeToMinutes(slot.startTime);
-          if (slotStartMin < currentMinutesVn + slot.leadTimeMinutes) {
+          const slotEndMin = timeToMinutes(slot.endTime);
+          // Khung giờ đã kết thúc trong ngày (slotEndMin <= currentMinutesVn)
+          // HOẶC thời gian đặt trước chưa đủ lead time
+          const leadTime = slot.leadTimeMinutes || 0;
+          if (slotEndMin <= currentMinutesVn || slotStartMin < currentMinutesVn + leadTime) {
             isLeadTimeRestricted = true;
           }
         }

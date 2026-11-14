@@ -5,10 +5,12 @@ import { SYSTEM_ROLE_CODES } from '../common/constants/permissions-registry';
 
 export interface ResolveRecipientsOptions {
   eventType: string;
+  category?: string;
   branchId?: string | null;
-  requiredPermissions: string[];
+  requiredPermissions?: string[];
   appScopes?: ('ADMIN' | 'POS' | 'WAITER' | 'KDS')[];
   excludeUserIds?: string[];
+  sendToAllBranchStaff?: boolean;
 }
 
 export interface RecipientUser {
@@ -25,47 +27,53 @@ export class NotificationRecipientService {
 
   /**
    * Resolve valid notification recipients based on Enterprise RBAC,
-   * active assignments, permission keys, branch scope, and event target.
+   * active assignments, branch scope, category preferences, and event target.
    *
-   * CRITICAL SECURITY PRINCIPLE:
-   * - Customers (role: USER) never receive internal staff notifications.
-   * - Staff at branch AVO2 NEVER receive operational notifications for branch AVO1.
-   * - Only staff with matching permissions (or Super Admins) receive the event.
+   * CRITICAL SECURITY PRINCIPLES (PHASE 2):
+   * 1. Default delivery to ALL valid active staff assigned to the relevant branch.
+   * 2. Accounts with canonical role 'USER' (customers) are STRICTLY EXCLUDED.
+   * 3. Respects personal staff notification preferences (StaffNotificationPreference).
+   * 4. Multi-device support: Staff receive events even when PWA/app is closed or in background.
    */
   async resolveRecipients(options: ResolveRecipientsOptions): Promise<RecipientUser[]> {
     const {
       eventType,
+      category = 'ORDER',
       branchId,
       requiredPermissions,
       appScopes,
       excludeUserIds = [],
+      sendToAllBranchStaff = true,
     } = options;
 
-    if (!requiredPermissions || requiredPermissions.length === 0) {
-      this.logger.warn(`resolveRecipients called with empty requiredPermissions for event ${eventType}`);
-      return [];
-    }
-
     try {
-      // 1. Query all active assignments matching permissions and branch
+      // 1. Build query for active staff assignments
+      // If sendToAllBranchStaff is true (default per Phase 2.1), we include all staff roles (excluding customer role USER)
+      const roleFilter: any = {
+        isActive: true,
+        code: { not: 'USER' },
+      };
+
+      if (!sendToAllBranchStaff && requiredPermissions && requiredPermissions.length > 0) {
+        roleFilter.OR = [
+          { code: SYSTEM_ROLE_CODES.ADMIN },
+          {
+            permissions: {
+              some: {
+                permissionKey: { in: requiredPermissions },
+              },
+            },
+          },
+        ];
+      }
+
       const assignments = await this.prisma.userRoleAssignment.findMany({
         where: {
           isActive: true,
-          role: {
-            isActive: true,
-            OR: [
-              { code: SYSTEM_ROLE_CODES.ADMIN },
-              {
-                permissions: {
-                  some: {
-                    permissionKey: { in: requiredPermissions },
-                  },
-                },
-              },
-            ],
-          },
+          role: roleFilter,
           user: {
-            // Exclude users explicitly locked or in exclude list
+            isAccountLocked: false,
+            // Exclude users in excludeUserIds list
             ...(excludeUserIds.length > 0
               ? { id: { notIn: excludeUserIds } }
               : {}),
@@ -78,6 +86,7 @@ export class NotificationRecipientService {
               email: true,
               fullName: true,
               role: true,
+              staffNotificationPreference: true,
             },
           },
           role: {
@@ -107,13 +116,12 @@ export class NotificationRecipientService {
         const user = assignment.user;
         if (!user) continue;
 
-        // Ensure user is not an unassigned external customer
-        if (user.role === 'USER' && assignment.role.code !== SYSTEM_ROLE_CODES.ADMIN) {
-          // If a user record still has role: 'USER' but has an active staff role assignment,
-          // the assignment role takes precedence, but double-check permissions
+        // RULE 2.1: Strictly exclude accounts with role 'USER' unless they hold an active non-USER staff role assignment
+        if (user.role === 'USER' && (!assignment.role || assignment.role.code === 'USER')) {
+          continue;
         }
 
-        const isAdmin = assignment.role.code === SYSTEM_ROLE_CODES.ADMIN;
+        const isAdmin = assignment.role.code === SYSTEM_ROLE_CODES.ADMIN || user.role === 'ADMIN';
         const isGlobalScope = assignment.role.scopeType === ScopeType.GLOBAL;
         const isAllBranches = assignment.branchScope === BranchScopeType.ALL_BRANCHES;
         const assignedBranchIds = assignment.branches.map((b) => b.branchId);
@@ -121,10 +129,8 @@ export class NotificationRecipientService {
         // Branch-level verification
         let hasBranchAccess = false;
         if (!branchId || branchId === 'ALL') {
-          // Event has no specific branch requirement or is global
           hasBranchAccess = true;
         } else {
-          // Event belongs to a specific branch (e.g. AVO1)
           if (isAdmin || isAllBranches) {
             hasBranchAccess = true;
           } else if (assignedBranchIds.includes(branchId)) {
@@ -133,11 +139,11 @@ export class NotificationRecipientService {
         }
 
         if (!hasBranchAccess) {
-          continue; // User is assigned to a different branch!
+          continue; // Assigned to another branch!
         }
 
-        // App Scope check (if specified, e.g. event is specifically meant for POS / Waiter)
-        if (appScopes && appScopes.length > 0 && !isAdmin) {
+        // App Scope check (only if sendToAllBranchStaff is explicitly false)
+        if (!sendToAllBranchStaff && appScopes && appScopes.length > 0 && !isAdmin) {
           const userPermKeys = new Set(assignment.role.permissions.map((p) => p.permissionKey));
           let matchesAppScope = false;
 
@@ -153,6 +159,28 @@ export class NotificationRecipientService {
           }
         }
 
+        // RULE 2.3: Check personal staff notification preferences
+        if (user.staffNotificationPreference) {
+          const pref = user.staffNotificationPreference;
+          const upperCat = (category || '').toUpperCase();
+
+          let isCategoryEnabled = true;
+          if (upperCat === 'ORDER') isCategoryEnabled = pref.orderEnabled;
+          else if (upperCat === 'ITEM') isCategoryEnabled = pref.itemEnabled;
+          else if (upperCat === 'KITCHEN') isCategoryEnabled = pref.kitchenEnabled;
+          else if (upperCat === 'QR_ORDER') isCategoryEnabled = pref.qrOrderEnabled;
+          else if (upperCat === 'SERVICE') isCategoryEnabled = pref.serviceEnabled;
+          else if (upperCat === 'PAYMENT') isCategoryEnabled = pref.paymentEnabled;
+          else if (upperCat === 'TABLE') isCategoryEnabled = pref.tableEnabled;
+          else if (upperCat === 'BUFFET') isCategoryEnabled = pref.buffetEnabled;
+          else if (upperCat === 'ALERT') isCategoryEnabled = pref.alertEnabled;
+
+          if (!isCategoryEnabled) {
+            // Staff opted out of this notification category
+            continue;
+          }
+        }
+
         recipientMap.set(user.id, {
           id: user.id,
           email: user.email,
@@ -162,7 +190,7 @@ export class NotificationRecipientService {
 
       const recipients = Array.from(recipientMap.values());
       this.logger.debug(
-        `Resolved ${recipients.length} recipients for event=${eventType} branch=${branchId || 'GLOBAL'}`,
+        `Resolved ${recipients.length} recipients for event=${eventType} category=${category} branch=${branchId || 'GLOBAL'}`,
       );
       return recipients;
     } catch (error) {

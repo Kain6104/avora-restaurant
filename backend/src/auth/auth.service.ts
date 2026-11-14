@@ -23,7 +23,7 @@ export class AuthService {
     private jwtService: JwtService,
     private notificationService: NotificationService,
     private authorizationService: AuthorizationService,
-  ) {}
+  ) { }
 
   private async generateNextMemberCode(): Promise<string> {
     const lastUser = await this.prisma.user.findFirst({
@@ -112,7 +112,7 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(password, saltRounds);
 
     const memberCode = await this.generateNextMemberCode();
-    
+
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expires = new Date();
     expires.setMinutes(expires.getMinutes() + 5);
@@ -182,28 +182,28 @@ export class AuthService {
     }
 
     if (!user.isEmailVerified) {
-       const now = new Date();
-       if (user.verificationOtpLastSentAt && (now.getTime() - user.verificationOtpLastSentAt.getTime() < 60000)) {
-         throw new UnauthorizedException({ message: 'Vui lòng chờ 1 phút trước khi yêu cầu gửi lại mã.', requiresVerification: true, email: user.email });
-       }
-       
-       const otp = Math.floor(100000 + Math.random() * 900000).toString();
-       const expires = new Date();
-       expires.setMinutes(expires.getMinutes() + 5);
-       
-       await this.prisma.user.update({
-         where: { id: user.id },
-         data: {
-           verificationOtp: otp,
-           verificationOtpExpires: expires,
-           verificationOtpAttempts: 0,
-           verificationOtpLastSentAt: now,
-         }
-       });
-       
-       this.sendVerificationEmail(user.email, user.fullName, otp);
-       
-       throw new UnauthorizedException({ message: 'Tài khoản chưa được xác thực. Chúng tôi đã gửi lại mã OTP vào email của bạn.', requiresVerification: true, email: user.email });
+      const now = new Date();
+      if (user.verificationOtpLastSentAt && (now.getTime() - user.verificationOtpLastSentAt.getTime() < 60000)) {
+        throw new UnauthorizedException({ message: 'Vui lòng chờ 1 phút trước khi yêu cầu gửi lại mã.', requiresVerification: true, email: user.email });
+      }
+
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+      const expires = new Date();
+      expires.setMinutes(expires.getMinutes() + 5);
+
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          verificationOtp: otp,
+          verificationOtpExpires: expires,
+          verificationOtpAttempts: 0,
+          verificationOtpLastSentAt: now,
+        }
+      });
+
+      this.sendVerificationEmail(user.email, user.fullName, otp);
+
+      throw new UnauthorizedException({ message: 'Tài khoản chưa được xác thực. Chúng tôi đã gửi lại mã OTP vào email của bạn.', requiresVerification: true, email: user.email });
     }
 
     // Xóa cờ forceRelogin khi đăng nhập thành công
@@ -215,7 +215,7 @@ export class AuthService {
     }
 
     // Tạo Payload cho JWT
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: user.role, jti: crypto.randomUUID() };
 
     return {
       message: 'Đăng nhập thành công',
@@ -229,6 +229,45 @@ export class AuthService {
     };
   }
 
+  decodeTokenSafely(token: string): any {
+    try {
+      return this.jwtService.decode(token);
+    } catch {
+      return null;
+    }
+  }
+
+  async handleLogoutRevocation(options: {
+    deviceInstallationId?: string;
+    endpoint?: string;
+    sessionId?: string;
+    userId?: string;
+  }) {
+    const { deviceInstallationId, endpoint, sessionId, userId } = options;
+    const conditions: any[] = [];
+    if (deviceInstallationId) conditions.push({ deviceInstallationId });
+    if (endpoint) conditions.push({ endpoint });
+    if (sessionId) conditions.push({ sessionId });
+
+    if (conditions.length > 0) {
+      try {
+        await this.prisma.webPushSubscription.updateMany({
+          where: {
+            OR: conditions,
+            status: 'ACTIVE',
+            ...(userId ? { userId } : {}),
+          },
+          data: {
+            status: 'REVOKED',
+            revokedAt: new Date(),
+          },
+        });
+      } catch (err) {
+        // Safe fail-through
+      }
+    }
+  }
+
   async validateGoogleUser(profile: any) {
     const { email, firstName, lastName, picture, googleId } = profile;
     const fullName = `${firstName} ${lastName}`.trim();
@@ -239,7 +278,7 @@ export class AuthService {
 
     if (!user) {
       const memberCode = await this.generateNextMemberCode();
-      
+
       // Create new user
       user = await this.prisma.user.create({
         data: {
@@ -272,6 +311,111 @@ export class AuthService {
           googleId: user.googleId || googleId,
           avatarUrl: user.avatarUrl || picture,
         },
+      });
+    }
+
+    return user;
+  }
+
+  /**
+   * Xác minh Google ID Token cho Khách hàng (QR Ordering / Web)
+   * Bắt buộc kiểm tra chữ ký Google tokeninfo, aud == GOOGLE_CLIENT_ID, iss hợp lệ, email_verified == true.
+   */
+  async verifyCustomerGoogleIdToken(idToken: string) {
+    const expectedClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+    if (!expectedClientId) {
+      throw new BadRequestException({
+        success: false,
+        code: 'GOOGLE_AUTH_NOT_CONFIGURED',
+        message: 'Đăng nhập Google chưa được cấu hình trên hệ thống.',
+      });
+    }
+
+    if (!idToken || typeof idToken !== 'string' || idToken.trim().length < 20) {
+      throw new UnauthorizedException('Google ID Token không hợp lệ hoặc bị thiếu.');
+    }
+
+    let payload: any;
+    try {
+      const response = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(idToken.trim())}`,
+      );
+      if (!response.ok) {
+        throw new Error(`Google tokeninfo HTTP ${response.status}`);
+      }
+      payload = await response.json();
+    } catch {
+      throw new UnauthorizedException('Google ID Token không hợp lệ hoặc đã hết hạn.');
+    }
+
+    const validIssuers = new Set(['accounts.google.com', 'https://accounts.google.com']);
+    if (!payload?.iss || !validIssuers.has(String(payload.iss))) {
+      throw new UnauthorizedException('Nguồn cấp Google Token không hợp lệ.');
+    }
+
+    if (payload.aud !== expectedClientId) {
+      throw new UnauthorizedException('Google Token không thuộc ứng dụng AVORA.');
+    }
+
+    const isEmailVerified = payload.email_verified === true || payload.email_verified === 'true';
+    if (!payload?.email || !isEmailVerified || !payload?.sub) {
+      throw new UnauthorizedException('Tài khoản Google chưa xác minh email hợp lệ.');
+    }
+
+    const normalizedEmail = String(payload.email).toLowerCase().trim();
+    const googleId = String(payload.sub).trim();
+
+    // Lookup safely by googleId OR normalized email to guarantee zero duplicate accounts
+    let user = await this.prisma.user.findFirst({
+      where: {
+        OR: [{ googleId }, { email: normalizedEmail }],
+      },
+      include: { membershipTier: true },
+    });
+
+    if (!user) {
+      const memberCode = await this.generateNextMemberCode();
+      const fullName =
+        [payload.given_name, payload.family_name].filter(Boolean).join(' ').trim() ||
+        payload.name?.trim() ||
+        normalizedEmail.split('@')[0];
+
+      user = await this.prisma.user.create({
+        data: {
+          email: normalizedEmail,
+          fullName,
+          avatarUrl: payload.picture || null,
+          googleId,
+          authProvider: 'GOOGLE',
+          role: 'USER',
+          memberCode,
+          isEmailVerified: true,
+        },
+        include: { membershipTier: true },
+      });
+
+      await this.notificationService
+        .createNotification({
+          userId: user.id,
+          title: 'Chào mừng bạn đến với Avora!',
+          content:
+            'Tài khoản của bạn đã được đăng ký qua Google thành công. Hãy tích điểm và nhận ưu đãi thành viên tại AVORA!',
+          type: 'SYSTEM',
+        })
+        .catch(() => { });
+    } else {
+      if (user.isAccountLocked) {
+        throw new UnauthorizedException('Tài khoản đã bị khóa.');
+      }
+      // Link googleId safely without modifying role, passwordHash, or phone
+      user = await this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          googleId: user.googleId || googleId,
+          avatarUrl: user.avatarUrl || payload.picture || null,
+          isEmailVerified: true,
+        },
+        include: { membershipTier: true },
       });
     }
 
@@ -354,7 +498,7 @@ export class AuthService {
     }
 
     // 4. Tạo JWT payload và trả về phiên đăng nhập
-    const jwtPayload = { sub: user.id, email: user.email, role: user.role };
+    const jwtPayload = { sub: user.id, email: user.email, role: user.role, jti: crypto.randomUUID() };
     const token = this.jwtService.sign(jwtPayload);
 
     return {
@@ -389,7 +533,7 @@ export class AuthService {
   }
 
   generateToken(user: any) {
-    const payload = { sub: user.id, email: user.email, role: user.role };
+    const payload = { sub: user.id, email: user.email, role: user.role, jti: crypto.randomUUID() };
     return this.jwtService.sign(payload);
   }
 
@@ -412,9 +556,13 @@ export class AuthService {
     const { passwordHash, ...result } = user;
     const capabilities = await this.authorizationService.getCapabilities(userId);
     const token = this.generateToken(user);
+    const effectiveRole = capabilities.user?.role || result.role;
+    const effectiveRoleName = capabilities.user?.roleName || (effectiveRole === 'ADMIN' ? 'Quản trị viên toàn quyền' : 'Nhân viên');
 
     return {
       ...result,
+      role: effectiveRole,
+      roleName: effectiveRoleName,
       token,
       hasPassword: !!passwordHash,
       permissions: Object.keys(capabilities.effectivePermissions),
@@ -445,38 +593,38 @@ export class AuthService {
   async changePassword(userId: string, data: any) {
     const { oldPassword, newPassword } = data;
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    
+
     if (!user || !user.passwordHash) {
       throw new UnauthorizedException('Không tìm thấy người dùng hoặc người dùng chưa có mật khẩu');
     }
-    
+
     const isPasswordValid = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!isPasswordValid) {
       throw new UnauthorizedException('Mật khẩu hiện tại không chính xác');
     }
-    
+
     const saltRounds = 10;
     const passwordHash = await bcrypt.hash(newPassword, saltRounds);
-    
+
     await this.prisma.user.update({
       where: { id: userId },
       data: { passwordHash },
     });
-    
+
     return { message: 'Đổi mật khẩu thành công' };
   }
 
   async updateProfile(userId: string, data: any) {
     const { fullName, phone, birthdate } = data;
-    
+
     if (phone) {
       const phoneRegex = /^(03|05|07|08|09)\d{8}$/;
       if (!phoneRegex.test(phone)) {
         throw new ConflictException('Số điện thoại không hợp lệ.');
       }
 
-      const existingPhone = await this.prisma.user.findFirst({ 
-        where: { phone, id: { not: userId } } 
+      const existingPhone = await this.prisma.user.findFirst({
+        where: { phone, id: { not: userId } }
       });
       if (existingPhone) {
         throw new ConflictException('Số điện thoại này đã được sử dụng bởi một tài khoản khác.');
@@ -489,7 +637,7 @@ export class AuthService {
     let updateData: any = {};
     if (fullName !== undefined) updateData.fullName = fullName;
     if (phone !== undefined) updateData.phone = phone;
-    
+
     if (birthdate) {
       if (user.birthdate) {
         throw new ConflictException('Ngày sinh chỉ được cập nhật 1 lần duy nhất.');
@@ -620,7 +768,7 @@ export class AuthService {
 
   async resetPassword(email: string, otp: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    
+
     if (!user) {
       throw new UnauthorizedException('Không tìm thấy tài khoản.');
     }
@@ -659,7 +807,7 @@ export class AuthService {
 
   async verifyOtp(email: string, otp: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    
+
     if (!user) {
       throw new UnauthorizedException('Không tìm thấy tài khoản.');
     }
@@ -685,7 +833,7 @@ export class AuthService {
 
   async verifyAccount(email: string, otp: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
-    
+
     if (!user) {
       throw new UnauthorizedException('Không tìm thấy tài khoản.');
     }
@@ -719,7 +867,7 @@ export class AuthService {
         verificationOtpAttempts: 0,
       }
     });
-    
+
     await this.notificationService.createNotification({
       userId: user.id,
       title: 'Chào mừng bạn đến với Avora!',
@@ -727,7 +875,7 @@ export class AuthService {
       type: 'SYSTEM',
     });
 
-    const payload = { sub: updatedUser.id, email: updatedUser.email, role: updatedUser.role };
+    const payload = { sub: updatedUser.id, email: updatedUser.email, role: updatedUser.role, jti: crypto.randomUUID() };
 
     return {
       message: 'Xác thực tài khoản thành công',
@@ -747,9 +895,9 @@ export class AuthService {
       throw new UnauthorizedException('Không tìm thấy tài khoản với email này.');
     }
     if (user.isEmailVerified) {
-       throw new ConflictException('Tài khoản này đã được xác thực.');
+      throw new ConflictException('Tài khoản này đã được xác thực.');
     }
-    
+
     const now = new Date();
     if (user.verificationOtpLastSentAt && (now.getTime() - user.verificationOtpLastSentAt.getTime() < 60000)) {
       throw new ConflictException('Vui lòng đợi 1 phút trước khi yêu cầu gửi lại mã.');
@@ -886,7 +1034,7 @@ export class AuthService {
             ipAddress: ipAddress || null,
           },
         });
-      } catch {}
+      } catch { }
 
       throw new UnauthorizedException({
         code: 'DESKTOP_SSO_CODE_INVALID',
@@ -905,7 +1053,7 @@ export class AuthService {
             ipAddress: ipAddress || null,
           },
         });
-      } catch {}
+      } catch { }
 
       throw new ConflictException({
         code: 'DESKTOP_SSO_CODE_ALREADY_USED',
@@ -924,7 +1072,7 @@ export class AuthService {
             ipAddress: ipAddress || null,
           },
         });
-      } catch {}
+      } catch { }
 
       throw new UnauthorizedException({
         code: 'DESKTOP_SSO_CODE_EXPIRED',
@@ -996,7 +1144,7 @@ export class AuthService {
           ipAddress: ipAddress || null,
         },
       });
-    } catch {}
+    } catch { }
 
     return {
       success: true,

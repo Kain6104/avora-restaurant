@@ -1,12 +1,33 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+  Optional,
+  Logger,
+} from '@nestjs/common';
+import { createHmac, timingSafeEqual } from 'crypto';
+import { OrderStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationService } from '../notification/notification.service';
+import { NotificationEngineService } from '../notification/notification-engine.service';
+import {
+  buildOrderNotificationPayload,
+  mapPriorityToNumeric,
+} from '../notification/order-notification.helper';
+import { OrderAuditService } from '../common/services/order-audit.service';
+import { PosGateway } from '../pos/pos.gateway';
 
 @Injectable()
 export class PaymentMethodService {
+  private readonly logger = new Logger(PaymentMethodService.name);
+
   constructor(
     private prisma: PrismaService,
     private notificationService: NotificationService,
+    @Optional() private notificationEngine?: NotificationEngineService,
+    @Optional() private posGateway?: PosGateway,
+    @Optional() private orderAuditService?: OrderAuditService,
   ) {}
 
   /**
@@ -93,6 +114,7 @@ export class PaymentMethodService {
     branchIds?: string[];
     isActive?: boolean;
     isActiveForPos?: boolean;
+    isActiveForQr?: boolean;
     displayOrder?: number;
   }) {
     const { methodCode, gatewayType, name } = data;
@@ -142,6 +164,7 @@ export class PaymentMethodService {
         branches: branchConnect,
         isActive: Boolean(data.isActive),
         isActiveForPos: Boolean(data.isActiveForPos),
+        isActiveForQr: Boolean(data.isActiveForQr),
         displayOrder: Number(data.displayOrder || 0),
       },
       include: {
@@ -188,6 +211,7 @@ export class PaymentMethodService {
       minOrderValue,
       isActive,
       isActiveForPos,
+      isActiveForQr,
       displayOrder,
     } = data;
 
@@ -219,6 +243,7 @@ export class PaymentMethodService {
         branches: branchUpdate,
         isActive: isActive !== undefined ? Boolean(isActive) : undefined,
         isActiveForPos: isActiveForPos !== undefined ? Boolean(isActiveForPos) : undefined,
+        isActiveForQr: isActiveForQr !== undefined ? Boolean(isActiveForQr) : undefined,
         displayOrder: displayOrder !== undefined ? Number(displayOrder) : undefined,
       },
       include: {
@@ -228,9 +253,12 @@ export class PaymentMethodService {
   }
 
   /**
-   * Bật / tắt nhanh trạng thái isActive hoặc isActiveForPos
+   * Bật / tắt nhanh trạng thái isActive, isActiveForPos hoặc isActiveForQr
    */
-  async toggleStatus(id: string, field: 'isActive' | 'isActiveForPos') {
+  async toggleStatus(id: string, field: 'isActive' | 'isActiveForPos' | 'isActiveForQr') {
+    if (!['isActive', 'isActiveForPos', 'isActiveForQr'].includes(field)) {
+      throw new BadRequestException('Trường trạng thái không hợp lệ');
+    }
     const method = await this.prisma.paymentMethod.findUnique({ where: { id } });
     if (!method) {
       throw new NotFoundException('Không tìm thấy phương thức thanh toán');
@@ -254,11 +282,68 @@ export class PaymentMethodService {
     return this.prisma.paymentMethod.delete({ where: { id } });
   }
 
+  private verifyPayosSignature(dataObj: Record<string, any>, signatureStr: string, checksumKey: string): boolean {
+    try {
+      const sortedKeys = Object.keys(dataObj || {}).sort();
+      const dataQueryStr = sortedKeys
+        .map((key) => {
+          let val = dataObj[key];
+          if (val === null || val === undefined || val === 'undefined' || val === 'null') {
+            val = '';
+          } else if (Array.isArray(val)) {
+            val = JSON.stringify(val);
+          }
+          return `${key}=${val}`;
+        })
+        .join('&');
+      const expected = createHmac('sha256', checksumKey).update(dataQueryStr).digest('hex');
+      const a = Buffer.from(expected, 'utf8');
+      const b = Buffer.from(String(signatureStr || '').trim(), 'utf8');
+      return a.length === b.length && timingSafeEqual(a, b);
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Webhook tiếp nhận thanh toán tự động từ PayOS / MoMo / SePay
    */
   async handleWebhook(payload: any, signature?: string) {
-    console.log('\n=== [PAYMENT WEBHOOK] Received callback ===', JSON.stringify(payload));
+    this.logger.log('[PAYMENT WEBHOOK] Received callback');
+
+    // 1. Xác thực chữ ký bảo mật nếu cổng PayOS / Gateway có cấu hình checksum key
+    const incomingSignature = String(signature || payload?.signature || '').trim();
+    const configuredPayos = await this.prisma.paymentMethod.findFirst?.({
+      where: {
+        methodCode: { in: ['PAYOS', 'PAY_OS'] },
+        isActive: true,
+      },
+      select: { configKey2: true, configKey3: true, configKey1: true },
+    });
+    const checksumKey =
+      configuredPayos?.configKey2 ||
+      configuredPayos?.configKey3 ||
+      process.env.PAYOS_CHECKSUM_KEY ||
+      '';
+
+    if (checksumKey) {
+      if (!incomingSignature) {
+        this.logger.warn('[PAYMENT WEBHOOK] Missing signature while checksumKey is configured');
+        throw new UnauthorizedException('Thiếu chữ ký xác thực thanh toán');
+      }
+      const dataForSign = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+      const isValidPayos = this.verifyPayosSignature(dataForSign, incomingSignature, checksumKey);
+      const rawHmac = createHmac('sha256', checksumKey)
+        .update(JSON.stringify(payload || {}))
+        .digest('hex');
+      const isValidRaw =
+        rawHmac.length === incomingSignature.length &&
+        timingSafeEqual(Buffer.from(rawHmac, 'utf8'), Buffer.from(incomingSignature, 'utf8'));
+      if (!isValidPayos && !isValidRaw) {
+        this.logger.error('[PAYMENT WEBHOOK] Invalid webhook signature');
+        throw new UnauthorizedException('Chữ ký webhook thanh toán không hợp lệ');
+      }
+    }
 
     let orderCode =
       payload?.data?.orderCode?.toString() ||
@@ -267,7 +352,7 @@ export class PaymentMethodService {
       '';
 
     if (!orderCode && payload?.content) {
-      const match = payload.content.match(/(ORD-[A-Z0-9]+|DH-[A-Z0-9]+|[A-Z0-9]{8,})/i);
+      const match = payload.content.match(/(ORD-[A-Z0-9]+|DH-[A-Z0-9]+|AVO-[A-Z0-9-]+|TMP-[A-Z0-9]+|[A-Z0-9]{8,})/i);
       if (match) orderCode = match[0];
     }
 
@@ -279,30 +364,100 @@ export class PaymentMethodService {
       where: {
         OR: [
           { orderCode: { contains: orderCode } },
+          { temporaryOrderCode: orderCode },
           { id: orderCode },
         ],
       },
-      include: { user: true },
+      include: { user: true, table: true },
     });
 
     if (!order) {
-      console.warn(`[PAYMENT WEBHOOK] Order not found for orderCode: ${orderCode}`);
+      this.logger.warn(`[PAYMENT WEBHOOK] Order not found for orderCode: ${orderCode}`);
       return { success: false, message: `Order not found for code ${orderCode}` };
+    }
+
+    const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
+    const isPayosPayload = Boolean(payload?.data?.paymentLinkId || payload?.signature || String(order.paymentMethod || '').toUpperCase() === 'PAYOS');
+    const gatewayLabel = isPayosPayload ? 'PAYOS' : (order.paymentMethod || 'GATEWAY');
+
+    // 2. Kiểm tra trạng thái thất bại / hủy từ cổng thanh toán
+    const statusText = String(payload?.data?.status || payload?.status || '').toUpperCase();
+    const isExplicitFail =
+      payload?.success === false ||
+      (payload?.code !== undefined && String(payload.code) !== '00') ||
+      (payload?.data?.code !== undefined && String(payload.data.code) !== '00') ||
+      ['CANCELLED', 'FAILED', 'EXPIRED', 'ERROR'].includes(statusText);
+
+    if (isExplicitFail) {
+      const failReason = payload?.desc || payload?.data?.desc || statusText || 'Giao dịch thất bại hoặc bị hủy';
+      await this.recordFailedPayment(order, displayCode, gatewayLabel, failReason, payload);
+      return { success: false, message: `Thanh toán thất bại: ${failReason}` };
     }
 
     if (order.paymentStatus === 'PAID') {
       return { success: true, message: 'Order already marked as PAID' };
     }
 
+    // 3. Kiểm tra số tiền thực nhận chống thanh toán thiếu
+    const paidAmountRaw = payload?.data?.amount ?? payload?.amount;
+    const paidAmount = paidAmountRaw !== undefined && paidAmountRaw !== null ? Number(paidAmountRaw) : 0;
+    const expectedAmount = Math.round(Number(order.totalAmount) || 0);
+    if (expectedAmount > 0 && Number.isFinite(paidAmount) && paidAmount > 0 && paidAmount < expectedAmount) {
+      const underpayReason = `Số tiền không đủ (Cần ${expectedAmount.toLocaleString('vi-VN')}₫, nhận ${paidAmount.toLocaleString('vi-VN')}₫)`;
+      await this.recordFailedPayment(order, displayCode, gatewayLabel, underpayReason, payload);
+      return { success: false, message: underpayReason };
+    }
+
+    const txRef = payload?.data?.paymentLinkId || payload?.data?.reference || payload?.transactionId || `WEBHOOK-${Date.now()}`;
+
     const updatedOrder = await this.prisma.order.update({
       where: { id: order.id },
       data: {
         paymentStatus: 'PAID',
-        transactionId: payload?.data?.paymentLinkId || payload?.transactionId || `WEBHOOK-${Date.now()}`,
+        ...(order.status === OrderStatus.PENDING ? { status: OrderStatus.CONFIRMED, confirmedAt: new Date() } : {}),
+        transactionId: txRef,
+      },
+      include: {
+        table: true,
+        orderItems: {
+          include: {
+            product: true,
+            selectedOptions: { include: { optionItem: true } },
+          },
+        },
       },
     });
 
-    const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: displayCode,
+          action: 'PAYMENT_CONFIRMED',
+          category: 'PAYMENT',
+          actorName: gatewayLabel === 'PAYOS' ? 'PayOS' : gatewayLabel,
+          branchId: order.branchId,
+          oldValue: { paymentStatus: order.paymentStatus, status: order.status },
+          newValue: {
+            paymentStatus: 'PAID',
+            status: updatedOrder.status,
+            amount: paidAmount || expectedAmount,
+            transactionId: txRef,
+            gateway: gatewayLabel,
+          },
+        })
+        .catch(() => {});
+    }
+
+    if (this.posGateway) {
+      this.posGateway.emitPaymentCompleted(updatedOrder, {
+        paymentMethod: gatewayLabel,
+        amount: paidAmount || expectedAmount,
+        transactionId: txRef,
+      });
+      this.posGateway.emitOrderUpdated(updatedOrder, undefined, updatedOrder.table?.name);
+    }
+
     if (order.userId) {
       await this.notificationService.createNotification({
         userId: order.userId,
@@ -314,10 +469,116 @@ export class PaymentMethodService {
       });
     }
 
+    if (this.notificationEngine) {
+      const builtSuccess = buildOrderNotificationPayload({
+        eventType: 'PAYMENT_SUCCESS',
+        orderCode: displayCode,
+        orderType: order.orderType,
+        tableName: (order as any).table?.name,
+        totalAmount: paidAmount || order.totalAmount || 0,
+        paymentMethod: gatewayLabel,
+        gateway: gatewayLabel,
+      });
+      this.notificationEngine
+        .publishEvent({
+          eventType: 'PAYMENT_SUCCESS',
+          category: 'PAYMENT',
+          priority: mapPriorityToNumeric(builtSuccess.priority),
+          icon: builtSuccess.icon,
+          branchId: order.branchId,
+          entityId: order.id,
+          subId: String(txRef),
+          title: builtSuccess.title,
+          message: builtSuccess.message,
+          actor: { name: gatewayLabel === 'PAYOS' ? 'PayOS' : 'Cổng thanh toán' },
+          reference: {
+            type: 'ORDER',
+            id: order.id,
+            url: `/admin/orders/${order.id}`,
+          },
+          metadata: {
+            orderId: order.id,
+            orderCode: displayCode,
+            amount: paidAmount || order.totalAmount || 0,
+            transactionId: txRef,
+            gateway: gatewayLabel,
+          },
+          requiredPermissions: ['orders.view', 'pos.payment.view', 'pos.access', 'waiter.access'],
+          appScopes: ['ADMIN', 'POS', 'WAITER'],
+          legacyType: 'ORDER',
+        })
+        .catch(() => {});
+    }
+
     return {
       success: true,
       message: `Updated order ${displayCode} to PAID`,
       orderId: updatedOrder.id,
     };
+  }
+
+  private async recordFailedPayment(
+    order: any,
+    displayCode: string,
+    gatewayLabel: string,
+    reason: string,
+    payload: any,
+  ) {
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: displayCode,
+          action: 'PAYMENT_FAILED',
+          category: 'PAYMENT',
+          actorName: gatewayLabel === 'PAYOS' ? 'PayOS' : gatewayLabel,
+          branchId: order.branchId,
+          reason,
+          newValue: {
+            gateway: gatewayLabel,
+            code: payload?.code || payload?.data?.code || null,
+            status: payload?.data?.status || payload?.status || null,
+          },
+        })
+        .catch(() => {});
+    }
+
+    if (this.notificationEngine) {
+      const builtFail = buildOrderNotificationPayload({
+        eventType: 'PAYMENT_FAILED',
+        orderCode: displayCode,
+        orderType: order.orderType,
+        tableName: order?.table?.name,
+        reason,
+      });
+      this.notificationEngine
+        .publishEvent({
+          eventType: 'PAYMENT_FAILED',
+          category: 'PAYMENT',
+          priority: mapPriorityToNumeric(builtFail.priority),
+          icon: builtFail.icon,
+          branchId: order.branchId,
+          entityId: order.id,
+          subId: `fail-${Date.now()}`,
+          title: builtFail.title,
+          message: builtFail.message,
+          actor: { name: gatewayLabel === 'PAYOS' ? 'PayOS' : 'Cổng thanh toán' },
+          reference: {
+            type: 'ORDER',
+            id: order.id,
+            url: `/admin/orders/${order.id}`,
+          },
+          metadata: {
+            orderId: order.id,
+            orderCode: displayCode,
+            gateway: gatewayLabel,
+            reason,
+          },
+          requiredPermissions: ['orders.view', 'pos.payment.view', 'pos.payment.collect', 'waiter.access'],
+          appScopes: ['ADMIN', 'POS', 'WAITER'],
+          legacyType: 'ORDER',
+        })
+        .catch(() => {});
+    }
   }
 }

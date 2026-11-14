@@ -6,6 +6,7 @@ import { PosModule } from '../pos/pos.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { BuffetModule } from '../buffet/buffet.module';
 import { NotificationModule } from '../notification/notification.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { NotificationModule } from '../notification/notification.module';
     PricingModule,
     BuffetModule,
     forwardRef(() => NotificationModule),
+    forwardRef(() => AuthModule),
   ],
   controllers: [QrOrderController],
   providers: [QrOrderService],

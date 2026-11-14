@@ -1,7 +1,15 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PosGateway } from '../../pos/pos.gateway';
 import { CheckoutGateway } from '../../order/checkout.gateway';
+import { NotificationEngineService } from '../../notification/notification-engine.service';
+import { NotificationService } from '../../notification/notification.service';
+import {
+  buildOrderNotificationPayload,
+  mapPriorityToNumeric,
+} from '../../notification/order-notification.helper';
+import { OrderAuditService } from '../../common/services/order-audit.service';
+import { getVietnamNow } from '../../common/utils/vietnam-time.util';
 import {
   PaymentRecordStatus,
   OrderStatus,
@@ -32,6 +40,9 @@ export class OrderMatchingService {
     private readonly prisma: PrismaService,
     private readonly posGateway: PosGateway,
     private readonly checkoutGateway: CheckoutGateway,
+    @Optional() private readonly notificationEngine?: NotificationEngineService,
+    @Optional() private readonly notificationService?: NotificationService,
+    @Optional() private readonly orderAuditService?: OrderAuditService,
   ) { }
 
   /**
@@ -204,10 +215,10 @@ export class OrderMatchingService {
       };
     }
 
-    // 7. Kiểm tra số tiền: phải khớp số tiền còn phải thanh toán
-    if (Math.abs(amountNum - remainingAmount) > 0.01) {
+    // 7. Kiểm tra số tiền: Cho phép thanh toán đủ hoặc thanh toán một phần (Multi-Payment / Nhiều PTTT)
+    if (amountNum > remainingAmount + 0.01) {
       this.logger.warn(
-        `Số tiền chuyển (${amountNum.toLocaleString('vi-VN')}đ) không khớp số tiền còn phải thanh toán (${remainingAmount.toLocaleString('vi-VN')}đ) của đơn ${matchedOrder.orderCode || matchedOrder.temporaryOrderCode || matchedOrder.id}. Chuyển REVIEW_REQUIRED`,
+        `Số tiền chuyển (${amountNum.toLocaleString('vi-VN')}đ) vượt quá số tiền còn phải thanh toán (${remainingAmount.toLocaleString('vi-VN')}đ) của đơn ${matchedOrder.orderCode || matchedOrder.temporaryOrderCode || matchedOrder.id}. Chuyển REVIEW_REQUIRED`,
       );
       await this.prisma.bankTransaction.update({
         where: { id: txId },
@@ -215,7 +226,7 @@ export class OrderMatchingService {
       });
       this.broadcastReviewRequired(
         bankTx,
-        `Số tiền (${amountNum.toLocaleString('vi-VN')}đ) khác số tiền cần trả (${remainingAmount.toLocaleString('vi-VN')}đ) cho đơn ${matchedOrder.orderCode || matchedOrder.temporaryOrderCode || matchedOrder.id}`,
+        `Số tiền (${amountNum.toLocaleString('vi-VN')}đ) vượt quá số tiền cần trả (${remainingAmount.toLocaleString('vi-VN')}đ) cho đơn ${matchedOrder.orderCode || matchedOrder.temporaryOrderCode || matchedOrder.id}`,
       );
       return {
         matched: false,
@@ -224,6 +235,10 @@ export class OrderMatchingService {
         reason: `Lệch số tiền: nhận ${amountNum}đ, cần ${remainingAmount}đ`,
       };
     }
+
+    const paymentAmount = Math.min(amountNum, remainingAmount);
+    const newAlreadyPaid = alreadyPaid + paymentAmount;
+    const isFullyPaid = (matchedOrder.totalAmount - newAlreadyPaid) <= 0.01;
 
     // 8. Thực hiện cập nhật Database Transaction Atomic & Concurrency Safe
     try {
@@ -244,7 +259,7 @@ export class OrderMatchingService {
           Boolean(matchedOrder.temporaryOrderCode);
 
         let officialOrderCode = matchedOrder.orderCode;
-        if (isPosOrder && (!officialOrderCode || officialOrderCode.startsWith('POS-') || officialOrderCode.startsWith('TMP-'))) {
+        if (isFullyPaid && isPosOrder && (!officialOrderCode || officialOrderCode.startsWith('POS-') || officialOrderCode.startsWith('TMP-'))) {
           try {
             if (matchedOrder.branchId) {
               const branch = await tx.branch.findUnique({
@@ -252,8 +267,7 @@ export class OrderMatchingService {
                 select: { branchCode: true },
               });
               const branchCode = (branch?.branchCode || 'AVO1').trim().toUpperCase();
-              const d = new Date();
-              const dateStr = `${d.getDate().toString().padStart(2, '0')}${(d.getMonth() + 1).toString().padStart(2, '0')}${d.getFullYear().toString().slice(-2)}`;
+              const dateStr = getVietnamNow().format('DDMMYY');
               const seq = await tx.orderSequence.upsert({
                 where: { branchId_date_type: { branchId: matchedOrder.branchId, date: dateStr, type: 'POS' } },
                 create: { branchId: matchedOrder.branchId, date: dateStr, type: 'POS', lastNumber: 1 },
@@ -282,24 +296,28 @@ export class OrderMatchingService {
           data: {
             orderId: matchedOrder.id,
             paymentMethod: 'TRANSFER',
-            amount: remainingAmount,
+            amount: paymentAmount,
             status: PaymentRecordStatus.COMPLETED,
             transactionRef: bankRef || `VCB-${bankTx.eventId}`,
-            note: `Tự động đối soát từ VCB Gateway (Ref: ${bankRef || 'N/A'}, Người gửi: ${bankTx.counterparty || 'N/A'})`,
+            note: isFullyPaid
+              ? `Tự động đối soát từ VCB Gateway (Ref: ${bankRef || 'N/A'}, Người gửi: ${bankTx.counterparty || 'N/A'})`
+              : `Thanh toán một phần / Nhiều PTTT qua VCB Gateway (Ref: ${bankRef || 'N/A'}, Nhận: ${paymentAmount.toLocaleString('vi-VN')}đ, Còn thiếu: ${(matchedOrder.totalAmount - newAlreadyPaid).toLocaleString('vi-VN')}đ)`,
           },
         });
 
-        // c. Cập nhật Order: chuyển paymentStatus -> PAID, cấp mã HĐ chính thức, chuyển COMPLETED cho đơn POS
+        // c. Cập nhật Order: chuyển paymentStatus -> PAID (hoặc PARTIAL), cấp mã HĐ chính thức khi hoàn tất
         const updatedOrder = await tx.order.update({
           where: { id: matchedOrder.id },
           data: {
-            orderCode: officialOrderCode || matchedOrder.orderCode,
-            paymentStatus: 'PAID',
+            orderCode: isFullyPaid ? (officialOrderCode || matchedOrder.orderCode) : matchedOrder.orderCode,
+            paymentStatus: isFullyPaid ? 'PAID' : 'PARTIAL',
             paymentMethod: 'TRANSFER',
             transactionId: bankRef || bankTx.eventId,
-            status: isPosOrder ? OrderStatus.COMPLETED : (matchedOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : matchedOrder.status),
-            completedAt: isPosOrder ? (matchedOrder.completedAt || new Date()) : matchedOrder.completedAt,
-            deliveredAt: isPosOrder ? (matchedOrder.deliveredAt || new Date()) : matchedOrder.deliveredAt,
+            status: isFullyPaid
+              ? (isPosOrder ? OrderStatus.COMPLETED : (matchedOrder.status === OrderStatus.PENDING ? OrderStatus.CONFIRMED : matchedOrder.status))
+              : matchedOrder.status,
+            completedAt: (isFullyPaid && isPosOrder) ? (matchedOrder.completedAt || new Date()) : matchedOrder.completedAt,
+            deliveredAt: (isFullyPaid && isPosOrder) ? (matchedOrder.deliveredAt || new Date()) : matchedOrder.deliveredAt,
             confirmedAt: matchedOrder.confirmedAt || new Date(),
             version: { increment: 1 },
           },
@@ -311,24 +329,15 @@ export class OrderMatchingService {
           },
         });
 
-        // d. Đóng TableSession nếu có
-        if (matchedOrder.tableSessionId) {
+        // d. Đóng TableSession nếu đơn đã thanh toán hoàn tất
+        if (isFullyPaid && matchedOrder.tableSessionId) {
           await tx.tableSession.update({
             where: { id: matchedOrder.tableSessionId },
             data: { status: TableSessionStatus.CLOSED, closedAt: new Date() },
           }).catch((err: any) => this.logger.warn('Lỗi đóng TableSession:', err));
         }
 
-        // e. Giải phóng bàn ăn trên POS và Waiter (chuyển sang VACANT)
-        if (matchedOrder.tableId) {
-          this.posGateway?.emitTableStatusChanged(
-            matchedOrder.branchId,
-            matchedOrder.tableId,
-            'VACANT',
-            null,
-            null,
-          );
-        }
+        // e. Giải phóng bàn ăn sẽ phát WebSocket AFTER transaction commit cùng broadcastOrderMatched
 
         // f. Tìm ca thu ngân đang mở và cập nhật doanh thu
         if (matchedOrder.branchId) {
@@ -344,9 +353,9 @@ export class OrderMatchingService {
             await tx.cashShift.update({
               where: { id: activeShift.id },
               data: {
-                totalRevenue: { increment: remainingAmount },
-                totalTransfer: { increment: remainingAmount },
-                orderCount: { increment: 1 },
+                totalRevenue: { increment: paymentAmount },
+                totalTransfer: { increment: paymentAmount },
+                ...(isFullyPaid ? { orderCount: { increment: 1 } } : {}),
               },
             }).catch(() => { });
 
@@ -685,9 +694,20 @@ export class OrderMatchingService {
       matchedAt: new Date().toISOString(),
     };
 
-    // POS Terminal Realtime
+    // POS Terminal & Waiter Realtime
     this.posGateway.emitPaymentCompleted(order, payment);
     this.posGateway.emitOrderUpdated(order);
+    if (order.paymentStatus === 'PAID' && order.tableId) {
+      this.posGateway.emitTableStatusChanged(
+        order.branchId,
+        order.tableId,
+        'VACANT',
+        null,
+        null,
+        undefined,
+        order.table?.name || order.table?.tableCode || '',
+      );
+    }
     this.posGateway.emitEvent({
       eventType: 'bank.transaction.matched',
       entityType: 'PAYMENT',
@@ -696,6 +716,15 @@ export class OrderMatchingService {
       payload,
     });
 
+    if (this.posGateway.server && order.branchId) {
+      this.posGateway.server.to(`branch:${order.branchId}`).emit('pos_order_paid', {
+        ...payload,
+        status: 'PAID',
+        transactionCode: bankTx.id || payment.transactionRef,
+        tableId: order.tableId || null,
+      });
+    }
+
     // Checkout Gateway (Customer / Web screen)
     this.checkoutGateway.emitSignal('ORDER_PAYMENT_CONFIRMED', payload, order.branchId);
 
@@ -703,6 +732,83 @@ export class OrderMatchingService {
     if (this.posGateway.server) {
       this.posGateway.server.to('admin:global').emit('bank.transaction.matched', payload);
       this.posGateway.server.to('admin:global').emit('order.payment.confirmed', payload);
+    }
+
+    const displayCode = order.orderCode || order.temporaryOrderCode || order.id;
+
+    if (this.orderAuditService) {
+      this.orderAuditService
+        .log({
+          orderId: order.id,
+          orderCode: displayCode,
+          action: 'PAYMENT_CONFIRMED',
+          category: 'PAYMENT',
+          actorName: bankTx.bank ? `BankConnect (${bankTx.bank})` : 'BankConnect',
+          branchId: order.branchId,
+          oldValue: { paymentStatus: 'PENDING' },
+          newValue: {
+            paymentStatus: order.paymentStatus,
+            amount: payment.amount,
+            paymentMethod: payment.paymentMethod,
+            transactionRef: payment.transactionRef,
+            bank: bankTx.bank,
+          },
+        })
+        .catch(() => {});
+    }
+
+    if (order.userId && this.notificationService) {
+      this.notificationService
+        .createNotification({
+          userId: order.userId,
+          title: 'Thanh toán thành công!',
+          content: `Đơn hàng ${displayCode} trị giá ${Number(payment.amount || 0).toLocaleString('vi-VN')}₫ đã được xác nhận thanh toán thành công.`,
+          type: 'ORDER',
+          referenceId: displayCode,
+          url: `/orders/${displayCode}`,
+        })
+        .catch(() => {});
+    }
+
+    if (this.notificationEngine) {
+      const builtSuccess = buildOrderNotificationPayload({
+        eventType: 'PAYMENT_SUCCESS',
+        orderCode: displayCode,
+        orderType: order.orderType,
+        tableName: order.table?.name || order.table?.tableCode,
+        totalAmount: payment.amount,
+        paymentMethod: 'BANK_TRANSFER',
+        gateway: 'BANK_CONNECT',
+      });
+      this.notificationEngine
+        .publishEvent({
+          eventType: 'PAYMENT_SUCCESS',
+          category: 'PAYMENT',
+          priority: mapPriorityToNumeric(builtSuccess.priority),
+          icon: builtSuccess.icon,
+          branchId: order.branchId,
+          entityId: order.id,
+          subId: String(payment.id || bankTx.id || Date.now()),
+          title: builtSuccess.title,
+          message: builtSuccess.message,
+          actor: { name: bankTx.bank ? `Chuyển khoản (${bankTx.bank})` : 'BankConnect' },
+          reference: {
+            type: 'ORDER',
+            id: order.id,
+            url: `/admin/orders/${order.id}`,
+          },
+          metadata: {
+            orderId: order.id,
+            orderCode: displayCode,
+            amount: payment.amount,
+            transactionRef: payment.transactionRef,
+            bank: bankTx.bank,
+          },
+          requiredPermissions: ['orders.view', 'pos.payment.view', 'pos.access', 'waiter.access'],
+          appScopes: ['ADMIN', 'POS', 'WAITER'],
+          legacyType: 'ORDER',
+        })
+        .catch((err) => this.logger.error('Error publishing BankConnect PAYMENT_SUCCESS:', err));
     }
   }
 

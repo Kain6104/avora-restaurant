@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -17,7 +17,7 @@ import { getRequiredEnv } from '../common/utils/env.util';
       secret: getRequiredEnv('JWT_SECRET'),
       signOptions: { expiresIn: '7d' },
     }),
-    NotificationModule,
+    forwardRef(() => NotificationModule),
   ],
   providers: [AuthService, JwtStrategy, GoogleStrategy],
   controllers: [AuthController],

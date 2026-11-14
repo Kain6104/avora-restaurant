@@ -49,6 +49,7 @@ import {
   OrderItemSource,
   BuffetSessionStatus,
   QrSessionStatus,
+  TableServiceRequestStatus,
 } from '@prisma/client';
 import { PrintRoutingService } from '../print-routing/print-routing.service';
 import { PrinterDispatcherService } from '../print-routing/printer-dispatcher.service';
@@ -1242,30 +1243,172 @@ export class PosService {
   }
 
   async getQrOrders(branchId: string) {
-    const qrOrders = await this.prisma.order.findMany({
-      where: {
-        branchId,
-        orderSource: OrderSource.QR_ORDER,
-        status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING] },
-      },
-      include: {
-        table: true,
-        orderItems: {
-          include: {
-            product: true,
-            selectedOptions: { include: { optionItem: true } },
+    if (!branchId) {
+      return { qrOrders: [], serviceRequests: [], pendingCount: 0 };
+    }
+
+    const recentSince = new Date(Date.now() - 12 * 60 * 60 * 1000);
+
+    const [qrRounds, legacyQrOrders, serviceRequests] = await Promise.all([
+      this.prisma.qrOrderRound.findMany({
+        where: {
+          qrOrderSession: {
+            branchId,
+            order: {
+              isDeleted: false,
+              paymentStatus: { not: 'PAID' },
+              status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING, OrderStatus.HELD] },
+            },
+          },
+          OR: [
+            { status: 'PENDING_APPROVAL' },
+            { status: 'APPROVED', submittedAt: { gte: recentSince } },
+            { status: 'REJECTED', submittedAt: { gte: recentSince } },
+          ],
+        },
+        include: {
+          qrOrderSession: {
+            include: {
+              table: true,
+              order: {
+                select: {
+                  id: true,
+                  orderCode: true,
+                  temporaryOrderCode: true,
+                  status: true,
+                  paymentStatus: true,
+                  kitchenStatus: true,
+                  totalAmount: true,
+                  customerName: true,
+                },
+              },
+            },
+          },
+          guest: true,
+          orderItems: {
+            include: {
+              product: { select: { id: true, name: true, price: true, imageUrl: true } },
+              selectedOptions: { include: { optionItem: true } },
+            },
           },
         },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+        orderBy: { submittedAt: 'desc' },
+        take: 60,
+      }),
+      this.prisma.order.findMany({
+        where: {
+          branchId,
+          isDeleted: false,
+          paymentStatus: { not: 'PAID' },
+          orderSource: OrderSource.QR_ORDER,
+          status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PREPARING] },
+        },
+        include: {
+          table: true,
+          orderItems: {
+            include: {
+              product: true,
+              selectedOptions: { include: { optionItem: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.tableServiceRequest.findMany({
+        where: {
+          branchId,
+          AND: [
+            {
+              OR: [
+                { status: { in: [TableServiceRequestStatus.OPEN, TableServiceRequestStatus.ACKNOWLEDGED] } },
+                { status: { in: [TableServiceRequestStatus.COMPLETED, TableServiceRequestStatus.CANCELLED] }, updatedAt: { gte: recentSince } },
+              ],
+            },
+            {
+              OR: [
+                { orderId: null },
+                {
+                  order: {
+                    isDeleted: false,
+                    paymentStatus: { not: 'PAID' },
+                    status: { notIn: [OrderStatus.COMPLETED, OrderStatus.CANCELLED] },
+                  },
+                },
+              ],
+            },
+          ],
+        },
+        include: {
+          table: true,
+          order: {
+            select: {
+              id: true,
+              orderCode: true,
+              temporaryOrderCode: true,
+              totalAmount: true,
+              customerName: true,
+            },
+          },
+          qrOrderSession: {
+            include: {
+              guests: {
+                take: 1,
+                orderBy: { joinedAt: 'desc' },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 40,
+      }),
+    ]);
 
-    return {
-      qrOrders: qrOrders.map((o) => ({
+    const mappedRounds = qrRounds.map((r) => ({
+      id: r.id,
+      entryType: r.status === 'PENDING_APPROVAL' ? 'QR_ROUND_PENDING' : 'QR_ROUND_AUTO',
+      roundId: r.id,
+      roundNumber: r.roundNumber,
+      orderId: r.orderId,
+      orderCode: r.qrOrderSession?.order?.orderCode || r.qrOrderSession?.order?.temporaryOrderCode || r.orderId,
+      tableId: r.qrOrderSession?.tableId,
+      table: r.qrOrderSession?.table
+        ? {
+            id: r.qrOrderSession.table.id,
+            name: r.qrOrderSession.table.name,
+            tableCode: r.qrOrderSession.table.tableCode,
+          }
+        : null,
+      guestName: r.guest?.guestName || r.qrOrderSession?.order?.customerName || 'Khách tại bàn',
+      status: r.status === 'PENDING_APPROVAL' ? 'PENDING' : (r.status === 'APPROVED' ? 'APPROVED' : 'REJECTED'),
+      roundStatus: r.status,
+      approvedByName: (r as any).approvedByName || null,
+      approvedAt: (r as any).approvedAt || null,
+      rejectReason: (r as any).rejectReason || null,
+      kitchenStatus: r.qrOrderSession?.order?.kitchenStatus,
+      totalAmount: r.orderItems.reduce((sum, it) => sum + it.priceAtSale * it.quantity, 0),
+      createdAt: r.submittedAt,
+      items: r.orderItems.map((it) => ({
+        id: it.id,
+        product: { id: it.product.id, name: it.product.name },
+        quantity: it.quantity,
+        price: it.priceAtSale,
+        note: it.note,
+        optionsTextSnapshot: it.optionsTextSnapshot,
+        kitchenStatus: it.kitchenStatus,
+      })),
+    }));
+
+    const roundOrderIds = new Set(mappedRounds.map((r) => r.orderId));
+    const mappedLegacy = legacyQrOrders
+      .filter((o) => !roundOrderIds.has(o.id))
+      .map((o) => ({
         id: o.id,
+        entryType: 'QR_ORDER',
+        orderId: o.id,
         orderCode: o.orderCode || (o as any).temporaryOrderCode,
         tableId: o.tableId,
         table: o.table ? { id: o.table.id, name: o.table.name, tableCode: o.table.tableCode } : null,
+        guestName: o.customerName || 'Khách tại bàn',
         status: o.status,
         kitchenStatus: o.kitchenStatus,
         totalAmount: o.totalAmount,
@@ -1277,20 +1420,122 @@ export class PosService {
           price: it.priceAtSale,
           note: it.note,
           optionsTextSnapshot: it.optionsTextSnapshot,
+          kitchenStatus: it.kitchenStatus,
         })),
-      })),
+      }));
+
+    const ackStaffIds = Array.from(
+      new Set(serviceRequests.map((r) => r.acknowledgedById).filter(Boolean) as string[]),
+    );
+    const ackStaffUsers = ackStaffIds.length
+      ? await this.prisma.user.findMany({
+          where: { id: { in: ackStaffIds } },
+          select: { id: true, fullName: true },
+        })
+      : [];
+    const ackStaffMap = new Map(ackStaffUsers.map((u) => [u.id, u.fullName]));
+
+    const mappedRequests = serviceRequests.map((req) => ({
+      id: req.id,
+      requestType: req.requestType,
+      paymentMethodCode: req.paymentMethodCode,
+      status: req.status,
+      note: req.note,
+      orderId: req.orderId,
+      orderCode: req.order?.orderCode || req.order?.temporaryOrderCode || null,
+      totalAmount: req.order?.totalAmount ?? 0,
+      tableId: req.tableId,
+      table: req.table
+        ? { id: req.table.id, name: req.table.name, tableCode: req.table.tableCode }
+        : null,
+      guestName:
+        req.order?.customerName ||
+        req.qrOrderSession?.guests?.[0]?.guestName ||
+        'Khách tại bàn',
+      acknowledgedByName: req.acknowledgedById ? ackStaffMap.get(req.acknowledgedById) || null : null,
+      acknowledgedAt: req.acknowledgedAt,
+      completedAt: req.completedAt,
+      createdAt: req.createdAt,
+    }));
+
+    const pendingRoundsCount = mappedRounds.filter((r) => r.status === 'PENDING').length;
+    const pendingLegacyCount = mappedLegacy.filter((o) => o.status === 'PENDING').length;
+    const pendingRequestsCount = mappedRequests.filter((r) => r.status === 'OPEN').length;
+
+    return {
+      qrOrders: [...mappedRounds, ...mappedLegacy],
+      serviceRequests: mappedRequests,
+      pendingCount: pendingRoundsCount + pendingLegacyCount + pendingRequestsCount,
     };
   }
 
-  async confirmQrOrder(orderId: string, user?: any) {
+  async confirmQrOrder(targetId: string, user?: any) {
+    // 1. Kiểm tra nếu là QrOrderRound
+    const round = await this.prisma.qrOrderRound.findUnique({
+      where: { id: targetId },
+      include: {
+        qrOrderSession: { include: { table: true } },
+        orderItems: true,
+      },
+    });
+
+    if (round) {
+      const actorName = user?.fullName || user?.name || user?.email || 'Nhân viên';
+      const actorId = user?.id || null;
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.qrOrderRound.update({
+          where: { id: targetId },
+          data: {
+            status: 'APPROVED',
+            approvedById: actorId,
+            approvedByName: actorName,
+            approvedAt: new Date(),
+          },
+        });
+
+        await tx.orderItem.updateMany({
+          where: { qrOrderRoundId: targetId },
+          data: {
+            kitchenStatus: KitchenStatus.SENT,
+            sentToKitchenAt: new Date(),
+            acknowledgedAt: new Date(),
+          },
+        });
+      });
+
+      this.posGateway.emitEvent({
+        eventType: 'QR_ROUND_APPROVED',
+        entityType: 'ORDER',
+        entityId: round.orderId,
+        branchId: round.qrOrderSession.branchId,
+        payload: {
+          roundId: round.id,
+          orderId: round.orderId,
+          roundNumber: round.roundNumber,
+          tableName: round.qrOrderSession.table?.name || '',
+        },
+      });
+
+      if (this.posGateway?.server) {
+        this.posGateway.server.to(`branch:${round.qrOrderSession.branchId}`).emit('QR_ORDER_CREATED', {
+          branchId: round.qrOrderSession.branchId,
+          orderId: round.orderId,
+        });
+      }
+
+      return { success: true, message: 'Đã duyệt lượt gọi món thành công', roundId: targetId };
+    }
+
+    // 2. Nếu là Order truyền thống
     const order = await this.prisma.order.findUnique({
-      where: { id: orderId },
+      where: { id: targetId },
       include: { orderItems: true },
     });
     if (!order) throw new NotFoundException('Đơn QR không tồn tại');
 
     const updated = await this.prisma.order.update({
-      where: { id: orderId },
+      where: { id: targetId },
       data: {
         status: OrderStatus.PREPARING,
         kitchenStatus: KitchenStatus.SENT,
@@ -1299,13 +1544,183 @@ export class PosService {
       include: { table: true, orderItems: { include: { product: true } } },
     });
 
-    await this.sendToKitchen(orderId, {}, user);
+    await this.sendToKitchen(targetId, {}, user);
     this.posGateway.emitOrderUpdated(updated, user?.id);
     return updated;
   }
 
-  async rejectQrOrder(orderId: string, reason?: string, user?: any) {
-    return this.cancelOrder(orderId, reason || 'Phục vụ từ chối yêu cầu QR', user?.id);
+  async rejectQrOrder(targetId: string, reason?: string, user?: any) {
+    const round = await this.prisma.qrOrderRound.findUnique({
+      where: { id: targetId },
+      include: { qrOrderSession: { include: { table: true } } },
+    });
+
+    if (round) {
+      const actorName = user?.fullName || user?.name || user?.email || 'Nhân viên';
+      const actorId = user?.id || null;
+      const finalReason = reason || 'Hết món / Hết nguyên liệu';
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.qrOrderRound.update({
+          where: { id: targetId },
+          data: {
+            status: 'REJECTED',
+            approvedById: actorId,
+            approvedByName: actorName,
+            approvedAt: new Date(),
+            rejectReason: finalReason,
+          },
+        });
+
+        await tx.orderItem.deleteMany({
+          where: { qrOrderRoundId: targetId },
+        });
+      });
+
+      this.posGateway.emitEvent({
+        eventType: 'QR_ROUND_REJECTED',
+        entityType: 'ORDER',
+        entityId: round.orderId,
+        branchId: round.qrOrderSession.branchId,
+        payload: {
+          roundId: round.id,
+          orderId: round.orderId,
+          roundNumber: round.roundNumber,
+          tableName: round.qrOrderSession.table?.name || '',
+          reason: finalReason,
+        },
+      });
+
+      if (this.posGateway?.server) {
+        this.posGateway.server.to(`branch:${round.qrOrderSession.branchId}`).emit('QR_ORDER_CREATED', {
+          branchId: round.qrOrderSession.branchId,
+          orderId: round.orderId,
+        });
+      }
+
+      return { success: true, message: 'Đã từ chối lượt gọi món thành công', roundId: targetId };
+    }
+
+    return this.cancelOrder(targetId, reason || 'Phục vụ từ chối yêu cầu QR', user?.id);
+  }
+
+  async resolveServiceRequest(requestId: string, user?: any) {
+    const existing = await this.prisma.tableServiceRequest.findUnique({
+      where: { id: requestId },
+      include: { table: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Yêu cầu hỗ trợ không tồn tại');
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.tableServiceRequest.update({
+      where: { id: requestId },
+      data: {
+        status: TableServiceRequestStatus.COMPLETED,
+        acknowledgedAt: existing.acknowledgedAt || now,
+        completedAt: now,
+        acknowledgedById: user?.id || existing.acknowledgedById || null,
+      },
+      include: { table: true },
+    });
+
+    this.posGateway.emitEvent({
+      eventType: 'SERVICE_REQUEST_UPDATED',
+      entityType: 'TABLE',
+      entityId: updated.tableId,
+      branchId: updated.branchId,
+      payload: {
+        requestId: updated.id,
+        orderId: updated.orderId,
+        tableId: updated.tableId,
+        tableName: updated.table?.name || '',
+        status: updated.status,
+        requestType: updated.requestType,
+      },
+    });
+
+    if (this.posGateway?.server) {
+      this.posGateway.server.to(`branch:${updated.branchId}`).emit('QR_ORDER_CREATED', {
+        branchId: updated.branchId,
+        requestId: updated.id,
+      });
+    }
+
+    return updated;
+  }
+
+  async cancelServiceRequest(requestId: string, reason?: string, user?: any) {
+    const existing = await this.prisma.tableServiceRequest.findUnique({
+      where: { id: requestId },
+      include: { table: true },
+    });
+    if (!existing) {
+      throw new NotFoundException('Yêu cầu hỗ trợ không tồn tại');
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.tableServiceRequest.update({
+      where: { id: requestId },
+      data: {
+        status: TableServiceRequestStatus.CANCELLED,
+        completedAt: now,
+        acknowledgedById: user?.id || existing.acknowledgedById || null,
+        note: reason ? `${existing.note ? existing.note + ' | ' : ''}Lý do hủy: ${reason}` : existing.note,
+      },
+      include: { table: true },
+    });
+
+    this.posGateway.emitEvent({
+      eventType: 'SERVICE_REQUEST_UPDATED',
+      entityType: 'TABLE',
+      entityId: updated.tableId,
+      branchId: updated.branchId,
+      payload: {
+        requestId: updated.id,
+        orderId: updated.orderId,
+        tableId: updated.tableId,
+        tableName: updated.table?.name || '',
+        status: updated.status,
+        requestType: updated.requestType,
+        reason,
+      },
+    });
+
+    if (this.posGateway?.server) {
+      this.posGateway.server.to(`branch:${updated.branchId}`).emit('QR_ORDER_CREATED', {
+        branchId: updated.branchId,
+        requestId: updated.id,
+      });
+    }
+
+    return updated;
+  }
+
+  async unlockPaymentLock(orderId: string, reason?: string, user?: any) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: { payments: true, table: true },
+    });
+    if (!order) throw new NotFoundException('Đơn hàng không tồn tại');
+
+    if (order.paymentStatus === 'PAID' || order.status === OrderStatus.COMPLETED) {
+      throw new BadRequestException('Không thể mở khóa đơn hàng đã thanh toán hoàn tất');
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: OrderStatus.PREPARING,
+        paymentStatus: 'PENDING',
+        paymentIntentStatus: 'NONE',
+        version: { increment: 1 },
+      },
+      include: { table: true, orderItems: true },
+    });
+
+    this.posGateway.emitOrderUpdated(updated, user?.id);
+    return updated;
   }
 
   async updateTableLayout(branchId: string, dto: UpdateTableLayoutDto) {

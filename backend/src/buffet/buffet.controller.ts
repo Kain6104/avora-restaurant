@@ -51,6 +51,12 @@ export class BuffetController {
     return { success: true, data, message: 'Đã cập nhật gói Buffet thành công' };
   }
 
+  @Post('packages/:id/duplicate')
+  async duplicatePackage(@Param('id') id: string, @Req() req?: any) {
+    const data = await this.buffetService.duplicatePackage(id, req?.user);
+    return { success: true, data, message: 'Đã nhân bản gói Buffet thành công' };
+  }
+
   @Delete('packages/:id')
   async deletePackage(@Param('id') id: string, @Req() req?: any) {
     const data = await this.buffetService.deletePackage(id, req?.user);

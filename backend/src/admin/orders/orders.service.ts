@@ -13,6 +13,51 @@ export class OrdersService {
     private orderAuditService: OrderAuditService,
   ) {}
 
+  /**
+   * Quy tắc hiển thị đơn hàng tại /admin/orders:
+   * - Đơn từ POS (orderSource === 'POS') chỉ hiển thị khi đã COMPLETED.
+   * - Đơn không phải POS hiển thị đầy đủ các trạng thái bình thường.
+   */
+  private applyAdminOrderVisibility(
+    where: Prisma.OrderWhereInput,
+    tab?: 'ALL' | 'POS' | 'ONLINE',
+    status?: OrderStatus,
+  ) {
+    const existingAnd = Array.isArray(where.AND)
+      ? where.AND
+      : where.AND
+        ? [where.AND]
+        : [];
+    const visibilityConditions: Prisma.OrderWhereInput[] = [...existingAnd];
+
+    if (tab === 'POS') {
+      visibilityConditions.push({
+        orderSource: 'POS',
+        status: OrderStatus.COMPLETED,
+      });
+    } else if (tab === 'ONLINE') {
+      visibilityConditions.push({
+        orderSource: { not: 'POS' },
+      });
+    } else {
+      visibilityConditions.push({
+        OR: [
+          { orderSource: { not: 'POS' } },
+          {
+            orderSource: 'POS',
+            status: OrderStatus.COMPLETED,
+          },
+        ],
+      });
+    }
+
+    if (status) {
+      where.status = status;
+    }
+
+    where.AND = visibilityConditions;
+  }
+
   async findAll(params: {
     skip?: number;
     take?: number;
@@ -55,19 +100,9 @@ export class OrdersService {
       where.branchId = branchId;
     }
 
-    // 2. Phân loại Tab (Hiển thị đầy đủ cả đơn POS đang phục vụ, đã thanh toán và đã hủy)
+    // 2. Phân loại Tab & quy tắc hiển thị đơn POS (chỉ hiển thị đơn POS đã COMPLETED)
     where.isDeleted = false;
-    if (tab === 'POS') {
-      where.orderSource = 'POS';
-    } else if (tab === 'ONLINE') {
-      // Đơn online: WEB, QR_ORDER, CHATBOT, VOICE, ADMIN...
-      where.orderSource = { not: 'POS' };
-    }
-
-    // 3. Trạng thái đơn hàng
-    if (status) {
-      where.status = status;
-    }
+    this.applyAdminOrderVisibility(where, tab, status);
 
     // 4. Trạng thái thanh toán
     if (paymentStatus && paymentStatus !== 'ALL') {
@@ -125,13 +160,17 @@ export class OrdersService {
     }
 
     // 10. Sắp xếp
-    let orderBy: Prisma.OrderOrderByWithRelationInput = { createdAt: 'desc' };
-    if (sortBy === 'amount_desc') {
+    let orderBy: Prisma.OrderOrderByWithRelationInput | Prisma.OrderOrderByWithRelationInput[] = { createdAt: 'desc' };
+    if (sortBy === 'completed_desc') {
+      orderBy = [{ completedAt: 'desc' }, { updatedAt: 'desc' }, { createdAt: 'desc' }];
+    } else if (sortBy === 'amount_desc') {
       orderBy = { totalAmount: 'desc' };
     } else if (sortBy === 'amount_asc') {
       orderBy = { totalAmount: 'asc' };
     } else if (sortBy === 'date_asc') {
       orderBy = { createdAt: 'asc' };
+    } else if (status === OrderStatus.COMPLETED || (tab === 'POS' && (!sortBy || sortBy === 'date_desc'))) {
+      orderBy = [{ completedAt: 'desc' }, { createdAt: 'desc' }];
     } else {
       orderBy = { createdAt: 'desc' };
     }
@@ -192,14 +231,10 @@ export class OrdersService {
       }
     }
 
-    // Helper build tab condition
-    const buildTabWhere = (t: string): Prisma.OrderWhereInput => {
+    // Helper build tab condition (dùng chung quy tắc POS chỉ hiển thị COMPLETED)
+    const buildTabWhere = (t?: 'ALL' | 'POS' | 'ONLINE'): Prisma.OrderWhereInput => {
       const w: Prisma.OrderWhereInput = { ...baseWhere, isDeleted: false };
-      if (t === 'POS') {
-        w.orderSource = 'POS';
-      } else if (t === 'ONLINE') {
-        w.orderSource = { not: 'POS' };
-      }
+      this.applyAdminOrderVisibility(w, t);
       return w;
     };
 
@@ -243,8 +278,15 @@ export class OrdersService {
   }
 
   async getFilterOptions(branchIdScope?: string) {
-    const branchWhere: any = {};
+    const branchWhere: Prisma.BranchWhereInput = {};
     if (branchIdScope) branchWhere.id = branchIdScope;
+
+    const cashierOrderWhere: Prisma.OrderWhereInput = {
+      isDeleted: false,
+      cashierName: { not: null },
+      ...(branchIdScope ? { branchId: branchIdScope } : {}),
+    };
+    this.applyAdminOrderVisibility(cashierOrderWhere, 'ALL');
 
     const [branches, cashiersRaw, paymentMethods] = await Promise.all([
       this.prisma.branch.findMany({
@@ -253,10 +295,7 @@ export class OrdersService {
         orderBy: { name: 'asc' },
       }),
       this.prisma.order.findMany({
-        where: {
-          cashierName: { not: null },
-          ...(branchIdScope ? { branchId: branchIdScope } : {}),
-        },
+        where: cashierOrderWhere,
         select: { cashierName: true },
         distinct: ['cashierName'],
       }),
@@ -438,12 +477,14 @@ export class OrdersService {
   }
 
   async getUnreadCount(branchIdScope?: string) {
-    const where: any = {
+    const where: Prisma.OrderWhereInput = {
+      isDeleted: false,
       isViewedByAdmin: false,
     };
     if (branchIdScope) {
       where.branchId = branchIdScope;
     }
+    this.applyAdminOrderVisibility(where, 'ALL');
     return this.prisma.order.count({ where });
   }
 

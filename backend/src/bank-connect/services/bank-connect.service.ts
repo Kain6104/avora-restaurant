@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
+import { getVietnamBusinessDayBounds, parseIsoToUtcDate } from '../../common/utils/vietnam-time.util';
 import { BankCryptoService } from './bank-crypto.service';
 import { BankParserService } from './bank-parser.service';
 import { OrderMatchingService } from './order-matching.service';
@@ -230,14 +231,8 @@ export class BankConnectService {
       };
     }
 
-    // 3. Lưu bản ghi BankTransaction
-    let occurredAtDate: Date;
-    try {
-      occurredAtDate = new Date(occurredAt);
-      if (isNaN(occurredAtDate.getTime())) occurredAtDate = new Date();
-    } catch {
-      occurredAtDate = new Date();
-    }
+    // 3. Lưu bản ghi BankTransaction (chuẩn hóa timestamp ISO về UTC chuẩn xác)
+    const occurredAtDate = parseIsoToUtcDate(occurredAt);
 
     let savedTx: any;
     try {
@@ -566,8 +561,16 @@ export class BankConnectService {
     }
     if (params.fromDate || params.toDate) {
       where.occurredAt = {};
-      if (params.fromDate) where.occurredAt.gte = new Date(params.fromDate);
-      if (params.toDate) where.occurredAt.lte = new Date(params.toDate);
+      if (params.fromDate) {
+        where.occurredAt.gte = /^\d{4}-\d{2}-\d{2}$/.test(params.fromDate.trim())
+          ? getVietnamBusinessDayBounds(params.fromDate.trim()).startUtc
+          : parseIsoToUtcDate(params.fromDate);
+      }
+      if (params.toDate) {
+        where.occurredAt.lte = /^\d{4}-\d{2}-\d{2}$/.test(params.toDate.trim())
+          ? getVietnamBusinessDayBounds(params.toDate.trim()).endUtc
+          : parseIsoToUtcDate(params.toDate);
+      }
     }
 
     const [items, total] = await Promise.all([
@@ -1726,14 +1729,14 @@ export class BankConnectService {
 
     return {
       packageName: 'vn.avora.bankconnect',
-      versionName: '1.0.5',
-      versionCode: 6,
+      versionName: '1.0.7',
+      versionCode: 8,
       fileSize,
       sha256,
       downloadUrl: 'https://avorafnb.com/api/bank-connect/v1/app/download-latest',
       staticDownloadUrl: 'https://avorafnb.com/downloads/avora-bank-connect.apk',
       releaseNotes:
-        'Bản nâng cấp v1.0.5 (Build 6): Bổ sung hộp thoại tự động thông báo cập nhật khi mở ứng dụng, chặn tải lại khi đã ở bản mới nhất, bắt buộc ghép nối thiết bị trên /admin/bank-connect trước khi sử dụng, thu hồi thiết bị thời gian thực (chặn vào app & ngắt đọc thông báo ngay lập tức), và tối ưu hàng nút Đăng nhập Vân tay + Google.',
+        'Bản nâng cấp v1.0.7 (Build 8): Chuẩn hóa toàn bộ múi giờ Asia/Ho_Chi_Minh trên Android Bank Connect (lịch sử giao dịch, đối soát ca, dashboard, chẩn đoán) đồng nhất với Backend UTC ISO 8601 và Admin Dashboard.',
       releasedAt,
     };
   }

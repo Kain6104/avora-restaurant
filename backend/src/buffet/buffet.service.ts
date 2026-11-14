@@ -116,6 +116,11 @@ export class BuffetService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const normalizedLimit =
+        dto.maxItemsPerSubmission === null || dto.maxItemsPerSubmission === undefined
+          ? null
+          : Math.max(1, Math.floor(Number(dto.maxItemsPerSubmission)));
+
       const created = await tx.buffetPackage.create({
         data: {
           branchId: dto.branchId,
@@ -123,6 +128,7 @@ export class BuffetService {
           description: dto.description || null,
           active: dto.active !== undefined ? dto.active : true,
           displayOrder: dto.displayOrder || 0,
+          maxItemsPerSubmission: normalizedLimit,
         },
       });
 
@@ -145,7 +151,14 @@ export class BuffetService {
               buffetPackageId: created.id,
               productId: it.productId,
               displayOrder: it.displayOrder !== undefined ? it.displayOrder : i,
-              maxQuantityPerRound: it.maxQuantityPerRound || null,
+              maxQuantityPerRound:
+                it.maxQuantityPerRound && it.maxQuantityPerRound > 0
+                  ? Math.floor(Number(it.maxQuantityPerRound))
+                  : null,
+              maxTotalQuantity:
+                it.maxTotalQuantity && it.maxTotalQuantity > 0
+                  ? Math.floor(Number(it.maxTotalQuantity))
+                  : null,
               availableForQr: it.availableForQr !== undefined ? it.availableForQr : true,
               allowRetailPurchase: it.allowRetailPurchase !== undefined ? it.allowRetailPurchase : true,
             },
@@ -185,6 +198,13 @@ export class BuffetService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const normalizedLimit =
+        dto.maxItemsPerSubmission === undefined
+          ? existing.maxItemsPerSubmission
+          : dto.maxItemsPerSubmission === null
+          ? null
+          : Math.max(1, Math.floor(Number(dto.maxItemsPerSubmission)));
+
       const updated = await tx.buffetPackage.update({
         where: { id },
         data: {
@@ -192,6 +212,7 @@ export class BuffetService {
           description: dto.description !== undefined ? dto.description : existing.description,
           active: dto.active !== undefined ? dto.active : existing.active,
           displayOrder: dto.displayOrder !== undefined ? dto.displayOrder : existing.displayOrder,
+          maxItemsPerSubmission: normalizedLimit,
         },
       });
 
@@ -216,7 +237,14 @@ export class BuffetService {
               buffetPackageId: id,
               productId: it.productId,
               displayOrder: it.displayOrder !== undefined ? it.displayOrder : i,
-              maxQuantityPerRound: it.maxQuantityPerRound || null,
+              maxQuantityPerRound:
+                it.maxQuantityPerRound && it.maxQuantityPerRound > 0
+                  ? Math.floor(Number(it.maxQuantityPerRound))
+                  : null,
+              maxTotalQuantity:
+                it.maxTotalQuantity && it.maxTotalQuantity > 0
+                  ? Math.floor(Number(it.maxTotalQuantity))
+                  : null,
               availableForQr: it.availableForQr !== undefined ? it.availableForQr : true,
               allowRetailPurchase: it.allowRetailPurchase !== undefined ? it.allowRetailPurchase : true,
             },
@@ -237,6 +265,68 @@ export class BuffetService {
       }
 
       return updated;
+    });
+  }
+
+  /**
+   * Nhân bản gói Buffet để cấu hình nhanh gói mới cùng cấu trúc
+   */
+  async duplicatePackage(id: string, user?: any) {
+    const existing = await this.prisma.buffetPackage.findUnique({
+      where: { id },
+      include: { tickets: true, items: { orderBy: { displayOrder: 'asc' } } },
+    });
+    if (!existing) {
+      throw new NotFoundException('Gói Buffet không tồn tại');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const cloned = await tx.buffetPackage.create({
+        data: {
+          branchId: existing.branchId,
+          name: `${existing.name} (Bản sao)`,
+          description: existing.description,
+          active: false,
+          displayOrder: (existing.displayOrder || 0) + 1,
+          maxItemsPerSubmission: existing.maxItemsPerSubmission,
+        },
+      });
+
+      for (const tk of existing.tickets) {
+        await tx.buffetPackageTicket.create({
+          data: {
+            buffetPackageId: cloned.id,
+            productId: tk.productId,
+          },
+        });
+      }
+
+      for (const it of existing.items) {
+        await tx.buffetPackageItem.create({
+          data: {
+            buffetPackageId: cloned.id,
+            productId: it.productId,
+            displayOrder: it.displayOrder,
+            maxQuantityPerRound: it.maxQuantityPerRound,
+            maxTotalQuantity: it.maxTotalQuantity,
+            availableForQr: it.availableForQr,
+            allowRetailPurchase: it.allowRetailPurchase,
+          },
+        });
+      }
+
+      if (user?.id) {
+        await tx.auditLog.create({
+          data: {
+            userId: user.id,
+            action: 'DUPLICATE_BUFFET_PACKAGE',
+            target: `BuffetPackage:${cloned.id}`,
+            newValue: JSON.stringify({ sourceId: id, name: cloned.name }),
+          },
+        });
+      }
+
+      return this.findById(cloned.id);
     });
   }
 

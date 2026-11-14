@@ -1,4 +1,5 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
+import { createHmac } from 'crypto';
 import { PaymentMethodService } from './payment-method.service';
 
 describe('PaymentMethodService - Flexible Validation, Active Filter & Webhooks', () => {
@@ -96,15 +97,125 @@ describe('PaymentMethodService - Flexible Validation, Active Filter & Webhooks',
     });
 
     expect(result.success).toBe(true);
-    expect(mockPrisma.order.update).toHaveBeenCalledWith({
-      where: { id: 'ord-123' },
-      data: expect.objectContaining({ paymentStatus: 'PAID' }),
-    });
+    expect(mockPrisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ord-123' },
+        data: expect.objectContaining({ paymentStatus: 'PAID' }),
+      }),
+    );
     expect(mockNotificationService.createNotification).toHaveBeenCalledWith(
       expect.objectContaining({
         userId: 'user-1',
         title: expect.stringContaining('Thanh toán thành công'),
       }),
     );
+  });
+
+  it('5. handleWebhook should reject invalid PayOS HMAC signature with UnauthorizedException', async () => {
+    mockPrisma.paymentMethod.findFirst = jest.fn().mockResolvedValue({
+      methodCode: 'PAYOS',
+      isActive: true,
+      configKey2: 'test-checksum-secret',
+    });
+
+    await expect(
+      service.handleWebhook(
+        {
+          code: '00',
+          data: { orderCode: 'ORD-999999', amount: 150000 },
+          signature: 'invalid-signature',
+        },
+        undefined,
+      ),
+    ).rejects.toThrow(UnauthorizedException);
+
+    expect(mockPrisma.order.update).not.toHaveBeenCalled();
+  });
+
+  it('6. handleWebhook should accept valid PayOS HMAC signature and confirm payment', async () => {
+    const checksumKey = 'test-checksum-secret';
+    mockPrisma.paymentMethod.findFirst = jest.fn().mockResolvedValue({
+      methodCode: 'PAYOS',
+      isActive: true,
+      configKey2: checksumKey,
+    });
+    mockPrisma.order.findFirst.mockResolvedValue({
+      id: 'ord-payos-1',
+      orderCode: 'AVO-PAYOS-01',
+      branchId: 'branch-1',
+      totalAmount: 150000,
+      paymentStatus: 'PENDING',
+      paymentMethod: 'PAYOS',
+    });
+
+    const dataObj: Record<string, any> = {
+      amount: 150000,
+      orderCode: 'AVO-PAYOS-01',
+      paymentLinkId: 'pl-123',
+    };
+    const sortedQuery = Object.keys(dataObj)
+      .sort()
+      .map((k) => `${k}=${dataObj[k]}`)
+      .join('&');
+    const validSig = createHmac('sha256', checksumKey).update(sortedQuery).digest('hex');
+
+    const res = await service.handleWebhook({
+      code: '00',
+      success: true,
+      data: dataObj,
+      signature: validSig,
+    });
+
+    expect(res.success).toBe(true);
+    expect(mockPrisma.order.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ord-payos-1' },
+        data: expect.objectContaining({ paymentStatus: 'PAID' }),
+      }),
+    );
+  });
+
+  it('7. handleWebhook should record PAYMENT_FAILED and NOT mark PAID on underpayment or failure status', async () => {
+    const mockNotificationEngine = { publishEvent: jest.fn().mockResolvedValue(true) };
+    const mockAuditService = { log: jest.fn().mockResolvedValue(true) };
+    const svc = new PaymentMethodService(
+      mockPrisma,
+      mockNotificationService,
+      mockNotificationEngine as any,
+      undefined,
+      mockAuditService as any,
+    );
+
+    mockPrisma.order.findFirst.mockResolvedValue({
+      id: 'ord-fail-1',
+      orderCode: 'AVO-FAIL-01',
+      branchId: 'branch-1',
+      totalAmount: 200000,
+      paymentStatus: 'PENDING',
+      paymentMethod: 'PAYOS',
+    });
+
+    const underpayRes = await svc.handleWebhook({
+      orderCode: 'AVO-FAIL-01',
+      amount: 100000,
+    });
+
+    expect(underpayRes.success).toBe(false);
+    expect(mockPrisma.order.update).not.toHaveBeenCalled();
+    expect(mockAuditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PAYMENT_FAILED' }),
+    );
+    expect(mockNotificationEngine.publishEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ eventType: 'PAYMENT_FAILED' }),
+    );
+
+    const explicitFailRes = await svc.handleWebhook({
+      code: '01',
+      desc: 'Cancelled by user',
+      data: { orderCode: 'AVO-FAIL-01', status: 'CANCELLED', amount: 200000 },
+    });
+
+    expect(explicitFailRes.success).toBe(false);
+    expect(mockPrisma.order.update).not.toHaveBeenCalled();
   });
 });

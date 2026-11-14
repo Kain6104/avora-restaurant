@@ -7,13 +7,22 @@ import {
   Body,
   Query,
   Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { QrOrderService } from './qr-order.service';
 import { JoinQrSessionDto } from './dto/join-qr-session.dto';
 import { SubmitQrRoundDto } from './dto/submit-qr-round.dto';
 import { CreateServiceRequestDto } from './dto/service-request.dto';
-import { MemberLookupDto, MemberVerifyDto, RedeemRewardDto } from './dto/member-actions.dto';
+import { RequestQrVatInvoiceDto } from './dto/vat-invoice.dto';
+import {
+  MemberLookupDto,
+  MemberVerifyDto,
+  RedeemRewardDto,
+  GoogleQrAuthDto,
+  LinkQrSessionAuthDto,
+} from './dto/member-actions.dto';
 import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 import { Throttle } from '@nestjs/throttler';
 
@@ -39,6 +48,15 @@ export class QrOrderController {
           totalAmount: session.order.totalAmount,
           subTotal: session.order.subTotal,
           guestCount: session.order.guestCount,
+          paymentStatus: (session.order as any).paymentStatus || 'PENDING',
+          customerName: session.order.customerName,
+          hasRedeemedPoints: Boolean((session.order as any).hasRedeemedPoints),
+          isInvoiceRequested: Boolean((session.order as any).isInvoiceRequested),
+          invoiceTaxCode: (session.order as any).invoiceTaxCode || null,
+          invoiceCompanyName: (session.order as any).invoiceCompanyName || null,
+          invoiceAddress: (session.order as any).invoiceAddress || null,
+          invoiceEmail: (session.order as any).invoiceEmail || null,
+          user: (session.order as any).user || null,
         },
         buffetSession: session.order.buffetSessions?.[0] || null,
       },
@@ -66,6 +84,50 @@ export class QrOrderController {
     @Body() dto: MemberVerifyDto,
   ) {
     return this.qrOrderService.verifyMember(token, dto);
+  }
+
+  @Get(':token/auth/google-config')
+  async getGoogleAuthConfig(@Param('token') token: string) {
+    return this.qrOrderService.getGoogleAuthConfig(token);
+  }
+
+  @Post(':token/auth/google')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  async authenticateWithGoogle(
+    @Param('token') token: string,
+    @Body() dto: GoogleQrAuthDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.qrOrderService.authenticateWithGoogle(token, dto);
+    if (result.jwtToken) {
+      const isSecure =
+        process.env.NODE_ENV === 'production' || process.env.FRONTEND_URL?.startsWith('https');
+      res.cookie('token', result.jwtToken, {
+        httpOnly: true,
+        secure: !!isSecure,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+      });
+    }
+    const { jwtToken: _token, ...publicPayload } = result;
+    return publicPayload;
+  }
+
+  @Post(':token/auth/session')
+  @UseGuards(OptionalJwtAuthGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  async linkSessionAuth(
+    @Param('token') token: string,
+    @Body() dto: LinkQrSessionAuthDto,
+    @Req() req: any,
+  ) {
+    return this.qrOrderService.linkAuthenticatedSessionUser(token, req?.user?.id, dto.deviceSessionId);
+  }
+
+  @Get(':token/activity')
+  async getActivityHistory(@Param('token') token: string) {
+    return this.qrOrderService.getActivityHistory(token);
   }
 
   @Get(':token/menu')
@@ -124,6 +186,24 @@ export class QrOrderController {
     return this.qrOrderService.redeemReward(token, dto);
   }
 
+  @Get(':token/vat/lookup')
+  @Throttle({ default: { limit: 25, ttl: 60000 } })
+  async lookupVatTaxCode(
+    @Param('token') token: string,
+    @Query('mst') mst: string,
+  ) {
+    return this.qrOrderService.lookupVatByTaxCode(token, mst);
+  }
+
+  @Post(':token/vat')
+  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  async requestVatInvoice(
+    @Param('token') token: string,
+    @Body() dto: RequestQrVatInvoiceDto,
+  ) {
+    return this.qrOrderService.requestVatInvoice(token, dto);
+  }
+
   // ==========================================
   // INTERNAL POS/WAITER QR MANAGEMENT ENDPOINTS
   // ==========================================
@@ -174,7 +254,7 @@ export class QrOrderController {
     @Param('roundId') roundId: string,
     @Req() req?: any,
   ) {
-    const data = await this.qrOrderService.approveQrRound(roundId, req?.user?.id);
+    const data = await this.qrOrderService.approveQrRound(roundId, req?.user?.id, req?.user);
     return data;
   }
 
@@ -185,7 +265,7 @@ export class QrOrderController {
     @Body('reason') reason?: string,
     @Req() req?: any,
   ) {
-    const data = await this.qrOrderService.rejectQrRound(roundId, reason, req?.user?.id);
+    const data = await this.qrOrderService.rejectQrRound(roundId, reason, req?.user?.id, req?.user);
     return data;
   }
 

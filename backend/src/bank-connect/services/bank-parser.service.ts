@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { getCurrentVietnamIso } from '../../common/utils/vietnam-time.util';
 
 export interface ParsedBankTransaction {
   bank: string;
@@ -478,16 +479,6 @@ export class BankParserService {
   }
 
   private getCurrentVietnamTimeIso(): string {
-    const now = new Date();
-    const offsetMs = 7 * 60 * 60 * 1000;
-    const vnDate = new Date(now.getTime() + offsetMs);
-    const pad = (n: number) => n.toString().padStart(2, '0');
-    const yyyy = vnDate.getUTCFullYear();
-    const mm = pad(vnDate.getUTCMonth() + 1);
-    const dd = pad(vnDate.getUTCDate());
-    const hh = pad(vnDate.getUTCHours());
-    const min = pad(vnDate.getUTCMinutes());
-    const ss = pad(vnDate.getUTCSeconds());
-    return `${yyyy}-${mm}-${dd}T${hh}:${min}:${ss}+07:00`;
+    return getCurrentVietnamIso();
   }
 }

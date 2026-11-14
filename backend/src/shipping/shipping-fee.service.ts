@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getVietnamNow } from '../common/utils/vietnam-time.util';
 import {
   OpenMapRoutingProvider,
   OsrmRoutingProvider,
@@ -331,7 +332,30 @@ export class ShippingFeeService {
     );
 
     const distanceKm = Math.round((route.distanceMeters / 1000) * 10) / 10;
-    const durationMinutes = Math.max(15, Math.ceil(route.durationSeconds / 60));
+
+    // Tính thời gian giao hàng thực tế tại Sài Gòn dựa trên giờ Việt Nam & kẹt xe giờ cao điểm
+    const vnNow = getVietnamNow();
+    const vnHour = vnNow.hour();
+    const vnMinute = vnNow.minute();
+    const currentMins = vnHour * 60 + vnMinute;
+
+    // Giờ cao điểm Sài Gòn: Sáng 7h00 - 9h00 (420 - 540p), Chiều 16h30 - 19h30 (990 - 1170p)
+    const isMorningRush = currentMins >= 7 * 60 && currentMins <= 9 * 60;
+    const isEveningRush = currentMins >= 16 * 60 + 30 && currentMins <= 19 * 60 + 30;
+    const isRushHour = isMorningRush || isEveningRush;
+
+    // Thời gian chuẩn bị món & đóng gói tại bếp (Kitchen buffer): 12 phút
+    const kitchenPrepMinutes = 12;
+
+    // Tốc độ di chuyển xe máy thực tế tại TP.HCM:
+    // - Giờ bình thường: ~3.2 phút/km (~19 km/h)
+    // - Giờ cao điểm kẹt xe: ~5.0 phút/km (~12 km/h do ùn tắc, đèn đỏ nhiều)
+    const travelMinutesPerKm = isRushHour ? 5.0 : 3.2;
+    const estimatedTravelMinutes = Math.ceil(distanceKm * travelMinutesPerKm);
+
+    // Thời gian dự kiến = Thời gian bếp chuẩn bị + Thời gian di chuyển (tối thiểu 20 phút)
+    const durationMinutes = Math.max(20, kitchenPrepMinutes + estimatedTravelMinutes);
+    const durationSeconds = durationMinutes * 60;
 
     // 4. Kiểm tra chính sách giao hàng
     let deliveryAvailable = true;

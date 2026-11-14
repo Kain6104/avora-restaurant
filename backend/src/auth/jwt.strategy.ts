@@ -45,6 +45,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       phone: user.phone,
       branchId: user.branchId,
       membershipTierId: user.membershipTierId,
+      jti: payload.jti || `session-${payload.iat || Date.now()}`,
+      sessionId: payload.jti || `session-${payload.iat || Date.now()}`,
+      exp: payload.exp,
     };
   }
 }

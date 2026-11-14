@@ -5,16 +5,30 @@ import { PosGateway } from '../pos/pos.gateway';
 import { NotificationGateway } from './notification.gateway';
 import { randomUUID } from 'crypto';
 import { NotificationType } from '@prisma/client';
+import { WebPushDeliveryService } from './web-push/web-push-delivery.service';
 
 export interface DomainNotificationEvent {
   eventType: string;
-  category: 'ORDER' | 'KITCHEN' | 'RESERVATION' | 'PAYMENT' | 'SERVICE' | 'MARKETING' | 'SYSTEM';
+  category:
+    | 'ORDER'
+    | 'ITEM'
+    | 'KITCHEN'
+    | 'RESERVATION'
+    | 'PAYMENT'
+    | 'SERVICE'
+    | 'TABLE'
+    | 'BUFFET'
+    | 'ALERT'
+    | 'MARKETING'
+    | 'SYSTEM'
+    | string;
   priority?: number; // 0=LOW, 1=NORMAL, 2=HIGH, 3=CRITICAL
   branchId?: string | null;
   entityId: string;
   subId?: string;
   title: string;
   message: string;
+  icon?: string;
   actor?: {
     id?: string;
     name?: string;
@@ -39,6 +53,7 @@ export interface RealtimeNotificationEnvelope {
   notificationId?: string;
   title: string;
   message: string;
+  icon?: string;
   priority: number;
   branchId?: string | null;
   actor?: {
@@ -64,6 +79,7 @@ export class NotificationEngineService {
     private readonly recipientService: NotificationRecipientService,
     private readonly posGateway: PosGateway,
     private readonly notificationGateway: NotificationGateway,
+    private readonly webPushDeliveryService: WebPushDeliveryService,
   ) {}
 
   /**
@@ -81,6 +97,16 @@ export class NotificationEngineService {
     eventId: string;
     recipientsCount: number;
   }> {
+    const safeTitle = (event.title || '').trim();
+    const safeMessage = (event.message || '').trim();
+    if (!safeTitle && !safeMessage) {
+      this.logger.warn(`Skipped publishing empty notification eventType=${event.eventType} entityId=${event.entityId}`);
+      return {
+        eventId: `${event.eventType}:${event.entityId}${event.subId ? `:${event.subId}` : ''}`,
+        recipientsCount: 0,
+      };
+    }
+
     const eventId = `${event.eventType}:${event.entityId}${event.subId ? `:${event.subId}` : ''}`;
     const priority = event.priority ?? 1;
     const occurredAt = new Date().toISOString();
@@ -90,34 +116,49 @@ export class NotificationEngineService {
       excludeUserIds.push(event.actor.id);
     }
 
-    // 1. Resolve recipients using Dynamic RBAC
+    // 1. Resolve recipients using Dynamic RBAC & All Staff Delivery
     const recipients = await this.recipientService.resolveRecipients({
       eventType: event.eventType,
+      category: event.category,
       branchId: event.branchId,
       requiredPermissions: event.requiredPermissions,
       appScopes: event.appScopes,
       excludeUserIds,
+      sendToAllBranchStaff: true,
     });
+
+    const mergedMetadata =
+      event.icon || event.metadata
+        ? {
+            ...(event.metadata || {}),
+            ...(event.icon ? { icon: event.icon } : {}),
+          }
+        : undefined;
 
     // 2. Build rows for bulk insert
     if (recipients.length > 0) {
-      const notificationRows = recipients.map((recipient) => ({
-        id: randomUUID(),
-        userId: recipient.id,
-        branchId: event.branchId || null,
-        eventId,
-        eventType: event.eventType,
-        category: event.category,
-        priority,
-        title: event.title,
-        content: event.message,
-        actorId: event.actor?.id || null,
-        referenceId: event.reference?.id || event.entityId,
-        url: event.reference?.url || null,
-        metadata: event.metadata ? (event.metadata as any) : undefined,
-        type: event.legacyType || NotificationType.SYSTEM,
-        isRead: false,
-      }));
+      const notificationIdByUserId = new Map<string, string>();
+      const notificationRows = recipients.map((recipient) => {
+        const id = randomUUID();
+        notificationIdByUserId.set(recipient.id, id);
+        return {
+          id,
+          userId: recipient.id,
+          branchId: event.branchId || null,
+          eventId,
+          eventType: event.eventType,
+          category: event.category,
+          priority,
+          title: event.title,
+          content: event.message,
+          actorId: event.actor?.id || null,
+          referenceId: event.reference?.id || event.entityId,
+          url: event.reference?.url || null,
+          metadata: mergedMetadata ? (mergedMetadata as any) : undefined,
+          type: event.legacyType || NotificationType.SYSTEM,
+          isRead: false,
+        };
+      });
 
       try {
         // Bulk persist into MySQL with unique compound (eventId, userId) check
@@ -135,13 +176,15 @@ export class NotificationEngineService {
           eventId,
           eventType: event.eventType,
           category: event.category,
+          notificationId: notificationIdByUserId.get(recipient.id),
           title: event.title,
           message: event.message,
+          icon: event.icon || mergedMetadata?.icon,
           priority,
           branchId: event.branchId || null,
           actor: event.actor,
           reference: event.reference,
-          metadata: event.metadata,
+          metadata: mergedMetadata,
           occurredAt,
         };
 
@@ -158,6 +201,42 @@ export class NotificationEngineService {
 
           // Fetch updated unread count asynchronously and emit
           this.emitUserUnreadCount(recipient.id);
+
+          // Background Web Push dispatch for iOS PWA, Android PWA, and Desktop
+          let targetPath = event.reference?.url || '/admin/pos/waiter';
+          if (targetPath === '/admin/pos/waiter') {
+            const upperCat = (event.category || '').toUpperCase();
+            if (upperCat === 'ORDER') targetPath = '/admin/pos/waiter?tab=ORDERS';
+            else if (upperCat === 'QR_ORDER' || upperCat === 'SERVICE' || upperCat === 'BUFFET') targetPath = '/admin/pos/waiter?tab=QR';
+            else if (upperCat === 'TABLE') targetPath = '/admin/pos/waiter?tab=TABLES';
+            else if (upperCat === 'PAYMENT') targetPath = '/admin/pos/waiter?tab=ORDERS';
+          }
+
+          this.webPushDeliveryService
+            .sendToUser(
+              recipient.id,
+              {
+                eventId,
+                notificationId: notificationIdByUserId.get(recipient.id),
+                category: event.category,
+                title: event.title,
+                body: event.message,
+                icon: '/avora_logo.png',
+                badge: '/avora_logo.png',
+                targetPath,
+                branchId: event.branchId || null,
+                metadata: mergedMetadata,
+                createdAt: occurredAt,
+              },
+              {
+                branchId: event.branchId || null,
+                urgency: priority >= 2 ? 'high' : 'normal',
+                topic: event.category ? event.category.toLowerCase().substring(0, 32) : undefined,
+              }
+            )
+            .catch((pushErr) => {
+              this.logger.debug(`Background Web Push dispatch error for user ${recipient.id}: ${pushErr?.message || pushErr}`);
+            });
         } catch (deliveryErr) {
           this.logger.error(`Delivery error for user ${recipient.id}:`, deliveryErr);
         }
@@ -172,11 +251,12 @@ export class NotificationEngineService {
         category: event.category,
         title: event.title,
         message: event.message,
+        icon: event.icon || mergedMetadata?.icon,
         priority,
         branchId: event.branchId || null,
         actor: event.actor,
         reference: event.reference,
-        metadata: event.metadata,
+        metadata: mergedMetadata,
         occurredAt,
       };
 

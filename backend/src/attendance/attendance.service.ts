@@ -651,7 +651,10 @@ export class AttendanceService {
     const attendances = await this.prisma.attendance.findMany({
       where,
       orderBy: [{ workDate: 'desc' }, { checkInTime: 'desc' }],
-      include: { shift: true },
+      include: {
+        shift: true,
+        branch: { select: { id: true, name: true } },
+      },
     });
 
     return attendances.map((a) => {
@@ -661,6 +664,8 @@ export class AttendanceService {
         id: a.id,
         date: dateFormatted,
         shiftName: a.shift?.name || 'Ca tự do',
+        branchName: a.branch?.name || '',
+        hasCheckOut: Boolean(a.checkOutTime),
         checkIn: a.checkInTime
           ? new Date(a.checkInTime).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour12: false, hour: '2-digit', minute: '2-digit' })
           : '--:--',
