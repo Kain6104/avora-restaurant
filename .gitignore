@@ -76,3 +76,40 @@ installer/Output/
 # Uploads runtime data
 backend/uploads/reviews/
 **/uploads/reviews/
+
+# Android Build & Signing
+**/.gradle/
+**/build/
+local.properties
+**/local.properties
+*.jks
+*.keystore
+key.properties
+**/key.properties
+
+# Database dumps, backups & sensitive sql
+*.sql
+*.dump
+backend/backups/
+**/backups/
+
+# User Thesis Documents & Templates
+*.docx
+*.pdf
+Bao_Cao_*
+Mau_Bao_Cao/
+Documentation/
+
+# Local Scratch, Debug Scripts & Artifacts
+*.tar.gz
+*.tmp
+~$*
+test-*.js
+backend/test-*.js
+backend/*.js
+backend/scripts/*.js
+backend/scripts/inspect-*.ts
+artifacts/
+index.html
+release/
+research/
