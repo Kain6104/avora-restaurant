@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import {
   X,
   MapPin,
@@ -343,7 +344,7 @@ export const DeliveryAddressModal: React.FC<DeliveryAddressModalProps> = ({
                             </div>
                             <div className="text-right">
                               <span className="font-bold text-amber-500">
-                                {m.points?.toLocaleString('vi-VN')} điểm
+                                <AvoraCoin amount={m.points || 0} size="xs" />
                               </span>
                               <span className="block text-[10px] text-gray-400">
                                 {m.addresses?.length || 0} địa chỉ
@@ -374,7 +375,7 @@ export const DeliveryAddressModal: React.FC<DeliveryAddressModalProps> = ({
                           </span>
                         </div>
                         <span className="text-[10px] text-gray-500 font-mono block">
-                          {selectedMember.phone} • {selectedMember.points?.toLocaleString('vi-VN')} điểm
+                          {selectedMember.phone} • <AvoraCoin amount={selectedMember.points || 0} size="xs" />
                         </span>
                       </div>
                     </div>

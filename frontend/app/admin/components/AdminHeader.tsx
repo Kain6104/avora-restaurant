@@ -160,8 +160,8 @@ export default function AdminHeader() {
 
         {/* Right Area: Branch Selector, Search, Language Selector, Notification, Profile */}
         <div className="flex items-center gap-1 sm:gap-2.5 shrink-0">
-          {/* Branch Selector (Desktop & Tablet) */}
-          <div className="hidden md:block">
+          {/* Branch Selector (Desktop & Mobile) */}
+          <div className="block">
             <BranchSelector />
           </div>
 

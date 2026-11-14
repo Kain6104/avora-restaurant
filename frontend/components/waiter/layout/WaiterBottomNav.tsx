@@ -2,7 +2,7 @@
 
 import React from 'react';
 import useSWR from 'swr';
-import { useWaiterStore, WaiterTab } from '@/store/useWaiterStore';
+import { useWaiterStore } from '@/store/useWaiterStore';
 import { LayoutGrid, Receipt, QrCode, SlidersHorizontal, ScanLine } from 'lucide-react';
 import { useIsIPhone } from '@/lib/utils/device';
 
@@ -19,9 +19,13 @@ export default function WaiterBottomNav() {
     { refreshInterval: 6000 }
   );
 
-  const pendingQrCount = Array.isArray(qrResponse?.data)
-    ? qrResponse.data.filter((o: any) => o.status === 'PENDING').length
-    : 0;
+  const qrOrdersList = (qrResponse?.data?.qrOrders || []) as Array<{ status?: string }>;
+  const serviceReqList = (qrResponse?.data?.serviceRequests || []) as Array<{ status?: string }>;
+  const pendingQrCount =
+    typeof qrResponse?.data?.pendingCount === 'number'
+      ? qrResponse.data.pendingCount
+      : qrOrdersList.filter((o) => o.status === 'PENDING').length +
+        serviceReqList.filter((r) => r.status === 'OPEN').length;
 
   return (
     <>
@@ -29,9 +33,9 @@ export default function WaiterBottomNav() {
         /* Center FAB Curved Notch & Scanning Laser */
         .bottom-nav-curve {
           position: absolute;
-          top: ${isIPhone ? '-22px' : '-18px'};
-          width: ${isIPhone ? '72px' : '68px'};
-          height: ${isIPhone ? '60px' : '52px'};
+          top: ${isIPhone ? '-22px' : '-20px'};
+          width: ${isIPhone ? '72px' : '66px'};
+          height: ${isIPhone ? '60px' : '54px'};
           background-color: #ffffff;
           border-radius: 50%;
           box-shadow: 0 -2px 6px rgba(0,0,0,0.03);
@@ -50,13 +54,13 @@ export default function WaiterBottomNav() {
           position: relative;
           overflow: hidden;
           box-shadow: 0 4px 15px rgba(218, 37, 29, 0.4);
-          transform: translateY(${isIPhone ? '-8px' : '-6px'});
+          transform: translateY(${isIPhone ? '-10px' : '-12px'});
           transition: transform 0.2s cubic-bezier(0.25, 0.8, 0.25, 1);
           z-index: 2;
         }
 
         .center-fab-squircle:active {
-          transform: translateY(-4px) scale(0.92);
+          transform: translateY(${isIPhone ? '-6px' : '-8px'}) scale(0.92);
         }
 
         .scan-laser-line {
@@ -82,7 +86,7 @@ export default function WaiterBottomNav() {
         className={`w-full bg-white border-t border-slate-200/80 flex items-center shrink-0 shadow-[0_-4px_20px_rgba(0,0,0,0.04)] z-50 relative select-none touch-none overscroll-none transition-all ${
           isIPhone
             ? 'pb-[max(18px,calc(env(safe-area-inset-bottom)+8px))] pt-1.5 min-h-[64px]'
-            : 'pb-1 pt-1 min-h-[54px] h-[54px]'
+            : 'pb-[max(6px,calc(env(safe-area-inset-bottom)+2px))] pt-1 min-h-[58px]'
         }`}
       >
         
@@ -127,7 +131,7 @@ export default function WaiterBottomNav() {
               <ScanLine size={24} className="z-10 relative" />
               <div className="scan-laser-line" />
             </div>
-            <span className="text-[10px] text-[#DA251D] font-black -mt-1 tracking-tight">
+            <span className="text-[10px] text-[#DA251D] font-black -mt-2 tracking-tight whitespace-nowrap">
               Chấm công
             </span>
           </div>

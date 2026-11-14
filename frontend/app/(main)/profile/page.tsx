@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import Barcode from 'react-barcode';
@@ -482,7 +483,7 @@ function ProfileContent() {
                 <Trophy size={14} className="text-yellow-400" /> Điểm Tích Lũy
               </p>
               <p className="text-2xl sm:text-3xl font-black font-mono text-yellow-400">
-                {new Intl.NumberFormat('vi-VN').format(user?.points || 0)}
+                <AvoraCoin amount={user?.points || 0} size="md" />
               </p>
               <Link
                 href="/loyalty"
@@ -718,7 +719,7 @@ function ProfileContent() {
                     <div>
                       <span className="text-[10px] uppercase font-bold opacity-75 block">Điểm khả dụng</span>
                       <span className="font-black text-xl sm:text-2xl font-mono">
-                        {new Intl.NumberFormat('vi-VN').format(user?.points || 0)}
+                        <AvoraCoin amount={user?.points || 0} size="sm" />
                       </span>
                     </div>
                     <Link

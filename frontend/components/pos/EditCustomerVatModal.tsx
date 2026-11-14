@@ -13,6 +13,7 @@ import {
   Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useModalZIndex } from '@/lib/modal-stack';
 import { RealMember } from './PaymentModal';
 
 interface EditCustomerVatModalProps {
@@ -29,6 +30,7 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
   isDarkMode = false,
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const modalZIndex = useModalZIndex(true, 110);
 
   // VAT Invoice Fields (Only editable fields)
   const [taxCode, setTaxCode] = useState(customer.taxCode || '');
@@ -105,7 +107,10 @@ export const EditCustomerVatModal: React.FC<EditCustomerVatModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none">
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150 select-none"
+      style={{ zIndex: modalZIndex }}
+    >
       <div className={`rounded-2xl shadow-2xl border w-full max-w-lg overflow-hidden flex flex-col max-h-[92vh] ${
         isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-900'
       }`}>

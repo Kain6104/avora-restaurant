@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import { toast } from 'react-hot-toast';
 import Barcode from 'react-barcode';
 import {
@@ -243,11 +244,12 @@ export default function LoyaltyPage() {
                   <Sparkles className="w-3.5 h-3.5 text-yellow-300" />
                   Điểm tích lũy khả dụng
                 </p>
-                <div className="flex items-baseline gap-2 mt-0.5">
-                  <span className="text-3xl sm:text-5xl font-black tracking-tight text-white font-mono">
-                    {new Intl.NumberFormat('vi-VN').format(data.points)}
-                  </span>
-                  <span className="text-sm font-black text-yellow-300">ĐIỂM</span>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <AvoraCoin
+                    amount={data.points}
+                    size="lg"
+                    valueClassName="text-3xl sm:text-5xl font-black tracking-tight text-white font-mono"
+                  />
                 </div>
               </div>
 
@@ -707,13 +709,16 @@ export default function LoyaltyPage() {
 
                     <div className="text-right shrink-0">
                       <span
-                        className={`text-sm sm:text-base font-black font-mono ${
+                        className={`inline-flex items-center gap-1 text-sm sm:text-base font-black font-mono ${
                           isPlus ? 'text-emerald-600' : 'text-red-600'
                         }`}
                       >
-                        {isPlus ? `+${tx.amount}` : tx.amount}
+                        <AvoraCoin
+                          amount={Math.abs(tx.amount)}
+                          prefix={isPlus ? '+' : '-'}
+                          size="xs"
+                        />
                       </span>
-                      <span className="block text-[10px] font-bold text-slate-400">ĐIỂM</span>
                     </div>
                   </div>
                 );

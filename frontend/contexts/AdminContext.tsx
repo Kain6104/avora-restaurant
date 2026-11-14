@@ -279,7 +279,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           throw new Error(`Server returned ${res.status}`);
         }
         const meData = await meRes.json();
-        if (meData?.role === 'USER') {
+        const hasStaffRoleOrPerms =
+          (meData.role && meData.role !== 'USER') ||
+          (meData.roles && meData.roles.length > 0) ||
+          (meData.assignments && meData.assignments.length > 0) ||
+          (meData.capabilities?.assignments && meData.capabilities.assignments.length > 0) ||
+          (meData.permissions && meData.permissions.length > 0) ||
+          (meData.effectivePermissions && Object.keys(meData.effectivePermissions).length > 0);
+
+        if (!hasStaffRoleOrPerms) {
           setCachedCapabilities(null);
           setUser({
             id: meData.id,
@@ -299,11 +307,17 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
           applyCapabilities(meData.capabilities);
           return meData.capabilities;
         }
-        throw new Error('Capabilities payload missing in fallback');
+        return null;
       }
 
       const caps: UserCapabilities = await res.json();
-      if (caps?.user?.role === 'USER') {
+      const hasStaffAssignments =
+        (caps?.assignments && caps.assignments.length > 0) ||
+        (caps?.roles && caps.roles.length > 0) ||
+        (caps?.effectivePermissions && Object.keys(caps.effectivePermissions).length > 0) ||
+        (caps?.user?.role && caps.user.role !== 'USER');
+
+      if (!hasStaffAssignments && caps?.user?.role === 'USER') {
         setCachedCapabilities(null);
         setUser(caps.user);
         setLoading(false);
@@ -384,12 +398,17 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
     // 2. Revalidate fresh capabilities ngầm (Stale-While-Revalidate)
     const init = async () => {
-      if (!cached) {
-        setLoading(true);
-      }
-      await fetchCapabilities();
-      if (mounted) {
-        setLoading(false);
+      try {
+        if (!cached) {
+          setLoading(true);
+        }
+        await fetchCapabilities();
+      } catch (err) {
+        console.error('[AdminContext] Error initializing capabilities:', err);
+      } finally {
+        if (mounted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -528,7 +547,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         return [];
       }
 
-      const isSystemAdmin = capabilities.roles.some((r) => r.code === 'ADMIN');
+      const isSystemAdmin = capabilities?.roles?.some((r) => r.code === 'ADMIN') || user?.role === 'ADMIN';
       if (isSystemAdmin) return allBranches;
 
       const perm = effectivePermissions[permissionKey];
@@ -536,14 +555,14 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 
       if (perm.isGlobal) return allBranches;
 
-      const branchSet = new Set(perm.branchIds);
+      const branchSet = new Set(perm.branchIds || []);
       return allBranches.filter((b) => branchSet.has(b.id));
     },
     [capabilities, effectivePermissions, allBranches, user?.role]
   );
 
-  const permissionsList = Object.keys(effectivePermissions);
-  const roleCodes = capabilities?.roles.map((r) => r.code) || (user?.role ? [user.role] : []);
+  const permissionsList = Object.keys(effectivePermissions || {});
+  const roleCodes = capabilities?.roles?.map((r) => r.code) || (user?.role ? [user.role] : []);
 
 
   return (

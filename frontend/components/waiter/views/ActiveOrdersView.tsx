@@ -25,7 +25,8 @@ import {
 } from 'lucide-react';
 import { isOnlineOrder } from '@/components/pos/pos-utils';
 
-const fetcher = (url: string) => fetch(url).then((r) => r.json());
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store', credentials: 'include' }).then((r) => r.json());
 
 type OrderFilterType = 'ALL' | 'DINE_IN' | 'TAKEAWAY' | 'DELIVERY' | 'ONLINE';
 
@@ -91,7 +92,7 @@ export default function ActiveOrdersView() {
   const { data: response, isLoading, mutate } = useSWR(
     isOffline || !activeBranchId ? null : `/api/pos/tables?branchId=${activeBranchId}`,
     fetcher,
-    { refreshInterval: 4000 }
+    { refreshInterval: 4000, keepPreviousData: true, revalidateOnFocus: false }
   );
 
   // Instant load from Dexie with SWR background updates
@@ -109,12 +110,27 @@ export default function ActiveOrdersView() {
         guestCount: o.guestCount || 2,
         totalAmount: o.totalAmount || 0,
         subTotal: o.subTotal || 0,
+        taxAmount: o.taxAmount || 0,
+        discountAmount: o.discountAmount || 0,
+        serviceChargeTotal: o.serviceChargeTotal || 0,
         status: o.status,
         kitchenStatus: o.kitchenStatus || 'PENDING',
+        paymentStatus: o.paymentStatus || null,
         cashierId: o.cashierId || null,
-        orderItems: o.orderItems || [],
+        itemCount: o.itemCount ?? (o.items?.length || o.orderItems?.length || 0),
+        items: o.items || o.orderItems || [],
+        orderItems: o.orderItems || o.items || [],
+        customerName: o.customerName || o.user?.fullName || null,
+        customerPhone: o.customerPhone || o.user?.phone || null,
+        tableName: o.tableName || o.table?.name || null,
+        table: o.table || null,
+        orderType: o.orderType || null,
+        orderSource: o.orderSource || null,
+        deliveryAddress: o.deliveryAddress || null,
+        isInvoiceRequested: o.isInvoiceRequested || false,
         user: o.user || null,
-        updatedAt: o.updatedAt,
+        createdAt: o.createdAt || null,
+        updatedAt: o.updatedAt || null,
       }));
       db.activeOrders.bulkPut(orderList).catch(() => {});
     }
@@ -250,17 +266,42 @@ export default function ActiveOrdersView() {
       <PullToRefresh
         onRefresh={async () => {
           if (activeBranchId) {
+            const freshRes = await fetch(`/api/pos/tables?branchId=${activeBranchId}`, {
+              cache: 'no-store',
+              credentials: 'include',
+            });
+            if (freshRes.ok) {
+              const freshJson = await freshRes.json();
+              await mutate(freshJson, { revalidate: false });
+            } else {
+              await mutate();
+            }
             await syncEngine.performDeltaSync(activeBranchId, false);
+          } else {
+            await mutate();
           }
-          await mutate();
         }}
         isOffline={isOffline}
         className="p-3 space-y-2.5 pb-8"
       >
-        {isLoading && !isOffline ? (
-          <div className="flex flex-col items-center justify-center py-20 text-slate-400 space-y-2">
-            <div className="animate-spin rounded-full h-8 w-8 border-2 border-[#DA251D] border-t-transparent" />
-            <p className="text-xs font-medium">Đang tải danh sách đơn...</p>
+        {isLoading && !isOffline && rawOrders.length === 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 animate-pulse">
+            {[1, 2, 3, 4].map((slot) => (
+              <div
+                key={slot}
+                className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="h-4 w-28 rounded bg-slate-200" />
+                  <div className="h-5 w-20 rounded-full bg-slate-100" />
+                </div>
+                <div className="h-3 w-3/4 rounded bg-slate-100" />
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <div className="h-3 w-20 rounded bg-slate-100" />
+                  <div className="h-4 w-24 rounded bg-slate-200" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : filteredOrders.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 text-slate-400 text-center">
@@ -282,7 +323,11 @@ export default function ActiveOrdersView() {
               const category = getOrderCategory(order);
               const isOnline = category === 'ONLINE';
               const codeDisplay = order.temporaryOrderCode || order.orderCode || (order.id ? order.id.slice(0, 8) : 'MỚI');
-              const itemCount = order.itemCount || order.items?.length || order.orderItems?.length || 0;
+              const itemCount = order.itemCount ?? (
+                order.items?.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0) ||
+                order.orderItems?.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 1), 0) ||
+                0
+              );
               const totalAmount = Number(order.totalAmount) || 0;
               const elapsedMinutes = order.createdAt
                 ? Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000)

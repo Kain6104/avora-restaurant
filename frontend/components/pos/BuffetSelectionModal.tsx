@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { X, Sparkles, ShoppingBag, Utensils } from 'lucide-react';
+import { useModalZIndex } from '@/lib/modal-stack';
 import { PosProduct } from './pos-types';
 
 export interface BuffetSelectionModalProps {
@@ -25,11 +26,15 @@ export const BuffetSelectionModal: React.FC<BuffetSelectionModalProps> = ({
   onClose,
   isDarkMode = false,
 }) => {
+  const modalZIndex = useModalZIndex(isOpen !== false && Boolean(product), 100);
   if (isOpen === false || !product) return null;
   const retailPrice = product.effectivePrice || product.price || 0;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 select-none">
+    <div
+      className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 select-none"
+      style={{ zIndex: modalZIndex }}
+    >
       <div className={`rounded-t-3xl sm:rounded-3xl shadow-2xl border w-full max-w-md overflow-hidden animate-in slide-in-from-bottom duration-200 sm:animate-in sm:zoom-in-95 ${
         isDarkMode ? 'bg-slate-900 border-slate-800 text-slate-100' : 'bg-white border-slate-200 text-slate-900'
       }`}>

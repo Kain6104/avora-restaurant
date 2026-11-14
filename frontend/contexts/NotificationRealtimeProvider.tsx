@@ -4,21 +4,15 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { io, Socket } from 'socket.io-client';
 import toast from 'react-hot-toast';
 import { mutate } from 'swr';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAdmin } from './AdminContext';
 import { useSoundHaptic } from '@/hooks/useSoundHaptic';
 import NotificationCenterDrawer, { NotificationItem } from '@/components/notifications/NotificationCenterDrawer';
 import {
-  ShoppingBag,
-  UtensilsCrossed,
-  CalendarCheck,
-  CreditCard,
-  BellRing,
-  MessageSquare,
-  ShieldAlert,
   X,
   ArrowRight,
 } from 'lucide-react';
+import { resolveNotificationVisual } from '@/components/notifications/notificationIconResolver';
 
 interface NotificationContextValue {
   notifications: NotificationItem[];
@@ -30,6 +24,11 @@ interface NotificationContextValue {
   toggleDrawer: () => void;
   markAsRead: (id: string) => Promise<void>;
   markAllAsRead: () => Promise<void>;
+  deleteNotification: (id: string) => Promise<void>;
+  deleteAllNotifications: () => Promise<void>;
+  selectedNotification: NotificationItem | null;
+  openNotificationDetail: (item: NotificationItem) => void;
+  closeNotificationDetail: () => void;
   soundEnabled: boolean;
   toggleSound: () => void;
   activeCategory: string;
@@ -40,7 +39,6 @@ interface NotificationContextValue {
 const NotificationRealtimeContext = createContext<NotificationContextValue | undefined>(undefined);
 
 export function NotificationRealtimeProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
   const isWaiter = pathname?.startsWith('/admin/pos/waiter');
   const { user, selectedBranchId } = useAdmin();
@@ -50,14 +48,35 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
   const [unreadCount, setUnreadCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false);
+  const [selectedNotification, setSelectedNotification] = useState<NotificationItem | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>('ALL');
 
   const socketRef = useRef<Socket | null>(null);
   const recentEventIdsRef = useRef<Set<string>>(new Set());
+  const eventNotificationIdMapRef = useRef<Map<string, string>>(new Map());
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
 
-  // Coalesce buffer for rapid kitchen item / order events
-  const coalesceBufferRef = useRef<Map<string, { count: number; timer: NodeJS.Timeout; event: any }>>(
+  interface NotificationEnvelope {
+    eventId?: string;
+    eventType?: string;
+    notificationId?: string;
+    title?: string;
+    message?: string;
+    content?: string;
+    category?: string;
+    priority?: number;
+    icon?: string;
+    branchId?: string;
+    actorId?: string;
+    url?: string;
+    occurredAt?: string;
+    reference?: { id?: string; url?: string; type?: string };
+    metadata?: Record<string, unknown>;
+    createdAt?: string;
+  }
+
+  const isStringKey = (key: unknown): key is string => typeof key === 'string';
+  const coalesceBufferRef = useRef<Map<string, { count: number; timer: NodeJS.Timeout; event: NotificationEnvelope }>>(
     new Map(),
   );
 
@@ -71,7 +90,11 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
       });
       if (res.ok) {
         const json = await res.json();
-        setNotifications(json.data || []);
+        const rawList = Array.isArray(json.data) ? (json.data as NotificationItem[]) : [];
+        const sanitized = rawList.filter((n) =>
+          Boolean((n?.title || '').trim() || (n?.content || '').trim())
+        );
+        setNotifications(sanitized);
         setUnreadCount(json.unreadCount ?? 0);
       }
     } catch (err) {
@@ -82,7 +105,10 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
   }, [user?.id]);
 
   useEffect(() => {
-    refreshNotifications();
+    const timer = window.setTimeout(() => {
+      void refreshNotifications();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [refreshNotifications]);
 
   // 2. Multi-Tab Coordination via BroadcastChannel
@@ -108,6 +134,19 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
       } else if (data.type === 'READ_ALL') {
         setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
         setUnreadCount(0);
+      } else if (data.type === 'DELETE_ONE') {
+        setNotifications((prev) => {
+          const target = prev.find((n) => n.id === data.notificationId);
+          if (target && !target.isRead) {
+            setUnreadCount((u) => Math.max(0, u - 1));
+          }
+          return prev.filter((n) => n.id !== data.notificationId);
+        });
+        setSelectedNotification((prev) => (prev?.id === data.notificationId ? null : prev));
+      } else if (data.type === 'DELETE_ALL') {
+        setNotifications([]);
+        setUnreadCount(0);
+        setSelectedNotification(null);
       }
     };
 
@@ -157,24 +196,122 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
     }
   }, []);
 
+  const deleteNotification = useCallback(async (id: string) => {
+    let wasUnread = false;
+    setNotifications((prev) => {
+      const target = prev.find((n) => n.id === id);
+      wasUnread = Boolean(target && !target.isRead);
+      return prev.filter((n) => n.id !== id);
+    });
+    if (wasUnread) {
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    }
+    setSelectedNotification((prev) => (prev?.id === id ? null : prev));
+
+    broadcastChannelRef.current?.postMessage({
+      type: 'DELETE_ONE',
+      notificationId: id,
+    });
+
+    try {
+      const res = await fetch(`/api/notifications/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (typeof json.unreadCount === 'number') {
+          setUnreadCount(json.unreadCount);
+        }
+      }
+    } catch (err) {
+      console.error('Error deleting notification:', err);
+      refreshNotifications();
+    }
+  }, [refreshNotifications]);
+
+  const deleteAllNotifications = useCallback(async () => {
+    setNotifications([]);
+    setUnreadCount(0);
+    setSelectedNotification(null);
+
+    broadcastChannelRef.current?.postMessage({ type: 'DELETE_ALL' });
+
+    try {
+      await fetch('/api/notifications', {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      toast.success('Đã xóa toàn bộ thông báo');
+    } catch (err) {
+      console.error('Error deleting all notifications:', err);
+      refreshNotifications();
+    }
+  }, [refreshNotifications]);
+
+  const openNotificationDetail = useCallback(
+    (item: NotificationItem) => {
+      if (!item.isRead) {
+        markAsRead(item.id);
+      }
+      setSelectedNotification({ ...item, isRead: true });
+    },
+    [markAsRead],
+  );
+
+  const closeNotificationDetail = useCallback(() => {
+    setSelectedNotification(null);
+  }, []);
+
   // 4. Custom Rich Toast Renderer in AVORA Premium Light style
   const showNotificationToast = useCallback(
-    (envelope: any) => {
+    (envelope: NotificationEnvelope) => {
       // 1. Tuyệt đối không hiển thị bất kỳ thông báo Toast nào ở màn hình bếp KDS (/admin/kds)
       const currentPath = pathname || (typeof window !== 'undefined' ? window.location.pathname : '');
       if (currentPath.includes('/kds')) {
         return;
       }
 
-      const getIcon = () => {
-        const cat = (envelope.category || envelope.eventType || '').toUpperCase();
-        if (cat.includes('ORDER')) return <ShoppingBag className="w-5 h-5 text-red-600" />;
-        if (cat.includes('KITCHEN')) return <UtensilsCrossed className="w-5 h-5 text-emerald-600" />;
-        if (cat.includes('RESERVATION')) return <CalendarCheck className="w-5 h-5 text-purple-600" />;
-        if (cat.includes('PAYMENT')) return <CreditCard className="w-5 h-5 text-amber-600" />;
-        if (cat.includes('SERVICE')) return <BellRing className="w-5 h-5 text-orange-600" />;
-        if (cat.includes('MARKETING') || cat.includes('ARTICLE')) return <MessageSquare className="w-5 h-5 text-blue-600" />;
-        return <ShieldAlert className="w-5 h-5 text-slate-700" />;
+      // Guard against blank notification envelopes with empty title and message
+      if (!envelope.title?.trim() && !envelope.message?.trim()) {
+        return;
+      }
+
+      const getIcon = () =>
+        resolveNotificationVisual(
+          envelope.category,
+          envelope.eventType,
+          envelope.icon || (typeof envelope.metadata?.icon === 'string' ? envelope.metadata.icon : undefined),
+          20,
+        ).icon;
+
+      const resolveMarkReadTarget = () =>
+        envelope.notificationId ||
+        (envelope.eventId ? eventNotificationIdMapRef.current.get(envelope.eventId) : undefined);
+
+      const openToastDetail = (toastId: string) => {
+        toast.dismiss(toastId);
+        const notifId = resolveMarkReadTarget();
+        if (notifId) {
+          markAsRead(notifId);
+        }
+        setSelectedNotification({
+          id: notifId || envelope.eventId || `notif-${Date.now()}`,
+          userId: user?.id || '',
+          title: envelope.title || 'Thông báo hệ thống',
+          content: envelope.message || '',
+          type: envelope.category || envelope.eventType,
+          category: envelope.category,
+          priority: envelope.priority ?? 1,
+          isRead: true,
+          branchId: envelope.branchId,
+          eventId: envelope.eventId,
+          metadata: envelope.metadata || (envelope.icon ? { icon: envelope.icon } : undefined),
+          url: envelope.reference?.url,
+          referenceId: envelope.reference?.id,
+          createdAt: envelope.occurredAt || new Date().toISOString(),
+        });
+        setIsDrawerOpen(true);
       };
 
       if (isWaiter) {
@@ -182,15 +319,9 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
         toast.custom(
           (t) => (
             <div
-              className={`${
-                t.visible ? 'animate-in fade-in slide-in-from-bottom-3' : 'animate-out fade-out slide-out-to-bottom-3'
-              } max-w-[88vw] sm:max-w-xs w-full bg-slate-950/95 backdrop-blur-md text-white border border-slate-800 shadow-2xl rounded-2xl pointer-events-auto flex items-center gap-3 p-3 transition-all cursor-pointer hover:bg-slate-900 duration-150 select-none`}
-              onClick={() => {
-                toast.dismiss(t.id);
-                if (envelope.notificationId) markAsRead(envelope.notificationId);
-                if (envelope.reference?.url) router.push(envelope.reference.url);
-                else setIsDrawerOpen(true);
-              }}
+              className={`${t.visible ? 'animate-in fade-in slide-in-from-bottom-3' : 'animate-out fade-out slide-out-to-bottom-3'
+                } max-w-[88vw] sm:max-w-xs w-full bg-slate-950/95 backdrop-blur-md text-white border border-slate-800 shadow-2xl rounded-2xl pointer-events-auto flex items-center gap-3 p-3 transition-all cursor-pointer hover:bg-slate-900 duration-150 select-none`}
+              onClick={() => toast.dismiss(t.id)}
             >
               <div className="w-8 h-8 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0">
                 {getIcon()}
@@ -211,7 +342,7 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
               </button>
             </div>
           ),
-          { duration: 4500, position: 'bottom-center' },
+          { duration: 3000, position: 'bottom-center' },
         );
         return;
       }
@@ -220,29 +351,9 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
       toast.custom(
         (t) => (
           <div
-            className={`${
-              t.visible ? 'animate-in fade-in slide-in-from-top-3' : 'animate-out fade-out slide-out-to-top-3'
-            } max-w-sm w-full bg-white text-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-slate-900/5 overflow-hidden border border-slate-200/90 transition-all cursor-pointer hover:bg-slate-50 duration-200 select-none`}
-            onClick={() => {
-              toast.dismiss(t.id);
-              if (envelope.notificationId) {
-                markAsRead(envelope.notificationId);
-              }
-              const isCurrentWaiter = typeof window !== 'undefined' && window.location.pathname.startsWith('/admin/pos/waiter');
-              if (isCurrentWaiter) {
-                // Trên giao diện /admin/pos/waiter: tuyệt đối không điều hướng khi click Toast
-                return;
-              }
-              if (envelope.reference?.url) {
-                router.push(envelope.reference.url);
-              } else if (envelope.category === 'ORDER' && envelope.reference?.id) {
-                router.push(`/admin/orders/${envelope.reference.id}`);
-              } else if (envelope.category === 'RESERVATION' && envelope.reference?.id) {
-                router.push(`/admin/reservations?id=${envelope.reference.id}`);
-              } else {
-                setIsDrawerOpen(true);
-              }
-            }}
+            className={`${t.visible ? 'animate-in fade-in slide-in-from-top-3' : 'animate-out fade-out slide-out-to-top-3'
+              } max-w-sm w-full bg-white text-slate-900 shadow-2xl rounded-2xl pointer-events-auto flex ring-1 ring-slate-900/5 overflow-hidden border border-slate-200/90 transition-all cursor-pointer hover:bg-slate-50 duration-200 select-none`}
+            onClick={() => toast.dismiss(t.id)}
           >
             <div className="flex-1 w-0 p-3.5">
               <div className="flex items-start gap-3">
@@ -264,13 +375,7 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
                     {envelope.message}
                   </p>
                   <div className="mt-1.5 flex items-center justify-between text-[10px]">
-                    {typeof window !== 'undefined' && !window.location.pathname.startsWith('/admin/pos/waiter') ? (
-                      <span className="font-bold text-red-600 flex items-center gap-0.5">
-                        Bấm để xem chi tiết <ArrowRight size={10} />
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 font-medium">Thông báo POS</span>
-                    )}
+                    <span className="text-slate-400 font-medium">Thông báo hệ thống</span>
                     <span className="text-slate-400">Vừa xong</span>
                   </div>
                 </div>
@@ -290,41 +395,70 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
             </div>
           </div>
         ),
-        { duration: 5000, position: 'top-left' },
+        { duration: 3000, position: 'top-left' },
       );
     },
-    [isWaiter, markAsRead, router],
+    [isWaiter, markAsRead, pathname, user?.id],
   );
 
   // 5. Invalidate SWR Caches for Zero-F5 live updates
-  const invalidateOperationalCaches = useCallback((envelope: any) => {
+  const invalidateOperationalCaches = useCallback((envelope: NotificationEnvelope) => {
     const cat = (envelope.category || envelope.eventType || '').toUpperCase();
-    if (cat.includes('ORDER') || envelope.eventType === 'ONLINE_ORDER_CREATED') {
-      mutate((key: any) => typeof key === 'string' && (key.startsWith('/api/pos/orders') || key.startsWith('/api/admin/orders')));
-      mutate((key: any) => typeof key === 'string' && key.startsWith('/api/admin/dashboard'));
+    if (cat.includes('ORDER') || cat.includes('PAYMENT') || envelope.eventType === 'ONLINE_ORDER_CREATED') {
+      mutate((key) => isStringKey(key) && (key.startsWith('/api/pos/orders') || key.startsWith('/api/admin/orders') || key.startsWith('/api/pos/tables') || key.startsWith('/api/pos/qr-orders')));
+      mutate((key) => isStringKey(key) && key.startsWith('/api/admin/dashboard'));
     }
     if (cat.includes('KITCHEN') || envelope.eventType === 'KITCHEN_ITEM_READY') {
-      mutate((key: any) => typeof key === 'string' && (key.startsWith('/api/pos/tables') || key.startsWith('/api/pos/orders')));
+      mutate((key) => isStringKey(key) && (key.startsWith('/api/pos/tables') || key.startsWith('/api/pos/orders')));
     }
     if (cat.includes('RESERVATION')) {
-      mutate((key: any) => typeof key === 'string' && (key.startsWith('/api/admin/reservations') || key.startsWith('/api/pos/reservations')));
+      mutate((key) => isStringKey(key) && (key.startsWith('/api/admin/reservations') || key.startsWith('/api/pos/reservations')));
     }
     if (cat.includes('MARKETING') || envelope.eventType === 'ARTICLE_COMMENT_CREATED') {
-      mutate((key: any) => typeof key === 'string' && key.startsWith('/api/articles/comments'));
-      mutate((key: any) => typeof key === 'string' && key.startsWith('/api/admin/articles'));
+      mutate((key) => isStringKey(key) && key.startsWith('/api/articles/comments'));
+      mutate((key) => isStringKey(key) && key.startsWith('/api/admin/articles'));
     }
-    if (cat.includes('SERVICE') || envelope.eventType === 'CUSTOMER_HELP_REQUESTED') {
-      mutate((key: any) => typeof key === 'string' && key.startsWith('/api/pos/tables'));
+    if (cat.includes('SERVICE') || cat.includes('QR_') || envelope.eventType === 'CUSTOMER_HELP_REQUESTED' || envelope.eventType === 'HELP_REQUESTED' || envelope.eventType === 'PAYMENT_REQUESTED') {
+      mutate((key) => isStringKey(key) && (key.startsWith('/api/pos/tables') || key.startsWith('/api/pos/qr-orders')));
     }
   }, []);
 
   // 6. Handle Realtime Notification Arrival with Deduplication & Coalescing
   const handleRealtimeEnvelope = useCallback(
-    (envelope: any) => {
+    (envelope: NotificationEnvelope) => {
+      if (!envelope) return;
+
+      const titleText = typeof envelope.title === 'string' ? envelope.title.trim() : '';
+      const messageText =
+        typeof envelope.message === 'string'
+          ? envelope.message.trim()
+          : typeof envelope.content === 'string'
+            ? envelope.content.trim()
+            : '';
+
+      // Raw operational cache-invalidation events from PosGateway (e.g. emitOrderUpdated) carry payload without title/message.
+      // Only refresh caches and DO NOT create blank notification items or blank toasts.
+      if (!titleText && !messageText) {
+        invalidateOperationalCaches(envelope);
+        return;
+      }
+
       const eventId = envelope.eventId || `${envelope.eventType}:${Date.now()}`;
 
-      // Deduplication: if we already handled this exact eventId in the last 60 seconds, ignore
+      if (envelope.eventId && envelope.notificationId) {
+        const mappedEventId = envelope.eventId;
+        eventNotificationIdMapRef.current.set(mappedEventId, envelope.notificationId);
+        setTimeout(() => eventNotificationIdMapRef.current.delete(mappedEventId), 120000);
+      }
+
+      // Deduplication: if we already handled this exact eventId in the last 60 seconds, patch notificationId if needed and ignore duplicate toast
       if (recentEventIdsRef.current.has(eventId)) {
+        const nextNotificationId = envelope.notificationId;
+        if (nextNotificationId) {
+          setNotifications((prev) =>
+            prev.map((n) => (n.eventId === eventId ? { ...n, id: nextNotificationId } : n)),
+          );
+        }
         return;
       }
       recentEventIdsRef.current.add(eventId);
@@ -334,14 +468,15 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
       const newItem: NotificationItem = {
         id: envelope.notificationId || eventId,
         userId: user?.id || '',
-        title: envelope.title,
-        content: envelope.message,
+        title: titleText || 'Thông báo hệ thống',
+        content: messageText || titleText,
         type: envelope.category || envelope.eventType,
         category: envelope.category,
         priority: envelope.priority ?? 1,
         isRead: false,
         branchId: envelope.branchId,
         eventId,
+        metadata: envelope.metadata || (envelope.icon ? { icon: envelope.icon } : undefined),
         url: envelope.reference?.url,
         referenceId: envelope.reference?.id,
         createdAt: envelope.occurredAt || new Date().toISOString(),
@@ -431,59 +566,83 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
     });
 
     // Main notification envelope event directed to user:userId room
-    socket.on('notification', (envelope: any) => {
+    socket.on('notification', (envelope: NotificationEnvelope) => {
       handleRealtimeEnvelope(envelope);
     });
 
-    // Unread count sync
+    // Unread count & deletion sync
     socket.on('unread_count', (data: { unreadCount: number }) => {
       if (typeof data?.unreadCount === 'number') {
         setUnreadCount(data.unreadCount);
       }
     });
 
-    // Direct operational broadcast events
-    socket.on('ONLINE_ORDER_CREATED', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-    });
-
-    socket.on('KITCHEN_ITEM_READY', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-    });
-
-    socket.on('CUSTOMER_HELP_REQUESTED', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-    });
-
-    socket.on('PAYMENT_REQUESTED', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-    });
-
-    socket.on('PAYMENT_SUCCESS', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('avora_chatbot_payment_success', {
-          detail: {
-            orderCode: envelope?.reference?.id || envelope?.metadata?.orderCode,
-            amount: envelope?.metadata?.amount,
-            message: envelope?.message,
-          },
-        }));
+    socket.on('notification_deleted', (data: { id?: string; unreadCount?: number }) => {
+      if (data?.id) {
+        setNotifications((prev) => prev.filter((n) => n.id !== data.id));
+        setSelectedNotification((prev) => (prev?.id === data.id ? null : prev));
+      }
+      if (typeof data?.unreadCount === 'number') {
+        setUnreadCount(data.unreadCount);
       }
     });
 
-    socket.on('chatbot_payment_success', (payload: any) => {
+    socket.on('notifications_cleared', () => {
+      setNotifications([]);
+      setUnreadCount(0);
+      setSelectedNotification(null);
+    });
+
+    // Direct operational broadcast events (14+ canonical order/payment events)
+    const standardOperationalEvents = [
+      'ONLINE_ORDER_CREATED',
+      'ORDER_CREATED',
+      'ORDER_UPDATED',
+      'CUSTOMER_ORDER_ADDED',
+      'ORDER_CANCELED',
+      'KITCHEN_ITEM_READY',
+      'CUSTOMER_HELP_REQUESTED',
+      'HELP_REQUESTED',
+      'PAYMENT_REQUESTED',
+      'PAYMENT_REQUEST_CANCELLED',
+      'PAYMENT_FAILED',
+      'CUSTOMER_REDEEMED_ITEM',
+      'ORDER_TABLE_CHANGED',
+      'ORDER_TYPE_CHANGED',
+      'ORDER_SPLIT',
+      'ORDER_MERGED',
+      'ORDER_STATUS_CHANGED',
+      'RESERVATION_CREATED',
+      'ARTICLE_COMMENT_CREATED',
+      'QR_ORDER_ROUND_SUBMITTED',
+      'SERVICE_REQUEST_UPDATED',
+    ];
+
+    standardOperationalEvents.forEach((eventName) => {
+      socket.on(eventName, (envelope: NotificationEnvelope) => {
+        handleRealtimeEnvelope(envelope);
+      });
+    });
+
+    socket.on('PAYMENT_SUCCESS', (envelope: NotificationEnvelope) => {
+      handleRealtimeEnvelope(envelope);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('avora_chatbot_payment_success', {
+            detail: {
+              orderCode: envelope?.reference?.id || envelope?.metadata?.orderCode,
+              amount: envelope?.metadata?.amount,
+              message: envelope?.message,
+            },
+          }),
+        );
+      }
+    });
+
+    socket.on('chatbot_payment_success', (payload: Record<string, unknown>) => {
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('avora_chatbot_payment_success', { detail: payload }));
       }
-    });
-
-    socket.on('RESERVATION_CREATED', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
-    });
-
-    socket.on('ARTICLE_COMMENT_CREATED', (envelope: any) => {
-      handleRealtimeEnvelope(envelope);
     });
 
     return () => {
@@ -508,6 +667,11 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
         toggleDrawer: () => setIsDrawerOpen((prev) => !prev),
         markAsRead,
         markAllAsRead,
+        deleteNotification,
+        deleteAllNotifications,
+        selectedNotification,
+        openNotificationDetail,
+        closeNotificationDetail,
         soundEnabled,
         toggleSound,
         activeCategory,
@@ -525,6 +689,11 @@ export function NotificationRealtimeProvider({ children }: { children: React.Rea
         unreadCount={unreadCount}
         onMarkAsRead={markAsRead}
         onMarkAllAsRead={markAllAsRead}
+        onDeleteNotification={deleteNotification}
+        onDeleteAllNotifications={deleteAllNotifications}
+        selectedNotification={selectedNotification}
+        onSelectNotification={openNotificationDetail}
+        onCloseDetail={closeNotificationDetail}
         soundEnabled={soundEnabled}
         onToggleSound={toggleSound}
         activeCategory={activeCategory}

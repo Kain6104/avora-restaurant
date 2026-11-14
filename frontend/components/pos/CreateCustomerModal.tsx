@@ -14,6 +14,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useModalZIndex } from '@/lib/modal-stack';
 
 interface CreateCustomerModalProps {
   onClose: () => void;
@@ -27,6 +28,7 @@ export const CreateCustomerModal: React.FC<CreateCustomerModalProps> = ({
   isDarkMode = false,
 }) => {
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  const modalZIndex = useModalZIndex(true, 110);
 
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -128,7 +130,10 @@ export const CreateCustomerModal: React.FC<CreateCustomerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150 select-none">
+    <div
+      className="fixed inset-0 flex items-end sm:items-center justify-center bg-black/60 backdrop-blur-xs p-0 sm:p-4 animate-in fade-in duration-150 select-none"
+      style={{ zIndex: modalZIndex }}
+    >
       <div className={`rounded-t-3xl sm:rounded-2xl shadow-2xl border w-full max-w-lg overflow-hidden flex flex-col max-h-[92dvh] sm:max-h-[92vh] animate-in slide-in-from-bottom duration-200 sm:animate-in sm:zoom-in-95 ${
         isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-gray-200 text-gray-900'
       }`}>

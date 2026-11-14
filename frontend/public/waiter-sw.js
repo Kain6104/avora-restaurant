@@ -1,14 +1,14 @@
 /**
- * AVORA Waiter POS - Offline-First Service Worker v3
+ * AVORA Waiter POS - Offline-First Service Worker v4
  * Chiến lược:
  * 1. Navigation: Network-First với Cache-Fallback vào App Shell (/admin/pos/waiter)
- * 2. Next.js Static Chunks (_next/static): Cache-First / Stale-While-Revalidate
+ * 2. Next.js Static Chunks (_next/static): Network-First với Cache-Fallback (tránh giữ UI phiên bản cũ)
  * 3. Static Assets (hình ảnh, biểu tượng, fonts): Cache-First
  * 4. API & WebSocket (/api/*, socket.io): Network-Only (dữ liệu nghiệp vụ quản lý qua IndexedDB)
  * 5. Push Notifications & Safe Invalidation
  */
 
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v6';
 const CACHE_SHELL = `avora-waiter-shell-${CACHE_VERSION}`;
 const CACHE_STATIC = `avora-waiter-static-${CACHE_VERSION}`;
 const CURRENT_CACHES = [CACHE_SHELL, CACHE_STATIC];
@@ -77,8 +77,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. Navigation Request: Network-First với fallback sang App Shell
+  // 2. Navigation Request: Chỉ xử lý App Shell cho Waiter POS (/admin/pos/waiter hoặc /waiter)
+  // Tuyệt đối không can thiệp vào các route của khách hàng như /qr/*, /checkout/*, trang chủ...
   if (request.mode === 'navigate' || request.destination === 'document') {
+    const isWaiterRoute =
+      url.pathname.startsWith('/admin/pos/waiter') ||
+      url.pathname.startsWith('/waiter');
+
+    if (!isWaiterRoute) {
+      // Để trình duyệt & Next.js App Router xử lý client navigation tự nhiên, không can thiệp SW
+      return;
+    }
+
     event.respondWith(
       fetch(request)
         .then((networkResponse) => {
@@ -103,28 +113,20 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Next.js Static Bundles (_next/static/...)
+  // 3. Next.js Static Bundles (_next/static/...) - Network-First để luôn nhận giao diện mới nhất khi online
   if (url.pathname.startsWith('/_next/static/')) {
     event.respondWith(
-      caches.match(request).then((cachedResponse) => {
-        if (cachedResponse) {
-          // Trả về ngay lập tức, tải nền để cập nhật nếu có
-          fetch(request).then((netRes) => {
-            if (netRes && netRes.status === 200) {
-              caches.open(CACHE_STATIC).then((cache) => cache.put(request, netRes));
-            }
-          }).catch(() => {});
-          return cachedResponse;
-        }
-
-        return fetch(request).then((networkResponse) => {
+      fetch(request)
+        .then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200) {
             const copy = networkResponse.clone();
             caches.open(CACHE_STATIC).then((cache) => cache.put(request, copy));
           }
           return networkResponse;
-        });
-      })
+        })
+        .catch(() => {
+          return caches.match(request);
+        })
     );
     return;
   }
@@ -163,30 +165,95 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+  let data = {};
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data = {
+        title: 'AVORA Waiter',
+        body: event.data.text() || 'Bạn có thông báo mới',
+      };
+    }
+  }
+
   const title = data.title || 'AVORA Waiter';
+  const body = data.body || 'Bạn có thông báo nghiệp vụ mới';
+  const icon = data.icon || '/avora_logo.png';
+  const badge = data.badge || '/avora_logo.png';
+  const tag = data.eventId || (data.category ? `avora-${data.category.toLowerCase()}` : 'avora-waiter-push');
+
   const options = {
-    body: data.body || 'Bạn có thông báo mới',
-    icon: '/avora_logo.png',
-    badge: '/avora_logo.png',
-    data: data,
-    vibrate: [200, 100, 200]
+    body,
+    icon,
+    badge,
+    tag,
+    renotify: true,
+    requireInteraction: data.category === 'SERVICE_REQUESTS' || data.category === 'PAYMENTS',
+    data: {
+      targetPath: data.targetPath || '/admin/pos/waiter',
+      eventId: data.eventId,
+      notificationId: data.notificationId,
+      category: data.category,
+      branchId: data.branchId,
+      createdAt: data.createdAt,
+    },
+    vibrate: [250, 100, 250, 100, 250],
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    Promise.all([
+      self.registration.showNotification(title, options),
+      // Inform any foreground windows of the push event for real-time sound / refresh
+      clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+        windowClients.forEach((client) => {
+          client.postMessage({
+            type: 'WEB_PUSH_RECEIVED',
+            payload: data,
+          });
+        });
+      }),
+    ])
+  );
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const notificationData = event.notification.data || {};
+  let targetPath = notificationData.targetPath || '/admin/pos/waiter';
+
+  // Strict local origin protection: do not allow external redirect URLs
+  if (targetPath.startsWith('http://') || targetPath.startsWith('https://')) {
+    try {
+      const parsed = new URL(targetPath);
+      targetPath = parsed.pathname + parsed.search + parsed.hash;
+    } catch {
+      targetPath = '/admin/pos/waiter';
+    }
+  }
+
+  if (!targetPath.startsWith('/')) {
+    targetPath = '/admin/pos/waiter';
+  }
+
   event.waitUntil(
-    clients.matchAll({ type: 'window' }).then((clientList) => {
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // 1. If an AVORA Waiter window is already open, focus it and trigger view navigation
       for (const client of clientList) {
         if (client.url && client.url.includes('/admin/pos/waiter') && 'focus' in client) {
-          return client.focus();
+          client.focus();
+          client.postMessage({
+            type: 'NOTIFICATION_NAVIGATE',
+            targetPath,
+            data: notificationData,
+          });
+          return;
         }
       }
+
+      // 2. Otherwise open a new window to the target path
       if (clients.openWindow) {
-        return clients.openWindow('/admin/pos/waiter');
+        return clients.openWindow(targetPath);
       }
     })
   );

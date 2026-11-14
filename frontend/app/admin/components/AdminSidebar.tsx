@@ -51,7 +51,10 @@ import {
   ArrowRightLeft,
   Activity,
   Ban,
+  Landmark,
+  ConciergeBell,
 } from 'lucide-react';
+import BranchSelector from './BranchSelector';
 
 /* ==========================================================================
    NAVIGATION DATA DEFINITIONS (CHUẨN ACCORDION SUSHI WA)
@@ -122,6 +125,14 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               permission: 'pos.access',
             },
             {
+              id: 'waiter_pos',
+              href: '/admin/pos/waiter',
+              icon: ConciergeBell,
+              labelKey: 'nav.waiter',
+              defaultLabel: 'Phục vụ',
+              permission: 'waiter.access',
+            },
+            {
               id: 'kds',
               href: '/admin/kds',
               icon: ChefHat,
@@ -136,6 +147,14 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               labelKey: 'nav.tables',
               defaultLabel: 'Quản lý bàn',
               permission: 'tables.view',
+            },
+            {
+              id: 'buffet',
+              href: '/admin/buffet',
+              icon: Layers,
+              labelKey: 'nav.buffet',
+              defaultLabel: 'Quản lý Gói Buffet',
+              permission: 'products.view',
             },
             {
               id: 'reservations',
@@ -631,6 +650,14 @@ const NAVIGATION_SECTIONS: NavSection[] = [
               permission: 'payment_methods.view',
             },
             {
+              id: 'bank_connect',
+              href: '/admin/bank-connect',
+              icon: Landmark,
+              labelKey: 'nav.bankConnect',
+              defaultLabel: 'Kết nối ngân hàng',
+              permission: 'payment_methods.view',
+            },
+            {
               id: 'print_templates',
               href: '/admin/settings/print-templates',
               icon: FileText,
@@ -943,7 +970,7 @@ export default function AdminSidebar() {
         href={item.href}
         prefetch={true}
         onClick={onClick}
-        className={`group relative flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+        className={`group relative flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
           active
             ? 'bg-red-50/85 text-red-600 font-bold border-l-4 border-red-600 shadow-2xs'
             : 'text-slate-700 hover:text-slate-900 hover:bg-slate-100/70'
@@ -1029,7 +1056,7 @@ export default function AdminSidebar() {
         <button
           type="button"
           onClick={() => toggleAccordion(group.id)}
-          className={`w-full group flex items-center justify-between px-3.5 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-150 cursor-pointer select-none ${
+          className={`w-full group flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer select-none ${
             hasActiveChild
               ? 'bg-red-50/85 text-red-600 font-bold border-l-4 border-red-600 shadow-2xs'
               : isOpen
@@ -1080,7 +1107,7 @@ export default function AdminSidebar() {
                     href={subItem.href}
                     prefetch={true}
                     onClick={onClick}
-                    className={`flex items-center justify-between px-3 py-2 rounded-lg text-[12.5px] transition-all duration-150 ${
+                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-md text-[12px] transition-all duration-150 ${
                       subActive
                         ? 'bg-white text-red-600 font-bold shadow-[0_1px_3px_rgba(218,37,29,0.08)] border border-red-100/80'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-white/80 font-medium'
@@ -1318,6 +1345,11 @@ export default function AdminSidebar() {
           >
             <X size={20} />
           </button>
+        </div>
+
+        {/* Mobile Branch Selector */}
+        <div className="px-3 py-2 border-b border-slate-100 bg-slate-50/70">
+          <BranchSelector />
         </div>
 
         {/* Mobile Navigation List */}

@@ -72,6 +72,7 @@ export default function PaymentMethodsPage() {
     branchIds: [] as string[],
     isActive: true,
     isActiveForPos: true,
+    isActiveForQr: false,
     displayOrder: 0,
   });
 
@@ -129,6 +130,7 @@ export default function PaymentMethodsPage() {
       branchIds: [],
       isActive: true,
       isActiveForPos: true,
+      isActiveForQr: false,
       displayOrder: methods.length + 1,
     });
     setIsModalOpen(true);
@@ -154,6 +156,7 @@ export default function PaymentMethodsPage() {
       branchIds: m.branches ? m.branches.map((b: any) => b.id) : [],
       isActive: m.isActive,
       isActiveForPos: m.isActiveForPos,
+      isActiveForQr: Boolean(m.isActiveForQr),
       displayOrder: m.displayOrder || 0,
     });
     setIsModalOpen(true);
@@ -168,7 +171,7 @@ export default function PaymentMethodsPage() {
     }
   };
 
-  const handleToggle = async (id: string, field: 'isActive' | 'isActiveForPos') => {
+  const handleToggle = async (id: string, field: 'isActive' | 'isActiveForPos' | 'isActiveForQr') => {
     try {
       const res = await fetch(`/api/payment-methods/${id}/toggle`, {
         method: 'PATCH',
@@ -313,20 +316,21 @@ export default function PaymentMethodsPage() {
                 <th className="py-2.5 sm:py-3.5 px-3 sm:px-4">{t('paymentMethods.minOrder', 'ĐƠN TỐI THIỂU')}</th>
                 <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">{t('paymentMethods.webApp', 'WEB / APP')}</th>
                 <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">{t('paymentMethods.pos', 'POS')}</th>
+                <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">{t('paymentMethods.qrOrder', 'QR ORDER')}</th>
                 <th className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">{t('common.actions', 'Thao tác')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-slate-400">
+                  <td colSpan={9} className="text-center py-12 text-slate-400">
                     <Loader2 size={24} className="animate-spin mx-auto mb-2 text-blue-600" />
                     <span>{t('common.loading', 'Đang tải dữ liệu...')}</span>
                   </td>
                 </tr>
               ) : filteredMethods.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="text-center py-12 text-slate-400">
+                  <td colSpan={9} className="text-center py-12 text-slate-400">
                     {t('common.noData', 'Không có dữ liệu')}
                   </td>
                 </tr>
@@ -437,6 +441,20 @@ export default function PaymentMethodsPage() {
                         }`}
                       >
                         <span>{m.isActiveForPos ? t('paymentMethods.on', 'BẬT') : t('paymentMethods.off', 'TẮT')}</span>
+                      </button>
+                    </td>
+                    {/* Toggle QR Order */}
+                    <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleToggle(m.id, 'isActiveForQr')}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] sm:text-xs font-bold transition-colors cursor-pointer min-h-[30px] ${
+                          m.isActiveForQr
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-slate-200 text-slate-500'
+                        }`}
+                      >
+                        <span>{m.isActiveForQr ? t('paymentMethods.on', 'BẬT') : t('paymentMethods.off', 'TẮT')}</span>
                       </button>
                     </td>
                     <td className="py-2.5 sm:py-3.5 px-3 sm:px-4 text-right">
@@ -587,6 +605,18 @@ export default function PaymentMethodsPage() {
                     type="checkbox"
                     checked={formData.isActiveForPos}
                     onChange={(e) => setFormData({ ...formData, isActiveForPos: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 cursor-pointer">
+                  <span className="text-xs font-bold text-slate-800">
+                    {t('paymentMethods.allowQr', 'Cho phép khách chọn khi thanh toán qua QR tại bàn')}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.isActiveForQr)}
+                    onChange={(e) => setFormData({ ...formData, isActiveForQr: e.target.checked })}
                     className="w-4 h-4 text-blue-600 rounded"
                   />
                 </label>

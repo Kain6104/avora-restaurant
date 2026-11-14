@@ -533,16 +533,23 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
               <h2 className="text-2xl font-black text-white leading-tight mb-2">
                 TÍCH ĐIỂM<br /><span className="text-red-400">ĐỔI QUÀ</span><br />HẤP DẪN
               </h2>
-              <p className="text-white/50 text-xs mb-5 leading-relaxed">Mỗi 10.000đ = 1 điểm. Đổi điểm lấy voucher, quà tặng siêu hấp dẫn!</p>
+              <p className="text-white/50 text-xs mb-5 leading-relaxed">
+                Có thể dùng điểm để đổi món khi dùng bữa tại nhà hàng, 1{' '}
+                <img src="/avora-coin.svg" alt="coin" className="w-3.5 h-3.5 inline-block align-middle mx-0.5" />{' '}
+                = 1đ &amp; nhận nhiều ưu đãi hấp dẫn!
+              </p>
 
               <div className="space-y-2.5 mb-5">
                 {[
-                  { pts: '500 PT', desc: 'Giảm 50.000đ' },
-                  { pts: '1000 PT', desc: 'Miễn phí ship' },
-                  { pts: '2000 PT', desc: '1 món miễn phí' },
+                  { pts: '500', desc: 'Giảm 50.000đ' },
+                  { pts: '1.000', desc: 'Miễn phí ship' },
+                  { pts: '2.000', desc: '1 món miễn phí' },
                 ].map(r => (
                   <div key={r.pts} className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-3 py-2.5">
-                    <span className="text-yellow-400 font-black text-sm">{r.pts}</span>
+                    <span className="text-yellow-400 font-black text-sm flex items-center gap-1">
+                      <span>{r.pts}</span>
+                      <img src="/avora-coin.svg" alt="coin" className="w-4 h-4 inline-block shrink-0" />
+                    </span>
                     <span className="text-white/70 text-xs font-medium">{r.desc}</span>
                     <ChevronRight className="w-3.5 h-3.5 text-white/30" />
                   </div>
@@ -565,8 +572,18 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                     <div className="w-6 h-4 bg-yellow-400/80 rounded-sm" />
                   </div>
                 </div>
-                <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded-full shadow-lg">
-                  {currentUser?.points !== undefined ? `${Number(currentUser.points).toLocaleString('vi-VN')} PT` : '+500 Pt'}
+                <div className="absolute -top-3 -right-2 bg-yellow-400 text-yellow-900 text-xs font-black px-2 py-0.5 rounded-full shadow-lg flex items-center gap-1">
+                  {currentUser?.points !== undefined ? (
+                    <>
+                      <span>{Number(currentUser.points).toLocaleString('vi-VN')}</span>
+                      <img src="/avora-coin.svg" alt="coin" className="w-3 h-3 inline-block shrink-0" />
+                    </>
+                  ) : (
+                    <>
+                      <span>+500</span>
+                      <img src="/avora-coin.svg" alt="coin" className="w-3 h-3 inline-block shrink-0" />
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -693,8 +710,9 @@ export default function HomeClient({ banners, categories, bestSellers, aiRecomme
                 </div>
               </div>
               {/* Floating badge */}
-              <div className="absolute -top-2 right-10 bg-yellow-400 text-yellow-900 font-black text-sm px-3 py-1 rounded-full shadow-lg rotate-3">
-                +500 PT
+              <div className="absolute -top-2 right-10 bg-yellow-400 text-yellow-900 font-black text-sm px-3 py-1 rounded-full shadow-lg rotate-3 flex items-center gap-1">
+                <span>+500</span>
+                <img src="/avora-coin.svg" alt="coin" className="w-4 h-4 inline-block shrink-0" />
               </div>
               {/* Avatar circle */}
               <div className="absolute -bottom-2 left-6 w-16 h-16 rounded-full overflow-hidden border-4 border-slate-900 shadow-xl">

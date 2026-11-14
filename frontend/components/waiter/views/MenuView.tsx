@@ -24,9 +24,56 @@ import toast from 'react-hot-toast';
 import ProductOptionSheet from '../menu/ProductOptionSheet';
 import { BuffetSelectionModal } from '@/components/pos/BuffetSelectionModal';
 import { BuffetRibbonTag } from '@/components/ui/BuffetRibbonTag';
+import PullToRefresh from '../common/PullToRefresh';
+import { syncEngine } from '@/lib/offline/syncEngine';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store', credentials: 'include' }).then(r => r.json());
 const EMPTY_ITEMS: UnsentItem[] = [];
+
+function LazyDishImage({
+  src,
+  alt,
+  sizes,
+  className = '',
+  fallbackIconSize = 20,
+}: {
+  src?: string | null;
+  alt: string;
+  sizes: string;
+  className?: string;
+  fallbackIconSize?: number;
+}) {
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  if (!src || failed) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-slate-100 text-slate-300">
+        <Utensils size={fallbackIconSize} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {!loaded && (
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-200 via-slate-100 to-slate-200 animate-pulse" />
+      )}
+      <Image
+        src={src}
+        alt={alt}
+        fill
+        sizes={sizes}
+        loading="lazy"
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        onError={() => setFailed(true)}
+        className={`${className} transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+      />
+    </>
+  );
+}
 
 export default function MenuView() {
   const isOffline = useWaiterStore(s => s.isOffline);
@@ -58,7 +105,7 @@ export default function MenuView() {
 
   const { products: localProducts, categories: localCategories, hasLocalData } = useInstantProducts(activeBranchId);
 
-  const { data: response, isLoading: isSwrLoading } = useSWR(
+  const { data: response, isLoading: isSwrLoading, mutate: mutateProducts } = useSWR(
     isOffline || !activeBranchId ? null : `/api/pos/products?branchId=${activeBranchId}`,
     fetcher
   );
@@ -354,7 +401,25 @@ export default function MenuView() {
       {/* 2. BODY CONTENT */}
       {isSearchMode ? (
         /* SEARCH RESULTS LIST (Image 4) */
-        <div className="flex-1 overflow-y-auto touch-pan-y divide-y divide-slate-100 p-2 pb-24">
+        <PullToRefresh
+          onRefresh={async () => {
+            if (activeBranchId) {
+              const res = await fetch(`/api/pos/products?branchId=${activeBranchId}`, {
+                cache: 'no-store',
+                credentials: 'include',
+              });
+              if (res.ok) {
+                const json = await res.json();
+                await mutateProducts(json, { revalidate: false });
+              } else {
+                await mutateProducts();
+              }
+              await syncEngine.performDeltaSync(activeBranchId, false);
+            }
+          }}
+          isOffline={isOffline}
+          className="divide-y divide-slate-100 p-2 pb-24"
+        >
           {filteredProducts.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-slate-400">
               <Search size={36} className="mb-2 opacity-50" />
@@ -374,16 +439,12 @@ export default function MenuView() {
                   {/* Left: Thumbnail */}
                   <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 shrink-0 relative overflow-hidden flex items-center justify-center">
                     {isBuffet && <BuffetRibbonTag size="sm" className="!left-0" />}
-                    {product.imageUrl ? (
-                      <Image 
-                        src={product.imageUrl} 
-                        alt={product.name} 
-                        fill 
-                        className="object-cover" 
-                      />
-                    ) : (
-                      <Utensils size={20} className="text-slate-300" />
-                    )}
+                    <LazyDishImage
+                      src={product.imageUrl}
+                      alt={product.name}
+                      sizes="56px"
+                      className="object-cover"
+                    />
                   </div>
 
                   {/* Middle: Dish Name & Price */}
@@ -409,7 +470,7 @@ export default function MenuView() {
               );
             })
           )}
-        </div>
+        </PullToRefresh>
       ) : (
         /* TWO-COLUMN MENU LAYOUT (Image 3) */
         <div className="flex-1 flex overflow-hidden">
@@ -442,11 +503,39 @@ export default function MenuView() {
             })}
           </aside>
 
-          {/* Right Column: 2-Column Dish Grid (Image 3) */}
-          <main className="flex-1 overflow-y-auto touch-pan-y p-3 pb-28">
+          {/* Right Column: 2-Column Dish Grid (Image 3, Pull-to-refresh supported) */}
+          <PullToRefresh
+            onRefresh={async () => {
+              if (activeBranchId) {
+                const res = await fetch(`/api/pos/products?branchId=${activeBranchId}`, {
+                  cache: 'no-store',
+                  credentials: 'include',
+                });
+                if (res.ok) {
+                  const json = await res.json();
+                  await mutateProducts(json, { revalidate: false });
+                } else {
+                  await mutateProducts();
+                }
+                await syncEngine.performDeltaSync(activeBranchId, false);
+              }
+            }}
+            isOffline={isOffline}
+            className="p-3 pb-28"
+          >
             {isInitialLoading ? (
-              <div className="flex justify-center py-20">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DA251D]" />
+              <div className="grid grid-cols-2 gap-3 animate-pulse">
+                {[1, 2, 3, 4, 5, 6].map((slot) => (
+                  <div
+                    key={slot}
+                    className="flex flex-col bg-white rounded-2xl overflow-hidden border border-slate-200/80"
+                  >
+                    <div className="w-full aspect-square bg-slate-200" />
+                    <div className="p-2.5 flex items-center justify-center">
+                      <div className="h-3.5 w-3/4 rounded bg-slate-200" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : filteredProducts.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -475,18 +564,13 @@ export default function MenuView() {
 
                       {/* Dish Image Container */}
                       <div className="w-full aspect-square bg-slate-100 relative overflow-hidden flex items-center justify-center">
-                        {p.imageUrl ? (
-                          <Image 
-                            src={p.imageUrl} 
-                            alt={p.name} 
-                            fill 
-                            className="object-cover group-hover:scale-105 transition-transform duration-300" 
-                          />
-                        ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs p-2 text-center">
-                            <span className="font-bold text-slate-600 line-clamp-2">{p.name}</span>
-                          </div>
-                        )}
+                        <LazyDishImage
+                          src={p.imageUrl}
+                          alt={p.name}
+                          sizes="(max-width: 640px) 42vw, 200px"
+                          className="object-cover group-hover:scale-105 transition-transform duration-300"
+                          fallbackIconSize={24}
+                        />
 
                         {/* Price Badge (Moved to top-right if buffet ribbon is present at top-left) */}
                         <div className={`absolute top-0 ${isBuffet ? 'right-0 rounded-bl-lg' : 'left-0 rounded-br-lg'} bg-neutral-800/85 text-white text-[11px] font-bold px-2 py-1 shadow-sm backdrop-blur-xs z-10`}>
@@ -514,7 +598,7 @@ export default function MenuView() {
                 })}
               </div>
             )}
-          </main>
+          </PullToRefresh>
         </div>
       )}
 

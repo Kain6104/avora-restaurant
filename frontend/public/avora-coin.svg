@@ -1,0 +1,196 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="1024" height="1024" shape-rendering="geometricPrecision">
+  <defs>
+    <!-- Gradient Cạnh 3D bên dưới đồng xu -->
+    <linearGradient id="coin3DEdge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#9e4300" />
+      <stop offset="25%" stop-color="#e88504" />
+      <stop offset="50%" stop-color="#7a2f00" />
+      <stop offset="75%" stop-color="#d47202" />
+      <stop offset="100%" stop-color="#692600" />
+    </linearGradient>
+
+    <!-- Gradient Viền vàng ngoài cùng -->
+    <linearGradient id="outerRimGrad" x1="15%" y1="10%" x2="85%" y2="90%">
+      <stop offset="0%" stop-color="#fff3a1" />
+      <stop offset="25%" stop-color="#ffd447" />
+      <stop offset="50%" stop-color="#f59e0b" />
+      <stop offset="75%" stop-color="#ffdd63" />
+      <stop offset="100%" stop-color="#b45309" />
+    </linearGradient>
+
+    <!-- Gradient Rãnh nâu đỏ đậm -->
+    <linearGradient id="darkGrooveGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#782902" />
+      <stop offset="50%" stop-color="#9a3803" />
+      <stop offset="100%" stop-color="#5c1d01" />
+    </linearGradient>
+
+    <!-- Gradient Viền vàng trong -->
+    <linearGradient id="innerRimGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#d97706" />
+      <stop offset="40%" stop-color="#fde047" />
+      <stop offset="70%" stop-color="#fef08a" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Gradient Mặt trong đồng xu -->
+    <radialGradient id="innerCoinFace" cx="35%" cy="28%" r="70%">
+      <stop offset="0%" stop-color="#ffca3a" />
+      <stop offset="45%" stop-color="#f59300" />
+      <stop offset="85%" stop-color="#d96b00" />
+      <stop offset="100%" stop-color="#b34e00" />
+    </radialGradient>
+
+    <!-- Nhánh trái chữ A -->
+    <linearGradient id="avoraLeftLeg" x1="15%" y1="20%" x2="45%" y2="95%">
+      <stop offset="0%" stop-color="#d47a00" />
+      <stop offset="25%" stop-color="#f5a614" />
+      <stop offset="65%" stop-color="#ffd863" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Bóng đổ dưới nếp gấp đỉnh chữ A -->
+    <linearGradient id="avoraTopUnderFold" x1="48%" y1="18%" x2="32%" y2="85%">
+      <stop offset="0%" stop-color="#7c3500" stop-opacity="0.9" />
+      <stop offset="55%" stop-color="#b85900" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#f5a614" stop-opacity="0" />
+    </linearGradient>
+
+    <!-- Nhánh phải chữ A -->
+    <linearGradient id="avoraRightLeg" x1="35%" y1="15%" x2="85%" y2="90%">
+      <stop offset="0%" stop-color="#fff9c4" />
+      <stop offset="25%" stop-color="#ffea79" />
+      <stop offset="65%" stop-color="#ffca3a" />
+      <stop offset="100%" stop-color="#f59e0b" />
+    </linearGradient>
+
+    <!-- Nếp gấp cuộn phía dưới bên phải chữ A -->
+    <linearGradient id="avoraBottomRightFold" x1="62%" y1="62%" x2="96%" y2="94%">
+      <stop offset="0%" stop-color="#803800" />
+      <stop offset="40%" stop-color="#bd6102" />
+      <stop offset="80%" stop-color="#eba018" />
+      <stop offset="100%" stop-color="#ffd152" />
+    </linearGradient>
+
+    <!-- Gradient Cái Muỗng -->
+    <linearGradient id="avoraSpoonGrad" x1="10%" y1="92%" x2="58%" y2="58%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="45%" stop-color="#ffd859" />
+      <stop offset="80%" stop-color="#fff099" />
+      <stop offset="100%" stop-color="#ffcf40" />
+    </linearGradient>
+
+    <!-- Gradient Cái Nĩa 4 răng -->
+    <linearGradient id="avoraForkGrad" x1="32%" y1="92%" x2="65%" y2="70%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="45%" stop-color="#ffd552" />
+      <stop offset="80%" stop-color="#ffec8a" />
+      <stop offset="100%" stop-color="#fff6b3" />
+    </linearGradient>
+
+    <clipPath id="innerFaceClip">
+      <circle cx="500" cy="482" r="356" />
+    </clipPath>
+  </defs>
+
+  <!-- Vector base shadow (non-blur so WebKit never rasterizes low-res) -->
+  <ellipse cx="500" cy="542" rx="440" ry="426" fill="#5a2300" opacity="0.22" />
+
+  <!-- Độ dày cạnh đáy 3D của đồng xu -->
+  <ellipse cx="500" cy="522" rx="438" ry="432" fill="url(#coin3DEdge)" />
+  <ellipse cx="500" cy="508" rx="438" ry="434" fill="#7c2d02" />
+
+  <!-- Vòng vàng ngoài cùng -->
+  <circle cx="500" cy="482" r="438" fill="url(#outerRimGrad)" />
+
+  <!-- Rãnh nâu đậm thứ nhất -->
+  <circle cx="500" cy="482" r="410" fill="url(#darkGrooveGrad)" />
+
+  <!-- Vòng vàng giữa -->
+  <circle cx="500" cy="482" r="392" fill="url(#innerRimGrad)" />
+
+  <!-- Rãnh nâu đậm thứ hai -->
+  <circle cx="500" cy="482" r="368" fill="#853102" />
+
+  <!-- Mặt chính bên trong đồng xu -->
+  <circle cx="500" cy="482" r="356" fill="url(#innerCoinFace)" />
+
+  <!-- Các vệt sáng phản chiếu chéo -->
+  <g clip-path="url(#innerFaceClip)">
+    <circle cx="500" cy="495" r="356" fill="none" stroke="#782902" stroke-width="18" opacity="0.35" />
+    <polygon points="315,100 345,100 390,880 355,880" fill="#ffffff" opacity="0.14" />
+    <polygon points="750,120 778,120 675,880 645,880" fill="#ffffff" opacity="0.12" />
+    <path d="M 140,420 Q 450,240 840,320 A 356,356 0 0,0 144,420 Z" fill="#ffffff" opacity="0.12" />
+    <path d="M 210,720 Q 500,660 790,685 A 356,356 0 0,1 210,720 Z" fill="#6b2400" opacity="0.18" />
+  </g>
+
+  <!-- Pure vector subtle emblem drop shadow -->
+  <g transform="translate(224, 174) scale(0.56)" opacity="0.38">
+    <path d="M 7,911 C 95,738 232,468 328,302 C 350,264 378,242 415,242 L 508,395 C 492,390 480,395 468,412 C 372,545 190,745 48,896 L 7,911 Z" fill="#6e2c00" />
+    <path d="M 310,338 C 358,244 415,193 482,193 C 546,193 590,232 630,302 L 980,909 C 855,868 745,782 658,655 L 482,355 C 435,288 345,288 310,338 Z" fill="#6e2c00" />
+    <path d="M 7,911 L 48,896 C 155,865 262,800 342,695 C 392,629 442,578 508,578 C 552,578 576,602 571,634 C 565,672 522,702 455,728 C 412,745 375,774 330,810 C 245,878 135,914 7,911 Z" fill="#6e2c00" />
+    <path d="M 315,911 C 362,892 398,856 422,810 C 438,780 452,767 476,756 L 604,700 A 5.8,5.8 0 0,1 610,710 L 491,779 A 8.5,8.5 0 0,0 500,793 L 621,726 A 5.8,5.8 0 0,1 627,736 L 512,811 A 8.5,8.5 0 0,0 521,825 L 638,754 A 5.8,5.8 0 0,1 644,764 L 533,843 A 8.5,8.5 0 0,0 542,857 L 654,782 A 5.8,5.8 0 0,1 660,792 L 556,878 C 534,896 514,911 488,911 L 315,911 Z" fill="#6e2c00" />
+  </g>
+
+  <!-- LOGO AVORA VÀNG KIM 3D -->
+  <g transform="translate(224, 158) scale(0.56)">
+    <path d="M 7,911
+             C 95,738 232,468 328,302
+             C 350,264 378,242 415,242
+             L 508,395
+             C 492,390 480,395 468,412
+             C 372,545 190,745 48,896
+             L 7,911 Z" fill="url(#avoraLeftLeg)" />
+
+    <path d="M 310,338
+             C 345,288 435,288 482,355
+             L 502,388
+             C 486,388 474,398 458,422
+             L 272,402 Z" fill="url(#avoraTopUnderFold)" />
+
+    <path d="M 658,655
+             L 756,826
+             C 790,886 848,912 918,912
+             C 942,912 965,910 980,909
+             L 915,830
+             Z" fill="url(#avoraBottomRightFold)" />
+
+    <path d="M 310,338
+             C 358,244 415,193 482,193
+             C 546,193 590,232 630,302
+             L 980,909
+             C 855,868 745,782 658,655
+             L 482,355
+             C 435,288 345,288 310,338 Z" fill="url(#avoraRightLeg)" />
+
+    <path d="M 7,911
+             L 48,896
+             C 155,865 262,800 342,695
+             C 392,629 442,578 508,578
+             C 552,578 576,602 571,634
+             C 565,672 522,702 455,728
+             C 412,745 375,774 330,810
+             C 245,878 135,914 7,911 Z" fill="url(#avoraSpoonGrad)" />
+
+    <path d="M 315,911
+             C 362,892 398,856 422,810
+             C 438,780 452,767 476,756
+             L 604,700
+             A 5.8,5.8 0 0,1 610,710
+             L 491,779
+             A 8.5,8.5 0 0,0 500,793
+             L 621,726
+             A 5.8,5.8 0 0,1 627,736
+             L 512,811
+             A 8.5,8.5 0 0,0 521,825
+             L 638,754
+             A 5.8,5.8 0 0,1 644,764
+             L 533,843
+             A 8.5,8.5 0 0,0 542,857
+             L 654,782
+             A 5.8,5.8 0 0,1 660,792
+             L 556,878
+             C 534,896 514,911 488,911
+             L 315,911 Z" fill="url(#avoraForkGrad)" />
+  </g>
+</svg>

@@ -18,7 +18,7 @@ export default function GlobalToaster() {
           zIndex: 999999,
         }}
         toastOptions={{
-          duration: 3500,
+          duration: 3000,
         }}
       >
         {(t) => <SwipeableToast t={t} />}
@@ -36,7 +36,7 @@ export default function GlobalToaster() {
         zIndex: 999999,
       }}
       toastOptions={{
-        duration: 3800,
+        duration: 3000,
       }}
     >
       {(t) => <SwipeableToast t={t} />}

@@ -31,6 +31,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isAuthenticated } from '@/lib/auth';
 import ReactionPicker from '@/components/article/ReactionPicker';
 import CommentSection from '@/components/article/CommentSection';
 import RelatedProducts from '@/components/article/RelatedProducts';
@@ -293,6 +294,11 @@ export default function ArticleDetailClient({
   }, [article.id]);
 
   const handleToggleFavorite = async () => {
+    if (!isAuthenticated()) {
+      toast.error('Vui lòng đăng nhập để lưu bài viết vào hồ sơ yêu thích!');
+      return;
+    }
+
     const previous = isFavorited;
     setIsFavorited(!previous);
 

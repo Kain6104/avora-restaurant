@@ -37,6 +37,7 @@ import {
   Sparkles,
   QrCode,
   Lock,
+  Unlock,
 } from 'lucide-react';
 import { PosCartItem, PosTable, PosOrder } from './pos-types';
 import { OrderCartItem } from './OrderCartItem';
@@ -99,6 +100,7 @@ export interface OrderCartProps {
   onOpenQrManagement?: () => void;
   onOpenRedeemPointsModal?: () => void;
   redeemableRewardsCount?: number;
+  onUnlockPaymentLock?: () => Promise<void> | void;
   isDarkMode?: boolean;
 }
 
@@ -157,13 +159,14 @@ export const OrderCart: React.FC<OrderCartProps> = ({
   vatPriceMode = 'VAT_EXCLUDED',
   onOpenBuffetModal,
   onOpenQrManagement,
+  onUnlockPaymentLock,
   isDarkMode = false,
 }) => {
   const isOnline = isOnlineOrder(currentOrder);
   const isAwaitingPayment =
     currentOrder?.paymentStatus === 'AWAITING_PAYMENT' ||
-    currentOrder?.paymentStatus === 'PAYMENT_REQUESTED' ||
     (currentOrder as any)?.paymentIntentStatus === 'ACTIVE';
+  const [isUnlockingLock, setIsUnlockingLock] = useState(false);
   // Chỉ khóa khi thực sự đã phát hành mã thanh toán chuyển khoản / đang chờ thanh toán / đã khóa tài chính
   const isCodeAlreadyCreated = Boolean(
     isAwaitingPayment ||
@@ -819,7 +822,7 @@ export const OrderCart: React.FC<OrderCartProps> = ({
 
       {/* 1.3 Awaiting Payment Notice Banner (Chờ xác nhận & Giải phóng bàn) */}
       {isAwaitingPayment && (
-        <div className={`border-b px-3 py-2 flex items-center justify-between text-xs shrink-0 select-none shadow-sm ${
+        <div className={`border-b px-3 py-2 flex items-center justify-between gap-2 text-xs shrink-0 select-none shadow-sm ${
           isDarkMode
             ? 'bg-blue-950/80 border-blue-800 text-blue-200'
             : 'bg-blue-50 border-blue-200 text-blue-900'
@@ -837,13 +840,48 @@ export const OrderCart: React.FC<OrderCartProps> = ({
                 </span>
               </div>
               <p className={`text-[10px] ${isDarkMode ? 'text-blue-300' : 'text-blue-700'}`}>
-                Bàn đã giải phóng &bull; Không thay đổi giá trị đơn
+                Bàn đang chờ chuyển khoản &bull; Không thay đổi giá trị đơn
               </p>
             </div>
           </div>
-          <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-amber-500">
-            <Lock className="w-3.5 h-3.5" />
-          </div>
+          {onUnlockPaymentLock ? (
+            <button
+              type="button"
+              disabled={isUnlockingLock}
+              onClick={async () => {
+                setIsUnlockingLock(true);
+                try {
+                  await onUnlockPaymentLock();
+                } finally {
+                  setIsUnlockingLock(false);
+                }
+              }}
+              className={`shrink-0 px-2 py-1 rounded-lg text-[10px] font-bold flex items-center gap-1 border transition-colors cursor-pointer disabled:opacity-60 ${
+                isDarkMode
+                  ? 'bg-amber-950/60 border-amber-700 text-amber-200 hover:bg-amber-900/70'
+                  : 'bg-white border-blue-300 text-blue-700 hover:bg-blue-100'
+              }`}
+              title="Mở khóa đơn nếu khách chưa chuyển khoản để chỉnh sửa thêm món"
+            >
+              <Unlock className="w-3 h-3" />
+              <span>{isUnlockingLock ? 'Đang mở...' : 'Mở khóa đơn'}</span>
+            </button>
+          ) : (
+            <div className="shrink-0 flex items-center gap-1 text-[11px] font-bold text-amber-500">
+              <Lock className="w-3.5 h-3.5" />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 1.3b Non-blocking notice when Waiter/Customer requested payment */}
+      {!isAwaitingPayment && currentOrder?.paymentStatus === 'PAYMENT_REQUESTED' && (
+        <div className={`border-b px-3 py-1.5 flex items-center justify-between text-[11px] shrink-0 select-none ${
+          isDarkMode
+            ? 'bg-amber-950/50 border-amber-800/80 text-amber-200'
+            : 'bg-amber-50 border-amber-200 text-amber-800'
+        }`}>
+          <span className="font-bold">Có yêu cầu thanh toán tại bàn (vẫn có thể thêm/sửa món)</span>
         </div>
       )}
 

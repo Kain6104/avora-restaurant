@@ -96,12 +96,13 @@ export default function WaiterEditItemModal({
 
   // Nhận diện món đổi điểm thưởng (chống lạm dụng: không xóa / không đổi số lượng, chỉ sửa ghi chú)
   const isRedeemedReward = Boolean(
-    item?.priceAtSale === 0 &&
-      (item?.discountReason?.includes('đổi điểm') ||
-        item?.discountReason?.includes('Đổi điểm') ||
-        item?.note?.includes('ĐỔI ĐIỂM') ||
-        item?.orderedByName?.includes('Đổi điểm') ||
-        Boolean(item?.orderedById && item?.priceAtSale === 0)),
+    item?.isPointRedemption === true ||
+      item?.pricingMode === 'POINT_REDEMPTION' ||
+      (item?.priceAtSale === 0 &&
+        (item?.discountReason?.includes('đổi điểm') ||
+          item?.discountReason?.includes('Đổi điểm') ||
+          item?.note?.includes('ĐỔI ĐIỂM') ||
+          item?.orderedByName?.includes('Đổi điểm'))),
   );
 
   let redeemedStaffName = '';
@@ -197,7 +198,10 @@ export default function WaiterEditItemModal({
 
   const handleRemoveItem = () => {
     if (isRedeemedReward) {
-      toast.error('Món đổi điểm không được phép xóa hoặc hủy khỏi đơn!');
+      toast.error(
+        'Sản phẩm này đã được khách hàng đổi bằng điểm thưởng nên không thể xóa khỏi đơn hàng để đảm bảo chính xác lịch sử điểm thưởng.',
+        { duration: 4000 }
+      );
       return;
     }
 
@@ -376,10 +380,15 @@ export default function WaiterEditItemModal({
       footer={
         <div className="flex items-center justify-between gap-2 w-full">
           {isRedeemedReward ? (
-            <div className="px-2.5 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold flex items-center gap-1.5 select-none">
-              <Lock size={13} className="text-amber-600" />
-              <span>Món đổi điểm (Cố định)</span>
-            </div>
+            <button
+              type="button"
+              onClick={handleRemoveItem}
+              className="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Sản phẩm đổi bằng điểm thưởng không thể xóa"
+            >
+              <Lock size={13} className="text-amber-600 shrink-0" />
+              <span>Không thể xóa (Đổi điểm)</span>
+            </button>
           ) : (
             <button
               type="button"

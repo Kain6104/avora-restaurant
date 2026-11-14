@@ -167,8 +167,9 @@ export default function AdminOrdersPage() {
           queryParams.branchId = selectedBranchId;
         }
 
-        // Trạng thái đơn
-        const effectiveStatus = modalFilters.status || filterStatus;
+        // Trạng thái đơn (Đơn POS tại trang quản lý chỉ hiển thị trạng thái COMPLETED)
+        const rawStatus = modalFilters.status || filterStatus;
+        const effectiveStatus = orderTab === 'POS' ? 'COMPLETED' : rawStatus;
         if (effectiveStatus) queryParams.status = effectiveStatus;
 
         // Tìm kiếm
@@ -205,7 +206,11 @@ export default function AdminOrdersPage() {
         const res = await fetch(url, { credentials: 'include' });
         if (res.ok) {
           const json = await res.json();
-          setOrders(json.data || []);
+          const rawOrders: Order[] = json.data || [];
+          const visibleOrders = rawOrders.filter(
+            (o) => o.orderSource !== 'POS' || o.status === 'COMPLETED',
+          );
+          setOrders(visibleOrders);
           if (json.meta) setMeta(json.meta);
         }
       } catch (err) {
@@ -568,7 +573,15 @@ export default function AdminOrdersPage() {
               key={tab.id}
               type="button"
               onClick={() => {
-                setOrderTab(tab.id as any);
+                const nextTab = tab.id as 'ALL' | 'POS' | 'ONLINE';
+                setOrderTab(nextTab);
+                if (nextTab === 'POS') {
+                  const currentStatus = modalFilters.status || filterStatus;
+                  if (currentStatus && currentStatus !== 'COMPLETED') {
+                    setFilterStatus('');
+                    setModalFilters((prev) => ({ ...prev, status: '' }));
+                  }
+                }
                 setPage(1);
               }}
               className={`flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-lg sm:rounded-xl text-[11px] sm:text-xs font-bold transition-all cursor-pointer select-none shrink-0 ${
@@ -594,39 +607,55 @@ export default function AdminOrdersPage() {
       </div>
 
       {/* Status KPI Filter Tabs */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5 md:gap-3">
-        {STATUS_KEYS.map((key) => {
-          const isActive = (modalFilters.status || filterStatus) === key;
-          const count = statusCounts[key] ?? 0;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => {
-                const nextStatus = isActive ? '' : key;
-                setFilterStatus(nextStatus);
-                setModalFilters((prev) => ({ ...prev, status: nextStatus }));
-                setPage(1);
-              }}
-              className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all relative overflow-hidden cursor-pointer ${
-                isActive
-                  ? 'bg-red-50/90 border-red-300 text-red-700 shadow-xs'
-                  : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-2xs'
-              }`}
-            >
-              <span className="text-[10px] sm:text-[11px] font-bold block truncate">
-                {getStatusLabel(key)}
-              </span>
-              <span
-                className={`text-sm sm:text-base md:text-lg font-black block mt-0.5 ${
-                  isActive ? 'text-red-600' : 'text-slate-900'
+      <div className="space-y-1.5">
+        {orderTab === 'POS' && (
+          <p className="text-[11px] font-medium text-slate-500">
+            Tab Đơn POS chỉ hiển thị các đơn đã hoàn thành (<span className="font-bold text-slate-700">COMPLETED</span>). Các đơn đang phục vụ hoặc chưa hoàn tất được quản lý trực tiếp trên POS.
+          </p>
+        )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2.5 md:gap-3">
+          {STATUS_KEYS.map((key) => {
+            const isPosRestricted = orderTab === 'POS' && key !== 'COMPLETED';
+            const isActive = !isPosRestricted && (modalFilters.status || filterStatus) === key;
+            const count = isPosRestricted ? 0 : (statusCounts[key] ?? 0);
+            return (
+              <button
+                key={key}
+                type="button"
+                disabled={isPosRestricted}
+                onClick={() => {
+                  if (isPosRestricted) return;
+                  const nextStatus = isActive ? '' : key;
+                  setFilterStatus(nextStatus);
+                  setModalFilters((prev) => ({ ...prev, status: nextStatus }));
+                  setPage(1);
+                }}
+                className={`p-2 sm:p-3 rounded-xl sm:rounded-2xl border text-left transition-all relative overflow-hidden ${
+                  isPosRestricted
+                    ? 'bg-slate-50/70 border-slate-100 text-slate-400 opacity-60 cursor-not-allowed'
+                    : isActive
+                      ? 'bg-red-50/90 border-red-300 text-red-700 shadow-xs cursor-pointer'
+                      : 'bg-white border-slate-100 text-slate-600 hover:border-slate-200 shadow-2xs cursor-pointer'
                 }`}
               >
-                {count.toLocaleString()}
-              </span>
-            </button>
-          );
-        })}
+                <span className="text-[10px] sm:text-[11px] font-bold block truncate">
+                  {getStatusLabel(key)}
+                </span>
+                <span
+                  className={`text-sm sm:text-base md:text-lg font-black block mt-0.5 ${
+                    isPosRestricted
+                      ? 'text-slate-400'
+                      : isActive
+                        ? 'text-red-600'
+                        : 'text-slate-900'
+                  }`}
+                >
+                  {count.toLocaleString()}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Filter Bar with Search & Professional Filter Modal Trigger */}
@@ -690,16 +719,22 @@ export default function AdminOrdersPage() {
       </FilterBar>
 
       {/* Professional Filter Modal Component */}
-      <OrderFilterModal
-        isOpen={isFilterModalOpen}
+      {isFilterModalOpen && (
+        <OrderFilterModal
+          isOpen={isFilterModalOpen}
         onClose={() => setIsFilterModalOpen(false)}
         initialValues={modalFilters}
         branches={filterOptions.branches}
         cashiers={filterOptions.cashiers}
         paymentMethods={filterOptions.paymentMethods}
+        orderTab={orderTab}
         onApply={(newFilters) => {
-          setModalFilters(newFilters);
-          if (newFilters.status) setFilterStatus(newFilters.status);
+          const sanitizedFilters =
+            orderTab === 'POS' && newFilters.status && newFilters.status !== 'COMPLETED'
+              ? { ...newFilters, status: '' }
+              : newFilters;
+          setModalFilters(sanitizedFilters);
+          setFilterStatus(sanitizedFilters.status || '');
           setPage(1);
         }}
         onReset={() => {
@@ -707,7 +742,8 @@ export default function AdminOrdersPage() {
           setFilterStatus('');
           setPage(1);
         }}
-      />
+        />
+      )}
 
       {/* Data Table */}
       <DataTable

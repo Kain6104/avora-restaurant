@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import {
   X,
   Search,
@@ -241,7 +242,7 @@ export const CustomerSelectModal: React.FC<CustomerSelectModalProps> = ({
                 <div className="flex flex-col items-end gap-1">
                   {renderTierBadge(currentCustomer.membershipTier)}
                   <span className={`text-[10px] font-bold ${isDarkMode ? 'text-amber-400' : 'text-amber-700'}`}>
-                    {currentCustomer.points?.toLocaleString('vi-VN')} điểm
+                    <AvoraCoin amount={currentCustomer.points || 0} size="xs" />
                   </span>
                 </div>
               </div>

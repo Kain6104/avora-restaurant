@@ -43,9 +43,27 @@ interface QuickActionItem {
 
 export default function AdminPortalHubPage() {
   const router = useRouter();
-  const { user, capabilities, role, effectivePermissions, availableBranches, selectedBranchId } = useAdmin();
+  const { user, capabilities, role, effectivePermissions, availableBranches, selectedBranchId, loading } = useAdmin();
   const { locale, t } = useLanguage();
   const [timeStr, setTimeStr] = useState<string>('');
+
+  // Tự động chuyển hướng nhân viên BRANCH_WAITER về /admin/pos/waiter
+  useEffect(() => {
+    if (loading) return;
+    const isWaiter =
+      role === 'BRANCH_WAITER' ||
+      capabilities?.user?.role === 'BRANCH_WAITER' ||
+      capabilities?.roles?.some((r) => r.code === 'BRANCH_WAITER');
+    const hasAdminAccess =
+      role === 'ADMIN' ||
+      capabilities?.roles?.some((r) => r.code === 'ADMIN') ||
+      Boolean(effectivePermissions?.['dashboard.view']) ||
+      Boolean(effectivePermissions?.['admin.access']);
+
+    if (isWaiter && !hasAdminAccess) {
+      router.replace('/admin/pos/waiter');
+    }
+  }, [loading, role, capabilities, effectivePermissions, router]);
 
   // Clock
   useEffect(() => {
@@ -229,11 +247,11 @@ export default function AdminPortalHubPage() {
   const allowedActions = useMemo(() => {
     return ACTION_TILES.filter((act) => {
       if (roleCode === 'ADMIN') return true;
-      const perm = effectivePermissions[act.permission];
+      const perm = effectivePermissions?.[act.permission];
       if (!perm) return false;
       if (perm.isGlobal) return true;
-      if (!selectedBranchId || selectedBranchId === 'ALL') return perm.branchIds.length > 0;
-      return perm.branchIds.includes(selectedBranchId);
+      if (!selectedBranchId || selectedBranchId === 'ALL') return (perm.branchIds?.length || 0) > 0;
+      return perm.branchIds?.includes(selectedBranchId);
     });
   }, [effectivePermissions, roleCode, selectedBranchId]);
 
@@ -327,7 +345,7 @@ export default function AdminPortalHubPage() {
           </span>
           <p className="text-sm sm:text-base md:text-lg font-black text-indigo-600 flex items-center gap-1 sm:gap-1.5 truncate">
             <KeyRound size={15} className="shrink-0" />
-            <span>{roleCode === 'ADMIN' ? '177 / 177' : Object.keys(effectivePermissions).length}</span>
+            <span>{roleCode === 'ADMIN' ? '177 / 177' : Object.keys(effectivePermissions || {}).length}</span>
           </p>
           <span className="text-[9px] sm:text-[10px] text-slate-400 mt-0.5 block truncate">
             {locale === 'en' ? 'Active permissions' : 'Quyền hạn hoạt động'}

@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Search, User, Gift, Coins, Loader2, Utensils, Lock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import Image from 'next/image';
 import useSWR from 'swr';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import toast from 'react-hot-toast';
 import { PosOrder, PosBranch } from './pos-types';
 
@@ -367,7 +368,7 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                         <div className="text-slate-400 text-[11px]">{u.phone}</div>
                       </div>
                       <span className="font-black text-[#00875A] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded text-xs">
-                        {(u.points ?? u.currentPoints ?? 0).toLocaleString('vi-VN')} điểm
+                        <AvoraCoin amount={u.points ?? u.currentPoints ?? 0} size="xs" />
                       </span>
                     </button>
                   ))}
@@ -452,8 +453,7 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
                             {item.name}
                           </h5>
                           <div className="flex items-center gap-1.5 mt-1 text-xs font-bold text-amber-500">
-                            <Coins size={14} className="text-amber-500" />
-                            <span>{requiredPoints.toLocaleString('vi-VN')} điểm</span>
+                            <AvoraCoin amount={requiredPoints} size="xs" />
                           </div>
                         </div>
                       </div>
@@ -528,12 +528,12 @@ export const PosRedeemPointsModal: React.FC<PosRedeemPointsModalProps> = ({
               </div>
               <div className="flex items-center justify-between">
                 <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Số điểm trừ:</span>
-                <span className="font-black text-[#da251d]">-{confirmItem.redemptionPoints?.toLocaleString('vi-VN')} điểm</span>
+                <AvoraCoin amount={confirmItem.redemptionPoints || 0} prefix="-" size="xs" className="font-black text-[#da251d]" />
               </div>
               <div className={`flex items-center justify-between pt-2 border-t ${isDarkMode ? 'border-slate-700' : 'border-slate-200'}`}>
                 <span className={isDarkMode ? 'text-slate-400' : 'text-slate-500'}>Điểm còn lại:</span>
                 <span className="font-black text-emerald-500 font-mono">
-                  {Math.max(0, userPoints - (confirmItem.redemptionPoints || 0)).toLocaleString('vi-VN')} điểm
+                  <AvoraCoin amount={Math.max(0, userPoints - (confirmItem.redemptionPoints || 0))} size="xs" />
                 </span>
               </div>
             </div>

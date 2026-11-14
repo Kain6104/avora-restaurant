@@ -1,16 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import Image from 'next/image';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  X,
   CreditCard,
   Banknote,
-  QrCode,
   ArrowRight,
   CheckCircle2,
   Loader2,
+  Landmark,
+  AlertCircle,
+  RefreshCw,
+  QrCode,
 } from 'lucide-react';
+import { QrBottomSheet } from './QrBottomSheet';
 import { QrPaymentMethod } from './qr-types';
 import toast from 'react-hot-toast';
 
@@ -18,263 +20,346 @@ interface QrPaymentRequestModalProps {
   isOpen: boolean;
   token: string;
   totalAmount: number;
+  orderCode?: string;
+  tableName?: string;
   onClose: () => void;
+  onSuccess?: () => void;
 }
 
 export const QrPaymentRequestModal: React.FC<QrPaymentRequestModalProps> = ({
   isOpen,
   token,
   totalAmount,
+  orderCode,
+  tableName,
   onClose,
+  onSuccess,
 }) => {
   const [paymentMethods, setPaymentMethods] = useState<QrPaymentMethod[]>([]);
   const [isLoadingMethods, setIsLoadingMethods] = useState(true);
-  const [selectedMethod, setSelectedMethod] = useState<string>('');
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [selectedCode, setSelectedCode] = useState<string>('');
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [payosCheckoutUrl, setPayosCheckoutUrl] = useState<string | null>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submittedMethod, setSubmittedMethod] = useState<QrPaymentMethod | null>(null);
+
+  const fetchMethods = useCallback(async () => {
+    setIsLoadingMethods(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/qr-order/${token}/payment-methods`, {
+        cache: 'no-store',
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Không thể tải phương thức thanh toán');
+      }
+      const list: QrPaymentMethod[] = data.methods || [];
+      setPaymentMethods(list);
+      if (list.length > 0) {
+        setSelectedCode((prev) =>
+          prev && list.some((m) => m.methodCode === prev) ? prev : list[0].methodCode
+        );
+      } else {
+        setSelectedCode('');
+      }
+    } catch (err: unknown) {
+      setLoadError(err instanceof Error ? err.message : 'Lỗi kết nối máy chủ');
+    } finally {
+      setIsLoadingMethods(false);
+    }
+  }, [token]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      // Reset submitted state on reopen
+      setIsSubmitted(false);
+      setSubmittedMethod(null);
+      setNote('');
+      return;
+    }
+    void fetchMethods();
+  }, [isOpen, fetchMethods]);
 
-    let isMounted = true;
-    const fetchMethods = async () => {
-      setIsLoadingMethods(true);
-      try {
-        const res = await fetch(`/api/qr-order/${token}/payment-methods`);
-        const data = await res.json();
-        if (isMounted && data.success && data.methods) {
-          setPaymentMethods(data.methods);
-          if (data.methods.length > 0) {
-            setSelectedMethod(data.methods[0].methodCode);
-          }
-        }
-      } catch (err) {
-        console.error('Lỗi tải phương thức thanh toán', err);
-      } finally {
-        if (isMounted) setIsLoadingMethods(false);
-      }
-    };
-
-    fetchMethods();
-    return () => {
-      isMounted = false;
-    };
-  }, [isOpen, token]);
-
-  if (!isOpen) return null;
+  const selectedMethodObj = useMemo(
+    () => paymentMethods.find((m) => m.methodCode === selectedCode) || null,
+    [paymentMethods, selectedCode]
+  );
 
   const handleRequestPayment = async () => {
-    if (!selectedMethod) {
+    if (!selectedMethodObj) {
       toast.error('Vui lòng chọn phương thức thanh toán');
+      return;
+    }
+
+    // 1. Kiểm tra mạng
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      toast.error('Không thể gửi yêu cầu, vui lòng thử lại hoặc gọi trực tiếp phục vụ');
+      return;
+    }
+
+    // 2. Chống spam Cooldown 15 giây
+    const COOLDOWN_MS = 15000;
+    const lastPaymentTime = Number(
+      (typeof window !== 'undefined' && localStorage.getItem('avora_qr_last_payment_time')) || 0
+    );
+    const elapsed = Date.now() - lastPaymentTime;
+    if (elapsed < COOLDOWN_MS) {
+      toast('Bạn vừa gửi yêu cầu, vui lòng đợi 15 giây', { icon: '⏳' });
       return;
     }
 
     setIsSubmitting(true);
     try {
       const deviceSessionId =
-        (typeof window !== 'undefined' && localStorage.getItem('avora_qr_device_id')) || 'guest-device';
+        (typeof window !== 'undefined' && localStorage.getItem('avora_qr_device_id')) ||
+        'guest-device';
 
-      const res = await fetch(`/api/qr-order/${token}/payment-request`, {
+      const res = await fetch(`/api/qr-order/${token}/service-requests`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          paymentMethodCode: selectedMethod,
+          requestType: 'PAYMENT',
+          paymentMethodCode: selectedMethodObj.methodCode,
           deviceSessionId,
           note: note.trim() || undefined,
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.message || 'Lỗi gửi yêu cầu thanh toán');
+      if (res.status === 401 || res.status === 404) {
+        toast.error('Phiên gọi món đã kết thúc');
+        return;
       }
 
-      if (data.request?.checkoutUrl || data.data?.checkoutUrl) {
-        setPayosCheckoutUrl(data.request?.checkoutUrl || data.data?.checkoutUrl);
-        toast.success('Đã tạo mã QR thanh toán PayOS');
-      } else {
-        toast.success('Đã gửi yêu cầu thanh toán tới thu ngân!');
-        onClose();
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || 'Không thể gửi yêu cầu thanh toán');
       }
-    } catch (err: any) {
-      toast.error(err.message || 'Lỗi gửi yêu cầu thanh toán');
+
+      if (data.isDuplicate) {
+        toast('Đang có yêu cầu chờ phục vụ tiếp nhận, vui lòng đợi trong giây lát', { icon: '⏳' });
+        setSubmittedMethod(selectedMethodObj);
+        setIsSubmitted(true);
+        return;
+      }
+
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('avora_qr_last_payment_time', Date.now().toString());
+      }
+
+      toast.success('Yêu cầu đã được gửi tới phục vụ');
+      setSubmittedMethod(selectedMethodObj);
+      setIsSubmitted(true);
+      onSuccess?.();
+    } catch (err: unknown) {
+      toast.error('Không thể gửi yêu cầu, vui lòng thử lại hoặc gọi trực tiếp phục vụ');
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const getMethodIcon = (method: QrPaymentMethod) => {
-    if (method.iconUrl) {
+    const code = method.methodCode.toUpperCase();
+    const gw = (method.gatewayType || '').toUpperCase();
+    if (code === 'CASH' || gw === 'CASH') {
       return (
-        <div className="w-8 h-8 rounded-xl relative overflow-hidden bg-slate-100 shrink-0">
-          <Image src={method.iconUrl} alt={method.name} fill className="object-contain" />
+        <div className="w-8 h-8 rounded-xl bg-emerald-50 border border-emerald-200/80 text-emerald-600 flex items-center justify-center shrink-0">
+          <Banknote className="w-4 h-4" />
         </div>
       );
     }
-    if (method.methodCode === 'CASH') {
+    if (gw === 'TRANSFER' || code.includes('BANK') || code.includes('TRANSFER')) {
       return (
-        <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-          <Banknote className="w-5 h-5" />
+        <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 text-blue-600 flex items-center justify-center shrink-0">
+          <Landmark className="w-4 h-4" />
         </div>
       );
     }
-    if (method.methodCode === 'PAYOS' || method.gatewayType === 'PAYOS') {
+    if (gw === 'PAYOS' || gw === 'SEPAY_QR') {
       return (
-        <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-          <QrCode className="w-5 h-5" />
+        <div className="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-200/80 text-indigo-600 flex items-center justify-center shrink-0">
+          <QrCode className="w-4 h-4" />
         </div>
       );
     }
     return (
-      <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
-        <CreditCard className="w-5 h-5" />
+      <div className="w-8 h-8 rounded-xl bg-slate-100 border border-slate-200/80 text-slate-700 flex items-center justify-center shrink-0">
+        <CreditCard className="w-4 h-4" />
       </div>
     );
   };
 
+  const footerNode = isSubmitted ? (
+    <button
+      type="button"
+      onClick={onClose}
+      className="w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all active:scale-[0.99] cursor-pointer"
+    >
+      Đóng
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={handleRequestPayment}
+      disabled={isSubmitting || !selectedMethodObj}
+      className="w-full h-11 rounded-xl bg-[#DA251D] hover:bg-[#b81d16] active:scale-[0.99] disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs"
+    >
+      <span>{isSubmitting ? 'Đang gửi yêu cầu...' : 'Gửi yêu cầu thanh toán'}</span>
+      <ArrowRight className="w-4 h-4" />
+    </button>
+  );
+
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 select-none overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl my-auto space-y-5 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-              <CreditCard className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">Gọi thanh toán</h3>
-              <p className="text-[11px] text-slate-400">
-                Tổng hóa đơn: <strong className="text-[#da251d] font-mono">{totalAmount.toLocaleString('vi-VN')}đ</strong>
-              </p>
-            </div>
+    <QrBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isSubmitted ? 'Yêu cầu thanh toán' : 'Gọi thanh toán'}
+      subtitle={
+        isSubmitted
+          ? tableName ? `Bàn ${tableName}` : undefined
+          : `Tạm tính: ${totalAmount.toLocaleString('vi-VN')}đ`
+      }
+      headerIcon={<CreditCard className="w-4 h-4 text-[#DA251D]" />}
+      footer={footerNode}
+    >
+      {isSubmitted && submittedMethod ? (
+        <div className="py-2 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-full bg-emerald-50 border border-emerald-200/80 flex items-center justify-center text-emerald-600 shadow-2xs">
+            <CheckCircle2 className="w-8 h-8" />
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div>
+            <h3 className="text-base font-black text-slate-900 tracking-tight">
+              ĐÃ GỬI YÊU CẦU THANH TOÁN
+            </h3>
+            <p className="text-xs text-slate-600 mt-1 max-w-xs mx-auto leading-relaxed">
+              Nhân viên sẽ đến bàn hỗ trợ bạn thanh toán.
+            </p>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 text-left text-xs space-y-2">
+            {tableName && (
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Bàn phục vụ:</span>
+                <span className="font-bold text-slate-900">{tableName}</span>
+              </div>
+            )}
+            {orderCode && (
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500 font-medium">Mã đơn:</span>
+                <span className="font-mono font-bold text-slate-900">#{orderCode}</span>
+              </div>
+            )}
+            <div className="flex justify-between items-center">
+              <span className="text-slate-500 font-medium">Phương thức:</span>
+              <span className="font-bold text-slate-900">{submittedMethod.name}</span>
+            </div>
+            <div className="flex justify-between items-center pt-1 border-t border-slate-200/60">
+              <span className="text-slate-500 font-medium">Tạm tính:</span>
+              <span className="font-black text-sm text-[#DA251D]">
+                {totalAmount.toLocaleString('vi-VN')}đ
+              </span>
+            </div>
+            {note.trim() && (
+              <div className="pt-1 border-t border-slate-200/60">
+                <span className="text-slate-500 font-medium block mb-0.5">Ghi chú:</span>
+                <span className="text-slate-700 italic block">{note.trim()}</span>
+              </div>
+            )}
+          </div>
         </div>
+      ) : (
+        <div className="space-y-3.5">
+          <div>
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-2">
+              Chọn hình thức thanh toán
+            </label>
 
-        {/* If PayOS checkout url generated */}
-        {payosCheckoutUrl ? (
-          <div className="space-y-4 text-center py-2">
-            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200 space-y-2">
-              <CheckCircle2 className="w-8 h-8 text-blue-600 mx-auto" />
-              <h4 className="text-sm font-black text-slate-900">Liên kết thanh toán trực tuyến</h4>
-              <p className="text-xs text-slate-500">
-                Nhấn bên dưới để chuyển sang cổng thanh toán bảo mật PayOS
-              </p>
-            </div>
-
-            <a
-              href={payosCheckoutUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="w-full h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 transition-all"
-            >
-              <span>MỞ CỔNG THANH TOÁN PAYOS</span>
-              <ArrowRight className="w-4 h-4" />
-            </a>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-full py-2 text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
-            >
-              Đóng cửa sổ
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Payment Methods List from DB */}
-            <div className="space-y-2.5">
-              <label className="text-xs font-black text-slate-800 uppercase tracking-wide block">
-                Chọn phương thức thanh toán
-              </label>
-
-              {isLoadingMethods ? (
-                <div className="py-8 text-center text-slate-400 flex items-center justify-center gap-2">
-                  <Loader2 className="w-4 h-4 animate-spin text-[#da251d]" />
-                  <span className="text-xs">Đang tải phương thức thanh toán...</span>
+            {isLoadingMethods ? (
+              <div className="py-8 text-center text-slate-400 flex items-center justify-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-[#DA251D]" />
+                <span className="text-xs font-medium">Đang tải phương thức khả dụng...</span>
+              </div>
+            ) : loadError ? (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center justify-between gap-2 text-xs text-rose-700">
+                <div className="flex items-center gap-2 min-w-0">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{loadError}</span>
                 </div>
-              ) : paymentMethods.length === 0 ? (
-                <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500 text-center">
-                  Vui lòng liên hệ trực tiếp nhân viên phục vụ tại bàn.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {paymentMethods.map((method) => {
-                    const isSelected = selectedMethod === method.methodCode;
-                    return (
-                      <button
-                        key={method.id}
-                        type="button"
-                        onClick={() => setSelectedMethod(method.methodCode)}
-                        className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                <button
+                  type="button"
+                  onClick={fetchMethods}
+                  className="inline-flex items-center gap-1 font-bold text-rose-800 underline shrink-0 cursor-pointer"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Thử lại</span>
+                </button>
+              </div>
+            ) : paymentMethods.length === 0 ? (
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 text-center">
+                Hiện chưa có phương thức thanh toán khả dụng. Vui lòng nhấn gọi nhân viên để được hỗ trợ tại bàn.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {paymentMethods.map((method) => {
+                  const isSelected = selectedCode === method.methodCode;
+                  return (
+                    <button
+                      key={method.id}
+                      type="button"
+                      onClick={() => setSelectedCode(method.methodCode)}
+                      className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                        isSelected
+                          ? 'bg-red-50/70 border-[#DA251D] text-slate-900 shadow-2xs'
+                          : 'bg-white border-slate-200/80 text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {getMethodIcon(method)}
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold block truncate">{method.name}</span>
+                          <span className="text-[11px] text-slate-500 block truncate mt-0.5">
+                            {method.description ||
+                              (method.gatewayType === 'CASH'
+                                ? 'Nhân viên thu tiền mặt tại bàn'
+                                : method.gatewayType === 'TRANSFER'
+                                ? 'Nhân viên hướng dẫn chuyển khoản tại bàn'
+                                : 'Nhân viên mang máy quẹt thẻ đến bàn')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
                           isSelected
-                            ? 'bg-blue-50/70 border-blue-400 text-slate-900 ring-1 ring-blue-400/30'
-                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                            ? 'bg-[#DA251D] border-[#DA251D]'
+                            : 'border-slate-300 bg-white'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          {getMethodIcon(method)}
-                          <div>
-                            <span className="text-xs font-black block">{method.name}</span>
-                            <span className="text-[10px] text-slate-400">
-                              {method.description ||
-                                (method.methodCode === 'CASH'
-                                  ? 'Thanh toán trực tiếp với nhân viên'
-                                  : method.methodCode === 'PAYOS'
-                                  ? 'Quét QR thanh toán trực tuyến'
-                                  : 'Nhân viên mang máy POS đến bàn')}
-                            </span>
-                          </div>
-                        </div>
+                        {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
 
-                        <div
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSelected
-                              ? 'bg-blue-600 border-blue-600'
-                              : 'border-slate-300 bg-white'
-                          }`}
-                        >
-                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Note input */}
-            <div>
-              <input
-                type="text"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Ghi chú thêm (VD: Xuất hóa đơn VAT...)"
-                className="w-full h-11 px-3.5 rounded-2xl bg-slate-50 border border-slate-200 focus:border-blue-400 focus:bg-white text-xs outline-none transition-all"
-              />
-            </div>
-
-            {/* Submit button */}
-            <button
-              type="button"
-              onClick={handleRequestPayment}
-              disabled={isSubmitting || !selectedMethod}
-              className="w-full h-12 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-50 text-white font-black text-xs uppercase tracking-wide flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 transition-all cursor-pointer"
-            >
-              <span>{isSubmitting ? 'ĐANG GỬI...' : 'GỬI YÊU CẦU THANH TOÁN'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </>
-        )}
-      </div>
-    </div>
+          <div>
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+              Ghi chú cho thu ngân (Tùy chọn)
+            </label>
+            <input
+              type="text"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Ví dụ: Cần tách bill, lấy hóa đơn VAT..."
+              className="w-full h-11 px-3.5 rounded-xl bg-slate-50 border border-slate-200/80 focus:border-[#DA251D] focus:bg-white text-xs font-medium outline-none transition-all placeholder:text-slate-400"
+            />
+          </div>
+        </div>
+      )}
+    </QrBottomSheet>
   );
 };

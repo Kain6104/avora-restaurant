@@ -1,14 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   X,
   Calendar,
   Building2,
   User,
   Check,
-  RotateCcw,
-  SlidersHorizontal,
   Cloud,
 } from 'lucide-react';
 
@@ -43,6 +41,7 @@ interface OrderFilterModalProps {
   branches: Array<{ id: string; name: string }>;
   cashiers: string[];
   paymentMethods: Array<{ id: string; name: string; methodCode: string }>;
+  orderTab?: 'ALL' | 'POS' | 'ONLINE';
 }
 
 export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
@@ -54,14 +53,13 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
   branches,
   cashiers,
   paymentMethods,
+  orderTab = 'ALL',
 }) => {
-  const [values, setValues] = useState<OrderFilterValues>(initialValues);
-
-  useEffect(() => {
-    if (isOpen) {
-      setValues(initialValues);
-    }
-  }, [isOpen, initialValues]);
+  const [values, setValues] = useState<OrderFilterValues>(() =>
+    orderTab === 'POS' && initialValues.status && initialValues.status !== 'COMPLETED'
+      ? { ...initialValues, status: '' }
+      : initialValues,
+  );
 
   if (!isOpen) return null;
 
@@ -131,7 +129,7 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">Chi nhánh</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none">🏢</span>
+              <Building2 className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={values.branchId}
                 onChange={(e) => setValues((v) => ({ ...v, branchId: e.target.value }))}
@@ -152,7 +150,7 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
           <div className="space-y-1.5">
             <label className="text-xs font-semibold text-slate-700 block">Thu ngân</label>
             <div className="relative">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm pointer-events-none">👤</span>
+              <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <select
                 value={values.cashierName}
                 onChange={(e) => setValues((v) => ({ ...v, cashierName: e.target.value }))}
@@ -178,16 +176,30 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
                 onChange={(e) => setValues((v) => ({ ...v, status: e.target.value }))}
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-all shadow-2xs cursor-pointer appearance-none"
               >
-                <option value="">Tất cả trạng thái</option>
-                <option value="PENDING">Chờ xác nhận</option>
-                <option value="CONFIRMED">Đã xác nhận</option>
-                <option value="PREPARING">Đang chuẩn bị</option>
-                <option value="DELIVERING">Đang giao</option>
-                <option value="COMPLETED">Hoàn thành</option>
-                <option value="CANCELLED">Đã hủy</option>
+                {orderTab === 'POS' ? (
+                  <>
+                    <option value="">Tất cả đơn POS (Hoàn thành)</option>
+                    <option value="COMPLETED">Hoàn thành</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="">Tất cả trạng thái</option>
+                    <option value="PENDING">Chờ xác nhận</option>
+                    <option value="CONFIRMED">Đã xác nhận</option>
+                    <option value="PREPARING">Đang chuẩn bị</option>
+                    <option value="DELIVERING">Đang giao</option>
+                    <option value="COMPLETED">Hoàn thành</option>
+                    <option value="CANCELLED">Đã hủy</option>
+                  </>
+                )}
               </select>
               <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 text-xs">▼</div>
             </div>
+            {orderTab === 'POS' && (
+              <p className="text-[11px] text-slate-500">
+                Đơn POS tại mục này chỉ hiển thị các đơn đã Hoàn thành.
+              </p>
+            )}
           </div>
 
           {/* 5 & 6. Grid 2 cột: Trạng thái HĐĐT & Phương thức thanh toán */}
@@ -246,7 +258,8 @@ export const OrderFilterModal: React.FC<OrderFilterModalProps> = ({
                 onChange={(e) => setValues((v) => ({ ...v, sortBy: e.target.value }))}
                 className="w-full px-3 py-2 bg-white border border-purple-400 rounded-xl text-xs font-semibold text-slate-800 outline-none focus:border-purple-600 focus:ring-1 focus:ring-purple-600 transition-all shadow-2xs cursor-pointer appearance-none"
               >
-                <option value="date_desc">Mặc định (Thời gian mới nhất)</option>
+                <option value="date_desc">Mặc định (Thời gian tạo mới nhất)</option>
+                <option value="completed_desc">Thời gian hoàn thành mới nhất</option>
                 <option value="amount_desc">Giá trị: Cao đến thấp</option>
                 <option value="amount_asc">Giá trị: Thấp đến cao</option>
                 <option value="date_asc">Thời gian: Cũ nhất trước</option>

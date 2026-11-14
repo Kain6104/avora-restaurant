@@ -36,11 +36,13 @@ export function AdminPageGuard({
   const targetBranch = branchId !== undefined ? branchId : selectedBranchId;
 
   // CHỈ tài khoản khách hàng thuần túy (USER không có bất kỳ vai trò/quyền nhân sự nào) mới bị chặn 404
+  // Quan trọng: Chỉ đánh giá sau khi đã tải xong quyền (!loading)
   const isPureCustomer =
+    !loading &&
     (user?.role === 'USER' || capabilities?.user?.role === 'USER' || role === 'USER') &&
-    (!capabilities?.assignments || capabilities.assignments.length === 0) &&
-    (!capabilities?.roles || capabilities.roles.length === 0) &&
-    (!capabilities?.effectivePermissions || Object.keys(capabilities.effectivePermissions).length === 0);
+    (capabilities?.assignments?.length ?? 0) === 0 &&
+    (capabilities?.roles?.length ?? 0) === 0 &&
+    Object.keys(capabilities?.effectivePermissions || {}).length === 0;
 
   if (isPureCustomer) {
     return <AdminUserForbidden404 />;
@@ -194,12 +196,21 @@ export function AdminPageGuard({
             >
               <ArrowLeft className="w-4 h-4" /> Quay lại
             </button>
-            <Link
-              href="/admin"
-              className="inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition shadow-xs hover:shadow-md cursor-pointer"
-            >
-              <Home className="w-4 h-4" /> Về cổng quản trị
-            </Link>
+            {can('waiter.access', targetBranch) || role === 'BRANCH_WAITER' ? (
+              <Link
+                href="/admin/pos/waiter"
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition shadow-xs hover:shadow-md cursor-pointer"
+              >
+                <UtensilsCrossed className="w-4 h-4" /> Về phục vụ bàn
+              </Link>
+            ) : (
+              <Link
+                href="/admin"
+                className="inline-flex items-center gap-2 px-5 py-2.5 text-xs sm:text-sm font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl transition shadow-xs hover:shadow-md cursor-pointer"
+              >
+                <Home className="w-4 h-4" /> Về cổng quản trị
+              </Link>
+            )}
           </div>
         </div>
       </div>

@@ -288,7 +288,6 @@ export const OrdersListPanel: React.FC<OrdersListPanelProps> = ({
                 const isPaymentRequested = o.paymentStatus === 'PAYMENT_REQUESTED' || o.status === 'HELD';
                 const isPriceLockedOrder =
                   isAwaitingConfirmation ||
-                  o.paymentStatus === 'PAYMENT_REQUESTED' ||
                   o.paymentStatus === 'PAID' ||
                   (o as any).paymentIntentStatus === 'ACTIVE' ||
                   Boolean((o as any).paymentLockedAt);

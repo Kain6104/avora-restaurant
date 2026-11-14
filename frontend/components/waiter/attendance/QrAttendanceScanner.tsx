@@ -428,10 +428,7 @@ export default function QrAttendanceScanner({ isOpen, onClose, onSuccess }: QrAt
             onSuccess(d);
           }
 
-          // Tự đóng sau 2.2 giây để người dùng đọc thông báo thành công
-          setTimeout(() => {
-            onClose();
-          }, 2200);
+          // Giữ modal mở để nhân viên xem thông tin chấm công đầy đủ và chủ động bấm nút Đóng
         } else {
           playBeep(false);
           triggerHaptic(false);
@@ -851,9 +848,13 @@ export default function QrAttendanceScanner({ isOpen, onClose, onSuccess }: QrAt
               <button
                 type="button"
                 onClick={onClose}
-                className="w-full py-2.5 rounded-xl bg-white/20 hover:bg-white/30 active:scale-95 text-white font-bold text-xs transition-all cursor-pointer"
+                className={`w-full py-3 rounded-xl font-bold text-xs transition-all cursor-pointer active:scale-95 ${
+                  scanResult.success
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/25'
+                    : 'bg-white/20 hover:bg-white/30 text-white'
+                }`}
               >
-                Đóng
+                {scanResult.success ? 'Xác nhận & Đóng' : 'Đóng'}
               </button>
             </div>
           </div>

@@ -14,6 +14,7 @@ export interface QrSessionBuffetPackage {
   id: string;
   name: string;
   description?: string;
+  maxItemsPerSubmission?: number | null;
   items: Array<{
     id: string;
     productId: string;
@@ -46,6 +47,12 @@ export interface QrSessionOrder {
   customerPhone?: string;
   userId?: string | null;
   hasRedeemedPoints?: boolean;
+  paymentStatus?: string;
+  isInvoiceRequested?: boolean;
+  invoiceTaxCode?: string | null;
+  invoiceCompanyName?: string | null;
+  invoiceAddress?: string | null;
+  invoiceEmail?: string | null;
   user?: {
     id: string;
     fullName: string;
@@ -80,6 +87,7 @@ export interface QrGuest {
     fullName: string;
     phone?: string;
     email?: string;
+    avatarUrl?: string | null;
     points: number;
     memberCode?: string;
     membershipTier?: {
@@ -95,30 +103,49 @@ export interface QrProductOptionItem {
   name: string;
   priceAdjustment: number;
   isDefault: boolean;
+  available?: boolean;
+  maxQuantity?: number;
+  displayOrder?: number;
 }
 
 export interface QrProductOptionGroup {
   id: string;
   name: string;
-  minSelections: number;
-  maxSelections: number;
-  items: QrProductOptionItem[];
+  isRequired?: boolean;
+  multipleChoice?: boolean;
+  minSelect?: number;
+  maxSelect?: number;
+  minSelections?: number;
+  maxSelections?: number;
+  displayOrder?: number;
+  items?: QrProductOptionItem[];
+  optionItems?: QrProductOptionItem[];
 }
 
 export interface QrProduct {
   id: string;
+  itemCode?: string;
   name: string;
   description?: string;
   price: number;
+  oldPrice?: number;
   originalPrice?: number;
   effectivePrice: number;
   imageUrl?: string;
   unit?: string;
+  badge?: string | null;
+  isBestSeller?: boolean;
+  isNew?: boolean;
   available: boolean;
   categoryId?: string;
   categoryName?: string;
+  categoryDisplayOrder?: number;
   optionGroups?: QrProductOptionGroup[];
   isBuffetIncluded?: boolean;
+  maxQuantityPerRound?: number | null;
+  maxTotalQuantity?: number | null;
+  usedTotalQuantity?: number;
+  remainingTotalQuantity?: number | null;
 }
 
 export interface QrCategory {
@@ -126,6 +153,7 @@ export interface QrCategory {
   name: string;
   slug?: string;
   icon?: string;
+  displayOrder?: number;
 }
 
 export interface QrCartOption {
@@ -156,6 +184,10 @@ export interface QrPaymentMethod {
   name: string;
   iconUrl?: string;
   description?: string;
+  minOrderValue?: number;
+  bankCode?: string | null;
+  accountNumber?: string | null;
+  accountName?: string | null;
   displayOrder: number;
 }
 
@@ -184,4 +216,65 @@ export interface QrTableOrderHistory {
   subTotal: number;
   guestCount: number;
   items: QrOrderItemDisplay[];
+}
+
+export interface QrGoogleAuthConfig {
+  enabled: boolean;
+  clientId: string | null;
+  oauthRedirectPath: string;
+}
+
+export type QrActivityType =
+  | 'ROUND'
+  | 'CALL_STAFF'
+  | 'PAYMENT_REQUEST'
+  | 'OTHER_REQUEST'
+  | 'REWARD_REDEEM'
+  | 'PAYMENT_COMPLETED';
+
+export interface QrActivityRoundItem {
+  id: string;
+  productId: string;
+  productName: string;
+  imageUrl?: string | null;
+  quantity: number;
+  pricingMode?: 'REGULAR' | 'BUFFET_TICKET' | 'BUFFET_INCLUDED' | string;
+  priceAtSale?: number;
+  kitchenStatus?: string;
+  optionsTextSnapshot?: string | null;
+  note?: string | null;
+}
+
+export interface QrActivityItem {
+  id: string;
+  type: QrActivityType;
+  title: string;
+  description?: string;
+  status: string;
+  timestamp: string;
+  actorName?: string | null;
+  metadata?: {
+    roundId?: string;
+    roundNumber?: number;
+    itemCount?: number;
+    items?: QrActivityRoundItem[];
+    staffName?: string | null;
+    approvedAt?: string | null;
+    rejectReason?: string | null;
+    statusMessage?: string | null;
+    pointsDelta?: number;
+    points?: number;
+    pointsRedeemed?: number;
+    [key: string]: unknown;
+  } | null;
+}
+
+export interface QrActivityResponse {
+  success: boolean;
+  orderPaymentStatus?: string;
+  summary: {
+    totalEvents: number;
+    pendingRequests: number;
+  };
+  activities: QrActivityItem[];
 }

@@ -35,6 +35,8 @@ import { logoutUser } from '@/lib/auth';
 import { useAdmin } from '@/contexts/AdminContext';
 import ResponsiveModal from '@/components/ui/ResponsiveModal';
 import PersonalTimecardView from './PersonalTimecardView';
+import WebPushSettingsCard from './WebPushSettingsCard';
+import StaffNotificationCategoryCard from './StaffNotificationCategoryCard';
 
 type SettingsSubScreen =
   | 'MAIN'
@@ -344,7 +346,18 @@ export default function SettingsView() {
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs space-y-4">
+          {/* Cài đặt danh mục thông báo nhân viên */}
+          <StaffNotificationCategoryCard />
+
+          {/* Card Web Push chuyên sâu cho thiết bị */}
+          <WebPushSettingsCard branchId={activeBranchId || undefined} />
+
+          {/* Âm thanh & Rung nội bộ ứng dụng */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-2xs space-y-4">
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              Âm thanh & Rung trong ứng dụng
+            </h3>
+
             {/* Âm thanh chuông báo */}
             <div className="flex items-center justify-between">
               <div>
@@ -387,27 +400,10 @@ export default function SettingsView() {
               </button>
             </div>
 
-            {/* Quyền Web Push */}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <div>
-                <div className="font-bold text-xs text-slate-900">Thông báo thiết bị (Web Push)</div>
-                <div className="text-[11px] text-slate-500">
-                  {pushStatus === 'granted' ? 'Đã cấp quyền thông báo' : 'Chưa kích hoạt'}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={requestPushPermission}
-                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 rounded-xl font-bold text-xs transition-all"
-              >
-                {pushStatus === 'granted' ? 'Đã bật' : 'Kích hoạt'}
-              </button>
-            </div>
-
             <button
               type="button"
               onClick={playTestSound}
-              className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 rounded-2xl font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Volume2 size={16} />
               <span>Phát thử âm thanh</span>

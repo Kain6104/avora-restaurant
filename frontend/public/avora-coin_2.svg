@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Đồng xu AVORA</title>
+  <desc id="desc">Đồng xu vàng ba chiều với biểu tượng AVORA kết hợp muỗng và nĩa, nền trong suốt.</desc>
+  <defs>
+    <radialGradient id="face" cx="35%" cy="24%" r="78%">
+      <stop offset="0" stop-color="#ffd85a"/>
+      <stop offset=".32" stop-color="#ffb321"/>
+      <stop offset=".72" stop-color="#ed8507"/>
+      <stop offset="1" stop-color="#c65a00"/>
+    </radialGradient>
+    <linearGradient id="rim" x1=".12" y1=".05" x2=".83" y2=".92">
+      <stop offset="0" stop-color="#fffce0"/>
+      <stop offset=".12" stop-color="#ffe76c"/>
+      <stop offset=".31" stop-color="#ffb50d"/>
+      <stop offset=".48" stop-color="#fff8bd"/>
+      <stop offset=".67" stop-color="#ffc322"/>
+      <stop offset=".88" stop-color="#fff5a0"/>
+      <stop offset="1" stop-color="#e47600"/>
+    </linearGradient>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#d96d00"/>
+      <stop offset=".45" stop-color="#a73b00"/>
+      <stop offset="1" stop-color="#6d2100"/>
+    </linearGradient>
+    <linearGradient id="mark" x1=".17" y1=".08" x2=".72" y2=".92">
+      <stop stop-color="#fffef1"/>
+      <stop offset=".25" stop-color="#fff7ba"/>
+      <stop offset=".58" stop-color="#ffd967"/>
+      <stop offset="1" stop-color="#ffb932"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#fff" stop-opacity=".72"/>
+      <stop offset=".3" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".72" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff8aa" stop-opacity=".35"/>
+    </linearGradient>
+    <filter id="coinShadow" x="-35%" y="-35%" width="180%" height="190%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="25" result="blur"/>
+      <feOffset dy="30" result="off"/>
+      <feColorMatrix in="off" values="0 0 0 0 .28 0 0 0 0 .09 0 0 0 0 0 0 0 0 .7 0"/>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="logoShadow" x="-30%" y="-30%" width="170%" height="180%">
+      <feDropShadow dx="10" dy="17" stdDeviation="8" flood-color="#843000" flood-opacity=".9"/>
+    </filter>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="9" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <clipPath id="faceClip"><circle cx="512" cy="480" r="353"/></clipPath>
+  </defs>
+
+  <!-- thick lower edge -->
+  <g filter="url(#coinShadow)">
+    <circle cx="512" cy="523" r="448" fill="url(#edge)"/>
+    <circle cx="512" cy="501" r="448" fill="#ed8d07"/>
+    <circle cx="512" cy="480" r="448" fill="url(#rim)"/>
+    <circle cx="512" cy="480" r="404" fill="#9f3900"/>
+    <circle cx="512" cy="480" r="385" fill="url(#rim)"/>
+    <circle cx="512" cy="480" r="353" fill="url(#face)"/>
+    <circle cx="512" cy="480" r="354" fill="none" stroke="#bd5200" stroke-width="8" opacity=".75"/>
+    <circle cx="512" cy="480" r="375" fill="none" stroke="#fff8b6" stroke-width="8" opacity=".82"/>
+    <circle cx="512" cy="480" r="423" fill="none" stroke="#fffbd0" stroke-width="13" opacity=".86"/>
+  </g>
+
+  <!-- face highlights -->
+  <g clip-path="url(#faceClip)" opacity=".95">
+    <path d="M190 255C345 112 611 92 793 213C610 167 390 203 246 360Z" fill="url(#shine)"/>
+    <path d="M188 604C304 729 546 790 759 694C602 734 380 688 242 562Z" fill="#fff09a" opacity=".13"/>
+    <path d="M342 130L390 833" stroke="#fff9b4" stroke-width="16" opacity=".13"/>
+    <path d="M780 180L688 801" stroke="#fff" stroke-width="10" opacity=".08"/>
+  </g>
+
+  <!-- AVORA A mark, redrawn to follow the supplied logo proportions -->
+  <g filter="url(#logoShadow)" fill="url(#mark)">
+    <!-- continuous A: narrow crown, long right leg, swept left foot -->
+    <path d="M221 611
+             C276 538 326 461 372 382
+             L450 259
+             C469 229 490 213 514 214
+             C542 214 563 236 584 272
+             L760 586
+             C775 613 762 629 738 629
+             L683 629
+             C660 629 645 617 634 597
+             L522 392
+             C510 370 500 370 487 392
+             L409 522
+             C365 595 308 630 224 633
+             C207 634 207 625 221 611Z"/>
+
+    <!-- spoon: small diagonal bowl with a long tapered handle flowing left -->
+    <ellipse cx="476" cy="477" rx="34" ry="45" transform="rotate(43 476 477)"/>
+    <path d="M452 502
+             C411 541 372 570 321 592
+             C371 586 415 568 466 526
+             L499 498 L481 482Z"/>
+
+    <!-- fork: compact, placed below the spoon exactly like the reference -->
+    <path d="M505 553
+             C542 528 571 511 610 494
+             L624 516
+             C588 533 557 552 527 577
+             L473 621 L416 621
+             C447 599 477 576 505 553Z"/>
+    <path d="M605 496L653 468L661 481L613 509Z"/>
+    <path d="M613 508L665 482L672 496L621 521Z"/>
+    <path d="M621 521L676 498L682 513L629 534Z"/>
+    <path d="M628 534L684 516L689 531L637 548Z"/>
+  </g>
+
+  <!-- restrained embossed highlights on the mark -->
+  <path d="M226 611C290 526 347 438 397 352L457 258C473 233 493 219 515 220C480 241 462 271 442 304L278 591C260 602 243 608 226 611Z" fill="#fff" opacity=".28"/>
+  <path d="M557 263L749 604H704L540 300Z" fill="#fff" opacity=".14"/>
+
+  <!-- star glints -->
+  <g fill="#fffde1" filter="url(#glow)">
+    <path d="M180 261L194 310L243 324L194 338L180 387L166 338L117 324L166 310Z"/>
+    <path d="M267 810L284 866L340 883L284 900L267 956L250 900L194 883L250 866Z"/>
+  </g>
+</svg>

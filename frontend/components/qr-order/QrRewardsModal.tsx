@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Gift, ShieldCheck, Loader2 } from 'lucide-react';
+import { Gift, ShieldCheck, Loader2 } from 'lucide-react';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
+import { QrBottomSheet } from './QrBottomSheet';
 import { QrGuest } from './qr-types';
 import toast from 'react-hot-toast';
 
@@ -11,6 +13,14 @@ interface QrRewardsModalProps {
   guest: QrGuest;
   onClose: () => void;
   onOpenRegister: () => void;
+  onRedeemSuccess?: () => void;
+}
+
+interface RewardModalItem {
+  id: string;
+  name: string;
+  redemptionPoints?: number;
+  points?: number;
 }
 
 export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
@@ -19,8 +29,9 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
   guest,
   onClose,
   onOpenRegister,
+  onRedeemSuccess,
 }) => {
-  const [rewards, setRewards] = useState<any[]>([]);
+  const [rewards, setRewards] = useState<RewardModalItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [redeemingId, setRedeemingId] = useState<string | null>(null);
 
@@ -30,7 +41,7 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
     const fetchRewards = async () => {
       setIsLoading(true);
       try {
-        const res = await fetch(`/api/qr-order/${token}/rewards`);
+        const res = await fetch(`/api/qr-order/${token}/rewards`, { cache: 'no-store' });
         const data = await res.json();
         if (isMounted && data.success) {
           setRewards(data.items || data.data?.rewards || []);
@@ -48,22 +59,21 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
     };
   }, [isOpen, token]);
 
-  if (!isOpen) return null;
-
   const handleRedeem = async (productId: string, pointsRequired: number) => {
     if (!guest.user) {
       toast.error('Vui lòng liên kết tài khoản thành viên để sử dụng điểm');
       return;
     }
     if ((guest.user.points || 0) < pointsRequired) {
-      toast.error('Số điểm tích lũy không đủ để đổi món này');
+      toast.error('Số AVORA Coin hiện tại chưa đủ để đổi món này');
       return;
     }
 
     setRedeemingId(productId);
     try {
       const deviceSessionId =
-        (typeof window !== 'undefined' && localStorage.getItem('avora_qr_device_id')) || guest.deviceSessionId;
+        (typeof window !== 'undefined' && localStorage.getItem('avora_qr_device_id')) ||
+        guest.deviceSessionId;
 
       const res = await fetch(`/api/qr-order/${token}/redeem`, {
         method: 'POST',
@@ -75,80 +85,64 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
         throw new Error(data.message || 'Lỗi đổi quà');
       }
 
-      toast.success(data.message || 'Đổi món bằng điểm thưởng thành công!');
+      toast.success(data.message || 'Đổi món bằng AVORA Coin thành công');
+      onRedeemSuccess?.();
       onClose();
-    } catch (err: any) {
-      toast.error(err.message || 'Lỗi đổi điểm');
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Lỗi đổi điểm');
     } finally {
       setRedeemingId(null);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] bg-black/60 backdrop-blur-xs animate-in fade-in duration-200 select-none overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl my-auto space-y-5 animate-in zoom-in-95 duration-200 max-h-[88vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-              <Gift className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-slate-900">Đổi điểm thưởng</h3>
-              <p className="text-[11px] text-slate-400">Quà tặng & quyền lợi thành viên</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Member Status Card */}
+    <QrBottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Đổi AVORA Coin nhanh"
+      subtitle="Quà tặng & quyền lợi thành viên tại bàn"
+      headerIcon={<Gift className="w-4 h-4" />}
+    >
+      <div className="space-y-4">
         {guest.user ? (
-          <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-center justify-between">
+          <div className="p-3.5 rounded-xl bg-amber-50/70 border border-amber-200 flex items-center justify-between gap-2">
             <div>
               <div className="flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-amber-600" />
                 <span className="text-xs font-bold text-slate-900">{guest.user.fullName}</span>
               </div>
-              <p className="text-xs text-amber-950 font-bold mt-0.5">
-                Hạng: <strong>{guest.user.membershipTier?.name || 'Thành viên'}</strong>
+              <p className="text-[11px] text-amber-900 font-medium mt-0.5">
+                Hạng:{' '}
+                <strong>{guest.user.membershipTier?.name || guest.user.tierName || 'Thành viên'}</strong>
               </p>
             </div>
 
             <div className="text-right">
-              <span className="text-[10px] text-slate-400 uppercase font-bold block">Điểm có sẵn</span>
-              <span className="text-base font-black text-[#da251d] font-mono">
-                {guest.user.points || 0} pts
-              </span>
+              <span className="text-[10px] text-slate-500 uppercase font-bold block">Số dư</span>
+              <AvoraCoin
+                amount={guest.user.points || 0}
+                size="sm"
+                valueClassName="text-sm font-bold text-[#DA251D]"
+              />
             </div>
           </div>
         ) : (
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-2">
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-2">
             <p className="text-xs text-slate-600 font-medium">
-              Vui lòng liên kết tài khoản thành viên để sử dụng điểm thưởng.
+              Liên kết tài khoản thành viên để sử dụng AVORA Coin đổi món.
             </p>
             <button
               type="button"
-              onClick={() => {
-                onClose();
-                onOpenRegister();
-              }}
-              className="px-4 py-2 rounded-xl bg-[#da251d] text-white text-xs font-bold shadow-xs cursor-pointer"
+              onClick={onOpenRegister}
+              className="px-4 py-2 rounded-lg bg-[#DA251D] text-white text-xs font-bold cursor-pointer"
             >
-              Đăng ký thành viên ngay
+              Đăng nhập / Đăng ký ngay
             </button>
           </div>
         )}
 
-        {/* Rewards List */}
-        <div className="space-y-2.5">
-          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
             Món quà có thể đổi
           </h4>
 
@@ -158,33 +152,38 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
               <span className="text-xs">Đang tải quà tặng...</span>
             </div>
           ) : rewards.length === 0 ? (
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-center text-xs text-slate-500">
               Chi nhánh hiện chưa có món quà đổi điểm nào.
             </div>
           ) : (
             <div className="space-y-2">
               {rewards.map((reward) => {
                 const pointsNeeded = reward.redemptionPoints ?? reward.points ?? 0;
-                const canRedeem = guest.user && (guest.user.points || 0) >= pointsNeeded;
+                const canRedeem = Boolean(
+                  guest.user && (guest.user.points || 0) >= pointsNeeded
+                );
                 const isRedeeming = redeemingId === reward.id;
 
                 return (
                   <div
                     key={reward.id}
-                    className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3"
+                    className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2.5"
                   >
                     <div className="flex-1 min-w-0">
-                      <h5 className="text-xs font-black text-slate-900 truncate">{reward.name}</h5>
-                      <span className="text-xs font-black text-amber-600 font-mono">
-                        {pointsNeeded} điểm
-                      </span>
+                      <h5 className="text-xs font-bold text-slate-900 truncate">{reward.name}</h5>
+                      <AvoraCoin
+                        amount={pointsNeeded}
+                        size="xs"
+                        valueClassName="text-xs font-bold text-amber-700"
+                        className="mt-0.5"
+                      />
                     </div>
 
                     <button
                       type="button"
                       onClick={() => handleRedeem(reward.id, pointsNeeded)}
                       disabled={!canRedeem || isRedeeming}
-                      className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs active:scale-95 transition-all cursor-pointer shrink-0"
+                      className="h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white font-bold text-xs transition-all cursor-pointer shrink-0"
                     >
                       {isRedeeming ? 'Đang đổi...' : 'Đổi ngay'}
                     </button>
@@ -195,6 +194,6 @@ export const QrRewardsModal: React.FC<QrRewardsModalProps> = ({
           )}
         </div>
       </div>
-    </div>
+    </QrBottomSheet>
   );
 };

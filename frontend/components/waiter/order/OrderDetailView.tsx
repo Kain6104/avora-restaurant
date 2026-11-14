@@ -57,9 +57,67 @@ import { syncEngine } from '@/lib/offline/syncEngine';
 import { useInstantOrder } from '@/lib/offline/useOfflineData';
 import PullToRefresh from '../common/PullToRefresh';
 import { useIsIPhone } from '@/lib/utils/device';
+import { useModalZIndex } from '@/lib/modal-stack';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store', credentials: 'include' }).then(r => r.json());
 const EMPTY_ITEMS: UnsentItem[] = [];
+
+const getPaymentMethodLabel = (method?: string): string => {
+  const code = String(method || '').trim().toUpperCase();
+  switch (code) {
+    case 'CASH':
+      return 'Tiền mặt';
+    case 'CARD':
+    case 'POS_CARD':
+    case 'SWIPE_CARD':
+      return 'Thẻ / Máy POS';
+    case 'SEPAY_QR':
+    case 'VIETQR':
+    case 'BANK_TRANSFER':
+    case 'TRANSFER':
+    case 'QR_TRANSFER':
+    case 'DYNAMIC_QR':
+      return 'Chuyển khoản ngân hàng';
+    case 'MOMO':
+      return 'Ví MoMo';
+    case 'ZALOPAY':
+      return 'Ví ZaloPay';
+    case 'VNPAY':
+      return 'VNPAY';
+    case 'PAYOS':
+      return 'PayOS';
+    case 'AVORA_COIN':
+    case 'POINTS':
+      return 'AVORA Coin';
+    default:
+      return code || 'Chưa xác định';
+  }
+};
+
+const isAutoConfirmedGatewayMethod = (method?: string, transactionCode?: string): boolean => {
+  const code = String(method || '').trim().toUpperCase();
+  if (['CASH', 'CARD', 'POS_CARD', 'SWIPE_CARD'].includes(code)) {
+    return false;
+  }
+  if (
+    [
+      'SEPAY_QR',
+      'VIETQR',
+      'BANK_TRANSFER',
+      'TRANSFER',
+      'QR_TRANSFER',
+      'DYNAMIC_QR',
+      'PAYOS',
+      'MOMO',
+      'ZALOPAY',
+      'VNPAY',
+    ].includes(code)
+  ) {
+    return true;
+  }
+  return Boolean(transactionCode && String(transactionCode).trim());
+};
 
 export default function OrderDetailView() {
   const { 
@@ -168,7 +226,7 @@ export default function OrderDetailView() {
   const { data: response, isLoading, mutate } = useSWR(
     swrKey,
     fetcher,
-    { refreshInterval: 4000 }
+    { refreshInterval: 4000, keepPreviousData: true, revalidateOnFocus: false }
   );
 
   const table = response?.data?.table || localLiveTable;
@@ -176,8 +234,19 @@ export default function OrderDetailView() {
   // Smart Reconciled Order: Instant optimistic display with zero 3-second delay
   const order = React.useMemo(() => {
     const serverOrder = selectedTableId ? response?.data?.order : response?.data;
+    const hasConfirmedEmptyServerResponse = Boolean(
+      response?.success && !serverOrder && !isLoading
+    );
     if (localLiveOrder) {
-      if (!serverOrder) return localLiveOrder;
+      if (!serverOrder) {
+        const isLocalDraft =
+          typeof localLiveOrder.id === 'string' &&
+          (localLiveOrder.id.startsWith('draft_') || localLiveOrder.id.startsWith('offline_'));
+        if (hasConfirmedEmptyServerResponse && !isLocalDraft) {
+          return null;
+        }
+        return localLiveOrder;
+      }
 
       // Check if localLiveOrder has unconfirmed optimistic items (id starts with opt_ or offline_)
       const localItems = localLiveOrder.orderItems || [];
@@ -208,13 +277,11 @@ export default function OrderDetailView() {
   }, [response?.data, localLiveOrder, selectedTableId]);
   const isOnline = isOnlineOrder(order);
 
-  // Đơn hàng bị khóa khi đang chờ xác nhận / chờ thanh toán / hoãn thanh toán hoặc đã hoàn tất
+  // Đơn hàng chỉ bị khóa sửa món khi đang chờ xác nhận chuyển khoản (paymentIntentStatus ACTIVE / AWAITING_PAYMENT) hoặc đã hoàn tất/hủy
   const isOrderLocked =
     isOnline ||
-    order?.status === 'HELD' ||
     order?.status === 'COMPLETED' ||
     order?.status === 'CANCELLED' ||
-    order?.paymentStatus === 'PAYMENT_REQUESTED' ||
     order?.paymentStatus === 'AWAITING_PAYMENT' ||
     order?.paymentStatus === 'PAID' ||
     order?.paymentStatus === 'COMPLETED' ||
@@ -298,8 +365,141 @@ export default function OrderDetailView() {
   const [paymentSuccessData, setPaymentSuccessData] = useState<{
     orderId: string;
     orderCode: string;
+    temporaryOrderCode?: string;
+    tableName?: string;
+    amount?: number;
+    paymentMethod?: string;
+    paidAt?: string;
+    transactionCode?: string;
   } | null>(null);
   const [isPrintingReceipt, setIsPrintingReceipt] = useState(false);
+
+  const guestModalZIndex = useModalZIndex(isEditingGuestCount, 110);
+  const exitConfirmZIndex = useModalZIndex(showExitConfirm, 130);
+  const paymentSuccessZIndex = useModalZIndex(Boolean(paymentSuccessData), 200);
+
+  // Preserve metadata of the order being viewed / paid in case closing session clears `order`
+  const lastViewedOrderRef = React.useRef<{
+    id?: string;
+    orderCode?: string;
+    temporaryOrderCode?: string;
+    tableId?: string | null;
+    tableName?: string;
+    totalAmount?: number;
+  }>({});
+
+  React.useEffect(() => {
+    if (order?.id) {
+      const rawTblName = table?.name || table?.tableCode || order?.table?.name || order?.tableName || '';
+      const cleanTblName = rawTblName.replace(/^Bàn\s+/i, '').trim() || rawTblName;
+      lastViewedOrderRef.current = {
+        id: order.id,
+        orderCode: order.orderCode || undefined,
+        temporaryOrderCode: order.temporaryOrderCode || undefined,
+        tableId: selectedTableId || order.tableId || null,
+        tableName: cleanTblName,
+        totalAmount: Number(order.totalAmount || order.subTotal || 0),
+      };
+    }
+  }, [order, table, selectedTableId]);
+
+  const showPaymentSuccessForOrder = React.useCallback(
+    async (data: any) => {
+      const snapshot = lastViewedOrderRef.current;
+      const finalId = data?.orderId || order?.id || snapshot.id || '';
+      const finalOrderCode =
+        data?.realOrderCode ||
+        data?.orderCode ||
+        (data as any)?.updatedOrder?.orderCode ||
+        order?.orderCode ||
+        snapshot.orderCode ||
+        '';
+      const finalTempCode =
+        data?.temporaryOrderCode ||
+        (data as any)?.updatedOrder?.temporaryOrderCode ||
+        order?.temporaryOrderCode ||
+        snapshot.temporaryOrderCode ||
+        undefined;
+      const rawTblName =
+        data?.tableName ||
+        table?.name ||
+        order?.table?.name ||
+        snapshot.tableName ||
+        '';
+      const cleanTblName = rawTblName.replace(/^Bàn\s+/i, '').trim() || rawTblName;
+
+      const resolvedPaymentMethod =
+        data?.paymentMethod ||
+        (data as any)?.payments?.[0]?.paymentMethod ||
+        (data as any)?.updatedOrder?.payments?.[0]?.paymentMethod ||
+        (order as any)?.payments?.[0]?.paymentMethod ||
+        (data?.transactionCode || isQrModalOpen ? 'SEPAY_QR' : '');
+
+      setIsPaymentOpen(false);
+      setIsQrModalOpen(false);
+      clearUnsentItems(cartKey);
+
+      if (finalId) {
+        await db.activeOrders.delete(finalId).catch(() => {});
+      }
+
+      setPaymentSuccessData((prev) => {
+        if (
+          prev &&
+          prev.orderId === finalId &&
+          prev.orderCode === finalOrderCode &&
+          prev.paymentMethod
+        ) {
+          return prev;
+        }
+        return {
+          orderId: finalId,
+          orderCode: finalOrderCode || finalTempCode || '',
+          temporaryOrderCode: finalTempCode,
+          tableName: cleanTblName,
+          amount: Number(data?.amount ?? data?.totalPaid ?? data?.totalAmount ?? order?.totalAmount ?? snapshot.totalAmount ?? 0),
+          paymentMethod: resolvedPaymentMethod || 'CASH',
+          paidAt: data?.paidAt || data?.matchedAt || new Date().toISOString(),
+          transactionCode: data?.transactionCode || '',
+        };
+      });
+    },
+    [order, table, cartKey, clearUnsentItems, isQrModalOpen],
+  );
+
+  // Instant WebSocket-bridged payment success detection while QR/payment or order detail is open
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePaidEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      const snapshot = lastViewedOrderRef.current;
+      const curId = order?.id || snapshot.id;
+      const curOrderCode = order?.orderCode || snapshot.orderCode;
+      const curTmpCode = order?.temporaryOrderCode || snapshot.temporaryOrderCode;
+      const curTableId = selectedTableId || order?.tableId || snapshot.tableId;
+
+      const isSameOrder =
+        (detail.orderId && curId && detail.orderId === curId) ||
+        (detail.orderCode && (detail.orderCode === curOrderCode || detail.orderCode === curTmpCode)) ||
+        (detail.temporaryOrderCode && (detail.temporaryOrderCode === curTmpCode || detail.temporaryOrderCode === curOrderCode)) ||
+        (isPaymentOpen && detail.tableId && curTableId && detail.tableId === curTableId);
+
+      if (isSameOrder) {
+        showPaymentSuccessForOrder(detail);
+      }
+    };
+
+    window.addEventListener('avora:payment-completed', handlePaidEvent);
+    return () => window.removeEventListener('avora:payment-completed', handlePaidEvent);
+  }, [order, selectedTableId, isPaymentOpen, showPaymentSuccessForOrder]);
+
+  // Also detect directly from polled/updated SWR order status if payment became PAID while viewing QR
+  React.useEffect(() => {
+    if ((isPaymentOpen || isQrModalOpen) && order && (order.paymentStatus === 'PAID' || order.status === 'COMPLETED')) {
+      showPaymentSuccessForOrder(order);
+    }
+  }, [isPaymentOpen, isQrModalOpen, order, showPaymentSuccessForOrder]);
 
   const handleExitToTables = () => {
     setPaymentSuccessData(null);
@@ -773,11 +973,14 @@ export default function OrderDetailView() {
 
   const handleTogglePaymentRequest = async () => {
     if (!order?.id) return;
-    const isCurrentlyRequested = order.paymentStatus === 'PAYMENT_REQUESTED' || order.status === 'HELD';
+    const isCurrentlyRequested =
+      order.paymentStatus === 'PAYMENT_REQUESTED' ||
+      order.status === 'HELD' ||
+      order.paymentStatus === 'AWAITING_PAYMENT';
     setIsRequestingPayment(true);
     try {
       if (isCurrentlyRequested) {
-        // Hủy yêu cầu thanh toán
+        // Hoãn thanh toán / hủy yêu cầu thanh toán -> quay về trạng thái phục vụ (PENDING)
         const res = await fetch(`/api/pos/orders/${order.id}/cancel-payment-request`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -785,9 +988,32 @@ export default function OrderDetailView() {
         });
         const json = await res.json();
         if (!res.ok || !json.success) {
-          throw new Error(json.message || json.error?.message || 'Không thể hủy yêu cầu thanh toán');
+          throw new Error(json.message || json.error?.message || 'Không thể hoãn yêu cầu thanh toán');
         }
-        toast.success('Đã hủy yêu cầu thanh toán!', {
+        const updatedOrder = json.data;
+        if (updatedOrder && activeBranchId) {
+          await db.activeOrders.put({
+            id: updatedOrder.id,
+            branchId: activeBranchId,
+            tableId: selectedTableId || updatedOrder.tableId || null,
+            orderCode: updatedOrder.orderCode,
+            temporaryOrderCode: updatedOrder.temporaryOrderCode || null,
+            guestCount: updatedOrder.guestCount || 1,
+            totalAmount: updatedOrder.totalAmount || 0,
+            subTotal: updatedOrder.subTotal || 0,
+            taxAmount: updatedOrder.taxAmount || 0,
+            discountAmount: updatedOrder.discountAmount || 0,
+            serviceChargeTotal: updatedOrder.serviceChargeTotal || 0,
+            status: updatedOrder.status,
+            paymentStatus: updatedOrder.paymentStatus,
+            kitchenStatus: updatedOrder.kitchenStatus || 'PENDING',
+            cashierId: updatedOrder.cashierId || null,
+            orderItems: updatedOrder.orderItems || [],
+            user: updatedOrder.user || null,
+            updatedAt: updatedOrder.updatedAt || new Date().toISOString(),
+          }).catch(() => {});
+        }
+        toast.success('Đã chuyển về trạng thái phục vụ (Hoãn thanh toán)!', {
           icon: <Bell size={16} className="text-slate-500" />,
         });
       } else {
@@ -800,6 +1026,29 @@ export default function OrderDetailView() {
         const json = await res.json();
         if (!res.ok || !json.success) {
           throw new Error(json.message || json.error?.message || 'Không thể gửi yêu cầu thanh toán');
+        }
+        const updatedOrder = json.data;
+        if (updatedOrder && activeBranchId) {
+          await db.activeOrders.put({
+            id: updatedOrder.id,
+            branchId: activeBranchId,
+            tableId: selectedTableId || updatedOrder.tableId || null,
+            orderCode: updatedOrder.orderCode,
+            temporaryOrderCode: updatedOrder.temporaryOrderCode || null,
+            guestCount: updatedOrder.guestCount || 1,
+            totalAmount: updatedOrder.totalAmount || 0,
+            subTotal: updatedOrder.subTotal || 0,
+            taxAmount: updatedOrder.taxAmount || 0,
+            discountAmount: updatedOrder.discountAmount || 0,
+            serviceChargeTotal: updatedOrder.serviceChargeTotal || 0,
+            status: updatedOrder.status,
+            paymentStatus: updatedOrder.paymentStatus,
+            kitchenStatus: updatedOrder.kitchenStatus || 'PENDING',
+            cashierId: updatedOrder.cashierId || null,
+            orderItems: updatedOrder.orderItems || [],
+            user: updatedOrder.user || null,
+            updatedAt: updatedOrder.updatedAt || new Date().toISOString(),
+          }).catch(() => {});
         }
         toast.success('Đã gửi yêu cầu thanh toán tới thu ngân POS!', {
           icon: <BellRing size={16} className="text-amber-500" />,
@@ -933,12 +1182,13 @@ export default function OrderDetailView() {
       const finalCode = payJson.data?.updatedOrder?.orderCode || payJson.data?.orderCode || order?.orderCode || '';
       toast.success(`Thanh toán hoàn tất đơn [${finalCode}]!`, { id: toastId, duration: 4000 });
 
-      setIsPaymentOpen(false);
-      clearUnsentItems(cartKey);
       await mutate();
-      setPaymentSuccessData({
+      await showPaymentSuccessForOrder({
         orderId,
         orderCode: finalCode,
+        temporaryOrderCode: payJson.data?.updatedOrder?.temporaryOrderCode || order?.temporaryOrderCode,
+        amount: payJson.data?.updatedOrder?.totalAmount ?? order?.totalAmount,
+        paymentMethod: payload?.payments?.[0]?.paymentMethod || 'CASH',
       });
     } catch (err: any) {
       toast.error(err.message || 'Lỗi thanh toán đơn hàng', { id: toastId });
@@ -1007,10 +1257,11 @@ export default function OrderDetailView() {
   const staffNameDisplay = currentUser?.fullName || order?.cashierName || 'Phục vụ bàn';
   const orderCodeDisplay = order?.orderCode || order?.temporaryOrderCode || (order?.id ? order.id.slice(0, 8) : 'MỚI');
 
-  const orderTitle = table?.name 
-    ? `Bàn ${table.name}` 
-    : table?.tableCode 
-    ? `Bàn ${table.tableCode}` 
+  const rawTableName = table?.name || table?.tableCode || order?.table?.name || order?.tableName || '';
+  const normalizedDineInTableName = rawTableName.replace(/^Bàn\s+/i, '').trim() || rawTableName;
+
+  const orderTitle = normalizedDineInTableName
+    ? normalizedDineInTableName
     : isOnline
     ? 'Đơn trực tuyến (Online)'
     : order?.orderType === 'TAKEAWAY' 
@@ -1087,9 +1338,49 @@ export default function OrderDetailView() {
       {/* ITEMS LIST & NATURAL FLOW CONTAINER (Full width, tích hợp PullToRefresh native) */}
       <PullToRefresh
         onRefresh={async () => {
-          await mutate();
+          if (swrKey) {
+            const freshRes = await fetch(swrKey, { cache: 'no-store', credentials: 'include' });
+            const freshJson = await freshRes.json();
+            if (freshJson?.success) {
+              const sOrder = selectedTableId ? freshJson.data?.order : freshJson.data;
+              if (sOrder && activeBranchId) {
+                await db.activeOrders.put({
+                  id: sOrder.id,
+                  branchId: activeBranchId,
+                  tableId: selectedTableId || sOrder.tableId || null,
+                  orderCode: sOrder.orderCode,
+                  temporaryOrderCode: sOrder.temporaryOrderCode || null,
+                  guestCount: sOrder.guestCount || 1,
+                  totalAmount: sOrder.totalAmount || 0,
+                  subTotal: sOrder.subTotal || 0,
+                  taxAmount: sOrder.taxAmount || 0,
+                  discountAmount: sOrder.discountAmount || 0,
+                  serviceChargeTotal: sOrder.serviceChargeTotal || 0,
+                  status: sOrder.status,
+                  paymentStatus: sOrder.paymentStatus,
+                  kitchenStatus: sOrder.kitchenStatus || 'PENDING',
+                  cashierId: sOrder.cashierId || null,
+                  orderItems: sOrder.orderItems || [],
+                  user: sOrder.user || null,
+                  updatedAt: sOrder.updatedAt || new Date().toISOString(),
+                }).catch(() => {});
+              } else if (!sOrder && selectedTableId) {
+                const staleList = await db.activeOrders.where('tableId').equals(selectedTableId).toArray().catch(() => []);
+                for (const st of staleList) {
+                  if (st.id && !st.id.startsWith('draft_') && !st.id.startsWith('offline_')) {
+                    await db.activeOrders.delete(st.id).catch(() => {});
+                  }
+                }
+              }
+              await mutate(freshJson, { revalidate: false });
+            } else {
+              await mutate();
+            }
+          } else {
+            await mutate();
+          }
           if (activeBranchId) {
-            await syncEngine.triggerBackgroundSync(false);
+            await syncEngine.performDeltaSync(activeBranchId, false);
           }
         }}
         isOffline={isOffline}
@@ -1116,9 +1407,22 @@ export default function OrderDetailView() {
         )}
 
         {isLoading && !isOffline && orderItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DA251D] mb-3" />
-            <span className="text-xs text-slate-400">Đang tải chi tiết đơn...</span>
+          <div className="p-3 space-y-2.5 animate-pulse">
+            {[1, 2, 3, 4].map((row) => (
+              <div
+                key={row}
+                className="bg-white rounded-2xl border border-slate-200/80 p-3.5 space-y-2"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="h-4 bg-slate-200 rounded w-3/5" />
+                  <div className="h-4 bg-slate-200 rounded w-16" />
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="h-3 bg-slate-100 rounded w-24" />
+                  <div className="h-5 bg-slate-100 rounded-full w-20" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : (
           <>
@@ -1127,7 +1431,15 @@ export default function OrderDetailView() {
               <div className="w-full bg-white border-y border-slate-200/90 divide-y divide-slate-100 shadow-2xs">
                 {orderItems.map((item: any, idx: number) => {
                   const isEven = idx % 2 === 0;
-                  const isRedeemedItem = item.priceAtSale === 0 && (item.discountReason?.includes('đổi điểm') || item.discountReason?.includes('Đổi điểm') || item.note?.includes('ĐỔI ĐIỂM') || item.orderedByName?.includes('Đổi điểm') || Boolean(item.orderedById && item.priceAtSale === 0));
+                  const isRedeemedItem = Boolean(
+                    item.isPointRedemption === true ||
+                      item.pricingMode === 'POINT_REDEMPTION' ||
+                      (item.priceAtSale === 0 &&
+                        (item.discountReason?.includes('đổi điểm') ||
+                          item.discountReason?.includes('Đổi điểm') ||
+                          item.note?.includes('ĐỔI ĐIỂM') ||
+                          item.orderedByName?.includes('Đổi điểm'))),
+                  );
                   const itemTotal = isRedeemedItem ? 0 : item.priceAtSale * item.quantity;
                   const itemTime = formatTime(item.createdAt || order?.createdAt);
 
@@ -1541,12 +1853,12 @@ export default function OrderDetailView() {
           </div>
         )}
 
-        {/* Status Banner for PAYMENT_REQUESTED or HELD */}
+        {/* Status Banner for PAYMENT_REQUESTED (chờ thu ngân POS) */}
         {order?.paymentStatus === 'PAYMENT_REQUESTED' ? (
-          <div className="py-2 px-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between text-xs text-amber-900 font-bold shadow-2xs animate-pulse">
-            <div className="flex items-center gap-2">
+          <div className="py-2 px-3 bg-amber-50 border border-amber-300 rounded-xl flex items-center justify-between text-xs text-amber-900 font-bold shadow-2xs">
+            <div className="flex items-center gap-2 min-w-0">
               <Clock className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>Đang chờ thu ngân POS xử lý thanh toán</span>
+              <span className="truncate">Đang chờ thu ngân POS xử lý thanh toán</span>
             </div>
             <div className="flex items-center gap-1.5 ml-2 shrink-0">
               {canCollectPayment && (
@@ -1576,7 +1888,7 @@ export default function OrderDetailView() {
                   Thanh toán ngay
                 </button>
               )}
-              {(canRequestPayment || canCollectPayment) && (
+              {canCollectPayment && (
                 <button
                   type="button"
                   disabled={isRequestingPayment}
@@ -1584,27 +1896,6 @@ export default function OrderDetailView() {
                   className="text-[11px] underline text-amber-800 hover:text-amber-950 font-bold cursor-pointer"
                 >
                   Hủy yêu cầu
-                </button>
-              )}
-            </div>
-          </div>
-        ) : order?.status === 'HELD' ? (
-          /* BANNER TRẠNG THÁI HOÃN THANH TOÁN (1 line thông báo, các nút đặt dưới, đổi nút thành Hoãn thanh toán, xóa nút Thanh toán ngay) */
-          <div className="p-2.5 bg-indigo-50 border border-indigo-200/90 rounded-xl space-y-2 text-xs text-indigo-950 shadow-2xs">
-            <div className="flex items-center gap-2 font-bold text-xs truncate">
-              <PauseCircle className="w-4 h-4 text-indigo-600 shrink-0" />
-              <span className="truncate">Đơn hàng đang ở trạng thái chờ thanh toán</span>
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-1 border-t border-indigo-100">
-              {canHoldOrder && (
-                <button
-                  type="button"
-                  disabled={isHoldingOrder}
-                  onClick={handleResumeOrder}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 disabled:opacity-50 text-white rounded-lg text-xs font-bold shadow-2xs cursor-pointer transition-all flex items-center gap-1.5"
-                >
-                  {isHoldingOrder ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <PlayCircle className="w-3.5 h-3.5" />}
-                  <span>Hoãn thanh toán</span>
                 </button>
               )}
             </div>
@@ -1746,30 +2037,38 @@ export default function OrderDetailView() {
               </button>
 
               {/* 3. NÚT YÊU CẦU THANH TOÁN / HOÃN THANH TOÁN (GỘP THÀNH 1 NÚT THÔNG MINH, HIỂN THỊ ĐẦY ĐỦ 1 DÒNG CHỮ) */}
-              <button
-                type="button"
-                disabled={isRequestingPayment || !canRequestPayment}
-                onClick={handleTogglePaymentRequest}
-                className={`col-span-6 py-2.5 px-2 rounded-xl font-bold text-xs shadow-2xs flex items-center justify-center gap-1.5 transition-all select-none whitespace-nowrap cursor-pointer ${
-                  !canRequestPayment
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
-                    : order?.paymentStatus === 'PAYMENT_REQUESTED'
-                    ? 'bg-slate-800 hover:bg-slate-900 active:scale-95 text-white shadow-xs'
-                    : 'bg-amber-50 hover:bg-amber-100 active:scale-95 border border-amber-300 text-amber-800'
-                }`}
-                title={order?.paymentStatus === 'PAYMENT_REQUESTED' ? 'Hoãn hoặc hủy yêu cầu thanh toán' : 'Gửi yêu cầu thanh toán tới quầy thu ngân'}
-              >
-                {isRequestingPayment ? (
-                  <Loader2 size={15} className="animate-spin text-inherit shrink-0" />
-                ) : order?.paymentStatus === 'PAYMENT_REQUESTED' ? (
-                  <PauseCircle size={15} className="text-white shrink-0" />
-                ) : (
-                  <Bell size={15} className="text-amber-700 shrink-0" />
-                )}
-                <span className="whitespace-nowrap">
-                  {order?.paymentStatus === 'PAYMENT_REQUESTED' ? 'Hoãn thanh toán' : 'Yêu cầu thanh toán'}
-                </span>
-              </button>
+              {(() => {
+                const isPaymentWaiting =
+                  order?.paymentStatus === 'PAYMENT_REQUESTED' ||
+                  order?.status === 'HELD' ||
+                  order?.paymentStatus === 'AWAITING_PAYMENT';
+                return (
+                  <button
+                    type="button"
+                    disabled={isRequestingPayment || !canRequestPayment}
+                    onClick={handleTogglePaymentRequest}
+                    className={`col-span-6 py-2.5 px-2 rounded-xl font-bold text-xs shadow-2xs flex items-center justify-center gap-1.5 transition-all select-none whitespace-nowrap cursor-pointer ${
+                      !canRequestPayment
+                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        : isPaymentWaiting
+                        ? 'bg-slate-800 hover:bg-slate-900 active:scale-95 text-white shadow-xs'
+                        : 'bg-amber-50 hover:bg-amber-100 active:scale-95 border border-amber-300 text-amber-800'
+                    }`}
+                    title={isPaymentWaiting ? 'Hoãn thanh toán / Hủy yêu cầu thanh toán' : 'Gửi yêu cầu thanh toán tới quầy thu ngân'}
+                  >
+                    {isRequestingPayment ? (
+                      <Loader2 size={15} className="animate-spin text-inherit shrink-0" />
+                    ) : isPaymentWaiting ? (
+                      <PauseCircle size={15} className="text-white shrink-0" />
+                    ) : (
+                      <Bell size={15} className="text-amber-700 shrink-0" />
+                    )}
+                    <span className="whitespace-nowrap">
+                      {isPaymentWaiting ? 'Hoãn thanh toán' : 'Yêu cầu thanh toán'}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1811,7 +2110,10 @@ export default function OrderDetailView() {
       />
 
       {isEditingGuestCount && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+        <div
+          className="fixed inset-0 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150"
+          style={{ zIndex: guestModalZIndex }}
+        >
           <div className="w-full max-w-xs bg-white rounded-2xl p-5 shadow-2xl text-center space-y-4">
             <h3 className="font-bold text-base text-slate-800">Cập nhật số lượng khách</h3>
             <div className="flex items-center justify-center gap-5">
@@ -1928,15 +2230,8 @@ export default function OrderDetailView() {
           onClose={() => setIsPaymentOpen(false)}
           onCustomerUpdated={() => mutate()}
           onPaymentSuccess={async (data: any) => {
-            const finalCode = data?.orderCode || (data as any)?.updatedOrder?.orderCode || order?.orderCode || '';
-            const finalId = data?.orderId || order?.id || '';
-            setIsPaymentOpen(false);
-            clearUnsentItems(cartKey);
             await mutate();
-            setPaymentSuccessData({
-              orderId: finalId,
-              orderCode: finalCode,
-            });
+            await showPaymentSuccessForOrder(data);
           }}
           onProcessPayment={handleProcessPayment}
           isProcessing={isProcessingPayment}
@@ -1972,7 +2267,8 @@ export default function OrderDetailView() {
       {/* MODAL CẢNH BÁO THOÁT ĐƠN CÓ MÓN CHƯA LƯU (3 NÚT: Hủy lưu | Tiếp tục chỉnh sửa | Lưu đơn) */}
       {showExitConfirm && (
         <div
-          className="fixed inset-0 z-[130] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+          style={{ zIndex: exitConfirmZIndex }}
           onClick={() => setShowExitConfirm(false)}
         >
           <div
@@ -2132,28 +2428,114 @@ export default function OrderDetailView() {
         </div>
       </ResponsiveModal>
 
-      {/* MODAL THANH TOÁN THÀNH CÔNG (MATCHING media_1794387328633_9dd2a4ef.png VỚI TONE MÀU AVORA) */}
-      {paymentSuccessData && (
-        <div className="fixed inset-0 z-[200] bg-white flex flex-col justify-between items-center px-6 pt-[calc(3rem+env(safe-area-inset-top))] pb-[max(24px,calc(env(safe-area-inset-bottom)+16px))] animate-in fade-in zoom-in-95 duration-200 select-none">
-          {/* Top placeholder */}
-          <div className="w-full flex justify-end" />
+      {/* MODAL THANH TOÁN THÀNH CÔNG */}
+      {paymentSuccessData && (() => {
+        const isAutoConfirmed = isAutoConfirmedGatewayMethod(
+          paymentSuccessData.paymentMethod,
+          paymentSuccessData.transactionCode,
+        );
+        const paymentMethodLabel = getPaymentMethodLabel(paymentSuccessData.paymentMethod);
 
-          {/* Centered Graphic + Text */}
-          <div className="flex flex-col items-center text-center max-w-sm mx-auto -mt-12">
+        return (
+        <div
+          className="fixed inset-0 bg-white flex flex-col justify-between items-center px-6 pt-[calc(3rem+env(safe-area-inset-top))] pb-[max(24px,calc(env(safe-area-inset-bottom)+16px))] animate-in fade-in zoom-in-95 duration-200 select-none overflow-y-auto"
+          style={{ zIndex: paymentSuccessZIndex }}
+        >
+          {/* Top Status Pill */}
+          <div className="w-full flex justify-center">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-extrabold border ${
+                isAutoConfirmed
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : 'bg-slate-100 border-slate-200 text-slate-700'
+              }`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>
+                {isAutoConfirmed
+                  ? 'Hệ thống đã xác nhận nhận được tiền'
+                  : 'Thu ngân đã xác nhận thu tiền'}
+              </span>
+            </span>
+          </div>
+
+          {/* Centered Graphic + Order Summary */}
+          <div className="flex flex-col items-center text-center max-w-sm w-full mx-auto my-4">
             {/* Green Circle with Checkmark */}
-            <div className="w-24 h-24 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] animate-in zoom-in-75 duration-300">
-              <Check className="w-12 h-12 stroke-[3.5]" />
+            <div className="w-22 h-22 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-[0_10px_30px_rgba(16,185,129,0.35)] animate-in zoom-in-75 duration-300">
+              <Check className="w-11 h-11 stroke-[3.5]" />
             </div>
 
             {/* Title */}
-            <h2 className="text-2xl font-black text-slate-900 mt-6 tracking-tight">
-              Thanh toán hoàn tất!
+            <h2 className="text-2xl font-black text-slate-900 mt-5 tracking-tight">
+              Thanh toán thành công!
             </h2>
-
-            {/* Subtitle */}
-            <p className="text-sm font-medium text-slate-500 mt-2 leading-relaxed">
-              Đơn hàng <span className="font-black text-slate-900">#{paymentSuccessData.orderCode}</span> đã được thanh toán thành công.
+            <p className="text-xs font-semibold text-emerald-700 mt-1">
+              {isAutoConfirmed
+                ? 'Đã nhận thanh toán thực tế từ hệ thống'
+                : 'Đã thanh toán hoàn tất'}
             </p>
+
+            {/* Detailed Order Receipt Card */}
+            <div className="w-full mt-5 bg-slate-50 border border-slate-200/90 rounded-2xl p-4 text-left space-y-2.5 text-xs shadow-2xs">
+              <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-200">
+                <span className="text-slate-500 font-semibold">Trạng thái</span>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[11px]">
+                  Đã thanh toán
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-500 font-semibold">Phương thức</span>
+                <span className="font-bold text-slate-900">
+                  {paymentMethodLabel}
+                </span>
+              </div>
+
+              {paymentSuccessData.tableName && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-slate-500 font-semibold">Bàn</span>
+                  <span className="font-black text-slate-900 text-sm">
+                    {paymentSuccessData.tableName}
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-slate-500 font-semibold">Mã đơn chính</span>
+                <span className="font-mono font-black text-slate-900">
+                  {paymentSuccessData.orderCode}
+                </span>
+              </div>
+
+              {paymentSuccessData.temporaryOrderCode &&
+                paymentSuccessData.temporaryOrderCode !== paymentSuccessData.orderCode && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500 font-semibold">Mã tạm</span>
+                    <span className="font-mono font-bold text-slate-600">
+                      {paymentSuccessData.temporaryOrderCode}
+                    </span>
+                  </div>
+                )}
+
+              {typeof paymentSuccessData.amount === 'number' && paymentSuccessData.amount > 0 && (
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-200">
+                  <span className="text-slate-600 font-bold">Số tiền đã nhận</span>
+                  <span className="font-mono font-black text-emerald-600 text-base">
+                    {paymentSuccessData.amount.toLocaleString('vi-VN')} đ
+                  </span>
+                </div>
+              )}
+
+              {paymentSuccessData.paidAt && (
+                <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                  <span>Thời gian xác nhận</span>
+                  <span className="font-mono font-semibold text-slate-700">
+                    {formatTime(paymentSuccessData.paidAt)}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Bottom Action Buttons */}
@@ -2184,7 +2566,8 @@ export default function OrderDetailView() {
             </button>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -1135,6 +1135,8 @@ export const PosShell: React.FC = () => {
 
   const handleSocketOrderUpdated = useCallback(
     (updatedOrder: any, envelope?: any) => {
+      if (!updatedOrder?.id) return;
+
       if (envelope?.eventId) {
         if (seenEventIds.current.has(envelope.eventId)) return;
         seenEventIds.current.add(envelope.eventId);
@@ -1144,30 +1146,104 @@ export const PosShell: React.FC = () => {
         }
       }
 
-      if (envelope?.actorId && currentUser?.id && envelope.actorId === currentUser.id) {
-        if (currentOrder && currentOrder.id === updatedOrder.id) {
-          setCurrentOrder(updatedOrder);
+      const isSelfActor = Boolean(envelope?.actorId && currentUser?.id && envelope.actorId === currentUser.id);
+      const isActiveOrder = currentOrder?.id === updatedOrder.id;
+
+      // Immediately reflect updated order in branchOrders snapshot before async refetch completes
+      setBranchOrders((prev) => {
+        const exists = prev.some((o) => o.id === updatedOrder.id);
+        if (updatedOrder.status === 'COMPLETED' || updatedOrder.status === 'CANCELLED') {
+          return prev.filter((o) => o.id !== updatedOrder.id);
         }
-        return;
-      }
-
-      if (currentOrder && currentOrder.id === updatedOrder.id) {
-        setCurrentOrder(updatedOrder);
-      }
-
-      const tableName = updatedOrder.table?.name || updatedOrder.tableName;
-      const msg = updatedOrder.notificationMessage || (tableName ? `Có thay đổi ở bàn ${tableName}` : `Đơn [${updatedOrder.orderCode || updatedOrder.temporaryOrderCode}] có cập nhật`);
-      toast.success(msg, {
-        icon: <Bell className="w-4 h-4 text-amber-500" />,
-        duration: 3000,
+        if (exists) {
+          return prev.map((o) => (o.id === updatedOrder.id ? { ...o, ...updatedOrder } : o));
+        }
+        return [updatedOrder, ...prev];
       });
+
+      if (isActiveOrder) {
+        const incomingVersion = typeof updatedOrder.version === 'number' ? updatedOrder.version : 0;
+        const localVersion = typeof currentOrder?.version === 'number' ? currentOrder.version : 0;
+        const isNotStale = incomingVersion === 0 || incomingVersion >= localVersion;
+
+        if (isNotStale) {
+          setCurrentOrder((prev) => (prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev));
+
+          if (!isSelfActor || !isSavingOrder) {
+            if (updatedOrder.guestCount !== undefined) {
+              setGuestCount(updatedOrder.guestCount || 1);
+            }
+            if (updatedOrder.customerName !== undefined || updatedOrder.user) {
+              setCustomerName(
+                updatedOrder.customerName ||
+                  updatedOrder.user?.name ||
+                  (updatedOrder.orderType === 'DINE_IN' ? 'Khách tại bàn' : 'Khách mang đi'),
+              );
+            }
+            if (updatedOrder.customerPhone !== undefined || updatedOrder.user?.phone !== undefined) {
+              setCustomerPhone(updatedOrder.customerPhone || updatedOrder.user?.phone || '');
+            }
+            if (updatedOrder.user !== undefined) {
+              setSelectedMember(updatedOrder.user || null);
+            }
+            if (updatedOrder.table) {
+              setSelectedTable(updatedOrder.table);
+            }
+
+            if (Array.isArray(updatedOrder.orderItems)) {
+              setCartItems((prevCart) => {
+                const prevById = new Map(prevCart.map((it) => [it.id, it]));
+                const mappedServerItems = mapAndSortOrderItemsToCart(updatedOrder.orderItems, prevCart).map((srvItem) => {
+                  const localItem = prevById.get(srvItem.id);
+                  if (
+                    localItem &&
+                    typeof localItem.savedQuantity === 'number' &&
+                    localItem.quantity !== localItem.savedQuantity &&
+                    srvItem.quantity === localItem.savedQuantity
+                  ) {
+                    // Keep local unsaved +/- delta if remote update modified other items or order metadata
+                    const localDelta = localItem.quantity - localItem.savedQuantity;
+                    return {
+                      ...srvItem,
+                      quantity: Math.max(1, srvItem.quantity + localDelta),
+                      savedQuantity: srvItem.quantity,
+                    };
+                  }
+                  return srvItem;
+                });
+
+                // Keep unsaved draft items added locally in this session
+                const unsavedLocalItems = prevCart.filter(
+                  (it) => typeof it.id === 'string' && it.id.startsWith('item-'),
+                );
+                return [...mappedServerItems, ...unsavedLocalItems];
+              });
+            }
+          }
+        }
+      }
+
+      if (!isSelfActor) {
+        const rawTableName = updatedOrder.table?.name || updatedOrder.tableName;
+        const cleanTableName =
+          typeof rawTableName === 'string' ? rawTableName.replace(/^Bàn\s+/i, '').trim() : '';
+        const msg =
+          updatedOrder.notificationMessage ||
+          (cleanTableName
+            ? `Có thay đổi ở bàn ${cleanTableName}`
+            : `Đơn [${updatedOrder.orderCode || updatedOrder.temporaryOrderCode}] có cập nhật`);
+        toast.success(msg, {
+          icon: <Bell className="w-4 h-4 text-amber-500" />,
+          duration: 3000,
+        });
+      }
 
       if (currentBranch) {
         fetchOrdersSnapshot(currentBranch.id);
         fetchTables(currentBranch.id);
       }
     },
-    [currentOrder, currentBranch, currentUser, fetchOrdersSnapshot, fetchTables],
+    [currentOrder, currentBranch, currentUser, isSavingOrder, fetchOrdersSnapshot, fetchTables],
   );
 
   const handleSocketTableStatusChanged = useCallback((data: any) => {
@@ -1762,6 +1838,17 @@ export const PosShell: React.FC = () => {
     prevTableIdRef.current = selectedTable?.id || null;
   }, [currentOrder?.id, selectedTable?.id]);
 
+  const isRedeemedCartItem = (item: any) =>
+    Boolean(
+      item?.pricingMode === 'POINT_REDEMPTION' ||
+        item?.isPointRedemption === true ||
+        (item?.priceAtSale === 0 &&
+          (item?.discountReason?.includes('đổi điểm') ||
+            item?.discountReason?.includes('Đổi điểm') ||
+            item?.note?.includes('ĐỔI ĐIỂM') ||
+            item?.orderedByName?.includes('Đổi điểm'))),
+    );
+
   const handleUpdateItemQuantity = (id: string, qty: number, customUnitPrice?: number) => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online chỉ được phép xem, không được sửa món!');
@@ -1769,6 +1856,11 @@ export const PosShell: React.FC = () => {
     }
     const item = cartItems.find((it) => it.id === id);
     if (!item) return;
+
+    if (isRedeemedCartItem(item)) {
+      toast.error('Sản phẩm đã được khách hàng đổi bằng điểm thưởng nên không thể xóa hoặc thay đổi số lượng để tránh sai lệch lịch sử điểm.');
+      return;
+    }
 
     const cleanQty = normalizePosQty(qty);
     if (cleanQty <= 0) {
@@ -1808,6 +1900,11 @@ export const PosShell: React.FC = () => {
   const handleRemoveCartItem = (id: string) => {
     if (isOnlineOrder(currentOrder)) {
       toast.error('Đơn hàng Online không thể xóa món!');
+      return;
+    }
+    const targetItem = cartItems.find((it) => it.id === id);
+    if (targetItem && isRedeemedCartItem(targetItem)) {
+      toast.error('Sản phẩm đã được khách hàng đổi bằng điểm thưởng nên không thể xóa khỏi đơn hàng để bảo toàn lịch sử điểm và đơn hàng.');
       return;
     }
     setCartItems((prev) => prev.filter((it) => it.id !== id));
@@ -2895,6 +2992,27 @@ export const PosShell: React.FC = () => {
     setFeesModalOrder(result.data);
   };
 
+  const handleUnlockPaymentLock = async () => {
+    if (!currentOrder?.id) return;
+    const res = await fetch(`${baseUrl}/api/pos/orders/${currentOrder.id}/unlock-payment-lock`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ reason: 'Thu ngân mở khóa đơn từ màn hình POS' }),
+    });
+    const result = await res.json();
+    if (!res.ok || !result.success) {
+      toast.error(result.message || result.error?.message || 'Không thể mở khóa đơn hàng');
+      return;
+    }
+    setCurrentOrder(result.data);
+    if (currentBranch) {
+      fetchOrdersSnapshot(currentBranch.id);
+      fetchTables(currentBranch.id);
+    }
+    toast.success('Đã mở khóa đơn hàng, bạn có thể tiếp tục chỉnh sửa món.', { duration: 3000 });
+  };
+
   const handleProcessPayment = async (payload: any) => {
     if (!currentBranch || cartItems.length === 0) return;
     setIsProcessingPayment(true);
@@ -3712,7 +3830,6 @@ export const PosShell: React.FC = () => {
                 const isCodeAlreadyCreated = Boolean(
                   currentOrder &&
                     (currentOrder.paymentStatus === 'AWAITING_PAYMENT' ||
-                      currentOrder.paymentStatus === 'PAYMENT_REQUESTED' ||
                       currentOrder.paymentStatus === 'PAID' ||
                       currentOrder.status === 'COMPLETED' ||
                       (currentOrder as any).paymentIntentStatus === 'ACTIVE' ||
@@ -3751,7 +3868,6 @@ export const PosShell: React.FC = () => {
                 const isCodeAlreadyCreated = Boolean(
                   currentOrder &&
                     (currentOrder.paymentStatus === 'AWAITING_PAYMENT' ||
-                      currentOrder.paymentStatus === 'PAYMENT_REQUESTED' ||
                       currentOrder.paymentStatus === 'PAID' ||
                       currentOrder.status === 'COMPLETED' ||
                       (currentOrder as any).paymentIntentStatus === 'ACTIVE' ||
@@ -3772,6 +3888,7 @@ export const PosShell: React.FC = () => {
                 setIsRedeemPointsModalOpen(true);
               }}
               redeemableRewardsCount={redeemableRewardsCount}
+              onUnlockPaymentLock={handleUnlockPaymentLock}
               isDarkMode={isDarkMode}
               onOpenQrManagement={() => {
                 if (selectedTable || currentOrder?.table) {

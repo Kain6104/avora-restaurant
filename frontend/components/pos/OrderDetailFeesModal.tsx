@@ -62,7 +62,6 @@ export const OrderDetailFeesModal: React.FC<OrderDetailFeesModalProps> = ({
     order.status === 'CANCELLED' ||
     order.paymentStatus === 'PAID' ||
     order.paymentStatus === 'AWAITING_PAYMENT' ||
-    order.paymentStatus === 'PAYMENT_REQUESTED' ||
     (order as any).paymentIntentStatus === 'ACTIVE';
 
   // VAT Invoice State

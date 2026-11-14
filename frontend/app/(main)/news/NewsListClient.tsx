@@ -24,6 +24,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { isAuthenticated } from '@/lib/auth';
 
 export interface ArticleListItem {
   id: string;
@@ -133,6 +134,11 @@ export default function NewsListClient({ initialArticles = [] }: NewsListClientP
   const handleToggleFavorite = async (e: React.MouseEvent, articleId: string) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (!isAuthenticated()) {
+      toast.error('Vui lòng đăng nhập để lưu bài viết vào mục yêu thích!');
+      return;
+    }
 
     const previousState = !!savedArticlesMap[articleId];
     const nextState = !previousState;

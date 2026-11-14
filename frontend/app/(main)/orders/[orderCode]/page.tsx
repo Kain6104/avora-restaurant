@@ -7,6 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
 import OrderReviewComposer from '@/components/reviews/OrderReviewComposer';
 import OrderReviewTimeline from '@/components/reviews/OrderReviewTimeline';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import {
   ArrowLeft,
   MapPin,
@@ -653,7 +654,9 @@ export default function OrderDetailPage() {
 
                 {order.pointsUsed > 0 && (
                   <div className="flex justify-between text-emerald-600 font-medium">
-                    <span>Điểm tích lũy ({order.pointsUsed.toLocaleString('vi-VN')} điểm):</span>
+                    <span className="inline-flex items-center gap-1">
+                      Điểm tích lũy (<AvoraCoin amount={order.pointsUsed} size="xs" />):
+                    </span>
                     <span>
                       -{new Intl.NumberFormat('vi-VN').format(
                         Math.round(order.pointsUsed * (order.branch?.pointRedeemRate && order.branch.pointRedeemRate > 0 ? order.branch.pointRedeemRate : 1))
@@ -670,8 +673,10 @@ export default function OrderDetailPage() {
                 </div>
 
                 {order.pointsAwarded > 0 && (
-                  <p className="text-[11px] text-amber-600 font-medium text-right italic">
-                    + Nhận được {order.pointsAwarded} điểm thưởng khi hoàn thành
+                  <p className="text-[11px] text-amber-600 font-medium flex items-center justify-end gap-1 italic">
+                    <span>+ Nhận được</span>
+                    <AvoraCoin amount={order.pointsAwarded} size="xs" className="font-bold not-italic" />
+                    <span>khi hoàn thành</span>
                   </p>
                 )}
               </div>

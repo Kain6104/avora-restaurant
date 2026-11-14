@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import {
   X,
   Percent,
@@ -636,7 +637,7 @@ export const OrderDiscountModal: React.FC<OrderDiscountModalProps> = ({
                             <div className="text-slate-400 text-[11px]">{m.phone}</div>
                           </div>
                           <span className="font-black text-[#00875A] bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded text-xs">
-                            {(m.points ?? m.currentPoints ?? 0).toLocaleString('vi-VN')} điểm
+                            <AvoraCoin amount={m.points ?? m.currentPoints ?? 0} size="xs" />
                           </span>
                         </button>
                       ))}
@@ -703,8 +704,7 @@ export const OrderDiscountModal: React.FC<OrderDiscountModalProps> = ({
                                 {item.name}
                               </h5>
                               <div className="flex items-center gap-1 text-[11px] font-bold text-[#F06A6A] mt-0.5">
-                                <span>🪙</span>
-                                <span>{requiredPoints.toLocaleString('vi-VN')} điểm</span>
+                                <AvoraCoin amount={requiredPoints} size="xs" />
                               </div>
                             </div>
                           </div>

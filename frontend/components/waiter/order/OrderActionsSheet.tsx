@@ -322,45 +322,170 @@ export default function OrderActionsSheet({
 
   return (
     <>
-      {/* Responsive Bottom Sheet: Action Sheet */}
+      {/* Responsive Bottom Sheet: Modern 3-Zone Architecture */}
       <ResponsiveModal
         isOpen={isOpen}
         onClose={onClose}
-        title={table?.name ? `Thao tác bàn – ${table.name}` : 'Thao tác đơn hàng'}
-        subtitle={`Mã đơn: ${orderCodeDisplay}`}
+        title={table?.name ? `Thao tác bàn – ${table.name}` : 'Thao tác bàn'}
         maxWidth="md"
-      >
-        <div className="space-y-3 py-1">
-          {/* Menu Actions List */}
-          <div className="divide-y divide-slate-100 bg-slate-50/70 rounded-2xl border border-slate-200/80 overflow-hidden">
-            {/* Sửa số lượng khách */}
-            <button
-              type="button"
-              onClick={() => {
-                setTempGuestCount(order?.guestCount || table?.activeSession?.guestCount || 1);
-                setIsEditGuestsOpen(true);
-              }}
-              className="w-full flex items-center justify-between gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <Users size={18} className="text-slate-600 shrink-0" />
-                <span>Sửa số lượng khách</span>
-              </div>
-              <span className="text-xs font-mono font-bold text-[#DA251D] bg-red-50 px-2.5 py-1 rounded-full border border-red-200 shadow-2xs">
-                {order?.guestCount || table?.activeSession?.guestCount || 1} khách
+        bodyClassName="p-3 sm:p-4"
+        footerClassName="p-3 bg-slate-50 border-t border-slate-200/80"
+        footer={
+          /* C. THÔNG TIN ĐƠN HÀNG — CỐ ĐỊNH PHÍA DƯỚI (FOOTER) */
+          <div className="w-full space-y-2 select-none">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                THÔNG TIN ĐƠN HÀNG
               </span>
-            </button>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+              <div className="flex items-center justify-between min-w-0">
+                <span className="text-slate-500 shrink-0">Mã đơn:</span>
+                <span className="font-mono font-bold text-slate-900 truncate ml-1">{orderCodeDisplay}</span>
+              </div>
+              <div className="flex items-center justify-between min-w-0">
+                <span className="text-slate-500 shrink-0">Phục vụ:</span>
+                <span className="font-semibold text-slate-900 truncate ml-1">{creatorName}</span>
+              </div>
+              <div className="flex items-center justify-between min-w-0">
+                <span className="text-slate-500 shrink-0">Tạo lúc:</span>
+                <span className="font-medium text-slate-700 truncate ml-1">{formatCreationTime()}</span>
+              </div>
+              <div className="flex items-center justify-between min-w-0">
+                <span className="text-slate-500 shrink-0">Thời gian:</span>
+                <span className="font-bold text-[#DA251D] truncate ml-1">{calculateDuration()}</span>
+              </div>
+            </div>
+          </div>
+        }
+      >
+        {/* B. ACTION MENU — VÙNG CUỘN DUY NHẤT Ở GIỮA */}
+        <div className="space-y-3.5 py-0.5 select-none">
+          {/* NHÓM 1: QUẢN LÝ BÀN */}
+          <div className="space-y-1">
+            <div className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              1. QUẢN LÝ BÀN
+            </div>
+            <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 divide-y divide-slate-100 overflow-hidden shadow-2xs">
+              {/* 1.1 Điều chỉnh số khách */}
+              <button
+                type="button"
+                onClick={() => {
+                  setTempGuestCount(order?.guestCount || table?.activeSession?.guestCount || 1);
+                  setIsEditGuestsOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Users size={18} className="text-slate-600 shrink-0" />
+                  <span>Điều chỉnh số khách</span>
+                </div>
+                <span className="text-xs font-mono font-bold text-[#DA251D] bg-red-50 px-2.5 py-0.5 rounded-full border border-red-200 shadow-2xs">
+                  {order?.guestCount || table?.activeSession?.guestCount || 1} khách
+                </span>
+              </button>
 
-            {/* In hóa đơn tạm tính */}
-            {onPrintTempBill && (
+              {/* 1.2 Xem mã QR gọi món */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setIsQrOrderOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <QrCode size={18} className="text-slate-600 shrink-0" />
+                  <span>Xem mã QR gọi món</span>
+                </div>
+              </button>
+
+              {/* 1.3 Chuyển bàn */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!can('pos.table.change', activeBranchId || undefined)) {
+                    toast.error('Bạn không có quyền chuyển bàn (pos.table.change)', {
+                      icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
+                    });
+                    return;
+                  }
+                  onClose();
+                  setIsMoveTableOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <ArrowLeftRight size={18} className="text-slate-600 shrink-0" />
+                  <span>Chuyển bàn</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* NHÓM 2: GỌI MÓN & BẾP */}
+          <div className="space-y-1">
+            <div className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              2. GỌI MÓN & BẾP
+            </div>
+            <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 divide-y divide-slate-100 overflow-hidden shadow-2xs">
+              {/* 2.1 Gửi món xuống bếp */}
+              <button
+                type="button"
+                disabled={isSendingKitchen}
+                onClick={() => {
+                  if (onSendKitchen) {
+                    onClose();
+                    onSendKitchen();
+                  } else {
+                    toast('Không có món mới cần gửi bếp', { icon: 'ℹ️' });
+                  }
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-orange-600 hover:bg-orange-50/70 active:bg-orange-100 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <ChefHat size={18} className="text-orange-500 shrink-0" />
+                  <span>Gửi món xuống bếp</span>
+                </div>
+                {isSendingKitchen && <Loader2 size={15} className="animate-spin text-orange-500 shrink-0" />}
+              </button>
+
+              {/* 2.2 Ghi chú cho bếp */}
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  setIsKitchenNoteOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-[#DA251D] hover:bg-red-50/70 active:bg-red-100 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Edit3 size={18} className="text-[#DA251D] shrink-0" />
+                  <span>Ghi chú cho bếp</span>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* NHÓM 3: THANH TOÁN & ƯU ĐÃI */}
+          <div className="space-y-1">
+            <div className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              3. THANH TOÁN & ƯU ĐÃI
+            </div>
+            <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 divide-y divide-slate-100 overflow-hidden shadow-2xs">
+              {/* 3.1 In phiếu tạm tính */}
               <button
                 type="button"
                 disabled={isPrintingTempBill}
                 onClick={() => {
-                  onClose();
-                  onPrintTempBill();
+                  if (onPrintTempBill) {
+                    onClose();
+                    onPrintTempBill();
+                  } else {
+                    toast.error('Chưa có hóa đơn để in tạm tính');
+                  }
                 }}
-                className="w-full flex items-center justify-between gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <Printer size={18} className="text-slate-600 shrink-0" />
@@ -368,37 +493,33 @@ export default function OrderActionsSheet({
                 </div>
                 {isPrintingTempBill && <Loader2 size={15} className="animate-spin text-slate-400 shrink-0" />}
               </button>
-            )}
 
-            {/* Báo bếp / Gửi lại lệnh in bếp */}
-            {onSendKitchen && (
+              {/* 3.2 Điểm thưởng & khuyến mãi */}
               <button
                 type="button"
-                disabled={isSendingKitchen}
                 onClick={() => {
                   onClose();
-                  onSendKitchen();
+                  onOpenRedeemPoints?.();
                 }}
-                className="w-full flex items-center justify-between gap-3 px-3.5 py-3 text-orange-600 hover:bg-orange-50/70 active:bg-orange-100 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-amber-700 hover:bg-amber-50 active:bg-amber-100 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
               >
                 <div className="flex items-center gap-3 min-w-0">
-                  <ChefHat size={18} className="text-orange-500 shrink-0" />
-                  <span>Báo bếp (Gửi lệnh in bếp)</span>
+                  <Coins size={18} className="text-amber-600 shrink-0" />
+                  <span>Điểm thưởng & khuyến mãi</span>
                 </div>
-                {isSendingKitchen && <Loader2 size={15} className="animate-spin text-orange-500 shrink-0" />}
               </button>
-            )}
 
-            {/* Thông báo thanh toán tới POS */}
-            {onTogglePaymentRequest && (
+              {/* 3.3 Hủy yêu cầu thanh toán / Gửi yêu cầu thanh toán */}
               <button
                 type="button"
                 disabled={isRequestingPayment}
                 onClick={() => {
-                  onClose();
-                  onTogglePaymentRequest();
+                  if (onTogglePaymentRequest) {
+                    onClose();
+                    onTogglePaymentRequest();
+                  }
                 }}
-                className={`w-full flex items-center justify-between gap-3 px-3.5 py-3 transition-colors font-bold text-xs sm:text-sm cursor-pointer ${
+                className={`w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 transition-colors font-medium text-xs sm:text-sm cursor-pointer ${
                   isPaymentRequested
                     ? 'text-amber-800 bg-amber-50/70 hover:bg-amber-100'
                     : 'text-amber-700 hover:bg-amber-50'
@@ -410,139 +531,81 @@ export default function OrderActionsSheet({
                   ) : (
                     <Bell size={18} className="text-amber-600 shrink-0" />
                   )}
-                  <span>{isPaymentRequested ? 'Hủy yêu cầu thanh toán' : 'Gửi yêu cầu TT tới thu ngân POS'}</span>
+                  <span>{isPaymentRequested ? 'Hủy yêu cầu thanh toán' : 'Gửi yêu cầu thanh toán'}</span>
                 </div>
                 {isRequestingPayment && <Loader2 size={15} className="animate-spin text-amber-500 shrink-0" />}
               </button>
-            )}
-
-            {/* Ghi chú Bếp */}
-            <button
-              type="button"
-              onClick={() => { onClose(); setIsKitchenNoteOpen(true); }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-[#DA251D] hover:bg-red-50/70 active:bg-red-100 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <Edit3 size={18} className="text-[#DA251D] shrink-0" />
-              <span>Ghi chú Bếp</span>
-            </button>
-
-            {/* QR Order */}
-            <button
-              type="button"
-              onClick={() => { onClose(); setIsQrOrderOpen(true); }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <QrCode size={18} className="text-slate-600 shrink-0" />
-              <span>Mã QR gọi món</span>
-            </button>
-
-            {/* Đổi điểm & Khuyến mãi */}
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenRedeemPoints?.();
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-amber-700 hover:bg-amber-50 active:bg-amber-100 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <Coins size={18} className="text-amber-600 shrink-0" />
-              <span>Đổi điểm & Khuyến mãi</span>
-            </button>
-
-            {/* Thay đổi bàn */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!can('pos.table.change', activeBranchId || undefined)) {
-                  toast.error('Bạn không có quyền chuyển bàn (pos.table.change)', {
-                    icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
-                  });
-                  return;
-                }
-                onClose();
-                setIsMoveTableOpen(true);
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <ArrowLeftRight size={18} className="text-slate-600 shrink-0" />
-              <span>Chuyển bàn</span>
-            </button>
-
-            {/* Tách đơn */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!can('pos.table.split', activeBranchId || undefined)) {
-                  toast.error('Bạn không có quyền tách bàn/đơn (pos.table.split)', {
-                    icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
-                  });
-                  return;
-                }
-                onClose();
-                setIsSplitOrderOpen(true);
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <Scissors size={18} className="text-slate-600 shrink-0" />
-              <span>Tách đơn</span>
-            </button>
-
-            {/* Gộp đơn */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!can('pos.table.merge', activeBranchId || undefined)) {
-                  toast.error('Bạn không có quyền gộp bàn/đơn (pos.table.merge)', {
-                    icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
-                  });
-                  return;
-                }
-                onClose();
-                setIsMergeOrderOpen(true);
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <FileText size={18} className="text-slate-600 shrink-0" />
-              <span>Gộp đơn</span>
-            </button>
-
-            {/* Hủy đơn */}
-            <button
-              type="button"
-              onClick={() => {
-                if (!can('pos.order.cancel', activeBranchId || undefined)) {
-                  toast.error('Bạn không có quyền hủy đơn hàng (pos.order.cancel)', {
-                    icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
-                  });
-                  return;
-                }
-                onClose();
-                setIsCancelOrderOpen(true);
-              }}
-              className="w-full flex items-center gap-3 px-3.5 py-3 text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition-colors font-bold text-xs sm:text-sm cursor-pointer"
-            >
-              <XCircle size={18} className="text-rose-600 shrink-0" />
-              <span>Hủy đơn</span>
-            </button>
+            </div>
           </div>
 
-          {/* Order Metadata Details */}
-          <div className="bg-slate-50/70 p-3 rounded-2xl border border-slate-200/80 space-y-1.5 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Mã đơn hàng</span>
-              <span className="font-mono font-bold text-slate-900">{orderCodeDisplay}</span>
+          {/* NHÓM 4: QUẢN LÝ ĐƠN HÀNG */}
+          <div className="space-y-1">
+            <div className="px-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              4. QUẢN LÝ ĐƠN HÀNG
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Người phục vụ</span>
-              <span className="font-semibold text-slate-900">{creatorName}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Thời gian tạo đơn</span>
-              <span className="font-semibold text-slate-900">{formatCreationTime()}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-500">Thời gian phục vụ</span>
-              <span className="font-bold text-[#DA251D]">{calculateDuration()}</span>
+            <div className="bg-slate-50/70 rounded-2xl border border-slate-200/80 divide-y divide-slate-100 overflow-hidden shadow-2xs">
+              {/* 4.1 Tách đơn hàng */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!can('pos.table.split', activeBranchId || undefined)) {
+                    toast.error('Bạn không có quyền tách bàn/đơn (pos.table.split)', {
+                      icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
+                    });
+                    return;
+                  }
+                  onClose();
+                  setIsSplitOrderOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <Scissors size={18} className="text-slate-600 shrink-0" />
+                  <span>Tách đơn hàng</span>
+                </div>
+              </button>
+
+              {/* 4.2 Gộp đơn hàng */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!can('pos.table.merge', activeBranchId || undefined)) {
+                    toast.error('Bạn không có quyền gộp bàn/đơn (pos.table.merge)', {
+                      icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
+                    });
+                    return;
+                  }
+                  onClose();
+                  setIsMergeOrderOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-slate-800 hover:bg-slate-100/70 active:bg-slate-200 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText size={18} className="text-slate-600 shrink-0" />
+                  <span>Gộp đơn hàng</span>
+                </div>
+              </button>
+
+              {/* 4.3 Hủy đơn hàng */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!can('pos.order.cancel', activeBranchId || undefined)) {
+                    toast.error('Bạn không có quyền hủy đơn hàng (pos.order.cancel)', {
+                      icon: <ShieldAlert className="w-4 h-4 text-rose-500" />,
+                    });
+                    return;
+                  }
+                  onClose();
+                  setIsCancelOrderOpen(true);
+                }}
+                className="w-full min-h-[46px] flex items-center justify-between gap-3 px-3.5 py-2.5 text-rose-600 hover:bg-rose-50 active:bg-rose-100 transition-colors font-medium text-xs sm:text-sm cursor-pointer"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <XCircle size={18} className="text-rose-600 shrink-0" />
+                  <span>Hủy đơn hàng</span>
+                </div>
+              </button>
             </div>
           </div>
         </div>

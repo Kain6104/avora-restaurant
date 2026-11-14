@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import {
   X,
   CreditCard,
@@ -28,6 +29,8 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getAuthHeaders } from '@/lib/auth';
+import { useModalZIndex } from '@/lib/modal-stack';
 import { printAgent } from '@/lib/print-agent';
 import { PosCartItem, PosTable, PosOrder } from './pos-types';
 import { PosDeliveryInfo } from './DeliveryAddressModal';
@@ -131,9 +134,9 @@ interface PaymentModalProps {
 }
 
 export const PaymentModal: React.FC<PaymentModalProps> = ({
-  order,
-  table,
-  cartItems,
+  order: propOrder,
+  table: propTable,
+  cartItems: propCartItems,
   guestCount,
   fullscreen = false,
   orderDiscount,
@@ -155,9 +158,43 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   onMoveToAwaiting,
   isDarkMode = false,
 }) => {
+  const modalZIndex = useModalZIndex(true, fullscreen ? 120 : 100);
+
+  // Preserve active order snapshot if parent session closes right after auto-payment confirmation
+  const [cachedSnapshot, setCachedSnapshot] = useState<{
+    order: PosOrder | null;
+    table: PosTable | null;
+    cartItems: PosCartItem[];
+  }>({
+    order: propOrder,
+    table: propTable,
+    cartItems: propCartItems,
+  });
+
+  if (
+    propOrder &&
+    propCartItems &&
+    propCartItems.length > 0 &&
+    (propOrder !== cachedSnapshot.order ||
+      (propTable && propTable !== cachedSnapshot.table) ||
+      propCartItems !== cachedSnapshot.cartItems)
+  ) {
+    setCachedSnapshot({
+      order: propOrder,
+      table: propTable || cachedSnapshot.table,
+      cartItems: propCartItems,
+    });
+  }
+
+  const order = propOrder || cachedSnapshot.order;
+  const table = propTable || cachedSnapshot.table;
+  const cartItems = (propCartItems && propCartItems.length > 0)
+    ? propCartItems
+    : cachedSnapshot.cartItems;
+  const hasTriggeredSuccessRef = useRef(false);
+
   const isAwaitingPayment =
     order?.paymentStatus === 'AWAITING_PAYMENT' ||
-    order?.paymentStatus === 'PAYMENT_REQUESTED' ||
     (order as any)?.paymentIntentStatus === 'ACTIVE';
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -522,7 +559,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       // 1. Gửi lệnh scan khẩn cấp tới Gateway Android
       fetch(`${baseUrl}/api/bank-connect/v1/admin/scan-request`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
         credentials: 'include',
         body: JSON.stringify({
           branchId: branch?.id,
@@ -552,7 +589,10 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
       let isDevOnline = false;
       let hasDev = false;
       try {
-        const devRes = await fetch(`${baseUrl}/api/bank-connect/v1/admin/devices`, { credentials: 'include' });
+        const devRes = await fetch(`${baseUrl}/api/bank-connect/v1/admin/devices`, {
+          headers: getAuthHeaders(),
+          credentials: 'include',
+        });
         const devJson = await devRes.json();
         if (devJson.success && Array.isArray(devJson.data)) {
           const activeDev = devJson.data.find((d: any) => d.status === 'ACTIVE') || devJson.data[0];
@@ -773,46 +813,144 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     invoiceEmail,
   ]);
 
-  // SePay Polling
+  // SePay Polling + Realtime Socket Payment Confirmation Listener
+  const triggerPaymentSuccessOnce = useCallback(
+    (payload: any) => {
+      if (hasTriggeredSuccessRef.current) return;
+      hasTriggeredSuccessRef.current = true;
+      setSepayStatus('PAID');
+      if (payload?.transactionCode) {
+        setSepayTxCode(payload.transactionCode);
+      }
+      toast.success('Đã nhận chuyển khoản thành công!', {
+        icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
+        duration: 4000,
+      });
+      setTimeout(() => {
+        onPaymentSuccess?.(payload);
+      }, 250);
+    },
+    [onPaymentSuccess],
+  );
+
   const checkSepayStatus = useCallback(async () => {
-    const orderCodeToCheck = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code;
-    if (!orderCodeToCheck || !isQrGenerated) return;
+    const orderCodeToCheck =
+      order?.orderCode ||
+      (order as any)?.temporaryOrderCode ||
+      (order as any)?.code ||
+      order?.id;
+    if (!orderCodeToCheck || !isQrGenerated || hasTriggeredSuccessRef.current) return;
 
     try {
-      const res = await fetch(`${baseUrl}/api/payment/check-status/${orderCodeToCheck}`, {
+      const res = await fetch(`${baseUrl}/api/payment/check-status/${encodeURIComponent(orderCodeToCheck)}`, {
+        headers: getAuthHeaders(),
         credentials: 'include',
+        cache: 'no-store',
       });
       if (res.ok) {
         const data = await res.json();
         if (data.isPaid) {
+          if (
+            data.rawStatus === 'COMPLETED' ||
+            data.status === 'COMPLETED' ||
+            data.status === 'PAID' ||
+            data.paymentStatus === 'PAID' ||
+            (data.orderCode && !String(data.orderCode).startsWith('TMP-'))
+          ) {
+            triggerPaymentSuccessOnce({
+              ...data,
+              orderId: data.orderId || order?.id,
+              orderCode: data.realOrderCode || data.orderCode || order?.orderCode,
+              temporaryOrderCode: data.temporaryOrderCode || (order as any)?.temporaryOrderCode,
+              amount: data.totalPaid || data.totalAmount || grandTotal,
+              tableName: table?.name || order?.table?.name,
+            });
+          } else {
+            hasTriggeredSuccessRef.current = true;
+            setSepayStatus('PAID');
+            setSepayTxCode(data.transactionCode || '');
+            setTimeout(() => {
+              handleFinalSubmit(data.transactionCode);
+            }, 400);
+          }
+        } else if (data.hasTransferPayment && sepayStatus !== 'PAID') {
           setSepayStatus('PAID');
           setSepayTxCode(data.transactionCode || '');
-          toast.success('SePay: Đã nhận chuyển khoản thành công!', {
+          toast.success('Đã nhận chuyển khoản phần tiền QR ngân hàng!', {
             icon: <CheckCircle2 className="w-5 h-5 text-emerald-500" />,
             duration: 4000,
           });
-
-          // Nếu đơn hàng đã được backend hoàn tất (COMPLETED), gọi ngay onPaymentSuccess để đóng modal và giải phóng bàn
-          if (data.rawStatus === 'COMPLETED' || data.status === 'COMPLETED' || (data.orderCode && !data.orderCode.startsWith('TMP-'))) {
-            setTimeout(() => {
-              onPaymentSuccess?.(data);
-            }, 600);
-          } else {
-            // Auto-trigger completion
-            setTimeout(() => {
-              handleFinalSubmit(data.transactionCode);
-            }, 600);
+          if (isMultiPaymentMode && data.totalPaid >= grandTotal) {
+            triggerPaymentSuccessOnce({
+              ...data,
+              orderId: data.orderId || order?.id,
+              orderCode: data.realOrderCode || data.orderCode || order?.orderCode,
+              temporaryOrderCode: data.temporaryOrderCode || (order as any)?.temporaryOrderCode,
+              amount: data.totalPaid || grandTotal,
+              tableName: table?.name || order?.table?.name,
+            });
           }
         }
       }
     } catch (err) {
       console.error('Polling SePay status error:', err);
     }
-  }, [baseUrl, order?.orderCode, (order as any)?.temporaryOrderCode, isQrGenerated, onPaymentSuccess, handleFinalSubmit]);
+  }, [
+    baseUrl,
+    order?.id,
+    order?.orderCode,
+    (order as any)?.temporaryOrderCode,
+    order?.table?.name,
+    table?.name,
+    isQrGenerated,
+    handleFinalSubmit,
+    sepayStatus,
+    isMultiPaymentMode,
+    grandTotal,
+    triggerPaymentSuccessOnce,
+  ]);
 
   useEffect(() => {
-    const activeCode = order?.orderCode || (order as any)?.temporaryOrderCode || (order as any)?.code;
+    if (typeof window === 'undefined') return;
+    const handleRealtimePaid = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || hasTriggeredSuccessRef.current) return;
+
+      const curId = order?.id;
+      const curOrderCode = order?.orderCode;
+      const curTmpCode = (order as any)?.temporaryOrderCode;
+      const curTableId = table?.id || order?.tableId;
+
+      const isMatch =
+        (detail.orderId && curId && detail.orderId === curId) ||
+        (detail.orderCode && (detail.orderCode === curOrderCode || detail.orderCode === curTmpCode)) ||
+        (detail.temporaryOrderCode && (detail.temporaryOrderCode === curTmpCode || detail.temporaryOrderCode === curOrderCode)) ||
+        (isQrGenerated && detail.tableId && curTableId && detail.tableId === curTableId);
+
+      if (isMatch) {
+        triggerPaymentSuccessOnce({
+          ...detail,
+          orderId: detail.orderId || curId,
+          orderCode: detail.orderCode || curOrderCode || curTmpCode,
+          temporaryOrderCode: detail.temporaryOrderCode || curTmpCode,
+          amount: detail.amount || grandTotal,
+          tableName: detail.tableName || table?.name || order?.table?.name,
+        });
+      }
+    };
+
+    window.addEventListener('avora:payment-completed', handleRealtimePaid);
+    return () => window.removeEventListener('avora:payment-completed', handleRealtimePaid);
+  }, [order?.id, order?.orderCode, (order as any)?.temporaryOrderCode, order?.tableId, order?.table?.name, table?.id, table?.name, isQrGenerated, grandTotal, triggerPaymentSuccessOnce]);
+
+  useEffect(() => {
+    const activeCode =
+      order?.orderCode ||
+      (order as any)?.temporaryOrderCode ||
+      (order as any)?.code ||
+      order?.id;
     if (hasActiveQr && isQrGenerated && activeCode && sepayStatus !== 'PAID') {
+      checkSepayStatus();
       pollTimerRef.current = setInterval(checkSepayStatus, 2500);
       return () => {
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -820,7 +958,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
     } else {
       if (pollTimerRef.current) clearInterval(pollTimerRef.current);
     }
-  }, [hasActiveQr, isQrGenerated, order?.orderCode, (order as any)?.temporaryOrderCode, sepayStatus, checkSepayStatus]);
+  }, [hasActiveQr, isQrGenerated, order?.id, order?.orderCode, (order as any)?.temporaryOrderCode, sepayStatus, checkSepayStatus]);
 
   // Auto-Save Customer to Order when Selected or Created
   const handleSelectMember = async (member: RealMember) => {
@@ -1012,19 +1150,25 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
   // Title header text
   const orderCodeDisplay = order?.orderCode || order?.temporaryOrderCode || '';
 
+  const rawDineInTableName = table?.name || order?.table?.name || '';
+  const cleanDineInTableName = rawDineInTableName.replace(/^Bàn\s+/i, '').trim() || rawDineInTableName;
+
   const headerTitle =
     orderType === 'DELIVERY'
       ? `Thanh toán - Giao hàng: ${deliveryAddress?.customerName || 'Khách giao'}`
       : orderType === 'TAKEAWAY'
       ? 'Thanh toán - Đơn mang đi'
-      : `Thanh toán- ${table ? table.name : order?.table?.name || 'Bàn - 1'}`;
+      : `Thanh toán - ${cleanDineInTableName || 'Mở bàn'}`;
 
   return (
-    <div className={
-      fullscreen
-        ? "fixed inset-0 z-[120] w-full h-[100dvh] flex flex-col bg-white dark:bg-[#181f2c] overflow-hidden select-none animate-in fade-in duration-150"
-        : "fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4 select-none animate-in fade-in duration-150"
-    }>
+    <div
+      style={{ zIndex: modalZIndex }}
+      className={
+        fullscreen
+          ? "fixed inset-0 w-full h-[100dvh] flex flex-col bg-white dark:bg-[#181f2c] overflow-hidden select-none animate-in fade-in duration-150"
+          : "fixed inset-0 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-xs p-0 sm:p-4 select-none animate-in fade-in duration-150"
+      }
+    >
       <div className={
         fullscreen
           ? "w-full h-full flex flex-col overflow-hidden bg-white dark:bg-[#181f2c] text-gray-900 dark:text-slate-100"
@@ -1154,7 +1298,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                           <div className="text-right space-y-0.5">
                             {renderTierBadge(m.membershipTier)}
                             <div className="text-[10px] font-bold text-amber-500">
-                              {m.points?.toLocaleString('vi-VN')} điểm
+                              <AvoraCoin amount={m.points || 0} size="xs" />
                             </div>
                           </div>
                         </button>
@@ -1198,7 +1342,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                     <div className="flex items-center justify-between text-[11px]">
                       <span className={isDarkMode ? 'text-slate-300' : 'text-gray-600'}>Điểm tích lũy:</span>
                       <span className="font-extrabold text-amber-500">
-                        {selectedMember.points?.toLocaleString('vi-VN')} điểm
+                        <AvoraCoin amount={selectedMember.points || 0} size="xs" />
                       </span>
                     </div>
 
@@ -1596,7 +1740,7 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({
                         <div className={`flex justify-between ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}>
                           <span>Điểm khả dụng:</span>
                           <span className="font-bold text-amber-600">
-                            {selectedMember.points?.toLocaleString('vi-VN')} điểm
+                            <AvoraCoin amount={selectedMember.points || 0} size="xs" />
                           </span>
                         </div>
                         {isUsePointsEnabled && (

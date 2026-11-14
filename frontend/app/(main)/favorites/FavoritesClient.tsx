@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useWishlist, WishlistItem } from '@/context/WishlistContext';
 import { useCart } from '@/context/CartContext';
+import { isAuthenticated } from '@/lib/auth';
 import AddToCartButton from '@/components/AddToCartButton';
 import ProductRatingBadge from '@/components/reviews/ProductRatingBadge';
 import { toast } from 'react-hot-toast';
@@ -1083,6 +1084,33 @@ export default function FavoritesClient() {
               <div className="py-24 flex flex-col items-center justify-center space-y-3">
                 <div className="w-10 h-10 border-3 border-[#da251d] border-t-transparent rounded-full animate-spin" />
                 <p className="text-xs font-bold text-slate-500">Đang đồng bộ thực đơn yêu thích của bạn...</p>
+              </div>
+            ) : !isAuthenticated() ? (
+              /* CHƯA ĐĂNG NHẬP: BẮT BUỘC ĐĂNG NHẬP ĐỂ XEM MÓN YÊU THÍCH */
+              <div className="bg-white rounded-3xl border border-slate-200/90 p-8 sm:p-12 text-center shadow-2xs relative overflow-hidden my-4">
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-80 bg-red-100/40 rounded-full blur-3xl pointer-events-none" />
+                <div className="relative z-10 max-w-md mx-auto space-y-4">
+                  <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-slate-900 to-slate-800 text-red-400 flex items-center justify-center mx-auto shadow-xl ring-8 ring-slate-100">
+                    <Heart className="w-10 h-10 fill-current text-red-500" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                      Đăng Nhập Để Xem Món Ăn Yêu Thích
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                      Thực đơn món ăn yêu thích được lưu đồng bộ an toàn trên tài khoản của bạn, giúp bạn xem lại và đặt món nhanh chóng trên mọi thiết bị.
+                    </p>
+                  </div>
+                  <div className="pt-3">
+                    <Link
+                      href="/login?redirect=/favorites?tab=dishes"
+                      className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white font-bold text-sm shadow-md shadow-red-600/25 active:scale-95 transition-all"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Đăng nhập tài khoản ngay</span>
+                    </Link>
+                  </div>
+                </div>
               </div>
             ) : favorites.length === 0 ? (
               /* EMPTY STATE: DISHES */

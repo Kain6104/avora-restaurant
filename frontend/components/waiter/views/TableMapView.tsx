@@ -14,7 +14,8 @@ import ResponsiveModal from '@/components/ui/ResponsiveModal';
 import { Users, Clock, Plus, X, ShoppingBag, Bike, RefreshCw, LayoutGrid, ShieldAlert, Check } from 'lucide-react';
 import toast from 'react-hot-toast';
 
-const fetcher = (url: string) => fetch(url).then(r => r.json());
+const fetcher = (url: string) =>
+  fetch(url, { cache: 'no-store', credentials: 'include' }).then(r => r.json());
 
 function formatElapsed(startTime?: string | Date | null) {
   if (!startTime) return '00:00:00';
@@ -78,7 +79,7 @@ export default function TableMapView() {
   const { data: response, error, isLoading, mutate } = useSWR(
     isOffline || !activeBranchId ? null : `/api/pos/tables?branchId=${activeBranchId}`, 
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: 5000, keepPreviousData: true, revalidateOnFocus: false }
   );
 
   const [openingTable, setOpeningTable] = useState<any | null>(null);
@@ -368,16 +369,36 @@ export default function TableMapView() {
       <PullToRefresh
         onRefresh={async () => {
           if (activeBranchId) {
+            const freshRes = await fetch(`/api/pos/tables?branchId=${activeBranchId}`, {
+              cache: 'no-store',
+              credentials: 'include',
+            });
+            if (freshRes.ok) {
+              const freshJson = await freshRes.json();
+              await mutate(freshJson, { revalidate: false });
+            } else {
+              await mutate();
+            }
             await syncEngine.performDeltaSync(activeBranchId, false);
+          } else {
+            await mutate();
           }
-          await mutate();
         }}
         isOffline={isOffline}
         className="p-2 sm:p-2.5 pb-4"
       >
-        {isLoading && !isOffline ? (
-          <div className="flex justify-center items-center h-40">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#DA251D]"></div>
+        {isLoading && !isOffline && !hasLocalData ? (
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 animate-pulse">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((slot) => (
+              <div
+                key={slot}
+                className="rounded-2xl border border-slate-200 bg-white p-2.5 min-h-[96px] sm:min-h-[104px] flex flex-col justify-between"
+              >
+                <div className="h-4 w-12 mx-auto rounded bg-slate-200" />
+                <div className="h-3 w-16 mx-auto rounded bg-slate-100" />
+                <div className="h-3 w-10 mx-auto rounded bg-slate-100" />
+              </div>
+            ))}
           </div>
         ) : filteredTables.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-slate-400 text-center">
@@ -483,7 +504,7 @@ export default function TableMapView() {
       <button
         type="button"
         onClick={() => setIsCreateOrderModalOpen(true)}
-        className={`fixed ${isIPhone ? 'bottom-20' : 'bottom-[70px]'} right-4 z-40 w-12 h-12 rounded-full bg-[#DA251D] hover:bg-[#b81d16] active:scale-90 text-white flex items-center justify-center shadow-xl shadow-red-500/30 transition-all border-2 border-white cursor-pointer`}
+        className={`fixed ${isIPhone ? 'bottom-[calc(env(safe-area-inset-bottom)+116px)]' : 'bottom-[82px]'} right-4 z-40 w-12 h-12 rounded-full bg-[#DA251D] hover:bg-[#b81d16] active:scale-90 text-white flex items-center justify-center shadow-xl shadow-red-500/30 transition-all border-2 border-white cursor-pointer`}
         title="Tạo đơn hàng mang đi / giao hàng"
       >
         <Plus size={24} strokeWidth={2.5} />

@@ -513,9 +513,9 @@ export const OrderCartItem: React.FC<OrderCartItemProps> = ({
             {isRedeemedReward ? (
               <button
                 type="button"
-                disabled
-                className="h-9 px-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-100 dark:bg-slate-800 text-slate-400 text-xs font-bold flex items-center justify-center gap-1 cursor-not-allowed opacity-60"
-                title="Món đổi điểm không được phép xóa khỏi đơn"
+                onClick={() => onRemoveItem(item.id)}
+                className="h-9 px-1.5 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 text-xs font-bold flex items-center justify-center gap-1 transition-all cursor-pointer"
+                title="Sản phẩm đã đổi bằng điểm thưởng không thể xóa"
               >
                 <Lock className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">Đổi điểm</span>

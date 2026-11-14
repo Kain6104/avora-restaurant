@@ -30,14 +30,15 @@ interface OperatingSlotPickerProps {
 }
 
 function getVnDateInfo(offsetDays: number = 0) {
-  const now = new Date();
-  const target = new Date(now.getTime() + offsetDays * 24 * 60 * 60 * 1000);
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   });
+  const todayVnStr = formatter.format(new Date()); // YYYY-MM-DD theo giờ Việt Nam
+  const [y, m, d] = todayVnStr.split('-').map(Number);
+  const target = new Date(Date.UTC(y, m - 1, d + offsetDays, 12, 0, 0));
   const dateStr = formatter.format(target); // YYYY-MM-DD
   const parts = dateStr.split('-');
   const day = parseInt(parts[2], 10);
@@ -69,6 +70,19 @@ export default function OperatingSlotPicker({
   const [dayTab, setDayTab] = useState<'today' | 'tomorrow' | 'custom'>('today');
   const [customDate, setCustomDate] = useState<string>('');
 
+  useEffect(() => {
+    if (selectedDate) {
+      if (selectedDate === todayInfo.dateStr) {
+        setDayTab('today');
+      } else if (selectedDate === tomorrowInfo.dateStr) {
+        setDayTab('tomorrow');
+      } else {
+        setDayTab('custom');
+        setCustomDate(selectedDate);
+      }
+    }
+  }, [selectedDate, todayInfo.dateStr, tomorrowInfo.dateStr]);
+
   const effectiveDate =
     dayTab === 'today'
       ? todayInfo.dateStr
@@ -77,7 +91,7 @@ export default function OperatingSlotPicker({
       : customDate || todayInfo.dateStr;
 
   useEffect(() => {
-    if (!branchId || !isModalOpen) return;
+    if (!branchId) return;
 
     const fetchSlots = async () => {
       try {
@@ -89,14 +103,6 @@ export default function OperatingSlotPicker({
           const data = await res.json();
           const list: OperatingSlot[] = data.data || [];
           setSlots(list);
-
-          // Nếu slot đang chọn không còn khả dụng trên ngày này, reset
-          if (selectedSlotId) {
-            const found = list.find((s) => s.id === selectedSlotId);
-            if (!found || !found.isAvailable) {
-              // keep or reset
-            }
-          }
         }
       } catch (e) {
         console.error('Failed to fetch operating slots:', e);

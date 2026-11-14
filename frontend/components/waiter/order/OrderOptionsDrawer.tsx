@@ -12,6 +12,7 @@ import {
   Sparkles 
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useModalZIndex } from '@/lib/modal-stack';
 
 interface OrderOptionsDrawerProps {
   isOpen: boolean;
@@ -60,6 +61,7 @@ export default function OrderOptionsDrawer({
   const [note, setNote] = useState<string>(order?.note || '');
 
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const modalZIndex = useModalZIndex(Boolean(isOpen && order), 100);
 
   if (!isOpen || !order) return null;
 
@@ -155,7 +157,10 @@ export default function OrderOptionsDrawer({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200 select-none">
+    <div
+      className="fixed inset-0 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200 select-none"
+      style={{ zIndex: modalZIndex }}
+    >
       <div 
         className="w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
         onClick={(e) => e.stopPropagation()}

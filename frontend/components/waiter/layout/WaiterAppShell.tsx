@@ -16,7 +16,7 @@ const fetcher = (url: string) => fetch(url).then(r => r.json());
 
 export default function WaiterAppShell({ children }: { children: React.ReactNode }) {
   const { user, selectedBranchId, setSelectedBranchId, availableBranches } = useAdmin();
-  const { setActiveBranchId, setCurrentBranch, setCurrentUser } = useWaiterStore();
+  const { setActiveBranchId, setCurrentBranch, setCurrentUser, setActiveTab, setSelectedOrderId } = useWaiterStore();
 
   // Fetch real POS init data from backend with saved branch support
   const savedBranch = typeof window !== 'undefined'
@@ -78,6 +78,56 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
     });
   }, [isAttendanceScannerOpen, setAttendanceScannerOpen, registerModalHandler]);
 
+  // Handle URL deep-linking and Service Worker notification click routing
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleRouteFromSearch = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get('tab');
+        const orderIdParam = params.get('orderId');
+
+        if (tabParam === 'ORDERS' || tabParam === 'QR' || tabParam === 'TABLES' || tabParam === 'SETTINGS') {
+          setActiveTab(tabParam as any);
+        }
+        if (orderIdParam) {
+          setSelectedOrderId(orderIdParam);
+        }
+      } catch {}
+    };
+
+    handleRouteFromSearch();
+
+    // Listen to push notification clicks routed while app is open
+    const handleSwMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'NOTIFICATION_NAVIGATE') {
+        const targetPath = event.data.targetPath || '';
+        try {
+          const url = new URL(targetPath, window.location.origin);
+          const tabParam = url.searchParams.get('tab');
+          const orderIdParam = url.searchParams.get('orderId');
+
+          if (tabParam === 'ORDERS' || tabParam === 'QR' || tabParam === 'TABLES' || tabParam === 'SETTINGS') {
+            setActiveTab(tabParam as any);
+          }
+          if (orderIdParam) {
+            setSelectedOrderId(orderIdParam);
+          }
+        } catch {
+          setActiveTab('ORDERS');
+        }
+      }
+    };
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSwMessage);
+      return () => {
+        navigator.serviceWorker.removeEventListener('message', handleSwMessage);
+      };
+    }
+  }, [setActiveTab, setSelectedOrderId]);
+
   const [mounted, setMounted] = useState(false);
   const theme = useWaiterStore((s) => s.theme);
 
@@ -86,12 +136,26 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
     if (typeof document !== 'undefined') {
       document.documentElement.setAttribute('data-theme', theme || 'light');
     }
-    // Register Service Worker with safe update handling
+    // Register Service Worker with safe update handling (force new version instead of sticking on cached old UI)
     if ('serviceWorker' in navigator) {
+      let hasReloaded = false;
+      const hadController = Boolean(navigator.serviceWorker.controller);
+
+      const handleControllerChange = () => {
+        if (!hadController || hasReloaded) return;
+        hasReloaded = true;
+        window.location.reload();
+      };
+
+      navigator.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+
       navigator.serviceWorker
-        .register('/waiter-sw.js')
+        .register('/waiter-sw.js', { updateViaCache: 'none' })
         .then((reg) => {
-          console.log('[Waiter SW] Registered successfully', reg);
+          reg.update().catch(() => {});
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+          }
           reg.onupdatefound = () => {
             const installing = reg.installing;
             if (installing) {
@@ -104,6 +168,10 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
           };
         })
         .catch((err) => console.error('[Waiter SW] Registration failed:', err));
+
+      return () => {
+        navigator.serviceWorker.removeEventListener('controllerchange', handleControllerChange);
+      };
     }
   }, [theme]);
 
@@ -155,12 +223,15 @@ export default function WaiterAppShell({ children }: { children: React.ReactNode
         return;
       }
 
+      // Allow PullToRefresh containers to receive downward pull touch events cleanly
+      const isPullToRefreshZone = Boolean(scrollable.closest('[data-pull-to-refresh="true"]'));
+
       // Inside scrollable container: stop propagation at boundaries
       const isAtTop = scrollable.scrollTop <= 0;
       const isAtBottom = scrollable.scrollTop + scrollable.clientHeight >= scrollable.scrollHeight - 1;
 
       if (isAtTop && deltaY > 0) {
-        if (e.cancelable) e.preventDefault();
+        if (!isPullToRefreshZone && e.cancelable) e.preventDefault();
         return;
       }
 

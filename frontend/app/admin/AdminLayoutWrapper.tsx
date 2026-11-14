@@ -118,9 +118,9 @@ function RoutePermissionEnforcer({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() || '';
 
   const requiredPermission = useMemo(() => {
-    // /admin is the command center portal hub, accessible to all authenticated staff
+    // /admin requires staff or admin access so pure customers are guarded
     if (pathname === '/admin') {
-      return undefined;
+      return 'admin.access';
     }
 
     for (const entry of ADMIN_ROUTE_PERMISSIONS) {
@@ -138,14 +138,30 @@ function RoutePermissionEnforcer({ children }: { children: React.ReactNode }) {
 function AdminLayoutInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, capabilities } = useAdmin();
+  const { user, capabilities, loading, role, can } = useAdmin();
+
+  // Tự động chuyển hướng mượt mà cho nhân viên BRANCH_WAITER khi truy cập cổng quản trị gốc /admin
+  useEffect(() => {
+    if (loading) return;
+    const isWaiter =
+      role === 'BRANCH_WAITER' ||
+      capabilities?.user?.role === 'BRANCH_WAITER' ||
+      capabilities?.roles?.some((r) => r.code === 'BRANCH_WAITER');
+    const hasAdminAccess = can('dashboard.view') || can('admin.access') || role === 'ADMIN';
+
+    if (pathname === '/admin' && isWaiter && !hasAdminAccess) {
+      router.replace('/admin/pos/waiter');
+    }
+  }, [pathname, loading, role, capabilities, can, router]);
 
   // CHỈ tài khoản khách hàng thuần túy (USER không có bất kỳ vai trò/quyền nhân viên nào) mới bị chặn 404
+  // Quan trọng: Phải đợi tải xong (!loading) mới kết luận để tránh flash 404 cho nhân sự
   const isPureCustomer =
+    !loading &&
     (user?.role === 'USER' || capabilities?.user?.role === 'USER') &&
-    (!capabilities?.assignments || capabilities.assignments.length === 0) &&
-    (!capabilities?.roles || capabilities.roles.length === 0) &&
-    (!capabilities?.effectivePermissions || Object.keys(capabilities.effectivePermissions).length === 0);
+    (capabilities?.assignments?.length ?? 0) === 0 &&
+    (capabilities?.roles?.length ?? 0) === 0 &&
+    Object.keys(capabilities?.effectivePermissions || {}).length === 0;
 
   if (isPureCustomer) {
     return <AdminUserForbidden404 />;

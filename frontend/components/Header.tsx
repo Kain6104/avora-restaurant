@@ -19,15 +19,22 @@ import CategoryAvatar from '@/components/category/CategoryAvatar';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
-function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) {
+function UpdatePhoneModal({
+  onUpdateSuccess,
+  onClose,
+}: {
+  onUpdateSuccess: () => void;
+  onClose: () => void;
+}) {
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!phone || phone.length !== 10) {
-      setError('Vui lòng nhập đúng 10 số điện thoại hợp lệ.');
+    const cleanPhone = phone.trim().replace(/\s+/g, '');
+    if (!cleanPhone || cleanPhone.length !== 10 || !/^[0-9]{10}$/.test(cleanPhone)) {
+      setError('Vui lòng nhập đúng 10 số điện thoại hợp lệ (ví dụ: 0912345678).');
       return;
     }
     setLoading(true);
@@ -41,7 +48,7 @@ function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) 
           'ngrok-skip-browser-warning': 'true'
         },
         credentials: 'include',
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({ phone: cleanPhone }),
       });
 
       const data = await res.json();
@@ -58,52 +65,65 @@ function UpdatePhoneModal({ onUpdateSuccess }: { onUpdateSuccess: () => void }) 
   };
 
   return (
-    <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100">
-        <div className="p-8">
-          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-inner">
-            <Phone className="w-8 h-8 text-red-600" />
+    <div className="fixed inset-0 z-[9999] bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden border border-slate-100 relative animate-in zoom-in-95 duration-200">
+        <button
+          type="button"
+          onClick={onClose}
+          className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+          aria-label="Đóng"
+        >
+          <X className="w-5 h-5" />
+        </button>
+
+        <div className="p-6 sm:p-8">
+          <div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center mb-5 mx-auto shadow-inner text-red-600">
+            <Phone className="w-8 h-8" />
           </div>
-          <h2 className="text-2xl font-black text-center text-slate-800 mb-2">Cập nhật Số điện thoại</h2>
-          <p className="text-center text-slate-500 text-sm mb-8">
-            Đây là bước bắt buộc để hoàn tất hồ sơ đăng nhập của bạn. Chúng tôi cần số điện thoại để liên hệ giao hàng.
+          <h2 className="text-xl sm:text-2xl font-black text-center text-slate-800 mb-2">Cập nhật Số điện thoại</h2>
+          <p className="text-center text-slate-500 text-xs sm:text-sm mb-6 leading-relaxed">
+            Thêm số điện thoại để nhà hàng thuận tiện liên hệ giao hàng và nhận các ưu đãi hấp dẫn dành riêng cho bạn.
           </p>
 
           {error && (
-            <div className="mb-6 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-sm font-bold text-center">
+            <div className="mb-5 p-3 bg-red-50 border border-red-100 rounded-xl text-red-600 text-xs sm:text-sm font-bold text-center">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-sm font-bold text-slate-700 mb-2">Số điện thoại của bạn</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                  <span className="text-slate-400 font-bold">+84</span>
-                </div>
-                <input
-                  type="tel"
-                  required
-                  className="block w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-bold transition-all shadow-sm"
-                  placeholder="Nhập 10 số..."
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-              </div>
+              <label className="block text-xs sm:text-sm font-bold text-slate-700 mb-2">Số điện thoại của bạn</label>
+              <input
+                type="tel"
+                required
+                className="block w-full px-4 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent font-bold transition-all shadow-sm text-sm"
+                placeholder="Nhập số điện thoại (ví dụ: 0912345678)..."
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+              />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center items-center py-3.5 px-4 rounded-2xl text-white bg-red-600 hover:bg-red-700 font-black shadow-lg shadow-red-600/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed hover:-translate-y-0.5"
-            >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              ) : (
-                'Xác Nhận & Tiếp Tục'
-              )}
-            </button>
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 py-3 px-4 rounded-2xl text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 font-bold text-xs sm:text-sm transition-all cursor-pointer"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 flex justify-center items-center py-3 px-4 rounded-2xl text-white bg-red-600 hover:bg-red-700 font-black text-xs sm:text-sm shadow-lg shadow-red-600/30 transition-all disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+              >
+                {loading ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                ) : (
+                  'Lưu số điện thoại'
+                )}
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -124,6 +144,7 @@ export default function Header({ initialCategories = [], initialBranches = [], i
   const [isMegaMenuOpen, setIsMegaMenuOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState(initialCategories[0]?.id || '');
   const [user, setUser] = useState<any>(null);
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
   const [isUserDropdownOpen, setIsUserDropdownOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -328,6 +349,19 @@ export default function Header({ initialCategories = [], initialBranches = [], i
     window.addEventListener('user-updated', handleUserUpdate);
     return () => window.removeEventListener('user-updated', handleUserUpdate);
   }, [fetchCurrentUser]);
+
+  useEffect(() => {
+    if (user && !user.phone) {
+      const dismissed = typeof window !== 'undefined' && localStorage.getItem(`avora_phone_modal_dismissed_${user.id}`);
+      if (!dismissed) {
+        setIsPhoneModalOpen(true);
+      } else {
+        setIsPhoneModalOpen(false);
+      }
+    } else {
+      setIsPhoneModalOpen(false);
+    }
+  }, [user]);
 
   /* ── handle login success & toast ── */
   useEffect(() => {
@@ -693,9 +727,17 @@ export default function Header({ initialCategories = [], initialBranches = [], i
 
   return (
     <>
-      {/* UPDATE PHONE MODAL FOR NEW GOOGLE USERS */}
-      {mounted && user && !user.phone && (
-        <UpdatePhoneModal onUpdateSuccess={() => window.location.reload()} />
+      {/* UPDATE PHONE MODAL FOR NEW GOOGLE USERS (OPTIONAL & DISMISSIBLE) */}
+      {mounted && user && !user.phone && isPhoneModalOpen && (
+        <UpdatePhoneModal
+          onUpdateSuccess={() => window.location.reload()}
+          onClose={() => {
+            if (user?.id) {
+              localStorage.setItem(`avora_phone_modal_dismissed_${user.id}`, 'true');
+            }
+            setIsPhoneModalOpen(false);
+          }}
+        />
       )}
 
       {/* BRANCH SELECTION MODAL */}
@@ -1095,7 +1137,10 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                           <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded-sm whitespace-nowrap">{user?.membershipTier?.name || 'Thành viên mới'}</span>
                         )}
                       </div>
-                      <p className="text-[10px] font-bold text-red-600 leading-tight mt-0.5">{new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm</p>
+                      <p className="text-[10px] font-bold text-red-600 leading-tight mt-0.5 flex items-center gap-1">
+                        <span>{new Intl.NumberFormat('vi-VN').format(user?.points || 0)}</span>
+                        <img src="/avora-coin.svg" alt="coin" className="w-3.5 h-3.5 inline-block shrink-0" />
+                      </p>
                     </div>
                     <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                   </div>
@@ -1394,8 +1439,10 @@ export default function Header({ initialCategories = [], initialBranches = [], i
                 >
                   <div className="flex items-center gap-1.5">
                     <Crown className="w-4 h-4 text-yellow-300" />
-                    <span className="text-white text-xs font-black">
-                      {new Intl.NumberFormat('vi-VN').format(user?.points || 0)} điểm VIP
+                    <span className="text-white text-xs font-black flex items-center gap-1">
+                      <span>{new Intl.NumberFormat('vi-VN').format(user?.points || 0)}</span>
+                      <img src="/avora-coin.svg" alt="coin" className="w-3.5 h-3.5 inline-block shrink-0" />
+                      <span>VIP</span>
                     </span>
                   </div>
                   <span className="text-amber-200 text-[11px] font-bold flex items-center gap-0.5">

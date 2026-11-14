@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useCart } from '../../../context/CartContext';
+import { AvoraCoin } from '@/components/ui/AvoraCoin';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -223,6 +224,11 @@ export default function CheckoutPage() {
         const addressList = Array.isArray(data) ? data : (data?.data || []);
         setAddresses(addressList);
 
+        // Nếu khách hàng chưa có bất kỳ địa chỉ nào và đang chọn giao hàng tận nơi -> mở modal thêm địa chỉ
+        if (addressList.length === 0 && orderType === 'DELIVERY') {
+          setIsAddressModalOpen(true);
+        }
+
         setSelectedAddressId((currentId) => {
           const targetId = preferredId || currentId;
           const exists = addressList.some((a: Address) => a.id === targetId);
@@ -293,7 +299,10 @@ export default function CheckoutPage() {
           if (json.data.shippingQuote) {
             setShippingQuote(json.data.shippingQuote);
             if (!json.data.shippingQuote.deliveryAvailable && orderType === 'DELIVERY') {
-              setIsOutOfRangeModalOpen(true);
+              // CHỈ hiển thị modal vượt bán kính nếu người dùng ĐÃ có địa chỉ chọn và distanceKm > 0
+              if (selectedAddressId && addresses.some(a => a.id === selectedAddressId) && json.data.shippingQuote.distanceKm > 0) {
+                setIsOutOfRangeModalOpen(true);
+              }
             }
           }
         }
@@ -368,9 +377,10 @@ export default function CheckoutPage() {
   const handlePlaceOrder = () => {
     // 1. Kiểm tra thông tin nhận hàng tùy theo hình thức
     if (orderType === 'DELIVERY') {
-      if (!selectedAddressId) {
+      if (!selectedAddressId || !selectedAddress) {
         setValidationErrors(prev => ({ ...prev, address: true }));
-        toast.error('Vui lòng chọn địa chỉ giao hàng trước khi đặt hàng!');
+        toast.error('Vui lòng thêm hoặc chọn địa chỉ nhận hàng trước khi đặt hàng!');
+        setIsAddressModalOpen(true);
         const el = document.getElementById('delivery-address-section');
         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         return;
@@ -699,7 +709,9 @@ export default function CheckoutPage() {
                         </p>
                       </div>
                     ) : (
-                      <p className="text-xs text-slate-400 italic">Vui lòng chọn địa chỉ giao hàng</p>
+                      <div className="flex items-center gap-1.5 text-rose-600 font-bold text-xs sm:text-sm">
+                        <span>Chưa có địa chỉ giao hàng — Nhấn để thêm địa chỉ mới</span>
+                      </div>
                     )}
                   </div>
                   <ChevronRight className="text-slate-400 shrink-0" size={20} />
@@ -1204,8 +1216,8 @@ export default function CheckoutPage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <span className="text-xs font-bold text-amber-900 block">Sử dụng điểm tích lũy</span>
-                      <span className="text-[11px] text-amber-700 block">
-                        Khả dụng: <strong>{(user.points || 0).toLocaleString('vi-VN')}</strong> điểm
+                      <span className="text-[11px] text-amber-700 inline-flex items-center gap-1">
+                        Khả dụng: <strong className="inline-flex items-center"><AvoraCoin amount={user.points || 0} size="xs" /></strong>
                       </span>
                     </div>
                     <label className="relative inline-flex items-center cursor-pointer">
@@ -1450,7 +1462,7 @@ export default function CheckoutPage() {
       />
 
       {/* MODAL BÁO LỖI ĐỊA CHỈ NGOÀI PHẠM VI GIAO HÀNG */}
-      {isOutOfRangeModalOpen && shippingQuote && !shippingQuote.deliveryAvailable && orderType === 'DELIVERY' && (
+      {isOutOfRangeModalOpen && selectedAddress && shippingQuote && !shippingQuote.deliveryAvailable && orderType === 'DELIVERY' && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 animate-in fade-in duration-200">
           <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setIsOutOfRangeModalOpen(false)} />
           <div className="relative bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-rose-100 animate-in zoom-in-95 duration-200">

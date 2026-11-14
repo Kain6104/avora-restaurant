@@ -14,18 +14,19 @@ export default function BranchSelector() {
   // Xác định người dùng có toàn quyền xem tất cả chi nhánh hay không
   const isSystemAdmin =
     role === 'ADMIN' ||
-    capabilities?.roles.some((r) => r.code === 'ADMIN') ||
-    capabilities?.assignments.some((a) => a.branchScope === 'ALL_BRANCHES');
+    capabilities?.roles?.some((r) => r.code === 'ADMIN') ||
+    capabilities?.assignments?.some((a) => a.branchScope === 'ALL_BRANCHES') ||
+    user?.role === 'ADMIN';
 
   // Cho phép chuyển đổi chi nhánh nếu là System Admin hoặc được gán từ 2 chi nhánh trở lên
-  const canSwitchBranch = isSystemAdmin || availableBranches.length > 1;
+  const canSwitchBranch = isSystemAdmin || (availableBranches?.length || 0) > 1;
 
   // Find currently selected branch object
   const allBranchesLabel = t('header.allBranches', 'Tất cả chi nhánh');
   const currentBranch =
     selectedBranchId === 'ALL'
       ? { id: 'ALL', name: allBranchesLabel }
-      : availableBranches.find((b) => b.id === selectedBranchId) || {
+      : availableBranches?.find((b) => b.id === selectedBranchId) || {
           id: selectedBranchId,
           name: user?.branch?.name || t('header.branch', 'Chi nhánh của bạn'),
         };
@@ -58,14 +59,14 @@ export default function BranchSelector() {
             ? `Chuyển đổi giữa ${isSystemAdmin ? 'tất cả các chi nhánh' : `${availableBranches.length} chi nhánh được phân công`}`
             : 'Tài khoản của bạn chỉ được phân công tại chi nhánh này'
         }
-        className={`flex items-center gap-2 sm:gap-2.5 h-9 sm:h-10 px-3 sm:px-3.5 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 transition-all duration-150 shadow-xs outline-none focus:ring-2 focus:ring-red-500/20 ${
+        className={`flex items-center gap-1.5 sm:gap-2.5 h-8 sm:h-9 px-2 sm:px-3 rounded-xl border border-slate-200/80 bg-white hover:bg-slate-50 transition-all duration-150 shadow-2xs outline-none focus:ring-2 focus:ring-red-500/20 ${
           !canSwitchBranch ? 'cursor-default opacity-90' : 'cursor-pointer hover:border-slate-300'
         }`}
       >
         <div className="p-1 rounded-lg bg-red-50 text-red-600 flex items-center justify-center shrink-0">
-          <Store size={15} strokeWidth={2.2} />
+          <Store size={14} strokeWidth={2.2} />
         </div>
-        <span className="text-xs sm:text-sm font-bold text-slate-800 truncate max-w-[130px] sm:max-w-[180px] lg:max-w-[220px]">
+        <span className="text-xs font-bold text-slate-800 truncate max-w-[85px] sm:max-w-[180px] lg:max-w-[220px]">
           {selectedBranchId === 'ALL' ? allBranchesLabel : currentBranch.name}
         </span>
 
@@ -78,7 +79,7 @@ export default function BranchSelector() {
 
         {canSwitchBranch ? (
           <ChevronDown
-            size={14}
+            size={13}
             className={`text-slate-400 shrink-0 transition-transform duration-200 ${
               isOpen ? 'rotate-180 text-slate-700' : ''
             }`}

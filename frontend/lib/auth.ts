@@ -187,6 +187,22 @@ export async function logoutUser(options?: { redirectUrl?: string; reload?: bool
 
   if (!targetUrl) targetUrl = '/login';
 
+  // 0. Thu hồi Web Push subscription trên thiết bị hiện tại nếu có
+  let deviceInstallationId: string | undefined = undefined;
+  if (typeof window !== 'undefined') {
+    try {
+      deviceInstallationId = localStorage.getItem('avora_waiter_device_installation_id') || undefined;
+      localStorage.removeItem('avora_waiter_push_enabled');
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.pushManager.getSubscription().then((sub) => {
+            if (sub) sub.unsubscribe().catch(() => {});
+          }).catch(() => {});
+        }).catch(() => {});
+      }
+    } catch {}
+  }
+
   // 1. Gửi request hủy session lên backend
   try {
     const apiBase = getApiBaseUrl();
@@ -194,6 +210,7 @@ export async function logoutUser(options?: { redirectUrl?: string; reload?: bool
       method: 'POST',
       credentials: 'include',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ deviceInstallationId }),
     }).catch(() => {});
   } catch {
     // Kể cả lỗi mạng, vẫn phải dọn sạch client
