@@ -70,7 +70,7 @@ fun DiagnosticScreen(
                 - Số tài khoản: ${tx.accountNumber}
                 - Chiều giao dịch: ${tx.direction}
                 - Số tiền: ${tx.amount} VND (Long)
-                - Thời gian: ${tx.occurredAt}
+                - Thời gian (VN): ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt)} (${tx.occurredAt})
                 - Người gửi: ${tx.counterparty}
                 - Nội dung: ${tx.transferContent}
                 - Ref VCB: ${tx.bankReference}
@@ -95,7 +95,7 @@ fun DiagnosticScreen(
                         [PASS] Kết nối HTTPS tới avorafnb.com thành công!
                         - HTTP Status: ${res.code()}
                         - Độ trễ: ${latency}ms
-                        - Server Time: ${res.body()?.serverTime}
+                        - Server Time (VN): ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(res.body()?.serverTime)} (${res.body()?.serverTime})
                         - Trạng thái thiết bị: ${res.body()?.status}
                     """.trimIndent()
                 } else {

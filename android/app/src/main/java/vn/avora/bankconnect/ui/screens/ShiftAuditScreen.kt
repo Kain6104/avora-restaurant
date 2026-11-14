@@ -507,7 +507,7 @@ fun ShiftAuditScreen(
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(item.reason, fontSize = 11.sp, color = Color(0xFFB91C1C))
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text("Thời gian: ${item.createdAt}", fontSize = 10.sp, color = Slate400)
+                                            Text("Thời gian: ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(item.createdAt)}", fontSize = 10.sp, color = Slate400)
                                         }
                                     }
                                 }
@@ -550,7 +550,7 @@ fun ShiftAuditScreen(
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(tx.reason, fontSize = 11.sp, color = Color(0xFFB45309), fontWeight = FontWeight.SemiBold)
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text("Thời gian: ${tx.occurredAt}", fontSize = 10.sp, color = Slate400)
+                                            Text("Thời gian: ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt)}", fontSize = 10.sp, color = Slate400)
                                         }
                                     }
                                 }
@@ -594,7 +594,7 @@ fun ShiftAuditScreen(
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Text(item.reason, fontSize = 11.sp, color = Color(0xFFBE123C), fontWeight = FontWeight.SemiBold)
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text("Thời gian: ${item.occurredAt} • Ref: ${item.bankReference ?: "Trống"}", fontSize = 10.sp, color = Slate400)
+                                            Text("Thời gian: ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(item.occurredAt)} • Ref: ${item.bankReference ?: "Trống"}", fontSize = 10.sp, color = Slate400)
                                         }
                                     }
                                 }
@@ -635,7 +635,7 @@ fun ShiftAuditScreen(
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text("${tx.bank} • Ref: ${tx.bankReference ?: tx.transferContent}", fontSize = 11.sp, color = Slate600)
                                             Spacer(modifier = Modifier.height(2.dp))
-                                            Text("Thời gian: ${tx.occurredAt}", fontSize = 10.sp, color = Slate400)
+                                            Text("Thời gian: ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt)}", fontSize = 10.sp, color = Slate400)
                                         }
                                     }
                                 }

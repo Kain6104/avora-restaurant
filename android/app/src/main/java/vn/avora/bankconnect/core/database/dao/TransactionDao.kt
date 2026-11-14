@@ -59,6 +59,15 @@ interface TransactionDao {
     @Query("SELECT * FROM bank_transactions WHERE bank = :bank AND accountNumber = :accountNumber AND amount = :amount AND direction = :direction AND createdAt >= :sinceTimestamp LIMIT 1")
     suspend fun findRecentDuplicate(bank: String, accountNumber: String, amount: Long, direction: String, sinceTimestamp: Long): TransactionEntity?
 
+    @Query("SELECT * FROM bank_transactions WHERE rawText = :rawText LIMIT 1")
+    suspend fun findByRawText(rawText: String): TransactionEntity?
+
+    @Query("SELECT * FROM bank_transactions WHERE bank = :bank AND bankReference = :bankRef AND bankReference IS NOT NULL AND bankReference != '' LIMIT 1")
+    suspend fun findByBankReference(bank: String, bankRef: String): TransactionEntity?
+
+    @Query("SELECT * FROM bank_transactions WHERE bank = :bank AND accountNumber = :accountNumber AND amount = :amount AND direction = :direction AND (occurredAt = :occurredAt OR (transferContent IS NOT NULL AND transferContent = :content) OR (rawText IS NOT NULL AND rawText = :rawText)) LIMIT 1")
+    suspend fun findDuplicateTx(bank: String, accountNumber: String, amount: Long, direction: String, occurredAt: String, content: String?, rawText: String?): TransactionEntity?
+
     @Query("DELETE FROM bank_transactions WHERE createdAt < :cutoffTime AND syncStatus = 'SYNCED'")
     suspend fun cleanupOldSynced(cutoffTime: Long)
 

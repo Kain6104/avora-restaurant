@@ -83,15 +83,7 @@ fun TransactionHistoryScreen(
                     val remoteItems = resp.body()!!.items
                     if (remoteItems.isNotEmpty()) {
                         val entities = remoteItems.map { item ->
-                            val occurredTs = try {
-                                java.time.Instant.parse(item.occurredAt).toEpochMilli()
-                            } catch (e: Exception) {
-                                try {
-                                    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(item.occurredAt)?.time ?: System.currentTimeMillis()
-                                } catch (e2: Exception) {
-                                    System.currentTimeMillis()
-                                }
-                            }
+                            val occurredTs = vn.avora.bankconnect.core.util.VnTimeUtils.parseToEpochMillis(item.occurredAt)
                             TransactionEntity(
                                 eventId = item.eventId ?: item.id,
                                 bank = item.bank,
@@ -326,15 +318,18 @@ fun TransactionHistoryScreen(
             if (filterState.minAmount != null && tx.amount < filterState.minAmount!!) return@filter false
             if (filterState.maxAmount != null && tx.amount > filterState.maxAmount!!) return@filter false
 
-            // 7. Time Range Filter
+            // 7. Time Range Filter (strictly by Asia/Ho_Chi_Minh calendar day)
             if (filterState.timeRange != "ALL") {
-                val now = System.currentTimeMillis()
-                val oneDay = 24 * 60 * 60 * 1000L
+                val txMillis = vn.avora.bankconnect.core.util.VnTimeUtils.parseToEpochMillis(tx.occurredAt, tx.createdAt)
+                val todayStart = vn.avora.bankconnect.core.util.VnTimeUtils.startOfVnDayMillis(0)
+                val yesterdayStart = vn.avora.bankconnect.core.util.VnTimeUtils.startOfVnDayMillis(1)
+                val sevenDaysStart = vn.avora.bankconnect.core.util.VnTimeUtils.startOfVnDayMillis(6)
+                val thirtyDaysStart = vn.avora.bankconnect.core.util.VnTimeUtils.startOfVnDayMillis(29)
                 when (filterState.timeRange) {
-                    "TODAY" -> if (now - tx.createdAt > oneDay) return@filter false
-                    "YESTERDAY" -> if (now - tx.createdAt < oneDay || now - tx.createdAt > 2 * oneDay) return@filter false
-                    "LAST_7_DAYS" -> if (now - tx.createdAt > 7 * oneDay) return@filter false
-                    "LAST_30_DAYS" -> if (now - tx.createdAt > 30 * oneDay) return@filter false
+                    "TODAY" -> if (txMillis < todayStart) return@filter false
+                    "YESTERDAY" -> if (txMillis < yesterdayStart || txMillis >= todayStart) return@filter false
+                    "LAST_7_DAYS" -> if (txMillis < sevenDaysStart) return@filter false
+                    "LAST_30_DAYS" -> if (txMillis < thirtyDaysStart) return@filter false
                 }
             }
 
@@ -648,7 +643,7 @@ fun TransactionHistoryScreen(
                                         maxLines = 1
                                     )
                                     Text(
-                                        text = tx.occurredAt,
+                                        text = vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt),
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             color = Slate400,
                                             fontSize = 10.sp
@@ -840,7 +835,8 @@ fun TransactionHistoryScreen(
                 DetailRow("Số tài khoản", tx.accountNumber)
                 DetailRow("Chiều giao dịch", tx.direction)
                 DetailRow("Số tiền", "${formatter.format(tx.amount)} VND")
-                DetailRow("Thời gian GD", tx.occurredAt)
+                DetailRow("Thời gian GD (VN)", vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt))
+                DetailRow("Thời gian nhận TB", vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.createdAt))
                 DetailRow("Người gửi", tx.counterparty ?: "N/A")
                 DetailRow("Nội dung chuyển", tx.transferContent ?: "N/A")
                 DetailRow("Mã Ref ngân hàng", tx.bankReference ?: "N/A")

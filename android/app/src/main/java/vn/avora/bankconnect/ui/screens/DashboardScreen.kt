@@ -45,14 +45,9 @@ fun DashboardScreen(
     val db = remember { AppDatabase.getInstance(context) }
     val scope = rememberCoroutineScope()
 
-    // Query start of day timestamp
+    // Query start of day timestamp (00:00:00 Asia/Ho_Chi_Minh)
     val startOfDay = remember {
-        Calendar.getInstance().apply {
-            set(Calendar.HOUR_OF_DAY, 0)
-            set(Calendar.MINUTE, 0)
-            set(Calendar.SECOND, 0)
-            set(Calendar.MILLISECOND, 0)
-        }.timeInMillis
+        vn.avora.bankconnect.core.util.VnTimeUtils.startOfVnDayMillis()
     }
 
     // Live States from Room
@@ -71,9 +66,12 @@ fun DashboardScreen(
 
     val currencyFormatter = remember { NumberFormat.getNumberInstance(Locale("vi", "VN")) }
 
-    // Tính toán phân bổ biến động theo 6 khung giờ hôm nay
+    // Tính toán phân bổ biến động theo 6 khung giờ hôm nay (Asia/Ho_Chi_Minh)
     val hourlyData = remember(allTransactions, startOfDay) {
-        val todayCredits = allTransactions.filter { it.direction == "CREDIT" && it.createdAt >= startOfDay }
+        val todayCredits = allTransactions.filter {
+            it.direction == "CREDIT" &&
+                vn.avora.bankconnect.core.util.VnTimeUtils.parseToEpochMillis(it.occurredAt, it.createdAt) >= startOfDay
+        }
         val slots = listOf(
             "06-09h" to (6 until 9),
             "09-12h" to (9 until 12),
@@ -82,16 +80,12 @@ fun DashboardScreen(
             "18-21h" to (18 until 21),
             "21-24h" to (21 until 24)
         )
-        val cal = Calendar.getInstance()
         slots.map { (label, hourRange) ->
-            val slotSum = todayCredits.filter { tx ->
-                cal.timeInMillis = tx.createdAt
-                cal.get(Calendar.HOUR_OF_DAY) in hourRange
-            }.sumOf { it.amount }
-            Triple(label, slotSum, todayCredits.count { tx ->
-                cal.timeInMillis = tx.createdAt
-                cal.get(Calendar.HOUR_OF_DAY) in hourRange
-            })
+            val matching = todayCredits.filter { tx ->
+                val txMillis = vn.avora.bankconnect.core.util.VnTimeUtils.parseToEpochMillis(tx.occurredAt, tx.createdAt)
+                vn.avora.bankconnect.core.util.VnTimeUtils.vnHourOfDay(txMillis) in hourRange
+            }
+            Triple(label, matching.sumOf { it.amount }, matching.size)
         }
     }
 
@@ -691,7 +685,7 @@ fun DashboardScreen(
                                             maxLines = 1
                                         )
                                         Text(
-                                            text = tx.occurredAt.replace("T", " ").take(19),
+                                            text = vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(tx.occurredAt, "dd/MM/yyyy HH:mm:ss"),
                                             fontSize = 10.sp,
                                             color = Slate400,
                                             fontFamily = FontFamily.Monospace

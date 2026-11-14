@@ -302,7 +302,7 @@ fun QuickMatchBottomSheet(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = "${candidate.branchName} • ${candidate.createdAt.take(16).replace("T", " ")}",
+                                        text = "${candidate.branchName} • ${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(candidate.createdAt, "dd/MM HH:mm")}",
                                         fontSize = 11.sp,
                                         color = Slate500,
                                         maxLines = 1,

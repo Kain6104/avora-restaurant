@@ -44,14 +44,14 @@ object OtaUpdateManager {
             }
             InstalledAppInfo(
                 packageName = context.packageName,
-                versionName = pInfo.versionName ?: "1.0.5",
+                versionName = pInfo.versionName ?: "1.0.6",
                 versionCode = vCode
             )
         } catch (e: Exception) {
             InstalledAppInfo(
                 packageName = EXPECTED_PACKAGE_NAME,
-                versionName = "1.0.5",
-                versionCode = 6L
+                versionName = "1.0.6",
+                versionCode = 7L
             )
         }
     }

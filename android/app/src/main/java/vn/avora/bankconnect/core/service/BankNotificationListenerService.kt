@@ -268,11 +268,11 @@ class BankNotificationListenerService : NotificationListenerService() {
 
         val now = System.currentTimeMillis()
 
-        // 1. Dọn dẹp cache deduplication cũ (> 60 giây)
+        // 1. Dọn dẹp cache deduplication cũ (> 1 giờ)
         val iterator = recentNotificationKeys.entries.iterator()
         while (iterator.hasNext()) {
             val entry = iterator.next()
-            if (now - entry.value > 60000L) {
+            if (now - entry.value > 3600000L) {
                 iterator.remove()
             }
         }
@@ -328,6 +328,13 @@ class BankNotificationListenerService : NotificationListenerService() {
 
         if (rawNotification.fullContent.isBlank()) return false
 
+        // Chống lặp tầng 1.5: Kiểm tra thông báo cũ còn treo trên thanh trạng thái đã lưu DB trước đó chưa
+        val existingByRaw = database.transactionDao().findByRawText(rawNotification.fullContent)
+        if (existingByRaw != null) {
+            Log.i(TAG, "[Deduplicate] Bỏ qua thông báo cũ vẫn còn trên thanh trạng thái (đã lưu eventId: ${existingByRaw.eventId})")
+            return false
+        }
+
         // Phân tích nội dung qua BankProviderDetector đa ngân hàng (VCB, OCB, BIDV, CTG, MB, TCB, ACB, Generic)
         val parseResult = vn.avora.bankconnect.core.parser.BankProviderDetector.detectAndParse(rawNotification)
         if (parseResult !is ParseResult.Success) {
@@ -345,17 +352,39 @@ class BankNotificationListenerService : NotificationListenerService() {
         }
         recentNotificationKeys[txFingerprint] = now
 
-        // 4. Chống lặp tầng 3: Kiểm tra Room Database 10 giây gần nhất
-        val tenSecondsAgo = now - 10000L
+        // 4. Chống lặp tầng 3: Kiểm tra Room Database toàn diện (Mã Ref, Nội dung, Thời điểm, hoặc 24h gần nhất)
+        if (!tx.bankReference.isNullOrBlank()) {
+            val existingByRef = database.transactionDao().findByBankReference(tx.bank, tx.bankReference!!)
+            if (existingByRef != null) {
+                Log.w(TAG, "[Deduplicate] Giao dịch có mã Ref ngân hàng đã tồn tại trong Room DB (Ref: ${tx.bankReference}, eventId: ${existingByRef.eventId}), bỏ qua chèn đúp!")
+                return false
+            }
+        }
+
+        val existingTx = database.transactionDao().findDuplicateTx(
+            bank = tx.bank,
+            accountNumber = tx.accountNumber,
+            amount = tx.amount,
+            direction = tx.direction,
+            occurredAt = tx.occurredAt,
+            content = tx.transferContent,
+            rawText = tx.rawText
+        )
+        if (existingTx != null) {
+            Log.w(TAG, "[Deduplicate] Giao dịch khớp hoàn toàn với bản ghi trong Room DB (eventId: ${existingTx.eventId}), bỏ qua chèn đúp!")
+            return false
+        }
+
+        val oneDayAgo = now - 86400000L
         val recentInDb = database.transactionDao().findRecentDuplicate(
             bank = tx.bank,
             accountNumber = tx.accountNumber,
             amount = tx.amount,
             direction = tx.direction,
-            sinceTimestamp = tenSecondsAgo
+            sinceTimestamp = oneDayAgo
         )
-        if (recentInDb != null) {
-            Log.w(TAG, "[Deduplicate] Giao dịch đã tồn tại trong Room DB (eventId: ${recentInDb.eventId}), bỏ qua chèn đúp!")
+        if (recentInDb != null && (recentInDb.occurredAt == tx.occurredAt || recentInDb.transferContent == tx.transferContent)) {
+            Log.w(TAG, "[Deduplicate] Giao dịch tương tự đã tồn tại trong Room DB 24h qua (eventId: ${recentInDb.eventId}), bỏ qua chèn đúp!")
             return false
         }
 
@@ -431,6 +460,14 @@ class BankNotificationListenerService : NotificationListenerService() {
 
         // Gửi ngay lập tức lên VPS qua HTTPS (Không chờ đợi / Không polling)
         sendTransactionToVpsImmediately(entity)
+
+        // Đóng thông báo trên thanh trạng thái sau khi đã ghi nhận thành công để tránh tích tụ
+        try {
+            cancelNotification(sbn.key)
+        } catch (e: Exception) {
+            Log.d(TAG, "Không thể tự đóng thông báo: ${e.message}")
+        }
+
         return true
     }
 

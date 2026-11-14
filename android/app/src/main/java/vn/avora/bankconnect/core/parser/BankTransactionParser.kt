@@ -34,9 +34,7 @@ object NotificationNormalizer {
     }
 
     fun getCurrentVietnamTimeIso(): String {
-        val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss+07:00", Locale.US)
-        sdf.timeZone = TimeZone.getTimeZone("GMT+7")
-        return sdf.format(Date())
+        return vn.avora.bankconnect.core.util.VnTimeUtils.currentVnIso()
     }
 }
 

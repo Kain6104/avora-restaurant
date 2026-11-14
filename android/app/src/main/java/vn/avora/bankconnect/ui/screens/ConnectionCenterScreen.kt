@@ -256,7 +256,7 @@ fun ConnectionCenterScreen(
                     DetailItem(
                         icon = Icons.Default.History,
                         title = "Biến động VCB gần nhất",
-                        subtitle = latestTx?.let { "${it.occurredAt} (+${it.amount}đ)" } ?: "Chưa có dữ liệu"
+                        subtitle = latestTx?.let { "${vn.avora.bankconnect.core.util.VnTimeUtils.formatVnDateTime(it.occurredAt)} (+${it.amount}đ)" } ?: "Chưa có dữ liệu"
                     )
                     DetailItem(
                         icon = Icons.Default.Schedule,

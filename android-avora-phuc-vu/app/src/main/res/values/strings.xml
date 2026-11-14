@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">AVORA Phục Vụ</string>
+    <string name="error_no_internet">Không có kết nối mạng</string>
+    <string name="error_no_internet_desc">Vui lòng kiểm tra lại kết nối Wi-Fi hoặc 4G/5G để tiếp tục phục vụ.</string>
+    <string name="btn_retry">Thử lại</string>
+    <string name="exit_confirm_title">Thoát ứng dụng?</string>
+    <string name="exit_confirm_desc">Bạn có chắc chắn muốn thoát khỏi AVORA Phục Vụ không?</string>
+    <string name="btn_exit">Thoát</string>
+    <string name="btn_cancel">Ở lại</string>
+    <string name="camera_permission_rationale">AVORA Phục Vụ cần quyền truy cập Camera để quét mã QR chấm công và gọi món tại bàn.</string>
+    <string name="location_permission_rationale">AVORA Phục Vụ cần quyền vị trí chính xác để xác thực chấm công theo phạm vi chi nhánh nhà hàng.</string>
+</resources>
+

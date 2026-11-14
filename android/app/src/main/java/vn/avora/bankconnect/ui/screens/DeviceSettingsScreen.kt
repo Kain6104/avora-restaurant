@@ -165,15 +165,7 @@ fun DeviceSettingsScreen(
                     val remoteItems = resp.body()!!.items
                     if (remoteItems.isNotEmpty()) {
                         val entities = remoteItems.map { item ->
-                            val occurredTs = try {
-                                java.time.Instant.parse(item.occurredAt).toEpochMilli()
-                            } catch (e: Exception) {
-                                try {
-                                    java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.getDefault()).parse(item.occurredAt)?.time ?: System.currentTimeMillis()
-                                } catch (e2: Exception) {
-                                    System.currentTimeMillis()
-                                }
-                            }
+                            val occurredTs = vn.avora.bankconnect.core.util.VnTimeUtils.parseToEpochMillis(item.occurredAt)
                             TransactionEntity(
                                 eventId = item.eventId ?: item.id,
                                 bank = item.bank,
