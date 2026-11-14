@@ -164,6 +164,15 @@ GitHub API confirmation:
 
 ---
 
+## 9. Cryptographic SSH Commit Signing Verification
+
+- **Key Algorithm:** `Ed25519`
+- **Key Fingerprint:** `SHA256:JT/CIpGQXwOxfqDP7AznSJhlABpd3w6l7p+8xgJEBLc`
+- **GitHub Registration:** Registered in GitHub Account Settings as **Signing Key** (`AVORA Windows Commit Signing`).
+- **Automatic Signing Policy:** Activated globally (`commit.gpgsign = true`). All commits created after key activation are automatically signed and verified by GitHub.
+
+---
+
 **Report Prepared By:** Antigravity AI  
 **Verification Date:** November 14, 2026  
-**Final Status:** **PASS**
+**Final Status:** **PASS** (Source Synchronized & Signed)
