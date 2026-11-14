@@ -1,0 +1,172 @@
+<Window x:Class="AvoraPosNative.Dialogs.CustomerSelectDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Khách Hàng Thành Viên"
+        Height="620" Width="580"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        Topmost="True"
+        UseLayoutRounding="True"
+        SnapsToDevicePixels="True"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <Border Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1.5" CornerRadius="16" Padding="24">
+        <Grid>
+            <Grid.RowDefinitions>
+                <!-- 0. Header -->
+                <RowDefinition Height="Auto"/>
+                <!-- 1. Search Box -->
+                <RowDefinition Height="Auto"/>
+                <!-- 2. Results List or Quick Create Form -->
+                <RowDefinition Height="*"/>
+                <!-- 3. Footer / Close -->
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- 0. HEADER -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="KHÁCH HÀNG THÀNH VIÊN &amp; TÍCH ĐIỂM" FontSize="11" FontWeight="Black" Foreground="#DA251D"/>
+                    <TextBlock Text="Tra cứu &amp; Gắn hội viên vào đơn" FontSize="18" FontWeight="Black" Foreground="#0F172A" Margin="0,2,0,0"/>
+                </StackPanel>
+
+                <Button Grid.Column="1" Content="✕" Width="32" Height="32"
+                        Background="#F1F5F9" Foreground="#64748B" BorderThickness="0"
+                        FontSize="14" FontWeight="Bold" Cursor="Hand" Click="BtnClose_Click">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="16">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+
+            <!-- 1. SEARCH BOX -->
+            <Border Grid.Row="1" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1.5" CornerRadius="10" Padding="12,6" Margin="0,0,0,16">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="🔍" FontSize="14" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0"/>
+
+                    <TextBox Grid.Column="1" x:Name="txtSearch" 
+                             Background="Transparent" BorderThickness="0"
+                             FontSize="14" FontWeight="SemiBold" Foreground="#0F172A"
+                             VerticalContentAlignment="Center"
+                             KeyDown="TxtSearch_KeyDown"/>
+
+                    <TextBlock Grid.Column="1" x:Name="txtPlaceholder" Text="Nhập SĐT (bắt đầu bằng 0...), Tên, Mã thẻ..."
+                               FontSize="13" Foreground="#94A3B8" VerticalAlignment="Center" IsHitTestVisible="False"
+                               Margin="2,0,0,0"/>
+
+                    <Button Grid.Column="2" Content="Tìm kiếm" Click="BtnSearch_Click"
+                            Background="#DA251D" Foreground="#FFFFFF" FontWeight="Bold" FontSize="12"
+                            Padding="14,6" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- 2. RESULTS CONTAINER -->
+            <Grid Grid.Row="2">
+                <!-- A. Normal Results List -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel x:Name="pnlResults">
+                        <!-- Default hint state -->
+                        <Border Background="#F8FAFC" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="20" Margin="0,10,0,0">
+                            <StackPanel HorizontalAlignment="Center">
+                                <TextBlock Text="👤" FontSize="36" HorizontalAlignment="Center" Opacity="0.5" Margin="0,0,0,8"/>
+                                <TextBlock Text="Tìm kiếm khách hàng theo SĐT, Tên hoặc Email" FontSize="13" FontWeight="Bold" Foreground="#475569" HorizontalAlignment="Center"/>
+                                <TextBlock Text="Nhập đầy đủ số điện thoại có số 0 ở đầu (Ví dụ: 0912345678)" FontSize="11.5" Foreground="#94A3B8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <!-- B. Quick Create Customer Box (collapsible) -->
+                <Border x:Name="pnlCreateNew" Background="#FFFFFF" BorderBrush="#E2E8F0" BorderThickness="1" CornerRadius="12" Padding="16" VerticalAlignment="Bottom" Visibility="Collapsed" Margin="0,0,0,6">
+                    <StackPanel>
+                        <TextBlock Text="Chưa có thông tin khách? Tạo nhanh hội viên mới:" FontSize="12" FontWeight="Bold" Foreground="#0F172A" Margin="0,0,0,10"/>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="10"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Họ và tên khách:" FontSize="11" Foreground="#64748B" Margin="0,0,0,4"/>
+                                <TextBox x:Name="txtNewName" Height="36" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8,6" FontSize="12" FontWeight="Bold"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Số điện thoại:" FontSize="11" Foreground="#64748B" Margin="0,0,0,4"/>
+                                <TextBox x:Name="txtNewPhone" Height="36" Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" Padding="8,6" FontSize="12" FontWeight="Bold"/>
+                            </StackPanel>
+                        </Grid>
+                        <Button Content="+ Tạo mới &amp; Chọn cho đơn này" Click="BtnCreateAndSelect_Click"
+                                Background="#10B981" Foreground="#FFFFFF" FontWeight="Bold" FontSize="12.5" Height="38" Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="8">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                        </Button>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- 3. FOOTER -->
+            <Grid Grid.Row="3" Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <Button Content="Khách vãng lai (Bỏ gắn thành viên)" Click="BtnClearCustomer_Click"
+                        Background="#F1F5F9" Foreground="#64748B" FontWeight="Bold" FontSize="12" Padding="14,10" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+
+                <Button Grid.Column="1" Content="Đóng" Click="BtnClose_Click"
+                        Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" Foreground="#334155" FontWeight="Bold" FontSize="12" Padding="20,10" Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
+
