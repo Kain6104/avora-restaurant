@@ -1,12 +1,12 @@
 # AVORA Restaurant Management System
 
-> **A multi-module restaurant management system with web-based administration, point-of-sale operations, QR ordering, kitchen workflows, workforce tools and supporting applications.**
+> **A multi-module restaurant management system with web-based administration, point-of-sale operations, QR ordering, kitchen workflows, workforce tools, and supporting applications.**
 
 [![Next.js](https://img.shields.io/badge/Next.js-16.3.1-black?logo=next.js)](https://nextjs.org/)
-[![React](https://img.shields.io/badge/React-19.0.0-blue?logo=react)](https://react.dev/)
-[![NestJS](https://img.shields.io/badge/NestJS-10.0-red?logo=nestjs)](https://nestjs.com/)
+[![React](https://img.shields.io/badge/React-19.2.8-blue?logo=react)](https://react.dev/)
+[![NestJS](https://img.shields.io/badge/NestJS-11.0.1-red?logo=nestjs)](https://nestjs.com/)
 [![Prisma](https://img.shields.io/badge/Prisma-5.14-2D3748?logo=prisma)](https://www.prisma.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?logo=typescript)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?logo=mysql)](https://www.mysql.com/)
 [![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Android](https://img.shields.io/badge/Android-SDK_35-3DDC84?logo=android)](https://developer.android.com/)
@@ -15,14 +15,14 @@
 
 ## Giới thiệu tổng quan (Vietnamese Overview)
 
-**AVORA Restaurant** là hệ thống quản lý nhà hàng đa phân hệ, phục vụ toàn diện vòng đời vận hành F&B từ khâu gọi món tại bàn, chế biến bếp, thanh toán thu ngân đến quản trị chuỗi chi nhánh và nhân sự:
+**AVORA Restaurant** là hệ thống quản lý nhà hàng đa phân hệ, hỗ trợ vận hành F&B từ khâu gọi món tại bàn, chế biến bếp, thanh toán thu ngân đến quản trị chi nhánh và nhân sự:
 
-- **Cổng Quản trị & Điều hành (`frontend/app/admin`)**: Quản lý thực đơn món ăn, danh mục, kho định lượng, đơn hàng, bàn ăn, báo cáo tài chính, khuyến mãi, phân quyền RBAC và cấu hình hệ thống.
-- **POS Thu ngân & Waiter (`/admin/pos` & `/admin/pos/waiter`)**: Điểm bán hàng cảm ứng cho thu ngân và ứng dụng phục vụ bàn chuyên biệt trên Web PWA / Android Native.
-- **Gọi món QR tại bàn (`/qr/[token]`)**: Khách hàng quét mã QR trên bàn để xem thực đơn, gọi món Alacarte & Buffet theo đợt, gọi nhân viên, yêu cầu thanh toán và xuất hóa đơn VAT theo thời gian thực.
-- **Bếp & Quầy pha chế (KDS - `/admin/kds`)**: Màn hình điều phối chế biến theo từng trạm bếp, cập nhật trạng thái món tức thời qua WebSocket.
-- **Chấm công & Nhân sự (`/admin/attendance`)**: Chấm công định vị QR Geofence, ca làm việc linh hoạt, bảng công tổng hợp xuất Excel tự động và thẻ chấm công cá nhân.
-- **Ứng dụng di động & Desktop**: Ứng dụng Android phục vụ bàn WebView (`android-avora-phuc-vu`), ứng dụng lắng nghe giao dịch ngân hàng tự động (`android/`), và POS Desktop .NET 8 WPF (`desktop/`).
+- **Cổng Quản trị & Điều hành (`frontend/app/admin`)**: Quản lý thực đơn, danh mục, kho nguyên liệu, đơn hàng, bàn ăn, báo cáo doanh thu, phân quyền RBAC và cấu hình hệ thống.
+- **POS Thu ngân & Phục vụ bàn (`/admin/pos` & `/admin/pos/waiter`)**: Giao diện bán hàng thu ngân và ứng dụng phục vụ bàn trên Web PWA và Android WebView.
+- **Gọi món QR tại bàn (`/qr/[token]`)**: Khách hàng quét mã QR trên bàn để xem thực đơn, gọi món Alacarte & Buffet theo đợt, gọi nhân viên, yêu cầu thanh toán và gửi thông tin xuất hóa đơn VAT.
+- **Bếp & Pha chế (KDS - `/admin/kds`)**: Màn hình điều phối chế biến theo trạm bếp, cập nhật trạng thái món qua WebSocket theo thời gian thực.
+- **Chấm công & Ca làm việc (`/admin/attendance`)**: Chấm công qua mã QR xác thực tọa độ GPS (geofencing), cấu hình ca làm việc, bảng công xuất Excel và thẻ chấm công cá nhân.
+- **Ứng dụng hỗ trợ**: Ứng dụng Android phục vụ bàn (`android-avora-phuc-vu`) đóng gói bằng native Kotlin WebView container, ứng dụng Android lắng nghe thông báo giao dịch ngân hàng (`android/`), và phần mềm POS Desktop .NET 8 WPF (`desktop/`).
 
 ---
 
@@ -30,18 +30,18 @@
 
 | Module | Category | Description | Status |
 | :--- | :--- | :--- | :---: |
-| **Point of Sale (POS)** | Operations | Full-featured cashier POS interface supporting cash, bank transfer, PayOS/Sepay, card, split payments, table merging/splitting, open price, and weight (kg) decimals. | **Implemented** |
-| **Waiter PWA & Mobile Web** | Operations | Mobile-first waiter app (`/admin/pos/waiter`) with active table floor maps, order round management, and device-bound Web Push notifications. | **Implemented** |
-| **QR Table Ordering** | Operations | Dynamic QR order flow (`/qr/[token]`) for guests: Alacarte food rounds, buffet submission limits, staff calling, payment requests, cooldown deduplication, and VAT invoice requests. | **Implemented** |
-| **Kitchen Display System (KDS)** | Operations | Real-time kitchen screen (`/admin/kds`) with station routing, item preparation state transitions, sound/haptic alerts, and batch order dispatching. | **Implemented** |
-| **Buffet Management** | Operations | Buffet ticket management with per-submission dish quantity caps, lifetime table limits, countdown timers, and buffet package tier rules. | **Implemented** |
-| **Attendance & Shifts** | Workforce | Geofenced QR attendance check-in/out, multi-shift configurations, dynamic Excel reports with native formulas, and personal employee timecards. | **Implemented** |
-| **Role-Based Access Control (RBAC)** | Security | Granular permission model with 5 canonical system roles (`ADMIN`, `BRANCH_MANAGER`, `BRANCH_STAFF`, `BRANCH_WAITER`, `BRANCH_KITCHEN`) and branch scoping (`ALL_BRANCHES` vs specific branches). | **Implemented** |
-| **Financial & Sales Reports** | Admin | Revenue reporting by date, branch, product category, payment method, tax, cancellations, and membership point redemption analytics. | **Implemented** |
-| **AVORA BankConnect App** | Integration | Android Kotlin utility (`android/`) capturing banking notification events for automated order transaction matching without SMS costs. | **Implemented** |
-| **AVORA Phục Vụ Android App** | Client App | Native Android WebView client (`android-avora-phuc-vu`) with edge-to-edge window insets, status bar transparency, and native gesture navigation. | **Implemented** |
-| **Native POS Desktop** | Client App | C# .NET 8 WPF application (`desktop/AvoraPosNative`) with local database storage, offline outbox order queuing, and background sync worker. | **In Progress** |
-| **Multi-Branch Inventory Sync** | Inventory | Warehouse management, ingredients, procurement, recipe mapping, and multi-branch inventory transfers (`/admin/inventory`). | **In Progress** |
+| **Point of Sale (POS)** | Operations | Cashier POS interface supporting cash, bank transfer, PayOS/Sepay webhooks, card, split payments, table merging/splitting, custom item pricing, and weight (kg) decimals. | **Implemented** |
+| **Waiter PWA & Mobile Web** | Operations | Mobile web interface (`/admin/pos/waiter`) with table status map, order round management, and Web Push notifications. | **Implemented** |
+| **QR Table Ordering** | Operations | Guest table ordering flow (`/qr/[token]`): Alacarte rounds, buffet dish submission limits, staff call requests, payment requests, order cooldown, and VAT invoice submission. | **Implemented** |
+| **Kitchen Display System (KDS)** | Operations | Kitchen screen (`/admin/kds`) with station routing, item state updates, alert sounds, and batch dispatching via WebSocket. | **Implemented** |
+| **Buffet Management** | Operations | Buffet ticket management with maximum dish quantity limits per single kitchen submission, session countdown timers, and buffet package tier rules. | **Implemented** |
+| **Attendance & Shifts** | Workforce | Geofenced QR attendance check-in/out, multi-shift configurations, Excel timesheet export with formulas, and personal employee timecards. | **Implemented** |
+| **Role-Based Access Control (RBAC)** | Security | Role permission model with 5 system roles (`ADMIN`, `BRANCH_MANAGER`, `BRANCH_STAFF`, `BRANCH_WAITER`, `BRANCH_KITCHEN`) and branch scoping (`ALL_BRANCHES` vs specific branch). | **Implemented** |
+| **Financial & Sales Reports** | Admin | Revenue reporting by date range, branch, product category, payment method, tax, cancellations, and loyalty point redemptions. | **Implemented** |
+| **AVORA BankConnect App** | Integration | Android Kotlin service (`android/`) capturing banking notifications for automated order matching. | **Implemented** |
+| **AVORA Phục Vụ Android App** | Client App | Android application (`android-avora-phuc-vu`) with a native Kotlin WebView container, edge-to-edge window insets, and JavaScript interface bridge for device capabilities. | **Implemented** |
+| **Native POS Desktop** | Client App | .NET 8 WPF desktop application (`desktop/AvoraPosNative`) with local SQLite storage, offline order queue, and background sync worker. | **In Progress** |
+| **Multi-Branch Inventory Sync** | Inventory | Warehouse management, ingredient tracking, procurement, recipes, and branch inventory transfers (`/admin/inventory`). | **In Progress** |
 
 ---
 
@@ -115,29 +115,29 @@ flowchart TD
 ## Technology Stack
 
 ### Frontend Web Application (`frontend/`)
-- **Framework:** Next.js 16.3.1 (React 19, Turbopack)
-- **Language:** TypeScript 5.0+
+- **Framework:** Next.js 16.3.1 (React 19.2.8, Turbopack)
+- **Language:** TypeScript 5.7+
 - **Styling:** TailwindCSS 4, Lucide React icons
 - **State & Data Fetching:** SWR, Zustand, React Context
 - **Realtime & Offline:** Socket.io-client, Dexie.js (IndexedDB), Service Worker Web Push
-- **Audio & Haptics:** Custom Sound / Vibration synthesizer for kitchen and waiter alerts
+- **Audio & Haptics:** Sound synthesizer and Vibration API for kitchen and waiter alerts
 
 ### Backend API (`backend/`)
-- **Framework:** NestJS 10 (Node.js runtime)
-- **Language:** TypeScript 5.0+
-- **ORM & Database:** Prisma ORM 5.14 with MySQL 8
+- **Framework:** NestJS 11.0.1 (Node.js runtime)
+- **Language:** TypeScript 5.7+
+- **ORM & Database:** Prisma ORM 5.14 with MySQL 8.0
 - **Authentication:** JWT (JSON Web Tokens), Passport, bcrypt password hashing
 - **Realtime:** Socket.io Gateway with room-based branch isolation
-- **Push Notifications:** Self-hosted Web Push protocol with VAPID authentication (RFC 8292)
-- **Excel Engine:** ExcelJS with dynamic formulas for payroll and attendance sheets
+- **Push Notifications:** Web Push protocol with VAPID authentication (RFC 8292)
+- **Excel Engine:** ExcelJS with native formulas for attendance reports
 
 ### Android Applications
-- **AVORA Phục Vụ (`android-avora-phuc-vu/`):** Kotlin, Android SDK 35, AndroidX, ViewBinding, WindowInsetsCompat Edge-to-Edge WebView container.
-- **AVORA BankConnect (`android/`):** Kotlin, Android SDK 35, Jetpack Compose, NotificationListenerService, Room database, Coroutines, OTA update manager.
+- **AVORA Phục Vụ (`android-avora-phuc-vu/`):** Kotlin, Android SDK 35, AndroidX, ViewBinding, WebKit WebView container with JavaScript interface bridge.
+- **AVORA BankConnect (`android/`):** Kotlin, Android SDK 35, Jetpack Compose, NotificationListenerService, Room database, Coroutines, Retrofit.
 
 ### Desktop Applications (`desktop/`)
 - **AvoraPos (`desktop/AvoraPos/`):** .NET 8 WPF with Microsoft WebView2 embedding.
-- **AvoraPosNative (`desktop/AvoraPosNative/`):** Native .NET 8 WPF client, CommunityToolkit.Mvvm, SQLite/LiteDB offline storage, and background sync worker.
+- **AvoraPosNative (`desktop/AvoraPosNative/`):** .NET 8 WPF, SQLite local storage, and background sync worker.
 
 ---
 
@@ -145,7 +145,7 @@ flowchart TD
 
 ```text
 avora-restaurant/
-├── .agents/                    # Agent development guidelines and coding style guides
+├── .agents/                    # Agent guidelines and coding style rules
 ├── android/                    # AVORA BankConnect Android native application source
 ├── android-avora-phuc-vu/      # AVORA Phục Vụ Android WebView native application source
 ├── backend/                    # NestJS API backend source code
@@ -166,7 +166,7 @@ avora-restaurant/
 │   └── store/                  # Client state stores (Zustand)
 ├── installer/                  # Inno Setup Windows installer script definitions
 ├── AGENTS.md                   # Repository guidelines and architectural conventions
-├── RBAC_PERMISSION_MATRIX.md   # Comprehensive 177-permission RBAC matrix
+├── RBAC_PERMISSION_MATRIX.md   # RBAC matrix covering 177 permissions and role mappings
 ├── RBAC_COVERAGE.md            # Route permission coverage report across admin modules
 ├── SUSHIWA_ATTENDANCE_*.md     # Attendance specifications, business rules, and API maps
 ├── AVORA_ATTENDANCE_*.md       # Attendance parity audit and verification reports
@@ -214,7 +214,7 @@ npx prisma migrate dev
 ```
 *(Optional) Seed foundational roles, menus, and operating slots:*
 ```bash
-npm run seed
+npx prisma db seed
 ```
 
 ### 4. Run Development Servers
@@ -232,7 +232,7 @@ npm install
 npm run dev
 ```
 
-Visit `http://localhost:4000` for customer web or `http://localhost:4000/admin` for the administration portal.
+Visit `http://localhost:4000` for the customer web application or `http://localhost:4000/admin` for the administration portal.
 
 ---
 
@@ -257,6 +257,7 @@ Safe templates are provided in the repository with non-production placeholder va
 - **Client Generation:** `npx prisma generate`
 - **Apply Migrations (Development):** `npx prisma migrate dev`
 - **Apply Migrations (Production):** `npx prisma migrate deploy`
+- **Seed Database:** `npx prisma db seed`
 
 ---
 
@@ -294,18 +295,18 @@ dotnet build desktop/AvoraPosNative/AvoraPosNative.csproj -c Release
 
 ## Technical Documentation Directory
 
-The repository includes detailed specifications and parity audits located at the root directory:
+The repository includes specifications, schema dictionaries, and parity audits located at the root directory:
 
 - [AGENTS.md](AGENTS.md) — Engineering guidelines, directory conventions, and coding style rules.
-- [RBAC_PERMISSION_MATRIX.md](RBAC_PERMISSION_MATRIX.md) — Complete 177-permission RBAC matrix and role definitions.
-- [RBAC_COVERAGE.md](RBAC_COVERAGE.md) — Verification of route permission enforcement across all admin modules.
+- [RBAC_PERMISSION_MATRIX.md](RBAC_PERMISSION_MATRIX.md) — RBAC matrix covering 177 permissions and role mappings.
+- [RBAC_COVERAGE.md](RBAC_COVERAGE.md) — Route permission coverage report across admin modules.
 - [SUSHIWA_ATTENDANCE_ARCHITECTURE.md](SUSHIWA_ATTENDANCE_ARCHITECTURE.md) — Attendance system architecture and geofencing engine.
 - [SUSHIWA_ATTENDANCE_BUSINESS_RULES.md](SUSHIWA_ATTENDANCE_BUSINESS_RULES.md) — Shift rules, overtime calculations, and penalty logic.
 - [SUSHIWA_ATTENDANCE_DATA_DICTIONARY.md](SUSHIWA_ATTENDANCE_DATA_DICTIONARY.md) — Database schema definitions for workforce attendance.
 - [SUSHIWA_ATTENDANCE_API_MAP.md](SUSHIWA_ATTENDANCE_API_MAP.md) — HTTP API endpoints for attendance check-in/out and timesheets.
 - [SUSHIWA_EXCEL_STRUCTURE_SPEC.md](SUSHIWA_EXCEL_STRUCTURE_SPEC.md) — Formula and styling specifications for Excel export sheets.
-- [SUSHIWA_FEATURE_PARITY_MATRIX.md](SUSHIWA_FEATURE_PARITY_MATRIX.md) — Full feature parity matrix between Sushi Wa and AVORA attendance.
-- [AVORA_ATTENDANCE_FINAL_PARITY_AUDIT.md](AVORA_ATTENDANCE_FINAL_PARITY_AUDIT.md) — Verification of 100% parity across attendance workflows.
+- [SUSHIWA_FEATURE_PARITY_MATRIX.md](SUSHIWA_FEATURE_PARITY_MATRIX.md) — Feature comparison matrix between Sushi Wa and AVORA attendance.
+- [AVORA_ATTENDANCE_FINAL_PARITY_AUDIT.md](AVORA_ATTENDANCE_FINAL_PARITY_AUDIT.md) — Audit report on attendance parity verification.
 - [POS_DESKTOP_MIGRATION_PLAN.md](POS_DESKTOP_MIGRATION_PLAN.md) — Migration strategy from WebView2 POS to Native WPF.
 - [POS_NATIVE_FEATURE_MATRIX.md](POS_NATIVE_FEATURE_MATRIX.md) — Offline caching and local SQLite storage capabilities.
 - [POS_NATIVE_NEW_APP_PLAN.md](POS_NATIVE_NEW_APP_PLAN.md) — Native WPF architecture plan and implementation tasks.
@@ -316,16 +317,16 @@ The repository includes detailed specifications and parity audits located at the
 
 ## Security & Confidentiality
 
-- **Zero Secrets in Repository:** Never commit real `.env` files, production credentials, JWT secrets, database connection strings, VAPID private keys, Android `.jks` signing keystores, or SSL certificates.
-- **Role Enforcement:** All administrative routes under `/admin/*` enforce server-validated capabilities via `AdminPageGuard` and JWT verification. Users with standard `USER` accounts receive a canonical 404 response when attempting direct access.
+- **Zero Secrets in Repository:** Never commit `.env` files, production credentials, JWT secrets, database connection strings, VAPID private keys, Android `.jks` signing keystores, or SSL certificates.
+- **Role Enforcement:** Administrative routes under `/admin/*` enforce server-validated capabilities via `AdminPageGuard` and JWT verification. Users with standard `USER` accounts receive a canonical 404 response on unauthorized access attempts.
 - **Reporting Vulnerabilities:** If you discover a security vulnerability within AVORA Restaurant, please open a private security advisory on GitHub or contact the repository maintainer directly.
 
 ---
 
 ## Project Status & License
 
-- **Project Status:** This repository is actively developed. Features and documentation may change between commits. Refer to the source code, tests, and project documentation for the current implementation status.
-- **License:** Not specified. Unauthorized copying, reproduction, or redistribution of this source code without explicit permission is prohibited.
+- **Project Status:** This repository is actively developed. Features and documentation may change between commits. Refer to the source code, tests, and project documentation for current implementation status.
+- **License:** No license is currently specified. All rights remain with the repository owner.
 
 ---
 
